@@ -19,7 +19,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from simconnect import SimConnect, PERIOD_VISUAL_FRAME
+from SimConnect import SimConnect, PERIOD_VISUAL_FRAME
 
 # ----------------------------------------------------------------------
 # Config
@@ -39,14 +39,14 @@ SIMVARS = {
     "heading_true_deg":        ("PLANE HEADING DEGREES TRUE", "degrees"),
     "pitch_deg":                ("PLANE PITCH DEGREES", "degrees"),
     "bank_deg":                 ("PLANE BANK DEGREES", "degrees"),
-    "yaw_rate_radps":          ("ROTATION VELOCITY BODY Z", "radians per second"),
+    "yaw_rate_radps":          ("ROTATION VELOCITY BODY Z", "Radians per second"),
     "fuel_total_qty_gal":      ("FUEL TOTAL QUANTITY", "gallons"),
 
-    "throttle_pct":             ("GENERAL ENG THROTTLE LEVER POSITION:1", "percent"),
-    "elevator_trim_pct":       ("ELEVATOR TRIM PCT", "percent"),
-    "elevator_position":       ("ELEVATOR POSITION", "position"),
-    "rudder_position":          ("RUDDER POSITION", "position"),
-    "flaps_handle_pct":        ("FLAPS HANDLE PERCENT", "percent"),
+    "throttle_pct":             ("GENERAL ENG THROTTLE LEVER POSITION:1", "Percent"),
+    "elevator_trim_pct":       ("ELEVATOR TRIM PCT", "Percent"),
+    "elevator_position":       ("ELEVATOR POSITION", "Position"),
+    "rudder_position":          ("RUDDER POSITION", "Position"),
+    "flaps_handle_pct":        ("FLAPS HANDLE PERCENT", "Percent"),
     "gear_handle_position":    ("GEAR HANDLE POSITION", "bool"),
 
     "latitude":                  ("PLANE LATITUDE", "degrees"),
@@ -55,8 +55,12 @@ SIMVARS = {
     "ambient_wind_kt":          ("AMBIENT WIND VELOCITY", "knots"),
     "ambient_temp_c":           ("AMBIENT TEMPERATURE", "celsius"),
 
-    "sim_running":              ("SIM RUNNING", "bool"),
-    "sim_paused":                ("SIM PAUSED", "bool"),
+    # NOTE: "Sim Running" and "Sim Paused" are NOT simvars — the SDK
+    # confirmed this (see "unrecognized simvar" warning). They're actually
+    # *system events* (SimStart/SimStop, Pause/Paused/Unpaused), same
+    # category as Crashed/CrashReset. Removed from here; see the note
+    # at the bottom of the file — events still need their own subscription
+    # mechanism, which we haven't nailed down yet for this package.
 }
 
 # Map simvar name -> canonical field name, for pulling values back out
@@ -81,6 +85,14 @@ def main():
         [SIMVARS[f] for f in SIMVARS]
     ]
     datadef = sc.subscribe_simdata(subscribe_list, period=PERIOD_VISUAL_FRAME)
+
+    # Wait for the connection handshake + first data batch to land before
+    # we start writing rows, so we don't get an empty leading row.
+    print("Waiting for first data batch...")
+    while not datadef.simdata:
+        sc.receive()
+        time.sleep(0.05)
+    print("Connected, data flowing.")
 
     # NOTE: Crashed/CrashReset event subscription is NOT included here yet.
     # I have not been able to confirm the exact pysimconnect call for
@@ -126,15 +138,23 @@ if __name__ == "__main__":
 
 # ----------------------------------------------------------------------
 # Notes:
-# - This version follows pysimconnect's documented pattern from its own
-#   PyPI quick-start: subscribe_simdata() once, pump with sc.receive()
-#   each loop, read from datadef.simdata[name].
-# - If any field prints FAILED with a KeyError, that variable name likely
-#   isn't recognized by the SDK/wrapper as written (check exact spelling
-#   against the SDK's Simulation Variables reference) — paste me the
-#   failing names and I'll fix them.
-# - Crashed/CrashReset event logging is deliberately left out until we
-#   verify the correct call — logging fabricated code that might silently
-#   no-op again isn't worth it. We'll add it once flight-state logging
-#   is confirmed working end-to-end.
+# - Confirmed working pattern (verified against real MSFS run): 
+#   subscribe_simdata() once, pump with sc.receive() each loop, read
+#   from datadef.simdata[name]. All Flight State/Control/Environment
+#   simvars resolved correctly once the connection's Open handshake
+#   completed.
+# - Data won't populate for the first ~second while the connection opens
+#   — that's expected, not a bug. If you want to skip logging empty rows,
+#   add a short sleep + receive-drain right after subscribe_simdata()
+#   before the write loop starts.
+# - Sim Paused/Sim Running/Crashed/CrashReset are all real *system events*,
+#   not simvars — none of them can be polled the way the rest of this
+#   script works. That's a separate subscription mechanism we still need
+#   to nail down for pysimconnect specifically (the examples/ folder in
+#   the repo is the next place to check, since the README doesn't show
+#   a system-event example). Left out of this version rather than guess
+#   a fourth unverified API.
+# - Checklist Items / Scenario Triggers remain outside SimConnect's scope
+#   entirely — log those from your own scenario/UI code with matching
+#   UTC timestamps.
 # ----------------------------------------------------------------------
