@@ -13,6 +13,7 @@ Run this AFTER MSFS2020 is running with a flight loaded.
 
 import csv
 import time
+import os
 from datetime import datetime, timezone
  
 from simconnect import SimConnect
