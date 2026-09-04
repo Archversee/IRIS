@@ -5,7 +5,7 @@ Tracking Data within Flight Simulators*.
 
 - **Backend:** FastAPI + asyncpg
 - **Frontend:** React (Vite) + recharts
-- **Database:** Supabase Postgres (plain Postgres — see the note below)
+- **Database:** Supabase Postgres (plain Postgres)
 
 Single-user for now (no auth). Batch CSV ingest works today; a real-time
 streaming path is stubbed and ready to build out.
@@ -56,9 +56,11 @@ psql "$DATABASE_URL" -f db/schema.sql
 
 ## 2. Backend
 
+#PYTHON 3.12.10
+
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+py -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # then paste your Supabase connection string
 uvicorn app.main:app --reload --port 8000
@@ -70,6 +72,11 @@ any `?pgbouncer=true` / `+asyncpg` suffix — asyncpg wants the plain
 `postgresql://` scheme.
 
 Interactive API docs: <http://localhost:8000/docs>.
+
+## To Run after setup
+cd backend
+.venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
 
 ## 3. Frontend
 
@@ -113,12 +120,6 @@ The dev server proxies `/api/*` to `http://localhost:8000` (see
 To go live, have `MSFSAdapter.py` POST rows here instead of (or alongside)
 writing CSV. Live *playback* fan-out to the browser isn't built yet — that's
 the next piece.
-
-## Note on your MSFSAdapter.py
-
-The uploaded logger calls `os.path.join` / `os.makedirs` but never
-`import os`, so it will crash on startup. Add `import os` near the top. The
-CSV format it produces otherwise matches what the flight ingest expects.
 
 ## Next steps / ideas
 
