@@ -38,6 +38,20 @@ function bounds(arr, key) {
 }
 const norm = (v, [mn, mx]) => (v == null || mx <= mn ? null : (v - mn) / (mx - mn));
 
+// nearest index in a { t } array sorted ascending by time
+function nearestIndexForTime(arr, t) {
+  let lo = 0, hi = arr.length - 1;
+  if (hi < 0) return 0;
+  if (t <= arr[0].t) return 0;
+  if (t >= arr[hi].t) return hi;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].t < t) lo = mid + 1; else hi = mid;
+  }
+  if (lo > 0 && Math.abs(arr[lo - 1].t - t) <= Math.abs(arr[lo].t - t)) return lo - 1;
+  return lo;
+}
+
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -173,6 +187,7 @@ export default function Review() {
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const curT = elapsed(cur.ts);
+  const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
   // instrument-screen gaze position + recent trail
   const gx = curEye && gazeB.x[1] > gazeB.x[0]
@@ -205,15 +220,6 @@ export default function Review() {
       {/* toolbar rail */}
       <div className="rev-rail">
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
-        <button className="rail-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
-          {playing ? "❚❚" : "▶"}
-        </button>
-        <button className="rail-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
-        <select className="rail-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
-          <option value={1}>1×</option>
-          <option value={4}>4×</option>
-          <option value={10}>10×</option>
-        </select>
         <div className="rail-sep" />
         <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
       </div>
@@ -303,6 +309,19 @@ export default function Review() {
           <div className="rev-scrub">
             <input type="range" min={0} max={flight.length - 1} value={cursor}
               onChange={(e) => setCursor(+e.target.value)} />
+          </div>
+          <div className="tl-transport">
+            <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
+            <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
+            <button className="tl-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
+              {playing ? "❚❚" : "▶"}
+            </button>
+            <button className="tl-btn" title="Forward 10s" onClick={() => seek(10)}>10s »</button>
+            <select className="tl-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
+              <option value={1}>1×</option>
+              <option value={4}>4×</option>
+              <option value={10}>10×</option>
+            </select>
           </div>
         </div>
 

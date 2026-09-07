@@ -49,12 +49,7 @@
   transition: background .12s, border-color .12s;
 }
 .rev-rail .rail-btn:hover { background: #21303f; border-color: #35485a; }
-.rev-rail .rail-btn.play { background: var(--rev-cyan); color: #04121c; border-color: var(--rev-cyan); }
 .rev-rail .rail-sep { flex: 1; }
-.rev-rail .rail-speed {
-  width: 40px; text-align: center; font-size: 12px; color: var(--rev-muted);
-  background: transparent; border: 1px solid var(--rev-line); border-radius: 8px; padding: 4px 0;
-}
 
 /* ---- main grid ---- */
 .rev-main {
@@ -123,6 +118,29 @@
 .filter-chip:disabled { opacity: .4; cursor: not-allowed; }
 .rev-scrub { display: flex; align-items: center; gap: 10px; padding: 4px 2px 2px; }
 .rev-scrub input[type=range] { flex: 1; accent-color: var(--rev-cyan); }
+
+/* ---- playback transport (below timeline + scrub bar) ---- */
+.tl-transport {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-top: 8px; padding: 8px 2px 4px; border-top: 1px solid var(--rev-line);
+}
+.tl-btn {
+  min-width: 44px; height: 34px; padding: 0 12px;
+  display: grid; place-items: center;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px;
+  color: var(--rev-text); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.tl-btn:hover { background: #21303f; border-color: #35485a; }
+.tl-btn.play {
+  width: 50px; height: 40px; font-size: 17px;
+  background: var(--rev-cyan); color: #04121c; border-color: var(--rev-cyan);
+}
+.tl-speed {
+  width: 56px; flex: none;
+  height: 34px; padding: 0 8px; text-align: center; font-size: 12px; color: var(--rev-muted);
+  background: transparent; border: 1px solid var(--rev-line); border-radius: 8px;
+}
 
 /* ---- bottom row ---- */
 .rev-bottom { display: grid; grid-template-columns: 1.3fr 1fr 0.85fr; gap: 10px; min-height: 0; }
