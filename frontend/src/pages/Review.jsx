@@ -24,6 +24,8 @@ const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
+const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -213,7 +215,7 @@ export default function Review() {
   const py = (la) => geo.la[1] > geo.la[0] ? gh - pad - ((la - geo.la[0]) / (geo.la[1] - geo.la[0])) * (gh - 2 * pad) : gh / 2;
   const track = flight.filter((r) => r.latitude != null).map((r) => `${px(r.longitude).toFixed(1)},${py(r.latitude).toFixed(1)}`).join(" ");
 
-  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-9);
+  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
     <div className="rev">
@@ -334,14 +336,20 @@ export default function Review() {
               <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
             ) : (
               <div className="scan-flow">
-                {visibleRuns.map((r, i) => (
-                  <span key={i} style={{ display: "contents" }}>
-                    <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
-                      {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
-                    </span>
-                    {i < visibleRuns.length - 1 && <span className="scan-arrow">→</span>}
-                  </span>
-                ))}
+                {[visibleRuns.slice(0, SCAN_ROW_CAP), visibleRuns.slice(SCAN_ROW_CAP)]
+                  .filter((row) => row.length)
+                  .map((row, ri) => (
+                    <div className="scan-row" key={ri}>
+                      {row.map((r, i) => (
+                        <span key={i} style={{ display: "contents" }}>
+                          <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
+                            {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
+                          </span>
+                          {i < row.length - 1 && <span className="scan-arrow">→</span>}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
               </div>
             )}
           </div>

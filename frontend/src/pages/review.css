@@ -153,15 +153,25 @@
   letter-spacing: .3px;
 }
 
-/* scan path */
-.scan-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+/* scan path — always exactly two rows, split evenly rather than left to flex-wrap */
+.scan-flow {
+  --scan-row-h: 48px;
+  display: flex; flex-direction: column; gap: 8px;
+  height: calc(var(--scan-row-h) * 2 + 8px);
+}
+.scan-row {
+  height: var(--scan-row-h);
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: nowrap; overflow: hidden;
+}
 .scan-node {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  flex: none; height: var(--scan-row-h); box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 0 14px; border-radius: 9px; font-size: 14px; font-weight: 600;
   border: 1px solid; background: var(--rev-panel-2); white-space: nowrap;
 }
-.scan-node .t { font-size: 10px; color: var(--rev-muted); font-weight: 500; }
-.scan-arrow { color: var(--rev-muted); font-size: 15px; }
+.scan-node .t { font-size: 11px; color: var(--rev-muted); font-weight: 500; }
+.scan-arrow { flex: none; color: var(--rev-muted); font-size: 17px; }
 .scan-empty { color: var(--rev-muted); font-size: 13px; }
 
 /* readouts */
