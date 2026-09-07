@@ -24,6 +24,8 @@ const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
+const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -37,6 +39,20 @@ function bounds(arr, key) {
   return [mn, mx];
 }
 const norm = (v, [mn, mx]) => (v == null || mx <= mn ? null : (v - mn) / (mx - mn));
+
+// nearest index in a { t } array sorted ascending by time
+function nearestIndexForTime(arr, t) {
+  let lo = 0, hi = arr.length - 1;
+  if (hi < 0) return 0;
+  if (t <= arr[0].t) return 0;
+  if (t >= arr[hi].t) return hi;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].t < t) lo = mid + 1; else hi = mid;
+  }
+  if (lo > 0 && Math.abs(arr[lo - 1].t - t) <= Math.abs(arr[lo].t - t)) return lo - 1;
+  return lo;
+}
 
 export default function Review() {
   const { id } = useParams();
@@ -173,6 +189,7 @@ export default function Review() {
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const curT = elapsed(cur.ts);
+  const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
   // instrument-screen gaze position + recent trail
   const gx = curEye && gazeB.x[1] > gazeB.x[0]
@@ -198,22 +215,13 @@ export default function Review() {
   const py = (la) => geo.la[1] > geo.la[0] ? gh - pad - ((la - geo.la[0]) / (geo.la[1] - geo.la[0])) * (gh - 2 * pad) : gh / 2;
   const track = flight.filter((r) => r.latitude != null).map((r) => `${px(r.longitude).toFixed(1)},${py(r.latitude).toFixed(1)}`).join(" ");
 
-  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-9);
+  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
     <div className="rev">
       {/* toolbar rail */}
       <div className="rev-rail">
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
-        <button className="rail-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
-          {playing ? "❚❚" : "▶"}
-        </button>
-        <button className="rail-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
-        <select className="rail-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
-          <option value={1}>1×</option>
-          <option value={4}>4×</option>
-          <option value={10}>10×</option>
-        </select>
         <div className="rail-sep" />
         <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
       </div>
@@ -304,6 +312,19 @@ export default function Review() {
             <input type="range" min={0} max={flight.length - 1} value={cursor}
               onChange={(e) => setCursor(+e.target.value)} />
           </div>
+          <div className="tl-transport">
+            <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
+            <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
+            <button className="tl-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
+              {playing ? "❚❚" : "▶"}
+            </button>
+            <button className="tl-btn" title="Forward 10s" onClick={() => seek(10)}>10s »</button>
+            <select className="tl-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
+              <option value={1}>1×</option>
+              <option value={4}>4×</option>
+              <option value={10}>10×</option>
+            </select>
+          </div>
         </div>
 
         {/* bottom row */}
@@ -315,14 +336,20 @@ export default function Review() {
               <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
             ) : (
               <div className="scan-flow">
-                {visibleRuns.map((r, i) => (
-                  <span key={i} style={{ display: "contents" }}>
-                    <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
-                      {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
-                    </span>
-                    {i < visibleRuns.length - 1 && <span className="scan-arrow">→</span>}
-                  </span>
-                ))}
+                {[visibleRuns.slice(0, SCAN_ROW_CAP), visibleRuns.slice(SCAN_ROW_CAP)]
+                  .filter((row) => row.length)
+                  .map((row, ri) => (
+                    <div className="scan-row" key={ri}>
+                      {row.map((r, i) => (
+                        <span key={i} style={{ display: "contents" }}>
+                          <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
+                            {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
+                          </span>
+                          {i < row.length - 1 && <span className="scan-arrow">→</span>}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
               </div>
             )}
           </div>

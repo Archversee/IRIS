@@ -49,12 +49,7 @@
   transition: background .12s, border-color .12s;
 }
 .rev-rail .rail-btn:hover { background: #21303f; border-color: #35485a; }
-.rev-rail .rail-btn.play { background: var(--rev-cyan); color: #04121c; border-color: var(--rev-cyan); }
 .rev-rail .rail-sep { flex: 1; }
-.rev-rail .rail-speed {
-  width: 40px; text-align: center; font-size: 12px; color: var(--rev-muted);
-  background: transparent; border: 1px solid var(--rev-line); border-radius: 8px; padding: 4px 0;
-}
 
 /* ---- main grid ---- */
 .rev-main {
@@ -124,6 +119,29 @@
 .rev-scrub { display: flex; align-items: center; gap: 10px; padding: 4px 2px 2px; }
 .rev-scrub input[type=range] { flex: 1; accent-color: var(--rev-cyan); }
 
+/* ---- playback transport (below timeline + scrub bar) ---- */
+.tl-transport {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-top: 8px; padding: 8px 2px 4px; border-top: 1px solid var(--rev-line);
+}
+.tl-btn {
+  min-width: 44px; height: 34px; padding: 0 12px;
+  display: grid; place-items: center;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px;
+  color: var(--rev-text); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.tl-btn:hover { background: #21303f; border-color: #35485a; }
+.tl-btn.play {
+  width: 50px; height: 40px; font-size: 17px;
+  background: var(--rev-cyan); color: #04121c; border-color: var(--rev-cyan);
+}
+.tl-speed {
+  width: 56px; flex: none;
+  height: 34px; padding: 0 8px; text-align: center; font-size: 12px; color: var(--rev-muted);
+  background: transparent; border: 1px solid var(--rev-line); border-radius: 8px;
+}
+
 /* ---- bottom row ---- */
 .rev-bottom { display: grid; grid-template-columns: 1.3fr 1fr 0.85fr; gap: 10px; min-height: 0; }
 .rev-card {
@@ -135,15 +153,25 @@
   letter-spacing: .3px;
 }
 
-/* scan path */
-.scan-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+/* scan path — always exactly two rows, split evenly rather than left to flex-wrap */
+.scan-flow {
+  --scan-row-h: 48px;
+  display: flex; flex-direction: column; gap: 8px;
+  height: calc(var(--scan-row-h) * 2 + 8px);
+}
+.scan-row {
+  height: var(--scan-row-h);
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: nowrap; overflow: hidden;
+}
 .scan-node {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  flex: none; height: var(--scan-row-h); box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 0 14px; border-radius: 9px; font-size: 14px; font-weight: 600;
   border: 1px solid; background: var(--rev-panel-2); white-space: nowrap;
 }
-.scan-node .t { font-size: 10px; color: var(--rev-muted); font-weight: 500; }
-.scan-arrow { color: var(--rev-muted); font-size: 15px; }
+.scan-node .t { font-size: 11px; color: var(--rev-muted); font-weight: 500; }
+.scan-arrow { flex: none; color: var(--rev-muted); font-size: 17px; }
 .scan-empty { color: var(--rev-muted); font-size: 13px; }
 
 /* readouts */
