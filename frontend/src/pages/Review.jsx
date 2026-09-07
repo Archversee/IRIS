@@ -1,14 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
+  PieChart, Pie, Cell,
 } from "recharts";
 import { api } from "../api/client.js";
+import "./review.css";
 
-const num = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d));
+const AOI_COLORS = {
+  airspeed: "#38bdf8", altimeter: "#4ade80", attitude: "#f5a623",
+  heading: "#a78bfa", outside: "#14b8a6", throttle: "#fb7185",
+  unlabelled: "#64748b",
+};
+const PALETTE = ["#38bdf8", "#4ade80", "#f5a623", "#a78bfa", "#14b8a6", "#fb7185", "#facc15", "#60a5fa"];
+function aoiColor(name, i = 0) {
+  return AOI_COLORS[name] || PALETTE[i % PALETTE.length];
+}
+
+const METRICS = [
+  { key: "altitude", label: "Altitude", unit: "ft", color: "#38bdf8", src: "altitude_ft" },
+  { key: "airspeed", label: "Airspeed", unit: "kt", color: "#4ade80", src: "airspeed_kt" },
+  { key: "vspeed", label: "Vert speed", unit: "fpm", color: "#a78bfa", src: "vertical_speed_fpm" },
+  { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
+];
+
+const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
+
+function bounds(arr, key) {
+  let mn = Infinity, mx = -Infinity;
+  for (const r of arr) {
+    const v = r[key];
+    if (v == null || Number.isNaN(v)) continue;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+  }
+  return [mn, mx];
+}
+const norm = (v, [mn, mx]) => (v == null || mx <= mn ? null : (v - mn) / (mx - mn));
 
 export default function Review() {
   const { id } = useParams();
+  const nav = useNavigate();
   const [summary, setSummary] = useState(null);
   const [flight, setFlight] = useState([]);
   const [eye, setEye] = useState([]);
@@ -17,6 +49,7 @@ export default function Review() {
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
+  const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const timer = useRef(null);
 
   useEffect(() => {
@@ -25,232 +58,369 @@ export default function Review() {
         const [sm, fl, ey, ev] = await Promise.all([
           api.summary(id), api.flight(id), api.eye(id), api.events(id),
         ]);
-        setSummary(sm);
-        setFlight(fl);
-        setEye(ey);
-        setEvents(ev);
-      } catch (e) {
-        setErr(e.message);
-      }
+        setSummary(sm); setFlight(fl); setEye(ey); setEvents(ev);
+      } catch (e) { setErr(e.message); }
     })();
   }, [id]);
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
   const elapsed = (ts) => (new Date(ts).getTime() - t0) / 1000;
 
-  // chart series (elapsed seconds on X)
-  const series = useMemo(
-    () =>
-      flight.map((r) => ({
-        t: +elapsed(r.ts).toFixed(2),
-        altitude_ft: r.altitude_ft,
-        airspeed_kt: r.airspeed_kt,
-        bank_deg: r.bank_deg,
-      })),
-    [flight]
-  );
-
-  // map each flight index to nearest eye index (two-pointer, computed once)
+  // nearest eye sample for each flight sample (two-pointer, once)
   const eyeForFlight = useMemo(() => {
     const map = new Array(flight.length).fill(-1);
     let j = 0;
     for (let i = 0; i < flight.length; i++) {
       const ft = new Date(flight[i].ts).getTime();
-      while (
-        j + 1 < eye.length &&
-        Math.abs(new Date(eye[j + 1].ts).getTime() - ft) <=
-          Math.abs(new Date(eye[j].ts).getTime() - ft)
-      )
+      while (j + 1 < eye.length &&
+        Math.abs(new Date(eye[j + 1].ts).getTime() - ft) <= Math.abs(new Date(eye[j].ts).getTime() - ft))
         j++;
       map[i] = eye.length ? j : -1;
     }
     return map;
   }, [flight, eye]);
 
-  // gaze normalization bounds
-  const gazeBounds = useMemo(() => {
-    const xs = eye.map((e) => e.gaze_point_x).filter((v) => v != null);
-    const ys = eye.map((e) => e.gaze_point_y).filter((v) => v != null);
-    return {
-      xmin: Math.min(...xs), xmax: Math.max(...xs),
-      ymin: Math.min(...ys), ymax: Math.max(...ys),
+  // workload proxy = mean pupil diameter at the aligned eye sample,
+  // smoothed with a centred moving average (raw pupil is too jittery to read).
+  const workloadRaw = useMemo(() => {
+    const raw = flight.map((_, i) => {
+      const e = eyeForFlight[i] >= 0 ? eye[eyeForFlight[i]] : null;
+      if (!e) return null;
+      const vals = [e.pupil_diam_left_mm, e.pupil_diam_right_mm].filter((v) => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    });
+    const W = 15; // ~1.5s window at 10 Hz
+    return raw.map((_, i) => {
+      let sum = 0, n = 0;
+      for (let k = Math.max(0, i - W); k <= Math.min(raw.length - 1, i + W); k++) {
+        if (raw[k] != null) { sum += raw[k]; n++; }
+      }
+      return n ? sum / n : null;
+    });
+  }, [flight, eye, eyeForFlight]);
+  const hasEye = eye.length > 0;
+
+  // normalized timeline series (shapes comparable across metrics)
+  const series = useMemo(() => {
+    if (!flight.length) return [];
+    const b = {
+      altitude: bounds(flight, "altitude_ft"),
+      airspeed: bounds(flight, "airspeed_kt"),
+      vspeed: bounds(flight, "vertical_speed_fpm"),
+      workload: [Math.min(...workloadRaw.filter((v) => v != null)), Math.max(...workloadRaw.filter((v) => v != null))],
     };
+    return flight.map((r, i) => ({
+      t: +elapsed(r.ts).toFixed(1),
+      altitude: norm(r.altitude_ft, b.altitude), altitudeR: r.altitude_ft,
+      airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
+      vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
+      workload: norm(workloadRaw[i], b.workload), workloadR: workloadRaw[i],
+    }));
+  }, [flight, workloadRaw]);
+
+  // AOI scan-path runs (collapse consecutive identical AOIs)
+  const runs = useMemo(() => {
+    const out = [];
+    let prev = null;
+    for (const e of eye) {
+      const a = e.aoi || "unlabelled";
+      if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
+    }
+    return out;
   }, [eye]);
 
-  // lat/long path bounds
-  const geoBounds = useMemo(() => {
-    const la = flight.map((r) => r.latitude).filter((v) => v != null);
-    const lo = flight.map((r) => r.longitude).filter((v) => v != null);
-    return {
-      lamin: Math.min(...la), lamax: Math.max(...la),
-      lomin: Math.min(...lo), lomax: Math.max(...lo),
-    };
-  }, [flight]);
+  // region dwell (whole session)
+  const regions = useMemo(() => {
+    const counts = {};
+    for (const e of eye) { const a = e.aoi || "unlabelled"; counts[a] = (counts[a] || 0) + 1; }
+    const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, n], i) => ({ name, value: n, pct: (n / total) * 100, color: aoiColor(name, i) }));
+  }, [eye]);
+
+  // gaze bounds for the instrument-screen overlay
+  const gazeB = useMemo(() => ({
+    x: bounds(eye, "gaze_point_x"),
+    y: bounds(eye, "gaze_point_y"),
+  }), [eye]);
+
+  // ground-track projection for the OTW panel
+  const geo = useMemo(() => ({ la: bounds(flight, "latitude"), lo: bounds(flight, "longitude") }), [flight]);
 
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
       timer.current = setInterval(() => {
-        setCursor((c) => {
-          if (c >= flight.length - 1) return 0;
-          return Math.min(flight.length - 1, c + speed);
-        });
+        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + speed)));
       }, 100);
     }
     return () => clearInterval(timer.current);
   }, [playing, speed, flight.length]);
 
-  if (err) return <div className="card err">Error: {err}</div>;
-  if (!summary) return <div className="card muted">Loading…</div>;
+  if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
+  if (!summary) return <div className="rev-loading">Loading session…</div>;
   if (!flight.length)
     return (
-      <div className="card">
-        <p className="muted">No flight data in this session.</p>
-        <Link to="/upload">Upload data →</Link>
+      <div className="rev-error">
+        No flight data in this session yet.<br />
+        <button className="rail-btn" style={{ width: "auto", padding: "6px 14px", marginTop: 12 }}
+          onClick={() => nav("/upload")}>Upload data</button>
       </div>
     );
 
   const cur = flight[cursor];
-  const curEye = eyeForFlight[cursor] >= 0 ? eye[eyeForFlight[cursor]] : null;
+  const curEyeIdx = eyeForFlight[cursor];
+  const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const curT = elapsed(cur.ts);
 
-  const gx =
-    curEye && curEye.gaze_point_x != null && gazeBounds.xmax > gazeBounds.xmin
-      ? ((curEye.gaze_point_x - gazeBounds.xmin) / (gazeBounds.xmax - gazeBounds.xmin)) * 100
-      : 50;
-  const gy =
-    curEye && curEye.gaze_point_y != null && gazeBounds.ymax > gazeBounds.ymin
-      ? ((curEye.gaze_point_y - gazeBounds.ymin) / (gazeBounds.ymax - gazeBounds.ymin)) * 100
-      : 50;
+  // instrument-screen gaze position + recent trail
+  const gx = curEye && gazeB.x[1] > gazeB.x[0]
+    ? ((curEye.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100 : null;
+  const gy = curEye && gazeB.y[1] > gazeB.y[0]
+    ? ((curEye.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100 : null;
+  const trail = [];
+  if (curEyeIdx >= 0) {
+    for (let k = Math.max(0, curEyeIdx - 24); k < curEyeIdx; k++) {
+      const e = eye[k];
+      if (e.gaze_point_x == null) continue;
+      trail.push({
+        x: ((e.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100,
+        y: ((e.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100,
+        o: (k - (curEyeIdx - 24)) / 24,
+      });
+    }
+  }
 
-  const geoW = 260, geoH = 160, pad = 12;
-  const projX = (lo) =>
-    geoBounds.lomax > geoBounds.lomin
-      ? pad + ((lo - geoBounds.lomin) / (geoBounds.lomax - geoBounds.lomin)) * (geoW - 2 * pad)
-      : geoW / 2;
-  const projY = (la) =>
-    geoBounds.lamax > geoBounds.lamin
-      ? geoH - pad - ((la - geoBounds.lamin) / (geoBounds.lamax - geoBounds.lamin)) * (geoH - 2 * pad)
-      : geoH / 2;
-  const pathPoints = flight
-    .filter((r) => r.latitude != null && r.longitude != null)
-    .map((r) => `${projX(r.longitude).toFixed(1)},${projY(r.latitude).toFixed(1)}`)
-    .join(" ");
+  // ground track
+  const gw = 100, gh = 100, pad = 8;
+  const px = (lo) => geo.lo[1] > geo.lo[0] ? pad + ((lo - geo.lo[0]) / (geo.lo[1] - geo.lo[0])) * (gw - 2 * pad) : gw / 2;
+  const py = (la) => geo.la[1] > geo.la[0] ? gh - pad - ((la - geo.la[0]) / (geo.la[1] - geo.la[0])) * (gh - 2 * pad) : gh / 2;
+  const track = flight.filter((r) => r.latitude != null).map((r) => `${px(r.longitude).toFixed(1)},${py(r.latitude).toFixed(1)}`).join(" ");
+
+  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-9);
 
   return (
-    <>
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h2 style={{ margin: 0, marginRight: "auto" }}>
-            {summary.session.name}{" "}
-            <span className="muted" style={{ fontSize: 14 }}>
-              · {summary.session.aircraft || "?"} · {summary.session.sim_source || "?"}
-            </span>
-          </h2>
-          <Link to={`/sessions/${id}/analytics`}>Analytics →</Link>
-        </div>
-
-        {/* transport controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}>
-          <button onClick={() => setPlaying((p) => !p)}>{playing ? "⏸ Pause" : "▶ Play"}</button>
-          <input
-            type="range"
-            min={0}
-            max={flight.length - 1}
-            value={cursor}
-            onChange={(e) => setCursor(+e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <span className="pill">t = {curT.toFixed(1)}s</span>
-          <select value={speed} onChange={(e) => setSpeed(+e.target.value)}>
-            <option value={1}>1×</option>
-            <option value={4}>4×</option>
-            <option value={10}>10×</option>
-          </select>
-        </div>
+    <div className="rev">
+      {/* toolbar rail */}
+      <div className="rev-rail">
+        <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
+        <button className="rail-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
+          {playing ? "❚❚" : "▶"}
+        </button>
+        <button className="rail-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
+        <select className="rail-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
+          <option value={1}>1×</option>
+          <option value={4}>4×</option>
+          <option value={10}>10×</option>
+        </select>
+        <div className="rail-sep" />
+        <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
       </div>
 
-      <div className="row">
-        {/* live readout */}
-        <div className="col card">
-          <h3>Flight state</h3>
-          <div className="readout">
-            <Metric k="Altitude (ft)" v={num(cur.altitude_ft)} />
-            <Metric k="Airspeed (kt)" v={num(cur.airspeed_kt)} />
-            <Metric k="V/S (fpm)" v={num(cur.vertical_speed_fpm, 0)} />
-            <Metric k="Heading (°)" v={num(cur.heading_true_deg, 0)} />
-            <Metric k="Pitch (°)" v={num(cur.pitch_deg)} />
-            <Metric k="Bank (°)" v={num(cur.bank_deg)} />
-            <Metric k="Throttle (%)" v={num(cur.throttle_pct, 0)} />
-            <Metric k="Gear" v={cur.gear_handle_position ? "DOWN" : "UP"} />
+      <div className="rev-main">
+        {/* title */}
+        <div className="rev-titlebar">
+          <h1>{summary.session.name}</h1>
+          <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
+          <span className="spacer" />
+          <span className="clock">T + {curT.toFixed(1)}s</span>
+        </div>
+
+        {/* screens */}
+        <div className="rev-screens">
+          <div className="rev-screen">
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
+            <div className="body">
+              {hasEye ? (
+                <div className="gaze-layer">
+                  <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }} preserveAspectRatio="none" viewBox="0 0 100 100">
+                    {trail.map((p, i) => (
+                      <circle key={i} cx={p.x} cy={p.y} r="0.8" fill="#38bdf8" opacity={p.o * 0.5} />
+                    ))}
+                  </svg>
+                  {gx != null && (
+                    <div className="gaze-current"
+                      style={{ left: `${gx}%`, top: `${gy}%`, color: aoiColor(curEye?.aoi) }} />
+                  )}
+                </div>
+              ) : (
+                <div className="screen-empty">No eye-tracking data for this session.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rev-screen">
+            <div className="head">OTW screen<span className="tag">ground track</span></div>
+            <div className="body">
+              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                <polyline points={track} fill="none" stroke="#1d4a47" strokeWidth="0.8" />
+                <circle cx={px(cur.longitude)} cy={py(cur.latitude)} r="2" fill="#14b8a6" />
+              </svg>
+              <div className="screen-empty" style={{ alignItems: "end", justifyItems: "start", padding: 10, pointerEvents: "none" }}>
+                <span style={{ fontSize: 11 }}>out-the-window video — later phase</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* gaze + path */}
-        <div className="col card">
-          <h3>Gaze {curEye ? "" : <span className="muted">(no eye data)</span>}</h3>
-          <div className="gaze-box" style={{ width: "100%", height: 160 }}>
-            <div className="gaze-dot" style={{ left: `${gx}%`, top: `${gy}%` }} />
+        {/* timeline */}
+        <div className="rev-timeline">
+          <div className="tl-head">
+            <h2>Session timeline</h2>
+            <div className="filters">
+              {METRICS.map((m) => {
+                const disabled = m.key === "workload" && !hasEye;
+                return (
+                  <button key={m.key} disabled={disabled}
+                    className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
+                    onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
+                    <span className="swatch" style={{ background: m.color }} />{m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="readout" style={{ marginTop: 10 }}>
-            <Metric k="AOI" v={curEye?.aoi || "—"} />
-            <Metric k="Pupil L (mm)" v={num(curEye?.pupil_diam_left_mm, 2)} />
-            <Metric k="Quality" v={num(curEye?.gaze_quality, 2)} />
-            <Metric k="Blink" v={curEye?.blink ? "yes" : "no"} />
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}>
+              <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
+              <XAxis dataKey="t" stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
+              <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
+              <Tooltip content={<TLTooltip />} />
+              {METRICS.map((m) =>
+                filters[m.key] && !(m.key === "workload" && !hasEye) ? (
+                  <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
+                    dot={false} strokeWidth={1.6} isAnimationActive={false} />
+                ) : null
+              )}
+              <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
+              {events.map((e, i) => (
+                <ReferenceLine key={i} x={+elapsed(e.ts).toFixed(1)} stroke="#f5a623" strokeDasharray="2 3"
+                  label={{ value: e.label, position: "top", fill: "#f5a623", fontSize: 10 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="rev-scrub">
+            <input type="range" min={0} max={flight.length - 1} value={cursor}
+              onChange={(e) => setCursor(+e.target.value)} />
+          </div>
+        </div>
+
+        {/* bottom row */}
+        <div className="rev-bottom">
+          {/* scan path */}
+          <div className="rev-card">
+            <h3>Instrument scan path</h3>
+            {visibleRuns.length === 0 ? (
+              <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
+            ) : (
+              <div className="scan-flow">
+                {visibleRuns.map((r, i) => (
+                  <span key={i} style={{ display: "contents" }}>
+                    <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
+                      {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
+                    </span>
+                    {i < visibleRuns.length - 1 && <span className="scan-arrow">→</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* readouts */}
+          <div className="rev-card">
+            <h3>Live state</h3>
+            <div className="readout-cols">
+              <div className="ro-group">
+                <h4>Flight state</h4>
+                <RO k="Heading" v={`${fmt(cur.heading_true_deg, 0)}°`} />
+                <RO k="Pitch" v={`${fmt(cur.pitch_deg)}°`} />
+                <RO k="Bank" v={`${fmt(cur.bank_deg)}°`} />
+                <RO k="Yaw rate" v={fmt(cur.yaw_rate_radps, 3)} />
+                <RO k="Fuel" v={`${fmt(cur.fuel_total_qty_gal)} gal`} />
+                <RO k="Lat" v={fmt(cur.latitude, 4)} />
+                <RO k="Long" v={fmt(cur.longitude, 4)} />
+                <RO k="Wind" v={`${fmt(cur.ambient_wind_kt)} kt`} />
+              </div>
+              <div className="ro-group">
+                <h4>Control input</h4>
+                <RO k="Throttle" v={`${fmt(cur.throttle_pct, 0)}%`} />
+                <RO k="Elev trim" v={`${fmt(cur.elevator_trim_pct)}%`} />
+                <RO k="Elevator" v={fmt(cur.elevator_position, 2)} />
+                <RO k="Rudder" v={fmt(cur.rudder_position, 2)} />
+                <RO k="Flaps" v={`${fmt(cur.flaps_handle_pct, 0)}%`} />
+                <RO k="Gear" v={cur.gear_handle_position ? "DOWN" : "UP"} />
+                <RO k="Altitude" v={`${fmt(cur.altitude_ft, 0)} ft`} />
+                <RO k="Airspeed" v={`${fmt(cur.airspeed_kt)} kt`} />
+              </div>
+            </div>
+          </div>
+
+          {/* region viewing */}
+          <div className="rev-card">
+            <h3>Region viewing %</h3>
+            {regions.length === 0 ? (
+              <div className="scan-empty">No eye-tracking data.</div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie data={regions} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                      innerRadius={30} outerRadius={62} paddingAngle={2} stroke="none">
+                      {regions.map((r, i) => <Cell key={i} fill={r.color} />)}
+                    </Pie>
+                    <Tooltip content={<PieTip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pie-legend">
+                  {regions.map((r, i) => (
+                    <div className="lg" key={i}>
+                      <span className="dot" style={{ background: r.color }} />
+                      {r.name}<span className="pct">{r.pct.toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
-
-      <div className="row">
-        <div className="col card">
-          <h3>Ground track</h3>
-          <svg width={geoW} height={geoH} style={{ background: "#06101a", borderRadius: 8 }}>
-            <polyline points={pathPoints} fill="none" stroke="#2b5c85" strokeWidth="1.5" />
-            <circle cx={projX(cur.longitude)} cy={projY(cur.latitude)} r="5" fill="#4aa8ff" />
-          </svg>
-        </div>
-        <div className="col card">
-          <h3>Altitude</h3>
-          <TimeChart data={series} dataKey="altitude_ft" color="#4aa8ff" t={curT} events={events} t0={t0} />
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Airspeed</h3>
-        <TimeChart data={series} dataKey="airspeed_kt" color="#3fb950" t={curT} events={events} t0={t0} height={180} />
-      </div>
-    </>
-  );
-}
-
-function Metric({ k, v }) {
-  return (
-    <div className="metric">
-      <div className="k">{k}</div>
-      <div className="v">{v}</div>
     </div>
   );
 }
 
-function TimeChart({ data, dataKey, color, t, events, t0, height = 200 }) {
+function RO({ k, v }) {
+  return <div className="ro-row"><span className="k">{k}</span><span className="v">{v}</span></div>;
+}
+
+function TLTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const rows = [
+    ["Altitude", fmt(d.altitudeR, 0), "ft"],
+    ["Airspeed", fmt(d.airspeedR, 1), "kt"],
+    ["Vert speed", fmt(d.vspeedR, 0), "fpm"],
+    ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), "mm pupil"],
+  ];
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
-        <CartesianGrid stroke="#2d3a48" strokeDasharray="3 3" />
-        <XAxis dataKey="t" stroke="#8b98a5" tick={{ fontSize: 11 }} unit="s" />
-        <YAxis stroke="#8b98a5" tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-        <Tooltip contentStyle={{ background: "#1a222c", border: "1px solid #2d3a48" }} />
-        <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} isAnimationActive={false} />
-        <ReferenceLine x={+t.toFixed(2)} stroke="#ff5c5c" />
-        {events.map((e, i) => (
-          <ReferenceLine
-            key={i}
-            x={+((new Date(e.ts).getTime() - t0) / 1000).toFixed(2)}
-            stroke="#e3b341"
-            strokeDasharray="2 2"
-          />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+    <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
+      <div style={{ color: "#8194a6", marginBottom: 4 }}>T + {d.t}s</div>
+      {rows.map(([k, v, u], i) => (
+        <div key={i} style={{ display: "flex", gap: 12, justifyContent: "space-between" }}>
+          <span style={{ color: "#8194a6" }}>{k}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{v} {u}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PieTip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "6px 10px", fontSize: 12 }}>
+      {d.name}: {d.pct.toFixed(1)}%
+    </div>
   );
 }
