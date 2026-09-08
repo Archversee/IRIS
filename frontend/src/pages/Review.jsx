@@ -249,20 +249,20 @@ export default function Review() {
         {/* screens */}
         <div className="rev-screens">
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
+            <div className="head">OTW screen</div>
             <div className="body">
-              {instrumentVideoSrc && (
-                <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
+              {otwVideoSrc && (
+                <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
             </div>
           </div>
 
           <div className="rev-screen">
-            <div className="head">OTW screen</div>
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
             <div className="body">
-              {otwVideoSrc && (
-                <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
+              {instrumentVideoSrc && (
+                <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
             </div>
