@@ -33,4 +33,12 @@ export const api = {
   eye: (id, maxPoints = 3000) => req(`/sessions/${id}/eye?max_points=${maxPoints}`),
   events: (id) => req(`/sessions/${id}/events`),
   analytics: (id) => req(`/sessions/${id}/analytics`),
+
+  videosAvailable: () => req("/videos-available"),
+  linkVideo: (id, screen, body) =>
+    req(`/sessions/${id}/video/${screen}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 };

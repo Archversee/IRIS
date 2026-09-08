@@ -26,10 +26,7 @@ const METRICS = [
 
 const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
-// --- combined screen recording (OBS captured Instruments + OTW side by side, one file) ---
-// Assumes the LEFT half of the frame is Instruments and the RIGHT half is OTW.
-// Swap the two crop rects in drawScreenFrame() below if your recording is mirrored.
-const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking the video
+const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a video
 
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
@@ -59,6 +56,33 @@ function nearestIndexForTime(arr, t) {
   return lo;
 }
 
+// Keeps one <video> element following the app's cursor-driven clock (the master clock),
+// rather than letting the video run free — offsetSec accounts for that recording's start
+// not lining up exactly with the flight-data log's first sample.
+function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !src || Number.isNaN(video.duration)) return;
+    const target = Math.max(0, curT + offsetSec);
+    if (Math.abs(video.currentTime - target) > VIDEO_SYNC_TOLERANCE) {
+      video.currentTime = target;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curT, src]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !src) return;
+    if (playing) video.play().catch(() => {});
+    else video.pause();
+  }, [playing, src]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (video) video.playbackRate = speed;
+  }, [speed]);
+}
+
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -72,10 +96,8 @@ export default function Review() {
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const timer = useRef(null);
-  const videoRef = useRef(null);
-  const leftCanvasRef = useRef(null);
-  const rightCanvasRef = useRef(null);
-  const rafRef = useRef(null);
+  const instrumentVideoRef = useRef(null);
+  const otwVideoRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -129,10 +151,11 @@ export default function Review() {
   }, [flight, eye, eyeForFlight]);
   const hasEye = eye.length > 0;
 
-  // Combined Instruments+OTW screen recording, single file.
-  const videoSrc = summary?.session?.screen_video_url || null;
-  // recording-start vs first flight-data sample (t0) gap, set per session via the video-link API
-  const videoOffsetSec = summary?.session?.video_offset_sec ?? 0;
+  // one independent recording per screen, each with its own sync offset (set via the video-link API)
+  const instrumentVideoSrc = summary?.session?.instrument_video_url || null;
+  const instrumentOffsetSec = summary?.session?.instrument_video_offset_sec ?? 0;
+  const otwVideoSrc = summary?.session?.otw_video_url || null;
+  const otwOffsetSec = summary?.session?.otw_video_offset_sec ?? 0;
 
   // normalized timeline series (shapes comparable across metrics)
   const series = useMemo(() => {
@@ -192,65 +215,9 @@ export default function Review() {
     return () => clearInterval(timer.current);
   }, [playing, speed, flight.length]);
 
-  // --- split-screen video: crop the combined recording into the two canvases ---
-  const drawScreenFrame = () => {
-    const video = videoRef.current;
-    const lc = leftCanvasRef.current, rc = rightCanvasRef.current;
-    if (!video || !lc || !rc || video.readyState < 2) return;
-    const w = video.videoWidth / 2, h = video.videoHeight;
-    if (!w || !h) return;
-    lc.getContext("2d").drawImage(video, 0, 0, w, h, 0, 0, lc.width, lc.height);
-    rc.getContext("2d").drawImage(video, w, 0, w, h, 0, 0, rc.width, rc.height);
-  };
-
-  // size the canvases once the video's real dimensions are known
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc) return;
-    const onMeta = () => {
-      const w = video.videoWidth / 2, h = video.videoHeight;
-      if (leftCanvasRef.current) { leftCanvasRef.current.width = w; leftCanvasRef.current.height = h; }
-      if (rightCanvasRef.current) { rightCanvasRef.current.width = w; rightCanvasRef.current.height = h; }
-      drawScreenFrame();
-    };
-    const onSeeked = () => drawScreenFrame();
-    video.addEventListener("loadedmetadata", onMeta);
-    video.addEventListener("seeked", onSeeked);
-    return () => {
-      video.removeEventListener("loadedmetadata", onMeta);
-      video.removeEventListener("seeked", onSeeked);
-    };
-  }, [videoSrc]);
-
-  // the app's own cursor-driven clock is the master; keep the video following it
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc || Number.isNaN(video.duration)) return;
-    const target = Math.max(0, curT + videoOffsetSec);
-    if (Math.abs(video.currentTime - target) > VIDEO_SYNC_TOLERANCE) {
-      video.currentTime = target;
-    }
-  }, [cursor, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc) return;
-    if (playing) video.play().catch(() => {});
-    else video.pause();
-  }, [playing, videoSrc]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) video.playbackRate = speed;
-  }, [speed]);
-
-  // redraw every frame while playing (paused redraws happen via the 'seeked' listener above)
-  useEffect(() => {
-    if (!playing || !videoSrc) return;
-    const loop = () => { drawScreenFrame(); rafRef.current = requestAnimationFrame(loop); };
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, videoSrc]);
+  // each screen's recording follows the app's cursor-driven clock independently
+  useSyncedVideo(instrumentVideoRef, instrumentVideoSrc, instrumentOffsetSec, curT, playing, speed);
+  useSyncedVideo(otwVideoRef, otwVideoSrc, otwOffsetSec, curT, playing, speed);
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
   if (!summary) return <div className="rev-loading">Loading session…</div>;
@@ -314,23 +281,12 @@ export default function Review() {
 
         {/* screens */}
         <div className="rev-screens">
-          {/* hidden source video — never shown directly, only cropped into the two canvases below */}
-          {videoSrc && (
-            <video
-              ref={videoRef}
-              src={videoSrc}
-              muted
-              playsInline
-              preload="auto"
-              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
-            />
-          )}
-
           <div className="rev-screen">
             <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
             <div className="body">
-              {videoSrc ? (
-                <canvas ref={leftCanvasRef} className="screen-video" />
+              {instrumentVideoSrc ? (
+                <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
+                  muted playsInline preload="auto" />
               ) : (
                 <div className="screen-empty">Instrument screen video not available yet.</div>
               )}
@@ -353,8 +309,9 @@ export default function Review() {
           <div className="rev-screen">
             <div className="head">OTW screen<span className="tag">ground track</span></div>
             <div className="body">
-              {videoSrc ? (
-                <canvas ref={rightCanvasRef} className="screen-video" />
+              {otwVideoSrc ? (
+                <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
+                  muted playsInline preload="auto" />
               ) : (
                 <div className="screen-empty">OTW screen video not available yet.</div>
               )}

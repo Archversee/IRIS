@@ -100,10 +100,11 @@ async def get_summary(session_id: UUID):
         event_n = await conn.fetchval(
             "select count(*) from events where session_id = $1", session_id)
     session = dict(s)
-    session["screen_video_url"] = (
-        f"{settings.public_base_url}/videos/{session['video_filename']}"
-        if session.get("video_filename") else None
-    )
+    for screen in ("instrument", "otw"):
+        filename = session.get(f"{screen}_video_filename")
+        session[f"{screen}_video_url"] = (
+            f"{settings.public_base_url}/videos/{filename}" if filename else None
+        )
     return {
         "session": session,
         "flight_rows": flight_n,
