@@ -29,7 +29,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from SimConnect import SimConnect, PERIOD_VISUAL_FRAME
+from simconnect import SimConnect, PERIOD_VISUAL_FRAME
 import obsws_python as obsws
 
 # ----------------------------------------------------------------------
@@ -48,8 +48,8 @@ ENABLE_OBS_RECORDING = True
 # One entry per OBS instance. `name` is just a label used in console
 # output and the events log — it doesn't need to match anything in OBS.
 OBS_INSTANCES = [
-    dict(name="instrument", host="localhost", port=4455, password=""),
-    dict(name="otw",        host="localhost", port=4456, password=""),
+    dict(name="instrument", host="localhost", port=4456, password=""),
+    dict(name="otw",        host="localhost", port=4455, password=""),
 ]
 
 # Canonical field -> (simvar name, unit)
