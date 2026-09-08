@@ -26,6 +26,11 @@ const METRICS = [
 
 const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
+// --- combined screen recording (OBS captured Instruments + OTW side by side, one file) ---
+// Assumes the LEFT half of the frame is Instruments and the RIGHT half is OTW.
+// Swap the two crop rects in drawScreenFrame() below if your recording is mirrored.
+const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking the video
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -67,6 +72,10 @@ export default function Review() {
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const timer = useRef(null);
+  const videoRef = useRef(null);
+  const leftCanvasRef = useRef(null);
+  const rightCanvasRef = useRef(null);
+  const rafRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -81,6 +90,10 @@ export default function Review() {
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
   const elapsed = (ts) => (new Date(ts).getTime() - t0) / 1000;
+  // hoisted above the early returns below: the video-sync effect closes over this
+  // and still fires (after commit) even on a render that bails out early with no
+  // flight data yet, so it must never be left in the temporal dead zone.
+  const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
 
   // nearest eye sample for each flight sample (two-pointer, once)
   const eyeForFlight = useMemo(() => {
@@ -115,6 +128,11 @@ export default function Review() {
     });
   }, [flight, eye, eyeForFlight]);
   const hasEye = eye.length > 0;
+
+  // Combined Instruments+OTW screen recording, single file.
+  const videoSrc = summary?.session?.screen_video_url || null;
+  // recording-start vs first flight-data sample (t0) gap, set per session via the video-link API
+  const videoOffsetSec = summary?.session?.video_offset_sec ?? 0;
 
   // normalized timeline series (shapes comparable across metrics)
   const series = useMemo(() => {
@@ -174,6 +192,66 @@ export default function Review() {
     return () => clearInterval(timer.current);
   }, [playing, speed, flight.length]);
 
+  // --- split-screen video: crop the combined recording into the two canvases ---
+  const drawScreenFrame = () => {
+    const video = videoRef.current;
+    const lc = leftCanvasRef.current, rc = rightCanvasRef.current;
+    if (!video || !lc || !rc || video.readyState < 2) return;
+    const w = video.videoWidth / 2, h = video.videoHeight;
+    if (!w || !h) return;
+    lc.getContext("2d").drawImage(video, 0, 0, w, h, 0, 0, lc.width, lc.height);
+    rc.getContext("2d").drawImage(video, w, 0, w, h, 0, 0, rc.width, rc.height);
+  };
+
+  // size the canvases once the video's real dimensions are known
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    const onMeta = () => {
+      const w = video.videoWidth / 2, h = video.videoHeight;
+      if (leftCanvasRef.current) { leftCanvasRef.current.width = w; leftCanvasRef.current.height = h; }
+      if (rightCanvasRef.current) { rightCanvasRef.current.width = w; rightCanvasRef.current.height = h; }
+      drawScreenFrame();
+    };
+    const onSeeked = () => drawScreenFrame();
+    video.addEventListener("loadedmetadata", onMeta);
+    video.addEventListener("seeked", onSeeked);
+    return () => {
+      video.removeEventListener("loadedmetadata", onMeta);
+      video.removeEventListener("seeked", onSeeked);
+    };
+  }, [videoSrc]);
+
+  // the app's own cursor-driven clock is the master; keep the video following it
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc || Number.isNaN(video.duration)) return;
+    const target = Math.max(0, curT + videoOffsetSec);
+    if (Math.abs(video.currentTime - target) > VIDEO_SYNC_TOLERANCE) {
+      video.currentTime = target;
+    }
+  }, [cursor, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    if (playing) video.play().catch(() => {});
+    else video.pause();
+  }, [playing, videoSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.playbackRate = speed;
+  }, [speed]);
+
+  // redraw every frame while playing (paused redraws happen via the 'seeked' listener above)
+  useEffect(() => {
+    if (!playing || !videoSrc) return;
+    const loop = () => { drawScreenFrame(); rafRef.current = requestAnimationFrame(loop); };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [playing, videoSrc]);
+
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
   if (!summary) return <div className="rev-loading">Loading session…</div>;
   if (!flight.length)
@@ -188,7 +266,6 @@ export default function Review() {
   const cur = flight[cursor];
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
-  const curT = elapsed(cur.ts);
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
   // instrument-screen gaze position + recent trail
@@ -237,10 +314,27 @@ export default function Review() {
 
         {/* screens */}
         <div className="rev-screens">
+          {/* hidden source video — never shown directly, only cropped into the two canvases below */}
+          {videoSrc && (
+            <video
+              ref={videoRef}
+              src={videoSrc}
+              muted
+              playsInline
+              preload="auto"
+              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+            />
+          )}
+
           <div className="rev-screen">
             <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
             <div className="body">
-              {hasEye ? (
+              {videoSrc ? (
+                <canvas ref={leftCanvasRef} className="screen-video" />
+              ) : (
+                <div className="screen-empty">Instrument screen video not available yet.</div>
+              )}
+              {hasEye && (
                 <div className="gaze-layer">
                   <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }} preserveAspectRatio="none" viewBox="0 0 100 100">
                     {trail.map((p, i) => (
@@ -252,8 +346,6 @@ export default function Review() {
                       style={{ left: `${gx}%`, top: `${gy}%`, color: aoiColor(curEye?.aoi) }} />
                   )}
                 </div>
-              ) : (
-                <div className="screen-empty">No eye-tracking data for this session.</div>
               )}
             </div>
           </div>
@@ -261,13 +353,16 @@ export default function Review() {
           <div className="rev-screen">
             <div className="head">OTW screen<span className="tag">ground track</span></div>
             <div className="body">
-              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+              {videoSrc ? (
+                <canvas ref={rightCanvasRef} className="screen-video" />
+              ) : (
+                <div className="screen-empty">OTW screen video not available yet.</div>
+              )}
+              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"
+                style={{ position: "absolute", inset: 0 }}>
                 <polyline points={track} fill="none" stroke="#1d4a47" strokeWidth="0.8" />
                 <circle cx={px(cur.longitude)} cy={py(cur.latitude)} r="2" fill="#14b8a6" />
               </svg>
-              <div className="screen-empty" style={{ alignItems: "end", justifyItems: "start", padding: 10, pointerEvents: "none" }}>
-                <span style={{ fontSize: 11 }}>out-the-window video — later phase</span>
-              </div>
             </div>
           </div>
         </div>

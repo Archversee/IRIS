@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import db
+from ..config import settings
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["data"])
 
@@ -98,8 +99,13 @@ async def get_summary(session_id: UUID):
             "select count(*) from eye_tracking_data where session_id = $1", session_id)
         event_n = await conn.fetchval(
             "select count(*) from events where session_id = $1", session_id)
+    session = dict(s)
+    session["screen_video_url"] = (
+        f"{settings.public_base_url}/videos/{session['video_filename']}"
+        if session.get("video_filename") else None
+    )
     return {
-        "session": dict(s),
+        "session": session,
         "flight_rows": flight_n,
         "eye_rows": eye_n,
         "event_rows": event_n,

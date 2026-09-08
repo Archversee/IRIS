@@ -25,7 +25,9 @@ create table if not exists sessions (
     notes        text,
     started_at   timestamptz,                -- flight start (from data)
     ended_at     timestamptz,                -- flight end (from data)
-    created_at   timestamptz not null default now()
+    created_at   timestamptz not null default now(),
+    video_filename    text,                  -- filename inside settings.video_dir, if a recording is linked
+    video_offset_sec  double precision not null default 0  -- recording-start vs first flight-data sample, seconds
 );
 
 -- ---------------------------------------------------------------------
