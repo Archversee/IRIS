@@ -196,15 +196,6 @@ export default function Review() {
       .map(([name, n], i) => ({ name, value: n, pct: (n / total) * 100, color: aoiColor(name, i) }));
   }, [eye]);
 
-  // gaze bounds for the instrument-screen overlay
-  const gazeB = useMemo(() => ({
-    x: bounds(eye, "gaze_point_x"),
-    y: bounds(eye, "gaze_point_y"),
-  }), [eye]);
-
-  // ground-track projection for the OTW panel
-  const geo = useMemo(() => ({ la: bounds(flight, "latitude"), lo: bounds(flight, "longitude") }), [flight]);
-
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
@@ -235,30 +226,6 @@ export default function Review() {
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
-  // instrument-screen gaze position + recent trail
-  const gx = curEye && gazeB.x[1] > gazeB.x[0]
-    ? ((curEye.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100 : null;
-  const gy = curEye && gazeB.y[1] > gazeB.y[0]
-    ? ((curEye.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100 : null;
-  const trail = [];
-  if (curEyeIdx >= 0) {
-    for (let k = Math.max(0, curEyeIdx - 24); k < curEyeIdx; k++) {
-      const e = eye[k];
-      if (e.gaze_point_x == null) continue;
-      trail.push({
-        x: ((e.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100,
-        y: ((e.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100,
-        o: (k - (curEyeIdx - 24)) / 24,
-      });
-    }
-  }
-
-  // ground track
-  const gw = 100, gh = 100, pad = 8;
-  const px = (lo) => geo.lo[1] > geo.lo[0] ? pad + ((lo - geo.lo[0]) / (geo.lo[1] - geo.lo[0])) * (gw - 2 * pad) : gw / 2;
-  const py = (la) => geo.la[1] > geo.la[0] ? gh - pad - ((la - geo.la[0]) / (geo.la[1] - geo.la[0])) * (gh - 2 * pad) : gh / 2;
-  const track = flight.filter((r) => r.latitude != null).map((r) => `${px(r.longitude).toFixed(1)},${py(r.latitude).toFixed(1)}`).join(" ");
-
   const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
@@ -284,42 +251,20 @@ export default function Review() {
           <div className="rev-screen">
             <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
             <div className="body">
-              {instrumentVideoSrc ? (
+              {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
-              ) : (
-                <div className="screen-empty">Instrument screen video not available yet.</div>
-              )}
-              {hasEye && (
-                <div className="gaze-layer">
-                  <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }} preserveAspectRatio="none" viewBox="0 0 100 100">
-                    {trail.map((p, i) => (
-                      <circle key={i} cx={p.x} cy={p.y} r="0.8" fill="#38bdf8" opacity={p.o * 0.5} />
-                    ))}
-                  </svg>
-                  {gx != null && (
-                    <div className="gaze-current"
-                      style={{ left: `${gx}%`, top: `${gy}%`, color: aoiColor(curEye?.aoi) }} />
-                  )}
-                </div>
               )}
             </div>
           </div>
 
           <div className="rev-screen">
-            <div className="head">OTW screen<span className="tag">ground track</span></div>
+            <div className="head">OTW screen</div>
             <div className="body">
-              {otwVideoSrc ? (
+              {otwVideoSrc && (
                 <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
-              ) : (
-                <div className="screen-empty">OTW screen video not available yet.</div>
               )}
-              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"
-                style={{ position: "absolute", inset: 0 }}>
-                <polyline points={track} fill="none" stroke="#1d4a47" strokeWidth="0.8" />
-                <circle cx={px(cur.longitude)} cy={py(cur.latitude)} r="2" fill="#14b8a6" />
-              </svg>
             </div>
           </div>
         </div>

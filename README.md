@@ -62,14 +62,8 @@ psql "$DATABASE_URL" -f db/schema.sql
 cd backend
 py -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # then paste your Supabase connection string
 uvicorn app.main:app --reload --port 8000
 ```
-
-Get the connection string from **Project Settings → Database → Connection
-string (URI)**. Use the *Session* pooler URI for a long-running server. Strip
-any `?pgbouncer=true` / `+asyncpg` suffix — asyncpg wants the plain
-`postgresql://` scheme.
 
 Interactive API docs: <http://localhost:8000/docs>.
 
