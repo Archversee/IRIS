@@ -1,13 +1,16 @@
 """FastAPI entrypoint."""
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from . import db
+from . import db, videos
 from .config import settings
 from .routers import analytics, data, ingest, sessions, stream
 
+os.makedirs(settings.video_dir, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +33,9 @@ app.include_router(ingest.router)
 app.include_router(data.router)
 app.include_router(analytics.router)
 app.include_router(stream.router)
+app.include_router(videos.router)
 
+app.mount("/videos", StaticFiles(directory=settings.video_dir), name="videos")
 
 @app.get("/health")
 async def health():

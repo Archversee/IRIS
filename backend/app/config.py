@@ -7,6 +7,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://postgres:postgres@localhost:5432/postgres"
     frontend_origin: str = "http://localhost:5173"
+    video_dir: str = "../data/videos"                    # or an absolute path to your OBS folder
+    public_base_url: str = "http://localhost:8000"
 
 
 settings = Settings()

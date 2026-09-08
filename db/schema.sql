@@ -25,7 +25,14 @@ create table if not exists sessions (
     notes        text,
     started_at   timestamptz,                -- flight start (from data)
     ended_at     timestamptz,                -- flight end (from data)
-    created_at   timestamptz not null default now()
+    created_at   timestamptz not null default now(),
+
+    -- Separate recordings per screen, both filenames inside settings.video_dir.
+    -- Offsets account for each recording's start vs the first flight-data sample, seconds.
+    instrument_video_filename    text,
+    instrument_video_offset_sec  double precision not null default 0,
+    otw_video_filename           text,
+    otw_video_offset_sec         double precision not null default 0
 );
 
 -- ---------------------------------------------------------------------

@@ -26,6 +26,8 @@ const METRICS = [
 
 const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
+const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a video
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -54,6 +56,33 @@ function nearestIndexForTime(arr, t) {
   return lo;
 }
 
+// Keeps one <video> element following the app's cursor-driven clock (the master clock),
+// rather than letting the video run free — offsetSec accounts for that recording's start
+// not lining up exactly with the flight-data log's first sample.
+function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !src || Number.isNaN(video.duration)) return;
+    const target = Math.max(0, curT + offsetSec);
+    if (Math.abs(video.currentTime - target) > VIDEO_SYNC_TOLERANCE) {
+      video.currentTime = target;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curT, src]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !src) return;
+    if (playing) video.play().catch(() => {});
+    else video.pause();
+  }, [playing, src]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (video) video.playbackRate = speed;
+  }, [speed]);
+}
+
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -67,6 +96,8 @@ export default function Review() {
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const timer = useRef(null);
+  const instrumentVideoRef = useRef(null);
+  const otwVideoRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -81,6 +112,10 @@ export default function Review() {
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
   const elapsed = (ts) => (new Date(ts).getTime() - t0) / 1000;
+  // hoisted above the early returns below: the video-sync effect closes over this
+  // and still fires (after commit) even on a render that bails out early with no
+  // flight data yet, so it must never be left in the temporal dead zone.
+  const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
 
   // nearest eye sample for each flight sample (two-pointer, once)
   const eyeForFlight = useMemo(() => {
@@ -115,6 +150,12 @@ export default function Review() {
     });
   }, [flight, eye, eyeForFlight]);
   const hasEye = eye.length > 0;
+
+  // one independent recording per screen, each with its own sync offset (set via the video-link API)
+  const instrumentVideoSrc = summary?.session?.instrument_video_url || null;
+  const instrumentOffsetSec = summary?.session?.instrument_video_offset_sec ?? 0;
+  const otwVideoSrc = summary?.session?.otw_video_url || null;
+  const otwOffsetSec = summary?.session?.otw_video_offset_sec ?? 0;
 
   // normalized timeline series (shapes comparable across metrics)
   const series = useMemo(() => {
@@ -155,15 +196,6 @@ export default function Review() {
       .map(([name, n], i) => ({ name, value: n, pct: (n / total) * 100, color: aoiColor(name, i) }));
   }, [eye]);
 
-  // gaze bounds for the instrument-screen overlay
-  const gazeB = useMemo(() => ({
-    x: bounds(eye, "gaze_point_x"),
-    y: bounds(eye, "gaze_point_y"),
-  }), [eye]);
-
-  // ground-track projection for the OTW panel
-  const geo = useMemo(() => ({ la: bounds(flight, "latitude"), lo: bounds(flight, "longitude") }), [flight]);
-
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
@@ -173,6 +205,10 @@ export default function Review() {
     }
     return () => clearInterval(timer.current);
   }, [playing, speed, flight.length]);
+
+  // each screen's recording follows the app's cursor-driven clock independently
+  useSyncedVideo(instrumentVideoRef, instrumentVideoSrc, instrumentOffsetSec, curT, playing, speed);
+  useSyncedVideo(otwVideoRef, otwVideoSrc, otwOffsetSec, curT, playing, speed);
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
   if (!summary) return <div className="rev-loading">Loading session…</div>;
@@ -188,32 +224,7 @@ export default function Review() {
   const cur = flight[cursor];
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
-  const curT = elapsed(cur.ts);
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
-
-  // instrument-screen gaze position + recent trail
-  const gx = curEye && gazeB.x[1] > gazeB.x[0]
-    ? ((curEye.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100 : null;
-  const gy = curEye && gazeB.y[1] > gazeB.y[0]
-    ? ((curEye.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100 : null;
-  const trail = [];
-  if (curEyeIdx >= 0) {
-    for (let k = Math.max(0, curEyeIdx - 24); k < curEyeIdx; k++) {
-      const e = eye[k];
-      if (e.gaze_point_x == null) continue;
-      trail.push({
-        x: ((e.gaze_point_x - gazeB.x[0]) / (gazeB.x[1] - gazeB.x[0])) * 100,
-        y: ((e.gaze_point_y - gazeB.y[0]) / (gazeB.y[1] - gazeB.y[0])) * 100,
-        o: (k - (curEyeIdx - 24)) / 24,
-      });
-    }
-  }
-
-  // ground track
-  const gw = 100, gh = 100, pad = 8;
-  const px = (lo) => geo.lo[1] > geo.lo[0] ? pad + ((lo - geo.lo[0]) / (geo.lo[1] - geo.lo[0])) * (gw - 2 * pad) : gw / 2;
-  const py = (la) => geo.la[1] > geo.la[0] ? gh - pad - ((la - geo.la[0]) / (geo.la[1] - geo.la[0])) * (gh - 2 * pad) : gh / 2;
-  const track = flight.filter((r) => r.latitude != null).map((r) => `${px(r.longitude).toFixed(1)},${py(r.latitude).toFixed(1)}`).join(" ");
 
   const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
@@ -238,36 +249,22 @@ export default function Review() {
         {/* screens */}
         <div className="rev-screens">
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
+            <div className="head">OTW screen</div>
             <div className="body">
-              {hasEye ? (
-                <div className="gaze-layer">
-                  <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }} preserveAspectRatio="none" viewBox="0 0 100 100">
-                    {trail.map((p, i) => (
-                      <circle key={i} cx={p.x} cy={p.y} r="0.8" fill="#38bdf8" opacity={p.o * 0.5} />
-                    ))}
-                  </svg>
-                  {gx != null && (
-                    <div className="gaze-current"
-                      style={{ left: `${gx}%`, top: `${gy}%`, color: aoiColor(curEye?.aoi) }} />
-                  )}
-                </div>
-              ) : (
-                <div className="screen-empty">No eye-tracking data for this session.</div>
+              {otwVideoSrc && (
+                <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
+                  muted playsInline preload="auto" />
               )}
             </div>
           </div>
 
           <div className="rev-screen">
-            <div className="head">OTW screen<span className="tag">ground track</span></div>
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
             <div className="body">
-              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
-                <polyline points={track} fill="none" stroke="#1d4a47" strokeWidth="0.8" />
-                <circle cx={px(cur.longitude)} cy={py(cur.latitude)} r="2" fill="#14b8a6" />
-              </svg>
-              <div className="screen-empty" style={{ alignItems: "end", justifyItems: "start", padding: 10, pointerEvents: "none" }}>
-                <span style={{ fontSize: 11 }}>out-the-window video — later phase</span>
-              </div>
+              {instrumentVideoSrc && (
+                <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
+                  muted playsInline preload="auto" />
+              )}
             </div>
           </div>
         </div>

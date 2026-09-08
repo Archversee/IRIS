@@ -11,10 +11,35 @@ export default function Upload() {
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [videoFiles, setVideoFiles] = useState([]);
+  const [videoLinks, setVideoLinks] = useState({
+    instrument: { filename: "", offset_sec: 0 },
+    otw: { filename: "", offset_sec: 0 },
+  });
+  const [videoBusy, setVideoBusy] = useState(null);
 
   useEffect(() => {
     api.listSessions().then(setSessions).catch((e) => setErr(e.message));
+    api.videosAvailable().then(setVideoFiles).catch((e) => setErr(e.message));
   }, []);
+
+  async function saveVideo(screen) {
+    if (!sessionId) return setErr("Pick or create a session first.");
+    setVideoBusy(screen);
+    setErr(null);
+    try {
+      const { filename, offset_sec } = videoLinks[screen];
+      await api.linkVideo(sessionId, screen, {
+        filename: filename || null,
+        offset_sec: Number(offset_sec) || 0,
+      });
+      addLog(`${screen} video: linked ${filename || "(cleared)"} @ offset ${offset_sec}s`);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setVideoBusy(null);
+    }
+  }
 
   function addLog(line) {
     setLog((l) => [...l, line]);
@@ -116,6 +141,51 @@ export default function Upload() {
         <button onClick={uploadAll} disabled={busy || !sessionId}>
           {busy ? "Uploading…" : "Upload & ingest"}
         </button>
+      </div>
+
+      <div className="card">
+        <h2>3. Videos</h2>
+        {videoFiles.length === 0 ? (
+          <p className="muted">
+            No video files found in the backend's video folder. Drop MP4s in there (see <code>video_dir</code> in
+            config.py) and reload this page.
+          </p>
+        ) : (
+          <div className="row">
+            {["instrument", "otw"].map((screen) => (
+              <div className="col" key={screen}>
+                <label>{screen === "instrument" ? "Instrument screen" : "OTW screen"}</label>
+                <select
+                  value={videoLinks[screen].filename}
+                  onChange={(e) =>
+                    setVideoLinks((v) => ({ ...v, [screen]: { ...v[screen], filename: e.target.value } }))
+                  }
+                >
+                  <option value="">— none —</option>
+                  {videoFiles.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+                <label style={{ marginTop: 8 }}>Sync offset (sec)</label>
+                <input
+                  type="number" step="0.1"
+                  value={videoLinks[screen].offset_sec}
+                  onChange={(e) =>
+                    setVideoLinks((v) => ({ ...v, [screen]: { ...v[screen], offset_sec: e.target.value } }))
+                  }
+                />
+                <br />
+                <button
+                  style={{ marginTop: 8 }}
+                  onClick={() => saveVideo(screen)}
+                  disabled={!sessionId || videoBusy === screen}
+                >
+                  {videoBusy === screen ? "Saving…" : `Save ${screen} video`}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {err && <p className="err">{err}</p>}

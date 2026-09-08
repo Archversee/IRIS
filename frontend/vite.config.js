@@ -12,6 +12,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
+      // static video files served by FastAPI's StaticFiles mount at /videos
+      "/videos": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
 });
