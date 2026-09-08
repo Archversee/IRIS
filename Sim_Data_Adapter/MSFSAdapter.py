@@ -9,9 +9,19 @@ Corrected to use pysimconnect's actual documented API:
 pysimconnect's API — that's why every field came back None.)
 
 INSTALL:
-    pip install pysimconnect
+    pip install pysimconnect obsws-python
 
-Run this AFTER MSFS2020 is running with a flight loaded.
+OBS SETUP (two instances, one mp4 each — instrument view + OTW view):
+    Run two separate OBS Studio processes (e.g. two installs, or the same
+    install launched twice with `--profile`/`--collection` pointing at two
+    scene collections — one scened to the instrument capture source, one
+    to the OTW capture source). In each instance:
+        Tools > WebSocket Server Settings > Enable WebSocket server
+    Give them different ports (e.g. 4455 and 4456) since they'll be on the
+    same machine. Fill in OBS_INSTANCES below to match.
+
+Run this AFTER MSFS2020 is running with a flight loaded, and after both
+OBS instances are open with the WebSocket server enabled.
 """
 
 import csv
@@ -20,6 +30,7 @@ import time
 from datetime import datetime, timezone
 
 from SimConnect import SimConnect, PERIOD_VISUAL_FRAME
+import obsws_python as obsws
 
 # ----------------------------------------------------------------------
 # Config
@@ -30,6 +41,16 @@ LOG_DIR = os.path.join(os.getcwd(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(LOG_DIR, "simconnect_log.csv")
 EVENTS_CSV = os.path.join(LOG_DIR, "simconnect_events.csv")
+
+# Set False to log flight data only, without touching OBS.
+ENABLE_OBS_RECORDING = True
+
+# One entry per OBS instance. `name` is just a label used in console
+# output and the events log — it doesn't need to match anything in OBS.
+OBS_INSTANCES = [
+    dict(name="instrument", host="localhost", port=4455, password=""),
+    dict(name="otw",        host="localhost", port=4456, password=""),
+]
 
 # Canonical field -> (simvar name, unit)
 SIMVARS = {
@@ -74,7 +95,36 @@ def log_event(event_name):
         csv.writer(f).writerow([ts, event_name])
 
 
+def connect_obs_clients():
+    clients = []
+    for cfg in OBS_INSTANCES:
+        print(f"Connecting to OBS ({cfg['name']}) at {cfg['host']}:{cfg['port']}...")
+        client = obsws.ReqClient(
+            host=cfg["host"], port=cfg["port"], password=cfg["password"], timeout=5
+        )
+        clients.append((cfg["name"], client))
+    return clients
+
+
+def start_obs_recordings(clients):
+    for name, client in clients:
+        client.start_record()
+        log_event(f"obs_record_start:{name}")
+
+
+def stop_obs_recordings(clients):
+    for name, client in clients:
+        try:
+            resp = client.stop_record()
+            log_event(f"obs_record_stop:{name}:{resp.output_path}")
+            print(f"OBS ({name}) saved recording to {resp.output_path}")
+        except Exception as e:
+            print(f"Failed to stop OBS ({name}) recording cleanly: {e}")
+
+
 def main():
+    obs_clients = connect_obs_clients() if ENABLE_OBS_RECORDING else []
+
     print("Connecting to SimConnect (make sure MSFS2020 is running with a flight loaded)...")
     sc = SimConnect()
 
@@ -93,6 +143,9 @@ def main():
         sc.receive()
         time.sleep(0.05)
     print("Connected, data flowing.")
+
+    if obs_clients:
+        start_obs_recordings(obs_clients)
 
     # NOTE: Crashed/CrashReset event subscription is NOT included here yet.
     # I have not been able to confirm the exact pysimconnect call for
@@ -131,6 +184,8 @@ def main():
             print("\nStopped logging.")
         finally:
             sc.Close()
+            if obs_clients:
+                stop_obs_recordings(obs_clients)
 
 
 if __name__ == "__main__":
