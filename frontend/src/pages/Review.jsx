@@ -82,7 +82,7 @@ function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
   useEffect(() => {
     const video = ref.current;
     if (video) video.playbackRate = speed;
-  }, [speed]);
+  }, [speed, src]);
 }
 
 export default function Review() {
