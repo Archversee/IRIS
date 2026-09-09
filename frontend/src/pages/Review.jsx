@@ -177,6 +177,16 @@ export default function Review() {
     }));
   }, [flight, workloadRaw]);
 
+  // x-axis ticks every 10s (Recharts' auto ticks land on round numbers like
+  // every 100s for a long session, which is too coarse to read the timeline by)
+  const timelineTicks = useMemo(() => {
+    if (!series.length) return [];
+    const maxT = series[series.length - 1].t;
+    const ticks = [];
+    for (let t = 0; t <= maxT; t += 10) ticks.push(t);
+    return ticks;
+  }, [series]);
+
   // AOI scan-path runs (collapse consecutive identical AOIs)
   const runs = useMemo(() => {
     const out = [];
@@ -291,7 +301,8 @@ export default function Review() {
           <ResponsiveContainer width="100%" height={150}>
             <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}>
               <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
-              <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
+              <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
+                stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
               <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
               <Tooltip content={<TLTooltip />} />
               {METRICS.map((m) =>
