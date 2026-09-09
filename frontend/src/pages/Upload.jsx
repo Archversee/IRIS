@@ -129,8 +129,8 @@ export default function Upload() {
             <input type="file" accept=".csv" onChange={(e) => setFiles({ ...files, flight: e.target.files[0] })} />
           </div>
           <div className="col">
-            <label>Eye tracking (Smart Eye export)</label>
-            <input type="file" accept=".csv" onChange={(e) => setFiles({ ...files, eye: e.target.files[0] })} />
+            <label>Eye tracking (Smart Eye export, .csv or raw .log)</label>
+            <input type="file" accept=".csv,.log" onChange={(e) => setFiles({ ...files, eye: e.target.files[0] })} />
           </div>
           <div className="col">
             <label>Events (simconnect_events.csv)</label>

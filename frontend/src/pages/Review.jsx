@@ -8,8 +8,9 @@ import { api } from "../api/client.js";
 import "./review.css";
 
 const AOI_COLORS = {
-  airspeed: "#38bdf8", altimeter: "#4ade80", attitude: "#f5a623",
-  heading: "#a78bfa", outside: "#14b8a6", throttle: "#fb7185",
+  OTW: "#14b8a6", Instruments: "#38bdf8",
+  airspeed: "#4ade80", altimeter: "#f5a623", attitude: "#a78bfa",
+  heading: "#fb7185", throttle: "#facc15",
   unlabelled: "#64748b",
 };
 const PALETTE = ["#38bdf8", "#4ade80", "#f5a623", "#a78bfa", "#14b8a6", "#fb7185", "#facc15", "#60a5fa"];
@@ -198,15 +199,19 @@ export default function Review() {
     return out;
   }, [eye]);
 
-  // region dwell (whole session)
+  // region dwell, cumulative up to the current playback position
   const regions = useMemo(() => {
     const counts = {};
-    for (const e of eye) { const a = e.aoi || "unlabelled"; counts[a] = (counts[a] || 0) + 1; }
+    for (const e of eye) {
+      if (elapsed(e.ts) > curT) continue;
+      const a = e.aoi || "unlabelled";
+      counts[a] = (counts[a] || 0) + 1;
+    }
     const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([name, n], i) => ({ name, value: n, pct: (n / total) * 100, color: aoiColor(name, i) }));
-  }, [eye]);
+  }, [eye, curT]);
 
   // playback loop
   useEffect(() => {
