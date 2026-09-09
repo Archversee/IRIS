@@ -10,8 +10,13 @@ SCREENS = {"instrument", "otw"}  # each session links one recording per screen
 
 @router.get("/videos-available")
 async def available():
-    return [f for f in sorted(os.listdir(settings.video_dir))
-            if os.path.splitext(f)[1].lower() in VIDEO_EXTS]
+    found = []
+    for root, _dirs, files in os.walk(settings.video_dir):
+        for f in files:
+            if os.path.splitext(f)[1].lower() in VIDEO_EXTS:
+                rel = os.path.relpath(os.path.join(root, f), settings.video_dir)
+                found.append(rel.replace(os.sep, "/"))
+    return sorted(found)
 
 class VideoLink(BaseModel):
     filename: str | None = None
