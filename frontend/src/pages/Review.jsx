@@ -26,7 +26,8 @@ const METRICS = [
 
 const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
-const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a video
+const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a paused/scrubbed video
+const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural decode jitter shouldn't trigger a seek every tick
 
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
@@ -64,11 +65,12 @@ function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
     const video = ref.current;
     if (!video || !src || Number.isNaN(video.duration)) return;
     const target = Math.max(0, curT + offsetSec);
-    if (Math.abs(video.currentTime - target) > VIDEO_SYNC_TOLERANCE) {
+    const tolerance = playing ? VIDEO_SYNC_TOLERANCE_PLAYING : VIDEO_SYNC_TOLERANCE;
+    if (Math.abs(video.currentTime - target) > tolerance) {
       video.currentTime = target;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curT, src]);
+  }, [curT, src, playing]);
 
   useEffect(() => {
     const video = ref.current;
@@ -289,7 +291,7 @@ export default function Review() {
           <ResponsiveContainer width="100%" height={150}>
             <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}>
               <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
-              <XAxis dataKey="t" stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
+              <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
               <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
               <Tooltip content={<TLTooltip />} />
               {METRICS.map((m) =>

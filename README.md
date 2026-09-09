@@ -7,9 +7,6 @@ Tracking Data within Flight Simulators*.
 - **Frontend:** React (Vite) + recharts
 - **Database:** Supabase Postgres (plain Postgres)
 
-Single-user for now (no auth). Batch CSV ingest works today; a real-time
-streaming path is stubbed and ready to build out.
-
 ```
 flight-review-system/
 ├── db/schema.sql              # tables + indexes (run in Supabase)
@@ -55,9 +52,11 @@ uvicorn app.main:app --reload --port 8000
 Interactive API docs: <http://localhost:8000/docs>.
 
 ## To Run after setup
+```bash
 cd backend
 .venv\Scripts\activate
 uvicorn app.main:app --reload --port 8000
+```
 
 ## 3. Frontend
 
@@ -133,10 +132,6 @@ frame-accurate.
 
 - `POST /sessions/{id}/stream/flight` — push one JSON sample
 - `WS   /sessions/{id}/stream/ws` — push a stream of samples
-
-To go live, have `MSFSAdapter.py` POST rows here instead of (or alongside)
-writing CSV. Live *playback* fan-out to the browser isn't built yet — that's
-the next piece.
 
 ## Next steps / ideas
 
