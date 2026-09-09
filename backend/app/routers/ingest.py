@@ -126,13 +126,23 @@ async def _session_exists(session_id: UUID) -> bool:
         return await conn.fetchval("select 1 from sessions where id = $1", session_id) is not None
 
 
+def _decode_upload(raw_bytes: bytes) -> str:
+    # Windows export tools (Smart Eye included) often save as UTF-16 rather
+    # than UTF-8 -- decoding those bytes as UTF-8 doesn't raise, it just
+    # silently interleaves NUL bytes through the text, breaking any string
+    # match against the content. Detect the BOM and decode accordingly.
+    if raw_bytes.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw_bytes.decode("utf-16")
+    return raw_bytes.decode("utf-8-sig")
+
+
 async def _read_csv(file: UploadFile) -> csv.DictReader:
-    raw = (await file.read()).decode("utf-8-sig")
+    raw = _decode_upload(await file.read())
     return csv.DictReader(io.StringIO(raw))
 
 
 async def _read_eye_rows(file: UploadFile):
-    raw = (await file.read()).decode("utf-8-sig")
+    raw = _decode_upload(await file.read())
     if _is_smarteye_raw(raw):
         return _smarteye_rows(raw)
     return csv.DictReader(io.StringIO(raw))
