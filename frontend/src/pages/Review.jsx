@@ -60,6 +60,28 @@ function nearestIndexForTime(arr, t) {
   return lo;
 }
 
+// name of the drawn AOI zone (if any) containing a gaze point, in the
+// instrument recording's native pixel space -- see AoiEditor.jsx
+function zoneForPoint(zones, x, y) {
+  for (const z of zones) {
+    const xMin = Math.min(z.x1, z.x2), xMax = Math.max(z.x1, z.x2);
+    const yMin = Math.min(z.y1, z.y2), yMax = Math.max(z.y1, z.y2);
+    if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) return z.name;
+  }
+  return null;
+}
+
+// refines the broad "Instruments" AOI into a specific dial when the gaze
+// point falls inside a drawn zone; any other AOI (OTW, blink, etc.) passes
+// through unchanged, since zones only make sense in the panel's own pixel space
+function effectiveAoi(e, zones) {
+  if (e.aoi === "Instruments" && e.gaze_point_x != null && e.gaze_point_y != null) {
+    const zoneName = zoneForPoint(zones, e.gaze_point_x, e.gaze_point_y);
+    if (zoneName) return zoneName;
+  }
+  return e.aoi || "unlabelled";
+}
+
 // Keeps one <video> element following the app's cursor-driven clock (the master clock),
 // rather than letting the video run free — offsetSec accounts for that recording's start
 // not lining up exactly with the flight-data log's first sample.
@@ -95,6 +117,7 @@ export default function Review() {
   const [flight, setFlight] = useState([]);
   const [eye, setEye] = useState([]);
   const [events, setEvents] = useState([]);
+  const [aoiZones, setAoiZones] = useState([]);
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -118,6 +141,7 @@ export default function Review() {
         setSummary(sm); setFlight(fl); setEye(ey); setEvents(ev);
       } catch (e) { setErr(e.message); }
     })();
+    api.listAoiZones().then(setAoiZones).catch(() => {});
   }, [id]);
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
@@ -205,11 +229,11 @@ export default function Review() {
     let prev = null;
     for (const e of eye) {
       if (e.blink) continue;
-      const a = e.aoi || "unlabelled";
+      const a = effectiveAoi(e, aoiZones);
       if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
     }
     return out;
-  }, [eye]);
+  }, [eye, aoiZones]);
 
   const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
 
@@ -311,6 +335,7 @@ export default function Review() {
   const cur = flight[cursor];
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
+  const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
   const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
@@ -329,6 +354,7 @@ export default function Review() {
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
         <div className="rail-sep" />
         <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
+        <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
       </div>
 
       <div className="rev-main">
@@ -352,11 +378,24 @@ export default function Review() {
           </div>
 
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curEye.aoi || "unlabelled") : "no eye data"}</span></div>
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span></div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
+              )}
+              {instrumentVideoSrc && aoiZones.length > 0 && (
+                <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
+                  {aoiZones.map((z) => (
+                    <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
+                      width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
+                      fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeDasharray="10 6" opacity="0.55" />
+                  ))}
+                  {curEye && !curEye.blink && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16"
+                      fill={curAoi && curAoi !== "Instruments" ? "#4ade80" : "#ff5c5c"} opacity="0.85" />
+                  )}
+                </svg>
               )}
             </div>
           </div>

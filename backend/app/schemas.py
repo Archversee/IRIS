@@ -34,6 +34,19 @@ class Event(EventCreate):
     session_id: UUID
 
 
+# ---- AOI zones -------------------------------------------------------
+class AoiZoneCreate(BaseModel):
+    name: str
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class AoiZone(AoiZoneCreate):
+    id: int
+
+
 # ---- ingest result --------------------------------------------------
 class IngestResult(BaseModel):
     inserted: int
