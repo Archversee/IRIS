@@ -100,7 +100,11 @@ export default function Review() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
-  const [minAoiDwellSec, setMinAoiDwellSec] = useState(MIN_AOI_DWELL_SEC_DEFAULT);
+  // kept as raw text (not a number) so a controlled input doesn't fight
+  // the user mid-edit -- e.g. typing "0.5" passes through an "0." state
+  // that would otherwise get snapped back to "0" on every keystroke
+  const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
+  const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
@@ -388,8 +392,8 @@ export default function Review() {
               <h3>Instrument scan path</h3>
               <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
                 min glance
-                <input type="number" min={0} step={0.1} value={minAoiDwellSec}
-                  onChange={(e) => setMinAoiDwellSec(Math.max(0, +e.target.value || 0))} />
+                <input type="number" min={0} step={0.1} value={minAoiDwellInput}
+                  onChange={(e) => setMinAoiDwellInput(e.target.value)} />
                 s
               </label>
             </div>
