@@ -147,6 +147,17 @@
   margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--rev-muted);
   letter-spacing: .3px;
 }
+.card-head { display: flex; align-items: center; gap: 10px; }
+.card-head h3 { margin: 0 0 10px; flex: 1; }
+.min-dwell {
+  display: flex; align-items: center; gap: 5px; margin-bottom: 10px;
+  font-size: 11px; color: var(--rev-muted); cursor: help;
+}
+.min-dwell input {
+  width: 46px; padding: 2px 5px; font-size: 12px; text-align: center;
+  color: var(--rev-text); background: var(--rev-panel-2);
+  border: 1px solid var(--rev-line); border-radius: 5px;
+}
 
 /* scan path — always exactly two rows, split evenly rather than left to flex-wrap */
 .scan-flow {

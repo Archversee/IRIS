@@ -30,6 +30,8 @@ const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before ro
 const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a paused/scrubbed video
 const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural decode jitter shouldn't trigger a seek every tick
 
+const MIN_AOI_DWELL_SEC_DEFAULT = 0.5; // AOI glances shorter than this are treated as tracking artifacts, not real looks
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -98,6 +100,7 @@ export default function Review() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
+  const [minAoiDwellSec, setMinAoiDwellSec] = useState(MIN_AOI_DWELL_SEC_DEFAULT);
   const timer = useRef(null);
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
@@ -188,11 +191,11 @@ export default function Review() {
     return ticks;
   }, [series]);
 
-  // AOI scan-path runs (collapse consecutive identical AOIs) -- blinks are
+  // Raw AOI transitions (collapse consecutive identical AOIs) -- blinks are
   // excluded rather than shown as "unlabelled": the eye tracker can't
   // resolve gaze position while the eyelid is closed, so those frames
   // aren't a real (if brief) look at nothing, they're just missing data.
-  const runs = useMemo(() => {
+  const rawRuns = useMemo(() => {
     const out = [];
     let prev = null;
     for (const e of eye) {
@@ -203,19 +206,50 @@ export default function Review() {
     return out;
   }, [eye]);
 
-  // region dwell, cumulative up to the current playback position (blinks excluded, see runs above)
-  const regions = useMemo(() => {
-    const counts = {};
-    for (const e of eye) {
-      if (e.blink || elapsed(e.ts) > curT) continue;
-      const a = e.aoi || "unlabelled";
-      counts[a] = (counts[a] || 0) + 1;
+  const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
+
+  // Merge transitions that don't hold for at least minAoiDwellSec: glasses
+  // (or other tracking artifacts) throw brief spurious AOI blips into the
+  // gaze stream, so a "look" shorter than this threshold is folded back
+  // into whichever AOI it interrupted rather than counted as a real glance.
+  const runs = useMemo(() => {
+    if (rawRuns.length < 2) return rawRuns;
+    let merged = rawRuns.map((r) => ({ ...r }));
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 1; i < merged.length; i++) {
+        const end = i + 1 < merged.length ? merged[i + 1].t : lastEyeT;
+        if (end - merged[i].t < minAoiDwellSec) {
+          merged[i].aoi = merged[i - 1].aoi;
+          changed = true;
+        }
+      }
+      if (changed) {
+        const collapsed = [];
+        for (const r of merged) {
+          if (!collapsed.length || collapsed[collapsed.length - 1].aoi !== r.aoi) collapsed.push(r);
+        }
+        merged = collapsed;
+      }
     }
-    const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-    return Object.entries(counts)
+    return merged;
+  }, [rawRuns, minAoiDwellSec, lastEyeT]);
+
+  // region dwell, cumulative up to the current playback position -- built
+  // from the cleaned runs above, so blinks and sub-threshold blips are
+  // already excluded; dwell is time-weighted rather than sample-counted.
+  const regions = useMemo(() => {
+    const durations = {};
+    for (let i = 0; i < runs.length && runs[i].t <= curT; i++) {
+      const end = i + 1 < runs.length ? Math.min(runs[i + 1].t, curT) : curT;
+      durations[runs[i].aoi] = (durations[runs[i].aoi] || 0) + Math.max(0, end - runs[i].t);
+    }
+    const total = Object.values(durations).reduce((a, b) => a + b, 0) || 1;
+    return Object.entries(durations)
       .sort((a, b) => b[1] - a[1])
-      .map(([name, n], i) => ({ name, value: n, pct: (n / total) * 100, color: aoiColor(name, i) }));
-  }, [eye, curT]);
+      .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
+  }, [runs, curT]);
 
   // playback loop
   useEffect(() => {
@@ -350,7 +384,15 @@ export default function Review() {
         <div className="rev-bottom">
           {/* scan path */}
           <div className="rev-card">
-            <h3>Instrument scan path</h3>
+            <div className="card-head">
+              <h3>Instrument scan path</h3>
+              <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
+                min glance
+                <input type="number" min={0} step={0.1} value={minAoiDwellSec}
+                  onChange={(e) => setMinAoiDwellSec(Math.max(0, +e.target.value || 0))} />
+                s
+              </label>
+            </div>
             {visibleRuns.length === 0 ? (
               <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
             ) : (
