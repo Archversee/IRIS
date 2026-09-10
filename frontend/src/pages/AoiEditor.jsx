@@ -134,12 +134,12 @@ export default function AoiEditor() {
         </>
       )}
 
-      {frameReady && (
+      {videoUrl && (
         <div
           style={{ position: "relative", width: "100%", maxWidth: 960, aspectRatio: "16 / 9", cursor: "crosshair" }}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
         >
-          <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", borderRadius: 8 }} />
+          <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", borderRadius: 8, background: "#06100f" }} />
           <svg viewBox={`0 0 ${NATIVE_W} ${NATIVE_H}`} preserveAspectRatio="none"
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
             {zones.map((z) => (
@@ -157,6 +157,11 @@ export default function AoiEditor() {
                 fill="rgba(255,255,255,0.15)" stroke="#fff" strokeWidth="2" strokeDasharray="6 4" />
             )}
           </svg>
+          {!frameReady && (
+            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#8194a6", pointerEvents: "none" }}>
+              Loading frame…
+            </div>
+          )}
         </div>
       )}
 
