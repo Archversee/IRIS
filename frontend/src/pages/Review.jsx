@@ -188,22 +188,26 @@ export default function Review() {
     return ticks;
   }, [series]);
 
-  // AOI scan-path runs (collapse consecutive identical AOIs)
+  // AOI scan-path runs (collapse consecutive identical AOIs) -- blinks are
+  // excluded rather than shown as "unlabelled": the eye tracker can't
+  // resolve gaze position while the eyelid is closed, so those frames
+  // aren't a real (if brief) look at nothing, they're just missing data.
   const runs = useMemo(() => {
     const out = [];
     let prev = null;
     for (const e of eye) {
+      if (e.blink) continue;
       const a = e.aoi || "unlabelled";
       if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
     }
     return out;
   }, [eye]);
 
-  // region dwell, cumulative up to the current playback position
+  // region dwell, cumulative up to the current playback position (blinks excluded, see runs above)
   const regions = useMemo(() => {
     const counts = {};
     for (const e of eye) {
-      if (elapsed(e.ts) > curT) continue;
+      if (e.blink || elapsed(e.ts) > curT) continue;
       const a = e.aoi || "unlabelled";
       counts[a] = (counts[a] || 0) + 1;
     }
@@ -276,7 +280,7 @@ export default function Review() {
           </div>
 
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye?.aoi || "no eye data"}</span></div>
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curEye.aoi || "unlabelled") : "no eye data"}</span></div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
