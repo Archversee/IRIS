@@ -126,6 +126,7 @@ export default function Review() {
   // and still fires (after commit) even on a render that bails out early with no
   // flight data yet, so it must never be left in the temporal dead zone.
   const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
+  const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
 
   // nearest eye sample for each flight sample (two-pointer, once)
   const eyeForFlight = useMemo(() => {
@@ -255,6 +256,33 @@ export default function Review() {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
+  // ground track: lat/long positions normalized into a square 0-100 viewBox,
+  // preserving true relative shape (equal scale on both axes, longitude
+  // corrected by cos(latitude) so the path isn't stretched east-west)
+  const groundTrack = useMemo(() => {
+    const pts = flight
+      .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
+      .filter((p) => p.lat != null && p.lon != null);
+    if (pts.length < 2) return [];
+
+    const lats = pts.map((p) => p.lat);
+    const lonScale = Math.cos(((Math.min(...lats) + Math.max(...lats)) / 2) * Math.PI / 180) || 1;
+    const xs = pts.map((p) => p.lon * lonScale);
+    const ys = pts.map((p) => p.lat);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const range = Math.max(xMax - xMin, yMax - yMin) || 1;
+    const xOffset = (range - (xMax - xMin)) / 2;
+    const yOffset = (range - (yMax - yMin)) / 2;
+
+    const SIZE = 100, PAD = 8, inner = SIZE - PAD * 2;
+    return pts.map((p, i) => ({
+      x: PAD + ((xs[i] - xMin + xOffset) / range) * inner,
+      y: PAD + inner - ((ys[i] - yMin + yOffset) / range) * inner, // north = up
+      t: p.t,
+    }));
+  }, [flight]);
+
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
@@ -285,6 +313,13 @@ export default function Review() {
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
+  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
+  const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const groundFlownPath = groundFlownIdx >= 0
+    ? groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ")
+    : "";
+  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
+
   const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
@@ -302,7 +337,6 @@ export default function Review() {
           <h1>{summary.session.name}</h1>
           <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
           <span className="spacer" />
-          <span className="clock">T + {curT.toFixed(1)}s</span>
         </div>
 
         {/* screens */}
@@ -323,6 +357,23 @@ export default function Review() {
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
+              )}
+            </div>
+          </div>
+
+          <div className="rev-screen">
+            <div className="head">Ground track</div>
+            <div className="body">
+              {groundTrack.length > 1 ? (
+                <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet">
+                  <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
+                  <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+                  {groundCurPoint && (
+                    <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="2.2" fill="#ff5c5c" />
+                  )}
+                </svg>
+              ) : (
+                <div className="scan-empty" style={{ padding: 12 }}>No position data.</div>
               )}
             </div>
           </div>
@@ -369,6 +420,7 @@ export default function Review() {
             <input type="range" min={0} max={flight.length - 1} value={cursor}
               onChange={(e) => setCursor(+e.target.value)} />
           </div>
+          <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
             <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
             <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
