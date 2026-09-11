@@ -89,7 +89,12 @@ with flight data logging, instead of being triggered by hand.
 Setup (once):
 
 1. Run two separate OBS Studio processes — one scened to the instrument
-   capture source, one to the OTW capture source.
+   capture source, one to the OTW capture source. For the **instrument**
+   instance, set Base (Canvas) and Output (Scaled) Resolution to match
+   Smart Eye's calibrated screen resolution exactly (1920x1080) — Smart
+   Eye reports gaze position (`gaze_point_x`/`gaze_point_y`) in that
+   screen's native pixel coordinates, so a mismatch here silently
+   misaligns any gaze-to-instrument-dial mapping built on top of it.
 2. In each instance: **Tools → WebSocket Server Settings → Enable
    WebSocket server**, using a different port per instance (e.g. `4455`
    and `4456`, since both run on the same machine).

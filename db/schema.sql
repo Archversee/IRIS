@@ -131,6 +131,23 @@ create table if not exists events (
 );
 
 -- ---------------------------------------------------------------------
+-- aoi_zones: named rectangles on the instrument panel, in the same pixel
+-- space as eye_tracking_data.gaze_point_x/y (the instrument recording's
+-- native resolution). Used to reclassify a raw "Instruments" gaze sample
+-- into a specific dial (e.g. "Airspeed", "Altimeter"). One shared layout
+-- across all sessions, since the simulator's panel layout is fixed.
+-- ---------------------------------------------------------------------
+create table if not exists aoi_zones (
+    id          bigint generated always as identity primary key,
+    name        text not null,
+    x1          double precision not null,
+    y1          double precision not null,
+    x2          double precision not null,
+    y2          double precision not null,
+    created_at  timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------
 -- Indexes
 --   The (session_id, ts) PKs already cover the common
 --   "one session, time-ordered" access pattern. BRIN indexes on ts are

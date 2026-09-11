@@ -41,4 +41,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+
+  listAoiZones: () => req("/aoi-zones"),
+  createAoiZone: (body) =>
+    req("/aoi-zones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  deleteAoiZone: (id) => req(`/aoi-zones/${id}`, { method: "DELETE" }),
 };

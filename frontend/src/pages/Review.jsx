@@ -25,7 +25,7 @@ const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
-const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
+// const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
 const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a paused/scrubbed video
 const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural decode jitter shouldn't trigger a seek every tick
@@ -58,6 +58,28 @@ function nearestIndexForTime(arr, t) {
   }
   if (lo > 0 && Math.abs(arr[lo - 1].t - t) <= Math.abs(arr[lo].t - t)) return lo - 1;
   return lo;
+}
+
+// name of the drawn AOI zone (if any) containing a gaze point, in the
+// instrument recording's native pixel space -- see AoiEditor.jsx
+function zoneForPoint(zones, x, y) {
+  for (const z of zones) {
+    const xMin = Math.min(z.x1, z.x2), xMax = Math.max(z.x1, z.x2);
+    const yMin = Math.min(z.y1, z.y2), yMax = Math.max(z.y1, z.y2);
+    if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) return z.name;
+  }
+  return null;
+}
+
+// refines the broad "Instruments" AOI into a specific dial when the gaze
+// point falls inside a drawn zone; any other AOI (OTW, blink, etc.) passes
+// through unchanged, since zones only make sense in the panel's own pixel space
+function effectiveAoi(e, zones) {
+  if (e.aoi === "Instruments" && e.gaze_point_x != null && e.gaze_point_y != null) {
+    const zoneName = zoneForPoint(zones, e.gaze_point_x, e.gaze_point_y);
+    if (zoneName) return zoneName;
+  }
+  return e.aoi || "unlabelled";
 }
 
 // Keeps one <video> element following the app's cursor-driven clock (the master clock),
@@ -95,10 +117,12 @@ export default function Review() {
   const [flight, setFlight] = useState([]);
   const [eye, setEye] = useState([]);
   const [events, setEvents] = useState([]);
+  const [aoiZones, setAoiZones] = useState([]);
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(4);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   // kept as raw text (not a number) so a controlled input doesn't fight
   // the user mid-edit -- e.g. typing "0.5" passes through an "0." state
@@ -106,6 +130,7 @@ export default function Review() {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
+  const speedAccum = useRef(0); // carries fractional sample-steps between ticks for speeds like 0.5x
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
 
@@ -118,6 +143,7 @@ export default function Review() {
         setSummary(sm); setFlight(fl); setEye(ey); setEvents(ev);
       } catch (e) { setErr(e.message); }
     })();
+    api.listAoiZones().then(setAoiZones).catch(() => {});
   }, [id]);
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
@@ -126,6 +152,7 @@ export default function Review() {
   // and still fires (after commit) even on a render that bails out early with no
   // flight data yet, so it must never be left in the temporal dead zone.
   const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
+  const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
 
   // nearest eye sample for each flight sample (two-pointer, once)
   const eyeForFlight = useMemo(() => {
@@ -204,11 +231,11 @@ export default function Review() {
     let prev = null;
     for (const e of eye) {
       if (e.blink) continue;
-      const a = e.aoi || "unlabelled";
+      const a = effectiveAoi(e, aoiZones);
       if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
     }
     return out;
-  }, [eye]);
+  }, [eye, aoiZones]);
 
   const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
 
@@ -255,11 +282,100 @@ export default function Review() {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
-  // playback loop
+  // ground track: lat/long positions normalized into a square 0-100 viewBox,
+  // preserving true relative shape (equal scale on both axes, longitude
+  // corrected by cos(latitude) so the path isn't stretched east-west)
+  const groundTrack = useMemo(() => {
+    const pts = flight
+      .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
+      .filter((p) => p.lat != null && p.lon != null);
+    if (pts.length < 2) return [];
+
+    const lats = pts.map((p) => p.lat);
+    const lonScale = Math.cos(((Math.min(...lats) + Math.max(...lats)) / 2) * Math.PI / 180) || 1;
+    const xs = pts.map((p) => p.lon * lonScale);
+    const ys = pts.map((p) => p.lat);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const range = Math.max(xMax - xMin, yMax - yMin) || 1;
+    const xOffset = (range - (xMax - xMin)) / 2;
+    const yOffset = (range - (yMax - yMin)) / 2;
+
+    const SIZE = 100, PAD = 8, inner = SIZE - PAD * 2;
+    return pts.map((p, i) => ({
+      x: PAD + ((xs[i] - xMin + xOffset) / range) * inner,
+      y: PAD + inner - ((ys[i] - yMin + yOffset) / range) * inner, // north = up
+      t: p.t,
+    }));
+  }, [flight]);
+
+    // Chronological AOI log — one row per completed (or ongoing) run, built
+  // once from `runs` with explicit start/end/duration, independent of
+  // playback position. Only the "current" flag below depends on curT, so
+  // the list itself never reflows while scrubbing — just the highlight
+  // moves.
+  const scanLog = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < runs.length; i++) {
+      const start = runs[i].t;
+      const end = i + 1 < runs.length ? runs[i + 1].t : lastEyeT;
+      // order is fixed at chronological position in the whole session —
+      // assigned here, before filtering/reversing, so it never shifts as
+      // rows enter/leave the visible (curT-filtered) log below.
+      out.push({ order: i + 1, aoi: runs[i].aoi, start, end, dur: Math.max(0, end - start) });
+    }
+    return out;
+  }, [runs, lastEyeT]);;
+
+  // Color assigned by first appearance in the session, not by render-time
+  // index — so a given AOI's color never shifts as new rows are added.
+  const scanLogColor = useMemo(() => {
+    const map = new Map();
+    let i = 0;
+    for (const r of scanLog) {
+      if (!map.has(r.aoi)) map.set(r.aoi, aoiColor(r.aoi, i++));
+    }
+    return map;
+  }, [scanLog]);
+
+  // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); // newest first
+    // Only rows whose glance has actually started by the playhead are shown,
+  // newest first. The in-progress row (if curT falls inside it) is clipped
+  // to "now" rather than showing its real future end/duration — so
+  // rewinding or scrubbing backward makes rows disappear immediately, and
+  // nothing reveals what hasn't been "played" yet.
+  const scanLogRows = useMemo(() => {
+    const rows = [];
+    for (let i = scanLog.length - 1; i >= 0; i--) {
+      const r = scanLog[i];
+      if (r.start > curT) continue;
+      const isCurrent = curT < r.end;
+      const end = isCurrent ? curT : r.end;
+      rows.push({ ...r, end, dur: Math.max(0, end - r.start), isCurrent });
+    }
+    return rows;
+  }, [scanLog, curT]);
+
+  // end a chart drag-scrub even if the mouse is released outside the chart
+  useEffect(() => {
+    if (!scrubbing) return;
+    const stop = () => setScrubbing(false);
+    window.addEventListener("mouseup", stop);
+    return () => window.removeEventListener("mouseup", stop);
+  }, [scrubbing]);
+
+  // playback loop -- speed can be fractional (e.g. 0.5x), so we accumulate
+  // it across ticks and only step cursor forward by whole samples, rather
+  // than adding a fraction directly to an index used for array lookups
   useEffect(() => {
     if (playing && flight.length) {
+      speedAccum.current = 0;
       timer.current = setInterval(() => {
-        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + speed)));
+        speedAccum.current += speed;
+        const step = Math.floor(speedAccum.current);
+        if (step <= 0) return;
+        speedAccum.current -= step;
+        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + step)));
       }, 100);
     }
     return () => clearInterval(timer.current);
@@ -283,9 +399,24 @@ export default function Review() {
   const cur = flight[cursor];
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
+  const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
-  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
+  // clicking/dragging directly on the timeline chart scrubs playback,
+  // replacing a separate range-input scrub bar
+  const seekToChartEvent = (chartEvent) => {
+    if (!chartEvent || chartEvent.activeLabel == null) return;
+    setCursor(nearestIndexForTime(series, chartEvent.activeLabel));
+  };
+
+  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
+  const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const groundFlownPath = groundFlownIdx >= 0
+    ? groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ")
+    : "";
+  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
+
+  // const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
     <div className="rev">
@@ -294,6 +425,7 @@ export default function Review() {
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
         <div className="rail-sep" />
         <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
+        <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
       </div>
 
       <div className="rev-main">
@@ -302,7 +434,6 @@ export default function Review() {
           <h1>{summary.session.name}</h1>
           <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
           <span className="spacer" />
-          <span className="clock">T + {curT.toFixed(1)}s</span>
         </div>
 
         {/* screens */}
@@ -318,11 +449,38 @@ export default function Review() {
           </div>
 
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curEye.aoi || "unlabelled") : "no eye data"}</span></div>
+            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span></div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
+              )}
+              {instrumentVideoSrc && aoiZones.length > 0 && (
+                <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
+                  {aoiZones.map((z) => (
+                    <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
+                      width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
+                      fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeDasharray="10 6" opacity="0.55" />
+                  ))}
+                  {/* gaze-point dot removed for now -- see Review.jsx history to bring it back */}
+                </svg>
+              )}
+            </div>
+          </div>
+
+          <div className="rev-screen">
+            <div className="head">Ground track</div>
+            <div className="body">
+              {groundTrack.length > 1 ? (
+                <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet">
+                  <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
+                  <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+                  {groundCurPoint && (
+                    <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="2.2" fill="#ff5c5c" />
+                  )}
+                </svg>
+              ) : (
+                <div className="scan-empty" style={{ padding: 12 }}>No position data.</div>
               )}
             </div>
           </div>
@@ -346,7 +504,12 @@ export default function Review() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}>
+            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
+              style={{ cursor: "pointer" }}
+              onMouseDown={(e) => { setScrubbing(true); seekToChartEvent(e); }}
+              onMouseMove={(e) => { if (scrubbing) seekToChartEvent(e); }}
+              onMouseUp={() => setScrubbing(false)}
+            >
               <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
               <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
                 stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
@@ -365,10 +528,7 @@ export default function Review() {
               ))}
             </LineChart>
           </ResponsiveContainer>
-          <div className="rev-scrub">
-            <input type="range" min={0} max={flight.length - 1} value={cursor}
-              onChange={(e) => setCursor(+e.target.value)} />
-          </div>
+          <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
             <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
             <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
@@ -377,9 +537,10 @@ export default function Review() {
             </button>
             <button className="tl-btn" title="Forward 10s" onClick={() => seek(10)}>10s »</button>
             <select className="tl-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
+              <option value={0.5}>0.5×</option>
               <option value={1}>1×</option>
-              <option value={4}>4×</option>
-              <option value={10}>10×</option>
+              <option value={2}>2×</option>
+              <option value={5}>5×</option>
             </select>
           </div>
         </div>
@@ -389,7 +550,7 @@ export default function Review() {
           {/* scan path */}
           <div className="rev-card">
             <div className="card-head">
-              <h3>Instrument scan path</h3>
+              <h3>Scan path</h3>
               <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
@@ -397,25 +558,36 @@ export default function Review() {
                 s
               </label>
             </div>
-            {visibleRuns.length === 0 ? (
+            {scanLogRows.length === 0 ? (
               <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
             ) : (
-              <div className="scan-flow">
-                {[visibleRuns.slice(0, SCAN_ROW_CAP), visibleRuns.slice(SCAN_ROW_CAP)]
-                  .filter((row) => row.length)
-                  .map((row, ri) => (
-                    <div className="scan-row" key={ri}>
-                      {row.map((r, i) => (
-                        <span key={i} style={{ display: "contents" }}>
-                          <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
-                            {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
-                          </span>
-                          {i < row.length - 1 && <span className="scan-arrow">→</span>}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-              </div>
+              <>
+                <div className="scan-log-header">
+                  <span className="h-num">#</span>
+                  <span className="h-aoi">Area of Interest</span>
+                  <span className="h-range">Time range</span>
+                  <span className="h-dur">Duration</span>
+                </div>
+                <div className="scan-log">
+                  {scanLogRows.map((r, i) => {
+                    const color = scanLogColor.get(r.aoi);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        className={"scan-log-row" + (r.isCurrent ? " current" : "")}
+                        onClick={() => setCursor(nearestIndexForTime(series, r.start))}
+                        title={`Jump to ${r.start.toFixed(1)}s`}
+                      >
+                        <span className="badge" style={{ background: color }}>{r.order}</span>
+                        <span className="aoi" style={r.isCurrent ? { color } : undefined}>{r.aoi}</span>
+                        <span className="range">{r.start.toFixed(1)} → {r.isCurrent ? "now" : r.end.toFixed(1) + "s"}</span>
+                        <span className="dur" style={r.isCurrent ? { color } : undefined}>{r.dur.toFixed(1)}s</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 

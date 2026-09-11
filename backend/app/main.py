@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db, videos
 from .config import settings
-from .routers import analytics, data, ingest, sessions, stream
+from .routers import aoi_zones, analytics, data, ingest, sessions, stream
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(sessions.router)
+app.include_router(aoi_zones.router)
 app.include_router(ingest.router)
 app.include_router(data.router)
 app.include_router(analytics.router)
