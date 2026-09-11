@@ -25,7 +25,7 @@ const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
-const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
+// const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
 
 const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a paused/scrubbed video
 const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural decode jitter shouldn't trigger a seek every tick
@@ -307,6 +307,53 @@ export default function Review() {
     }));
   }, [flight]);
 
+    // Chronological AOI log — one row per completed (or ongoing) run, built
+  // once from `runs` with explicit start/end/duration, independent of
+  // playback position. Only the "current" flag below depends on curT, so
+  // the list itself never reflows while scrubbing — just the highlight
+  // moves.
+  const scanLog = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < runs.length; i++) {
+      const start = runs[i].t;
+      const end = i + 1 < runs.length ? runs[i + 1].t : lastEyeT;
+      // order is fixed at chronological position in the whole session —
+      // assigned here, before filtering/reversing, so it never shifts as
+      // rows enter/leave the visible (curT-filtered) log below.
+      out.push({ order: i + 1, aoi: runs[i].aoi, start, end, dur: Math.max(0, end - start) });
+    }
+    return out;
+  }, [runs, lastEyeT]);;
+
+  // Color assigned by first appearance in the session, not by render-time
+  // index — so a given AOI's color never shifts as new rows are added.
+  const scanLogColor = useMemo(() => {
+    const map = new Map();
+    let i = 0;
+    for (const r of scanLog) {
+      if (!map.has(r.aoi)) map.set(r.aoi, aoiColor(r.aoi, i++));
+    }
+    return map;
+  }, [scanLog]);
+
+  // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); // newest first
+    // Only rows whose glance has actually started by the playhead are shown,
+  // newest first. The in-progress row (if curT falls inside it) is clipped
+  // to "now" rather than showing its real future end/duration — so
+  // rewinding or scrubbing backward makes rows disappear immediately, and
+  // nothing reveals what hasn't been "played" yet.
+  const scanLogRows = useMemo(() => {
+    const rows = [];
+    for (let i = scanLog.length - 1; i >= 0; i--) {
+      const r = scanLog[i];
+      if (r.start > curT) continue;
+      const isCurrent = curT < r.end;
+      const end = isCurrent ? curT : r.end;
+      rows.push({ ...r, end, dur: Math.max(0, end - r.start), isCurrent });
+    }
+    return rows;
+  }, [scanLog, curT]);
+
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
@@ -345,7 +392,7 @@ export default function Review() {
     : "";
   const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
-  const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
+  // const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
   return (
     <div className="rev">
@@ -477,7 +524,7 @@ export default function Review() {
           {/* scan path */}
           <div className="rev-card">
             <div className="card-head">
-              <h3>Instrument scan path</h3>
+              <h3>Scan path</h3>
               <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
@@ -485,25 +532,36 @@ export default function Review() {
                 s
               </label>
             </div>
-            {visibleRuns.length === 0 ? (
+            {scanLogRows.length === 0 ? (
               <div className="scan-empty">No gaze fixations yet at this point in the flight.</div>
             ) : (
-              <div className="scan-flow">
-                {[visibleRuns.slice(0, SCAN_ROW_CAP), visibleRuns.slice(SCAN_ROW_CAP)]
-                  .filter((row) => row.length)
-                  .map((row, ri) => (
-                    <div className="scan-row" key={ri}>
-                      {row.map((r, i) => (
-                        <span key={i} style={{ display: "contents" }}>
-                          <span className="scan-node" style={{ borderColor: aoiColor(r.aoi), color: aoiColor(r.aoi) }}>
-                            {r.aoi}<span className="t">{r.t.toFixed(1)}s</span>
-                          </span>
-                          {i < row.length - 1 && <span className="scan-arrow">→</span>}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-              </div>
+              <>
+                <div className="scan-log-header">
+                  <span className="h-num">#</span>
+                  <span className="h-aoi">Area of Interest</span>
+                  <span className="h-range">Time range</span>
+                  <span className="h-dur">Duration</span>
+                </div>
+                <div className="scan-log">
+                  {scanLogRows.map((r, i) => {
+                    const color = scanLogColor.get(r.aoi);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        className={"scan-log-row" + (r.isCurrent ? " current" : "")}
+                        onClick={() => setCursor(nearestIndexForTime(series, r.start))}
+                        title={`Jump to ${r.start.toFixed(1)}s`}
+                      >
+                        <span className="badge" style={{ background: color }}>{r.order}</span>
+                        <span className="aoi" style={r.isCurrent ? { color } : undefined}>{r.aoi}</span>
+                        <span className="range">{r.start.toFixed(1)} → {r.isCurrent ? "now" : r.end.toFixed(1) + "s"}</span>
+                        <span className="dur" style={r.isCurrent ? { color } : undefined}>{r.dur.toFixed(1)}s</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 

@@ -163,25 +163,61 @@
   border: 1px solid var(--rev-line); border-radius: 5px;
 }
 
-/* scan path — always exactly two rows, split evenly rather than left to flex-wrap */
-.scan-flow {
-  --scan-row-h: 48px;
-  display: flex; flex-direction: column; gap: 8px;
-  height: calc(var(--scan-row-h) * 2 + 8px);
+/* scan path — chronological log, newest on top, scrollable, click a row
+   to jump playback to that glance's start time. */
+.scan-log {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
-.scan-row {
-  height: var(--scan-row-h);
-  display: flex; align-items: center; gap: 10px;
-  flex-wrap: nowrap; overflow: hidden;
+.scan-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 4px;
+  border: none;
+  border-bottom: 1px solid #1b2530;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rev-text);
+  font: inherit;
+  font-weight: 400;
+  cursor: pointer;
+  text-align: left;
 }
-.scan-node {
-  flex: none; height: var(--scan-row-h); box-sizing: border-box;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  padding: 0 14px; border-radius: 9px; font-size: 14px; font-weight: 600;
-  border: 1px solid; background: var(--rev-panel-2); white-space: nowrap;
+.scan-log-row:last-child { border-bottom: none; }
+.scan-log-row:hover { background: var(--rev-panel-2); }
+.scan-log-row.current { background: #16202b; border-left: 2px solid var(--rev-cyan); padding-left: 2px; }
+.scan-log-row .badge {
+  flex: none;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  color: #06121f;
+  font-variant-numeric: tabular-nums;
 }
-.scan-node .t { font-size: 11px; color: var(--rev-muted); font-weight: 500; }
-.scan-arrow { flex: none; color: var(--rev-muted); font-size: 17px; }
+.scan-log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 6px;
+  border-bottom: 1px solid var(--rev-line);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--rev-muted);
+}
+.scan-log-header .h-num { flex: none; width: 20px; text-align: center; }
+.scan-log-header .h-aoi { flex: 1; }
+.scan-log-header .h-range { font-variant-numeric: tabular-nums; }
+.scan-log-header .h-dur { min-width: 34px; text-align: right; }
+.scan-log-row .aoi { flex: 1; font-size: 13px; font-weight: 500; color: #c3ced9; }
+.scan-log-row .range { font-size: 11px; color: var(--rev-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scan-log-row .dur { font-size: 11px; font-weight: 600; color: var(--rev-muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .scan-empty { color: var(--rev-muted); font-size: 13px; }
 
 /* readouts */
