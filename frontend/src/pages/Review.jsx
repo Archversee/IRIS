@@ -121,6 +121,7 @@ export default function Review() {
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   // kept as raw text (not a number) so a controlled input doesn't fight
@@ -354,6 +355,14 @@ export default function Review() {
     return rows;
   }, [scanLog, curT]);
 
+  // end a chart drag-scrub even if the mouse is released outside the chart
+  useEffect(() => {
+    if (!scrubbing) return;
+    const stop = () => setScrubbing(false);
+    window.addEventListener("mouseup", stop);
+    return () => window.removeEventListener("mouseup", stop);
+  }, [scrubbing]);
+
   // playback loop
   useEffect(() => {
     if (playing && flight.length) {
@@ -384,6 +393,13 @@ export default function Review() {
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
+
+  // clicking/dragging directly on the timeline chart scrubs playback,
+  // replacing a separate range-input scrub bar
+  const seekToChartEvent = (chartEvent) => {
+    if (!chartEvent || chartEvent.activeLabel == null) return;
+    setCursor(nearestIndexForTime(series, chartEvent.activeLabel));
+  };
 
   const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
   const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -480,7 +496,12 @@ export default function Review() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}>
+            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
+              style={{ cursor: "pointer" }}
+              onMouseDown={(e) => { setScrubbing(true); seekToChartEvent(e); }}
+              onMouseMove={(e) => { if (scrubbing) seekToChartEvent(e); }}
+              onMouseUp={() => setScrubbing(false)}
+            >
               <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
               <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
                 stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
@@ -499,10 +520,6 @@ export default function Review() {
               ))}
             </LineChart>
           </ResponsiveContainer>
-          <div className="rev-scrub">
-            <input type="range" min={0} max={flight.length - 1} value={cursor}
-              onChange={(e) => setCursor(+e.target.value)} />
-          </div>
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
             <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>

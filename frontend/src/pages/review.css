@@ -74,7 +74,6 @@
   display: flex; flex-direction: column;
   background: var(--rev-panel); border: 1px solid var(--rev-line);
   border-radius: 10px; overflow: hidden; min-height: 0;
-  aspect-ratio: 16 / 9; max-height: 38vh;
 }
 .rev-screen .head {
   display: flex; align-items: center; gap: 8px;
@@ -84,7 +83,11 @@
 .rev-screen .head .tag {
   margin-left: auto; font-size: 11px; color: #7fb5b0; font-weight: 500;
 }
-.rev-screen .body { position: relative; flex: 1; background: #06100f; min-height: 0; }
+/* aspect-ratio goes on .body, not .rev-screen -- the head bar's own height
+   would otherwise throw off the box's true shape, leaving the video
+   slightly pillarboxed and the AOI overlay (which assumes an exact 16:9
+   box) stretched out of alignment with it */
+.rev-screen .body { position: relative; flex: 1; background: #06100f; min-height: 0; aspect-ratio: 16 / 9; max-height: 38vh; }
 .screen-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -109,8 +112,6 @@
 .filter-chip .swatch { width: 9px; height: 9px; border-radius: 2px; }
 .filter-chip.on { color: var(--rev-text); border-color: #3a4d60; background: var(--rev-panel-2); }
 .filter-chip:disabled { opacity: .4; cursor: not-allowed; }
-.rev-scrub { display: flex; align-items: center; gap: 10px; padding: 4px 2px 2px; }
-.rev-scrub input[type=range] { flex: 1; accent-color: var(--rev-cyan); }
 
 .tl-clock {
   text-align: center; font-variant-numeric: tabular-nums;
