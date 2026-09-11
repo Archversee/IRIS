@@ -122,7 +122,7 @@ export default function Review() {
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [speed, setSpeed] = useState(4);
+  const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   // kept as raw text (not a number) so a controlled input doesn't fight
   // the user mid-edit -- e.g. typing "0.5" passes through an "0." state
@@ -130,6 +130,7 @@ export default function Review() {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
+  const speedAccum = useRef(0); // carries fractional sample-steps between ticks for speeds like 0.5x
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
 
@@ -363,11 +364,18 @@ export default function Review() {
     return () => window.removeEventListener("mouseup", stop);
   }, [scrubbing]);
 
-  // playback loop
+  // playback loop -- speed can be fractional (e.g. 0.5x), so we accumulate
+  // it across ticks and only step cursor forward by whole samples, rather
+  // than adding a fraction directly to an index used for array lookups
   useEffect(() => {
     if (playing && flight.length) {
+      speedAccum.current = 0;
       timer.current = setInterval(() => {
-        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + speed)));
+        speedAccum.current += speed;
+        const step = Math.floor(speedAccum.current);
+        if (step <= 0) return;
+        speedAccum.current -= step;
+        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + step)));
       }, 100);
     }
     return () => clearInterval(timer.current);
@@ -529,9 +537,10 @@ export default function Review() {
             </button>
             <button className="tl-btn" title="Forward 10s" onClick={() => seek(10)}>10s »</button>
             <select className="tl-speed" title="Speed" value={speed} onChange={(e) => setSpeed(+e.target.value)}>
+              <option value={0.5}>0.5×</option>
               <option value={1}>1×</option>
-              <option value={4}>4×</option>
-              <option value={10}>10×</option>
+              <option value={2}>2×</option>
+              <option value={5}>5×</option>
             </select>
           </div>
         </div>
