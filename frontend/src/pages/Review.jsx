@@ -391,10 +391,7 @@ export default function Review() {
                       width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
                       fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeDasharray="10 6" opacity="0.55" />
                   ))}
-                  {curEye && !curEye.blink && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
-                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16"
-                      fill={curAoi && curAoi !== "Instruments" ? "#4ade80" : "#ff5c5c"} opacity="0.85" />
-                  )}
+                  {/* gaze-point dot removed for now -- see Review.jsx history to bring it back */}
                 </svg>
               )}
             </div>

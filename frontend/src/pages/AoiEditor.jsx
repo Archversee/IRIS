@@ -11,6 +11,8 @@ export default function AoiEditor() {
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState("");
   const [videoUrl, setVideoUrl] = useState(null);
+  const [duration, setDuration] = useState(0);
+  const [previewTime, setPreviewTime] = useState(0);
   const [frameReady, setFrameReady] = useState(false);
   const [zones, setZones] = useState([]);
   const [dragBox, setDragBox] = useState(null);
@@ -31,6 +33,8 @@ export default function AoiEditor() {
   async function pickSession(id) {
     setSessionId(id);
     setFrameReady(false);
+    setDuration(0);
+    setPreviewTime(0);
     setErr(null);
     if (!id) return setVideoUrl(null);
     try {
@@ -41,6 +45,17 @@ export default function AoiEditor() {
     } catch (e) {
       setErr(e.message);
     }
+  }
+
+  function onLoadedMetadata() {
+    const video = videoRef.current;
+    if (!video) return;
+    setDuration(video.duration || 0);
+    // skip a possible black lead-in frame at t=0 (common right after OBS
+    // starts recording) by seeking a little in before the first capture
+    const t = Math.min(1, (video.duration || 2) / 2);
+    setPreviewTime(t);
+    video.currentTime = t;
   }
 
   function captureFrame() {
@@ -55,6 +70,12 @@ export default function AoiEditor() {
     } catch {
       setErr("Couldn't capture a frame from this video (likely a cross-origin issue).");
     }
+  }
+
+  function scrubTo(t) {
+    const video = videoRef.current;
+    setPreviewTime(t);
+    if (video) video.currentTime = t;
   }
 
   function toNative(clientX, clientY) {
@@ -127,8 +148,13 @@ export default function AoiEditor() {
         <>
           <video ref={videoRef} src={videoUrl} style={{ display: "none" }}
             crossOrigin="anonymous" muted playsInline
-            onLoadedData={captureFrame} />
-          <div style={{ margin: "10px 0" }}>
+            onLoadedMetadata={onLoadedMetadata} onSeeked={captureFrame} />
+          <div className="row" style={{ alignItems: "center", margin: "10px 0" }}>
+            <div className="col" style={{ flex: 1 }}>
+              <label>Frame ({previewTime.toFixed(1)}s / {duration.toFixed(1)}s)</label>
+              <input type="range" min={0} max={duration || 0} step={0.1} value={previewTime}
+                onChange={(e) => scrubTo(+e.target.value)} disabled={!duration} />
+            </div>
             <button onClick={captureFrame}>Recapture current frame</button>
           </div>
         </>
