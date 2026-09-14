@@ -69,8 +69,9 @@ export default function Upload() {
           addLog(`${kind}: inserted ${r.inserted}, skipped ${r.skipped}`);
         }
       }
-      addLog("Done. Opening review…");
-      setTimeout(() => nav(`/sessions/${sessionId}/review`), 600);
+      //addLog("Done. Opening review…");
+      //setTimeout(() => nav(`/sessions/${sessionId}/review`), 600);
+      addLog("Done. You can now link your videos below, or head to Review when ready.");
     } catch (e) {
       setErr(e.message);
     } finally {
