@@ -134,6 +134,16 @@ export default function Review() {
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
 
+  // To make ground track clickable
+  const [groundScrubbing, setGroundScrubbing] = useState(false);
+  const groundTrackRef = useRef(null);
+  useEffect(() => {
+    if (!groundScrubbing) return;
+    const stop = () => setGroundScrubbing(false);
+    window.addEventListener("mouseup", stop);
+    return () => window.removeEventListener("mouseup", stop);
+  }, [groundScrubbing]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -409,6 +419,30 @@ export default function Review() {
     setCursor(nearestIndexForTime(series, chartEvent.activeLabel));
   };
 
+  // Ground track is drawn in a 100x100 viewBox with preserveAspectRatio
+  // "xMidYMid meet" inside a 16:9 box, so clicks are letterboxed — convert
+  // screen coords into the track's own square coordinate space first, then
+  // snap to whichever flown point is physically closest to the click.
+  const seekToGroundEvent = (clientX, clientY) => {
+    const el = groundTrackRef.current;
+    if (!el || groundTrack.length < 2) return;
+    const rect = el.getBoundingClientRect();
+    const scale = Math.min(rect.width, rect.height) / 100;
+    if (scale <= 0) return;
+    const offsetX = (rect.width - scale * 100) / 2;
+    const offsetY = (rect.height - scale * 100) / 2;
+    const x = (clientX - rect.left - offsetX) / scale;
+    const y = (clientY - rect.top - offsetY) / scale;
+
+    let bestIdx = 0, bestDist = Infinity;
+    for (let i = 0; i < groundTrack.length; i++) {
+      const dx = groundTrack[i].x - x, dy = groundTrack[i].y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    setCursor(nearestIndexForTime(series, groundTrack[bestIdx].t));
+  };
+
   const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
   const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
   const groundFlownPath = groundFlownIdx >= 0
@@ -472,7 +506,12 @@ export default function Review() {
             <div className="head">Ground track</div>
             <div className="body">
               {groundTrack.length > 1 ? (
-                <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet">
+                <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet"
+                  ref={groundTrackRef}
+                  onMouseDown={(e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); }}
+                  onMouseMove={(e) => { if (groundScrubbing) seekToGroundEvent(e.clientX, e.clientY); }}
+                  onMouseUp={() => setGroundScrubbing(false)}
+                >
                   <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
                   <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
                   {groundCurPoint && (
