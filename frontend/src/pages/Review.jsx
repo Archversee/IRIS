@@ -483,7 +483,7 @@ export default function Review() {
           </div>
 
           <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span></div>
+            <div className="head">Instrument screen</div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
@@ -590,6 +590,7 @@ export default function Review() {
           <div className="rev-card">
             <div className="card-head">
               <h3>Scan path</h3>
+              <span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span>
               <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
