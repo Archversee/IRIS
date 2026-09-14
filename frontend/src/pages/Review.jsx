@@ -517,7 +517,7 @@ export default function Review() {
                     );
                   })}
                   {lookingAtInstruments && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
-                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="26"
+                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
                       fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
                   )}
                 </svg>
