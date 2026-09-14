@@ -410,6 +410,8 @@ export default function Review() {
   const curEyeIdx = eyeForFlight[cursor];
   const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
+  const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
+  const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
   const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
 
   // clicking/dragging directly on the timeline chart scrubs playback,
@@ -472,7 +474,7 @@ export default function Review() {
 
         {/* screens */}
         <div className="rev-screens">
-          <div className="rev-screen">
+          <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
             <div className="head">OTW screen</div>
             <div className="body">
               {otwVideoSrc && (
@@ -482,7 +484,7 @@ export default function Review() {
             </div>
           </div>
 
-          <div className="rev-screen">
+          <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
             <div className="head">Instrument screen</div>
             <div className="body">
               {instrumentVideoSrc && (
@@ -491,11 +493,18 @@ export default function Review() {
               )}
               {instrumentVideoSrc && aoiZones.length > 0 && (
                 <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-                  {aoiZones.map((z) => (
-                    <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
-                      width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
-                      fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeDasharray="10 6" opacity="0.55" />
-                  ))}
+                  {aoiZones.map((z) => {
+                    const active = z.name === curAoi;
+                    return (
+                      <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
+                        width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
+                        fill={active ? "rgba(74,222,128,0.25)" : "none"}
+                        stroke={active ? "#4ade80" : "#38bdf8"}
+                        strokeWidth={active ? "4" : "2.5"}
+                        strokeDasharray={active ? "none" : "10 6"}
+                        opacity={active ? "0.95" : "0.55"} />
+                    );
+                  })}
                   {/* gaze-point dot removed for now -- see Review.jsx history to bring it back */}
                 </svg>
               )}

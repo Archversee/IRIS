@@ -74,6 +74,11 @@
   display: flex; flex-direction: column;
   background: var(--rev-panel); border: 1px solid var(--rev-line);
   border-radius: 10px; overflow: hidden; min-height: 0;
+  transition: border-color .12s, box-shadow .12s;
+}
+.rev-screen.active-screen {
+  border-color: var(--rev-green);
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
 }
 .rev-screen .head {
   display: flex; align-items: center; gap: 8px;
