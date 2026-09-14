@@ -488,7 +488,8 @@ export default function Review() {
               )}
               {otwVideoSrc && lookingAtOtw && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
                 <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-                  <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16" fill="#ff5c5c" opacity="0.9" />
+                  <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
+                    fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
                 </svg>
               )}
             </div>
@@ -516,8 +517,8 @@ export default function Review() {
                     );
                   })}
                   {lookingAtInstruments && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
-                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16"
-                      fill={curAoi && curAoi !== "Instruments" ? "#4ade80" : "#ff5c5c"} opacity="0.9" />
+                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="26"
+                      fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
                   )}
                 </svg>
               )}
