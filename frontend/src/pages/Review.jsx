@@ -130,7 +130,7 @@ export default function Review() {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
-  const speedAccum = useRef(0); // carries fractional sample-steps between ticks for speeds like 0.5x
+  const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
 
@@ -183,6 +183,10 @@ export default function Review() {
   // playback time instead of going through eyeForFlight -- routing it
   // through the flight-sample grid would throw away most of that resolution
   const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
+  // full-precision flight timeline for the playback loop below -- `series`
+  // (used for chart ticks) rounds .t to 0.1s, which would cap playback
+  // resolution at 100ms regardless of the log's actual sampling rate
+  const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
 
   // workload proxy = mean pupil diameter at the aligned eye sample,
   // smoothed with a centred moving average (raw pupil is too jittery to read).
@@ -325,6 +329,21 @@ export default function Review() {
     }));
   }, [flight]);
 
+  // static full-route path never changes after load; only the "flown so
+  // far" slice and current-position marker need to track curT. Splitting
+  // these out avoids rebuilding the whole path string on every tick now
+  // that the playback loop can fire up to 60x/sec.
+  const groundFullPath = useMemo(
+    () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
+    [groundTrack]
+  );
+  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
+  const groundFlownPath = useMemo(() => {
+    if (groundFlownIdx < 0) return "";
+    return groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  }, [groundTrack, groundFlownIdx]);
+  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
+
     // Chronological AOI log — one row per completed (or ongoing) run, built
   // once from `runs` with explicit start/end/duration, independent of
   // playback position. Only the "current" flag below depends on curT, so
@@ -380,22 +399,33 @@ export default function Review() {
     return () => window.removeEventListener("mouseup", stop);
   }, [scrubbing]);
 
-  // playback loop -- speed can be fractional (e.g. 0.5x), so we accumulate
-  // it across ticks and only step cursor forward by whole samples, rather
-  // than adding a fraction directly to an index used for array lookups
+  // playback loop -- advances the cursor by actual elapsed wall-clock time
+  // (times speed), not a fixed sample count per tick, so it plays at the
+  // correct rate and updates smoothly regardless of the flight log's own
+  // sampling rate (10Hz, 30Hz, 60Hz, whatever). Ticks at ~60fps so the UI
+  // itself isn't the bottleneck, independent of how dense the data is.
   useEffect(() => {
     if (playing && flight.length) {
-      speedAccum.current = 0;
+      // start from the currently displayed position, not from whatever
+      // virtualT held from a previous play/pause cycle
+      virtualT.current = curT;
+      let lastTick = performance.now();
       timer.current = setInterval(() => {
-        speedAccum.current += speed;
-        const step = Math.floor(speedAccum.current);
-        if (step <= 0) return;
-        speedAccum.current -= step;
-        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + step)));
-      }, 100);
+        const now = performance.now();
+        const dtSec = (now - lastTick) / 1000;
+        lastTick = now;
+        // accumulate on the continuous clock itself -- never re-derive the
+        // next target from the already-snapped displayed sample, or any
+        // advance smaller than half the sample spacing gets rounded away
+        // and playback stalls
+        virtualT.current += dtSec * speed;
+        if (virtualT.current >= totalT) virtualT.current = 0;
+        setCursor(nearestIndexForTime(flightTimeline, virtualT.current));
+      }, 16);
     }
     return () => clearInterval(timer.current);
-  }, [playing, speed, flight.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, speed, flight.length, totalT, flightTimeline]);
 
   // each screen's recording follows the app's cursor-driven clock independently
   useSyncedVideo(instrumentVideoRef, instrumentVideoSrc, instrumentOffsetSec, curT, playing, speed);
@@ -450,12 +480,6 @@ export default function Review() {
     setCursor(nearestIndexForTime(series, groundTrack[bestIdx].t));
   };
 
-  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
-  const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const groundFlownPath = groundFlownIdx >= 0
-    ? groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ")
-    : "";
-  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
   // const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
