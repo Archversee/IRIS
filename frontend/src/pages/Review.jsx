@@ -447,13 +447,23 @@ export default function Review() {
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
   const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
-  const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
+  // single entry point for every user-initiated jump (seek buttons, chart
+  // click, ground-track click, scan-log rows): the playback loop now runs
+  // off its own continuous virtualT clock, so any seek that only sets
+  // `cursor` gets silently overwritten by the very next 16ms tick unless
+  // virtualT is moved to match
+  const seekTo = (targetT) => {
+    const clamped = Math.max(0, Math.min(totalT, targetT));
+    virtualT.current = clamped;
+    setCursor(nearestIndexForTime(flightTimeline, clamped));
+  };
+  const seek = (deltaSec) => seekTo(curT + deltaSec);
 
   // clicking/dragging directly on the timeline chart scrubs playback,
   // replacing a separate range-input scrub bar
   const seekToChartEvent = (chartEvent) => {
     if (!chartEvent || chartEvent.activeLabel == null) return;
-    setCursor(nearestIndexForTime(series, chartEvent.activeLabel));
+    seekTo(chartEvent.activeLabel);
   };
 
   // Ground track is drawn in a 100x100 viewBox with preserveAspectRatio
@@ -477,7 +487,7 @@ export default function Review() {
       const d = dx * dx + dy * dy;
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
-    setCursor(nearestIndexForTime(series, groundTrack[bestIdx].t));
+    seekTo(groundTrack[bestIdx].t);
   };
 
 
@@ -616,7 +626,7 @@ export default function Review() {
           </ResponsiveContainer>
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
-            <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
+            <button className="tl-btn" title="Restart" onClick={() => { seekTo(0); setPlaying(false); }}>↺</button>
             <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
             <button className="tl-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
               {playing ? "❚❚" : "▶"}
@@ -663,7 +673,7 @@ export default function Review() {
                         key={i}
                         type="button"
                         className={"scan-log-row" + (r.isCurrent ? " current" : "")}
-                        onClick={() => setCursor(nearestIndexForTime(series, r.start))}
+                        onClick={() => seekTo(r.start)}
                         title={`Jump to ${r.start.toFixed(1)}s`}
                       >
                         <span className="badge" style={{ background: color }}>{r.order}</span>
