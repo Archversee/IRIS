@@ -178,6 +178,12 @@ export default function Review() {
     return map;
   }, [flight, eye]);
 
+  // eye samples run far denser than flight's 10Hz poll rate (often 60Hz+),
+  // so the live gaze dot/tag look up the nearest eye sample directly by
+  // playback time instead of going through eyeForFlight -- routing it
+  // through the flight-sample grid would throw away most of that resolution
+  const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
+
   // workload proxy = mean pupil diameter at the aligned eye sample,
   // smoothed with a centred moving average (raw pupil is too jittery to read).
   const workloadRaw = useMemo(() => {
@@ -407,8 +413,7 @@ export default function Review() {
     );
 
   const cur = flight[cursor];
-  const curEyeIdx = eyeForFlight[cursor];
-  const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
+  const curEye = eyeTimeline.length ? eye[nearestIndexForTime(eyeTimeline, curT)] : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
   const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
@@ -481,6 +486,11 @@ export default function Review() {
                 <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
+              {otwVideoSrc && lookingAtOtw && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+                <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
+                  <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16" fill="#ff5c5c" opacity="0.9" />
+                </svg>
+              )}
             </div>
           </div>
 
@@ -491,7 +501,7 @@ export default function Review() {
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
-              {instrumentVideoSrc && aoiZones.length > 0 && (
+              {instrumentVideoSrc && (
                 <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
                   {aoiZones.map((z) => {
                     const active = z.name === curAoi;
@@ -505,7 +515,10 @@ export default function Review() {
                         opacity={active ? "0.95" : "0.55"} />
                     );
                   })}
-                  {/* gaze-point dot removed for now -- see Review.jsx history to bring it back */}
+                  {lookingAtInstruments && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="16"
+                      fill={curAoi && curAoi !== "Instruments" ? "#4ade80" : "#ff5c5c"} opacity="0.9" />
+                  )}
                 </svg>
               )}
             </div>
