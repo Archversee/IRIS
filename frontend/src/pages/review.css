@@ -253,3 +253,12 @@
   .rev-main { grid-template-rows: auto auto auto auto; overflow: auto; }
   .rev { position: static; height: auto; }
 }
+
+/* ---- gaze animation ---- */
+.gaze-cursor {
+  transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.gaze-halo {
+  fill: none; stroke: #ff2e63; stroke-width: 6; opacity: 0.5;
+  filter: drop-shadow(0 0 8px rgba(255,46,99,0.8));
+}

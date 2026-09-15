@@ -60,6 +60,33 @@ function nearestIndexForTime(arr, t) {
   return lo;
 }
 
+// linear interpolation between the two eye samples bracketing t, for a
+// smooth sub-sample gaze position instead of snapping to the nearest
+// discrete sample. Never interpolates across a blink or an AOI change --
+// those are real saccades/occlusions, not sensor jitter to smooth over.
+function interpolatedGaze(eyeArr, timeline, t) {
+  if (!eyeArr.length) return null;
+  const i = nearestIndexForTime(timeline, t);
+  let j = i;
+  if (timeline[i].t < t && i + 1 < eyeArr.length) j = i + 1;
+  else if (timeline[i].t > t && i - 1 >= 0) j = i - 1;
+
+  const a = eyeArr[i], b = eyeArr[j];
+  if (i === j || a.blink || b.blink || a.aoi !== b.aoi
+      || a.gaze_point_x == null || b.gaze_point_x == null) {
+    return { x: a.gaze_point_x, y: a.gaze_point_y };
+  }
+  const lo = timeline[i].t <= timeline[j].t ? a : b;
+  const hi = timeline[i].t <= timeline[j].t ? b : a;
+  const ta = Math.min(timeline[i].t, timeline[j].t);
+  const tb = Math.max(timeline[i].t, timeline[j].t);
+  const frac = tb > ta ? Math.min(1, Math.max(0, (t - ta) / (tb - ta))) : 0;
+  return {
+    x: lo.gaze_point_x + (hi.gaze_point_x - lo.gaze_point_x) * frac,
+    y: lo.gaze_point_y + (hi.gaze_point_y - lo.gaze_point_y) * frac,
+  };
+}
+
 // name of the drawn AOI zone (if any) containing a gaze point, in the
 // instrument recording's native pixel space -- see AoiEditor.jsx
 function zoneForPoint(zones, x, y) {
@@ -108,6 +135,31 @@ function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
     const video = ref.current;
     if (video) video.playbackRate = speed;
   }, [speed, src]);
+}
+
+// tracks the previous gaze point + time to derive a direction and speed,
+// so the marker elongates like a comet while the eye is moving fast and
+// relaxes back to a circle when it settles -- classic squash-and-stretch
+function useGazeStretch(gaze, curT) {
+  const prevRef = useRef(null); // { x, y, t }
+  const [stretch, setStretch] = useState({ angleDeg: 0, factor: 1 });
+
+  useEffect(() => {
+    if (!gaze || gaze.x == null) return;
+    const prev = prevRef.current;
+    prevRef.current = { x: gaze.x, y: gaze.y, t: curT };
+    if (!prev) return;
+    const dt = curT - prev.t;
+    if (dt <= 0) return;
+    const dx = gaze.x - prev.x, dy = gaze.y - prev.y;
+    const dist = Math.hypot(dx, dy);
+    const speed = dist / dt; // px/sec in the 1920x1080 native space
+    const factor = 1 + Math.min(1.8, speed / 4000); // cap how far it can stretch
+    const angleDeg = dist > 0.5 ? Math.atan2(dy, dx) * (180 / Math.PI) : 0;
+    setStretch({ angleDeg, factor });
+  }, [gaze?.x, gaze?.y, curT]);
+
+  return stretch;
 }
 
 export default function Review() {
@@ -187,6 +239,8 @@ export default function Review() {
   // (used for chart ticks) rounds .t to 0.1s, which would cap playback
   // resolution at 100ms regardless of the log's actual sampling rate
   const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
+  const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
+  const gazeStretch = useGazeStretch(gaze, curT);
 
   // workload proxy = mean pupil diameter at the aligned eye sample,
   // smoothed with a centred moving average (raw pupil is too jittery to read).
@@ -444,6 +498,7 @@ export default function Review() {
 
   const cur = flight[cursor];
   const curEye = eyeTimeline.length ? eye[nearestIndexForTime(eyeTimeline, curT)] : null;
+  //const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
   const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
@@ -520,10 +575,15 @@ export default function Review() {
                 <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
-              {otwVideoSrc && lookingAtOtw && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+              {otwVideoSrc && lookingAtOtw && gaze.x != null && gaze.y != null && (
                 <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-                  <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
-                    fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
+                  <g className="gaze-cursor"
+                    style={{
+                      transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
+                    }}>
+                    <circle r="70" className="gaze-halo" />
+                    <circle r="14" className="gaze-dot" />
+                  </g>
                 </svg>
               )}
             </div>
@@ -550,9 +610,14 @@ export default function Review() {
                         opacity={active ? "0.95" : "0.55"} />
                     );
                   })}
-                  {lookingAtInstruments && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
-                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
-                      fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
+                  {lookingAtInstruments && gaze.x != null && gaze.y != null && (
+                    <g className="gaze-cursor"
+                      style={{
+                        transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
+                      }}>
+                      <circle r="70" className="gaze-halo" />
+                      <circle r="14" className="gaze-dot" />
+                    </g>
                   )}
                 </svg>
               )}
