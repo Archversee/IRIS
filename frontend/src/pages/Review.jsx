@@ -596,7 +596,6 @@ export default function Review() {
                       transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
                     }}>
                     <circle r="70" className="gaze-halo" />
-                    <circle r="14" className="gaze-dot" />
                   </g>
                 </svg>
               )}
@@ -630,7 +629,6 @@ export default function Review() {
                         transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
                       }}>
                       <circle r="70" className="gaze-halo" />
-                      <circle r="14" className="gaze-dot" />
                     </g>
                   )}
                 </svg>

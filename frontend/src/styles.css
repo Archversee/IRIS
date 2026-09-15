@@ -55,4 +55,3 @@ th { color: var(--muted); font-weight: 600; }
 .muted { color: var(--muted); }
 .err { color: var(--danger); font-size: 14px; }
 .gaze-box { position: relative; background: #06101a; border: 1px solid var(--border); border-radius: 8px; }
-.gaze-dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); transform: translate(-50%,-50%); box-shadow: 0 0 12px var(--accent); }
