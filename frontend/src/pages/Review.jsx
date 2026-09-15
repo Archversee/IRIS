@@ -130,7 +130,7 @@ export default function Review() {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
-  const speedAccum = useRef(0); // carries fractional sample-steps between ticks for speeds like 0.5x
+  const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
 
@@ -177,6 +177,16 @@ export default function Review() {
     }
     return map;
   }, [flight, eye]);
+
+  // eye samples run far denser than flight's 10Hz poll rate (often 60Hz+),
+  // so the live gaze dot/tag look up the nearest eye sample directly by
+  // playback time instead of going through eyeForFlight -- routing it
+  // through the flight-sample grid would throw away most of that resolution
+  const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
+  // full-precision flight timeline for the playback loop below -- `series`
+  // (used for chart ticks) rounds .t to 0.1s, which would cap playback
+  // resolution at 100ms regardless of the log's actual sampling rate
+  const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
 
   // workload proxy = mean pupil diameter at the aligned eye sample,
   // smoothed with a centred moving average (raw pupil is too jittery to read).
@@ -319,6 +329,21 @@ export default function Review() {
     }));
   }, [flight]);
 
+  // static full-route path never changes after load; only the "flown so
+  // far" slice and current-position marker need to track curT. Splitting
+  // these out avoids rebuilding the whole path string on every tick now
+  // that the playback loop can fire up to 60x/sec.
+  const groundFullPath = useMemo(
+    () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
+    [groundTrack]
+  );
+  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
+  const groundFlownPath = useMemo(() => {
+    if (groundFlownIdx < 0) return "";
+    return groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  }, [groundTrack, groundFlownIdx]);
+  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
+
     // Chronological AOI log — one row per completed (or ongoing) run, built
   // once from `runs` with explicit start/end/duration, independent of
   // playback position. Only the "current" flag below depends on curT, so
@@ -374,22 +399,33 @@ export default function Review() {
     return () => window.removeEventListener("mouseup", stop);
   }, [scrubbing]);
 
-  // playback loop -- speed can be fractional (e.g. 0.5x), so we accumulate
-  // it across ticks and only step cursor forward by whole samples, rather
-  // than adding a fraction directly to an index used for array lookups
+  // playback loop -- advances the cursor by actual elapsed wall-clock time
+  // (times speed), not a fixed sample count per tick, so it plays at the
+  // correct rate and updates smoothly regardless of the flight log's own
+  // sampling rate (10Hz, 30Hz, 60Hz, whatever). Ticks at ~60fps so the UI
+  // itself isn't the bottleneck, independent of how dense the data is.
   useEffect(() => {
     if (playing && flight.length) {
-      speedAccum.current = 0;
+      // start from the currently displayed position, not from whatever
+      // virtualT held from a previous play/pause cycle
+      virtualT.current = curT;
+      let lastTick = performance.now();
       timer.current = setInterval(() => {
-        speedAccum.current += speed;
-        const step = Math.floor(speedAccum.current);
-        if (step <= 0) return;
-        speedAccum.current -= step;
-        setCursor((c) => (c >= flight.length - 1 ? 0 : Math.min(flight.length - 1, c + step)));
-      }, 100);
+        const now = performance.now();
+        const dtSec = (now - lastTick) / 1000;
+        lastTick = now;
+        // accumulate on the continuous clock itself -- never re-derive the
+        // next target from the already-snapped displayed sample, or any
+        // advance smaller than half the sample spacing gets rounded away
+        // and playback stalls
+        virtualT.current += dtSec * speed;
+        if (virtualT.current >= totalT) virtualT.current = 0;
+        setCursor(nearestIndexForTime(flightTimeline, virtualT.current));
+      }, 16);
     }
     return () => clearInterval(timer.current);
-  }, [playing, speed, flight.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, speed, flight.length, totalT, flightTimeline]);
 
   // each screen's recording follows the app's cursor-driven clock independently
   useSyncedVideo(instrumentVideoRef, instrumentVideoSrc, instrumentOffsetSec, curT, playing, speed);
@@ -407,16 +443,27 @@ export default function Review() {
     );
 
   const cur = flight[cursor];
-  const curEyeIdx = eyeForFlight[cursor];
-  const curEye = curEyeIdx >= 0 ? eye[curEyeIdx] : null;
+  const curEye = eyeTimeline.length ? eye[nearestIndexForTime(eyeTimeline, curT)] : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
-  const seek = (deltaSec) => setCursor(nearestIndexForTime(series, curT + deltaSec));
+  const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
+  const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
+  // single entry point for every user-initiated jump (seek buttons, chart
+  // click, ground-track click, scan-log rows): the playback loop now runs
+  // off its own continuous virtualT clock, so any seek that only sets
+  // `cursor` gets silently overwritten by the very next 16ms tick unless
+  // virtualT is moved to match
+  const seekTo = (targetT) => {
+    const clamped = Math.max(0, Math.min(totalT, targetT));
+    virtualT.current = clamped;
+    setCursor(nearestIndexForTime(flightTimeline, clamped));
+  };
+  const seek = (deltaSec) => seekTo(curT + deltaSec);
 
   // clicking/dragging directly on the timeline chart scrubs playback,
   // replacing a separate range-input scrub bar
   const seekToChartEvent = (chartEvent) => {
     if (!chartEvent || chartEvent.activeLabel == null) return;
-    setCursor(nearestIndexForTime(series, chartEvent.activeLabel));
+    seekTo(chartEvent.activeLabel);
   };
 
   // Ground track is drawn in a 100x100 viewBox with preserveAspectRatio
@@ -440,15 +487,9 @@ export default function Review() {
       const d = dx * dx + dy * dy;
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
-    setCursor(nearestIndexForTime(series, groundTrack[bestIdx].t));
+    seekTo(groundTrack[bestIdx].t);
   };
 
-  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
-  const groundFullPath = groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const groundFlownPath = groundFlownIdx >= 0
-    ? groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ")
-    : "";
-  const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
   // const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
 
@@ -472,31 +513,47 @@ export default function Review() {
 
         {/* screens */}
         <div className="rev-screens">
-          <div className="rev-screen">
+          <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
             <div className="head">OTW screen</div>
             <div className="body">
               {otwVideoSrc && (
                 <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
+              {otwVideoSrc && lookingAtOtw && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+                <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
+                  <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
+                    fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
+                </svg>
+              )}
             </div>
           </div>
 
-          <div className="rev-screen">
-            <div className="head">Instrument screen<span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span></div>
+          <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
+            <div className="head">Instrument screen</div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
                   muted playsInline preload="auto" />
               )}
-              {instrumentVideoSrc && aoiZones.length > 0 && (
+              {instrumentVideoSrc && (
                 <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-                  {aoiZones.map((z) => (
-                    <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
-                      width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
-                      fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeDasharray="10 6" opacity="0.55" />
-                  ))}
-                  {/* gaze-point dot removed for now -- see Review.jsx history to bring it back */}
+                  {aoiZones.map((z) => {
+                    const active = z.name === curAoi;
+                    return (
+                      <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
+                        width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
+                        fill={active ? "rgba(74,222,128,0.25)" : "none"}
+                        stroke={active ? "#4ade80" : "#38bdf8"}
+                        strokeWidth={active ? "4" : "2.5"}
+                        strokeDasharray={active ? "none" : "10 6"}
+                        opacity={active ? "0.95" : "0.55"} />
+                    );
+                  })}
+                  {lookingAtInstruments && curEye.gaze_point_x != null && curEye.gaze_point_y != null && (
+                    <circle cx={curEye.gaze_point_x} cy={curEye.gaze_point_y} r="60"
+                      fill="none" stroke="#8194a6" strokeWidth="5" opacity="0.9" />
+                  )}
                 </svg>
               )}
             </div>
@@ -569,7 +626,7 @@ export default function Review() {
           </ResponsiveContainer>
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
-            <button className="tl-btn" title="Restart" onClick={() => { setCursor(0); setPlaying(false); }}>↺</button>
+            <button className="tl-btn" title="Restart" onClick={() => { seekTo(0); setPlaying(false); }}>↺</button>
             <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
             <button className="tl-btn play" title="Play / pause" onClick={() => setPlaying((p) => !p)}>
               {playing ? "❚❚" : "▶"}
@@ -590,6 +647,7 @@ export default function Review() {
           <div className="rev-card">
             <div className="card-head">
               <h3>Scan path</h3>
+              <span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span>
               <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
@@ -615,7 +673,7 @@ export default function Review() {
                         key={i}
                         type="button"
                         className={"scan-log-row" + (r.isCurrent ? " current" : "")}
-                        onClick={() => setCursor(nearestIndexForTime(series, r.start))}
+                        onClick={() => seekTo(r.start)}
                         title={`Jump to ${r.start.toFixed(1)}s`}
                       >
                         <span className="badge" style={{ background: color }}>{r.order}</span>

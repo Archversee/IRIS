@@ -74,6 +74,11 @@
   display: flex; flex-direction: column;
   background: var(--rev-panel); border: 1px solid var(--rev-line);
   border-radius: 10px; overflow: hidden; min-height: 0;
+  transition: border-color .12s, box-shadow .12s;
+}
+.rev-screen.active-screen {
+  border-color: var(--rev-green);
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
 }
 .rev-screen .head {
   display: flex; align-items: center; gap: 8px;
@@ -152,10 +157,13 @@
   margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--rev-muted);
   letter-spacing: .3px;
 }
-.card-head { display: flex; align-items: center; gap: 10px; }
-.card-head h3 { margin: 0 0 10px; flex: 1; }
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.card-head h3 { margin: 0; flex: 1; }
+.card-head .tag {
+  font-size: 11px; font-weight: 600; color: var(--rev-teal);
+}
 .min-dwell {
-  display: flex; align-items: center; gap: 5px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 5px;
   font-size: 11px; color: var(--rev-muted); cursor: help;
 }
 .min-dwell input {
