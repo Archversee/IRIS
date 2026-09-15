@@ -1,9 +1,6 @@
 """
 Read endpoints powering the review/playback UI.
 
-Downsampling: charts don't need all 10 Hz samples. Pass ?max_points=N and
-the server returns roughly N evenly-spaced rows using a row_number stride,
-so a full flight renders fast. Omit it (or set 0) to get everything.
 """
 from datetime import datetime
 from uuid import UUID

@@ -32,6 +32,8 @@ const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural d
 
 const MIN_AOI_DWELL_SEC_DEFAULT = 0.5; // AOI glances shorter than this are treated as tracking artifacts, not real looks
 
+const CHART_MAX_POINTS = 2000; // the timeline chart has a few hundred pixels of width -- thinning it for display loses nothing visible, unlike thinning the playback/gaze data itself
+
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 function bounds(arr, key) {
@@ -285,6 +287,19 @@ export default function Review() {
       workload: norm(workloadRaw[i], b.workload), workloadR: workloadRaw[i],
     }));
   }, [flight, workloadRaw]);
+
+  // downsampled purely for the chart's own rendering -- seeking still
+  // resolves against the full-resolution flightTimeline in seekTo, so this
+  // only affects how many points Recharts has to draw, not accuracy
+  const chartSeries = useMemo(() => {
+    if (series.length <= CHART_MAX_POINTS) return series;
+    const stride = Math.ceil(series.length / CHART_MAX_POINTS);
+    const out = [];
+    for (let i = 0; i < series.length; i += stride) out.push(series[i]);
+    const last = series[series.length - 1];
+    if (out[out.length - 1] !== last) out.push(last);
+    return out;
+  }, [series]);
 
   // x-axis ticks every 10s (Recharts' auto ticks land on round numbers like
   // every 100s for a long session, which is too coarse to read the timeline by)
@@ -665,7 +680,7 @@ export default function Review() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={series} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
+            <LineChart data={chartSeries} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
               style={{ cursor: "pointer" }}
               onMouseDown={(e) => { setScrubbing(true); seekToChartEvent(e); }}
               onMouseMove={(e) => { if (scrubbing) seekToChartEvent(e); }}

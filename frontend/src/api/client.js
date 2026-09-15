@@ -28,9 +28,13 @@ export const api = {
   },
 
   summary: (id) => req(`/sessions/${id}/summary`),
-  flight: (id, maxPoints = 3000) =>
+  // 200000 is the backend's own ceiling (see max_points in data.py). The
+  // Review page's timeline chart downsamples client-side for rendering
+  // (see CHART_MAX_POINTS in Review.jsx), so this fetch can stay at full
+  // resolution for accurate playback/gaze lookups without the chart lagging.
+  flight: (id, maxPoints = 200000) =>
     req(`/sessions/${id}/flight?max_points=${maxPoints}`),
-  eye: (id, maxPoints = 3000) => req(`/sessions/${id}/eye?max_points=${maxPoints}`),
+  eye: (id, maxPoints = 200000) => req(`/sessions/${id}/eye?max_points=${maxPoints}`),
   events: (id) => req(`/sessions/${id}/events`),
   analytics: (id) => req(`/sessions/${id}/analytics`),
 
