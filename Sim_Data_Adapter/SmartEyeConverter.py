@@ -1,26 +1,16 @@
 """
-Converts a wide, tab-separated Smart Eye "Output Data" export into the flat
-CSV shape the backend's /sessions/{id}/ingest/eye endpoint expects (see
+Converts Smart Eye "Output Data" export into a CSV shape /sessions/{id}/ingest/eye endpoint expects (see
 backend/app/routers/ingest.py and EYE_COLUMNS in backend/app/db.py).
 
-RealTimeClock is a Windows FILETIME value (100ns intervals since
-1601-01-01 UTC) -- an absolute wall-clock timestamp, so it converts
-directly to the same UTC time frame MSFSAdapter.py's flight log uses.
-No manual sync offset needed, as long as both machines' clocks agree.
-
-ClosestWorldIntersection.objectName is used as the AOI label (the named
-3D-scene object your gaze intersects, e.g. "OTW", or an instrument panel
+ClosestWorldIntersection.objectName is used as the AOI label ( e.g. "OTW", or an instrument panel
 region name if your Smart Eye scene/calibration defines one).
-
-USAGE:
-    python SmartEyeConverter.py input.log output.csv
 """
 import csv
 import math
 import sys
 from datetime import datetime, timedelta, timezone
 
-FILETIME_EPOCH_DELTA = 116444736000000000  # 100ns ticks between 1601-01-01 and 1970-01-01
+FILETIME_EPOCH_DELTA = 116444736000000000  
 
 
 def filetime_to_iso(ticks: str) -> str:
@@ -29,7 +19,7 @@ def filetime_to_iso(ticks: str) -> str:
     return dt.isoformat()
 
 
-# output column -> source column, copied through as-is
+# output column -> source column
 DIRECT_MAP = {
     "gaze_origin_x": "FilteredGazeOrigin.x",
     "gaze_origin_y": "FilteredGazeOrigin.y",
@@ -81,7 +71,7 @@ def convert(in_path: str, out_path: str) -> int:
                 for out_col, src_col in DEG_MAP.items():
                     v = row.get(src_col)
                     out_row[out_col] = math.degrees(float(v)) if v not in (None, "") else None
-                # Blink is a blink-event id counter (0 = not blinking), not a 0/1 flag
+                # Blink is a blink-event id counter
                 blink_raw = row.get("Blink")
                 out_row["blink"] = 0 if blink_raw in (None, "", "0") else 1
                 writer.writerow(out_row)
