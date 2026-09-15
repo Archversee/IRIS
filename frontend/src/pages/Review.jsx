@@ -170,7 +170,6 @@ export default function Review() {
   const [summary, setSummary] = useState(null);
   const [flight, setFlight] = useState([]);
   const [eye, setEye] = useState([]);
-  const [events, setEvents] = useState([]);
   const [aoiZones, setAoiZones] = useState([]);
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
@@ -201,10 +200,10 @@ export default function Review() {
   useEffect(() => {
     (async () => {
       try {
-        const [sm, fl, ey, ev] = await Promise.all([
-          api.summary(id), api.flight(id), api.eye(id), api.events(id),
+        const [sm, fl, ey] = await Promise.all([
+          api.summary(id), api.flight(id), api.eye(id),
         ]);
-        setSummary(sm); setFlight(fl); setEye(ey); setEvents(ev);
+        setSummary(sm); setFlight(fl); setEye(ey);
       } catch (e) { setErr(e.message); }
     })();
     api.listAoiZones().then(setAoiZones).catch(() => {});
@@ -698,10 +697,6 @@ export default function Review() {
                 ) : null
               )}
               <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
-              {events.map((e, i) => (
-                <ReferenceLine key={i} x={+elapsed(e.ts).toFixed(1)} stroke="#f5a623" strokeDasharray="2 3"
-                  label={{ value: e.label, position: "top", fill: "#f5a623", fontSize: 10 }} />
-              ))}
             </LineChart>
           </ResponsiveContainer>
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>

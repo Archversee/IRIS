@@ -7,7 +7,7 @@ export default function Upload() {
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState("");
   const [form, setForm] = useState({ name: "", pilot_name: "", aircraft: "", sim_source: "MSFS" });
-  const [files, setFiles] = useState({ flight: null, eye: null, events: null });
+  const [files, setFiles] = useState({ flight: null, eye: null });
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -63,7 +63,7 @@ export default function Upload() {
     setBusy(true);
     setErr(null);
     try {
-      for (const kind of ["flight", "eye", "events"]) {
+      for (const kind of ["flight", "eye"]) {
         if (files[kind]) {
           const r = await api.ingest(sessionId, kind, files[kind]);
           addLog(`${kind}: inserted ${r.inserted}, skipped ${r.skipped}`);
@@ -140,10 +140,6 @@ function filesForScreen(screen, allFiles) {
           <div className="col">
             <label>Eye tracking (Smart Eye export, .csv or raw .log)</label>
             <input type="file" accept=".csv,.log" onChange={(e) => setFiles({ ...files, eye: e.target.files[0] })} />
-          </div>
-          <div className="col">
-            <label>Events (simconnect_events.csv)</label>
-            <input type="file" accept=".csv" onChange={(e) => setFiles({ ...files, events: e.target.files[0] })} />
           </div>
         </div>
         <br />

@@ -21,19 +21,6 @@ class Session(SessionCreate):
     created_at: datetime
 
 
-# ---- events ---------------------------------------------------------
-class EventCreate(BaseModel):
-    ts: datetime
-    event_type: str
-    label: str
-    payload: dict | None = None
-
-
-class Event(EventCreate):
-    id: int
-    session_id: UUID
-
-
 # ---- AOI zones -------------------------------------------------------
 class AoiZoneCreate(BaseModel):
     name: str

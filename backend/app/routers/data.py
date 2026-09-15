@@ -74,15 +74,6 @@ async def get_eye(
     return await _query_timeseries("eye_tracking_data", session_id, start, end, max_points)
 
 
-@router.get("/events")
-async def get_events(session_id: UUID):
-    async with db.acquire() as conn:
-        rows = await conn.fetch(
-            "select * from events where session_id = $1 order by ts", session_id
-        )
-    return [dict(r) for r in rows]
-
-
 @router.get("/summary")
 async def get_summary(session_id: UUID):
     """Counts + time bounds, used to bootstrap the review page."""
@@ -94,8 +85,6 @@ async def get_summary(session_id: UUID):
             "select count(*) from flight_data where session_id = $1", session_id)
         eye_n = await conn.fetchval(
             "select count(*) from eye_tracking_data where session_id = $1", session_id)
-        event_n = await conn.fetchval(
-            "select count(*) from events where session_id = $1", session_id)
     session = dict(s)
     for screen in ("instrument", "otw"):
         filename = session.get(f"{screen}_video_filename")
@@ -106,5 +95,4 @@ async def get_summary(session_id: UUID):
         "session": session,
         "flight_rows": flight_n,
         "eye_rows": eye_n,
-        "event_rows": event_n,
     }

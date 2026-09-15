@@ -17,7 +17,7 @@ flight-review-system/
 │   │   ├── schemas.py         # pydantic models
 │   │   └── routers/
 │   │       ├── sessions.py    # create/list/get/delete sessions
-│   │       ├── ingest.py      # CSV upload (flight / eye / events)
+│   │       ├── ingest.py      # CSV upload (flight / eye)
 │   │       ├── data.py        # time-range + downsampled reads
 │   │       ├── analytics.py   # derived performance metrics
 │   │       └── stream.py      # real-time stub (WS + REST)
@@ -72,9 +72,8 @@ The dev server proxies `/api/*` to `http://localhost:8000` (see
 ## Data flow
 
 1. On the sim laptop, `MSFSAdapter.py` writes `logs/simconnect_log.csv`
-   (flight state) and `logs/simconnect_events.csv` (crash events), and —
-   if OBS recording is enabled — starts/stops the instrument and OTW
-   recordings in step with the flight data (see below).
+   (flight state), and — if OBS recording is enabled — starts/stops the
+   instrument and OTW recordings in step with the flight data (see below).
 2. Smart Eye (separate laptop) exports its gaze CSV.
 3. In the app: **Upload** → create a session → attach the CSVs → ingest.
 4. **Review** plays flight + gaze back on one synchronized timeline.
@@ -127,9 +126,6 @@ frame-accurate.
   `EYE_COLUMNS` (`backend/app/db.py`). Rename your Smart Eye export headers
   to match, or edit that list to match your export. `aoi` (area of interest)
   drives the dwell analytics.
-- **Events** — either the raw two-column `MSFSAdapter` format
-  `[timestamp, event_name]` (no header) or a headered
-  `ts,event_type,label` CSV.
 
 ## Real-time streaming (later)
 

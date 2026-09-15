@@ -119,18 +119,6 @@ create table if not exists eye_tracking_data (
 );
 
 -- ---------------------------------------------------------------------
--- events: discrete events (crash, checklist, scenario triggers, ...)
--- ---------------------------------------------------------------------
-create table if not exists events (
-    id           bigint generated always as identity primary key,
-    session_id   uuid not null references sessions(id) on delete cascade,
-    ts           timestamptz not null,
-    event_type   text not null,               -- 'system' | 'checklist' | 'scenario' | ...
-    label        text not null,               -- e.g. 'Crashed', 'Gear down checklist'
-    payload      jsonb                         -- arbitrary extra data
-);
-
--- ---------------------------------------------------------------------
 -- aoi_zones: named rectangles on the instrument panel, in the same pixel
 -- space as eye_tracking_data.gaze_point_x/y (the instrument recording's
 -- native resolution). Used to reclassify a raw "Instruments" gaze sample
@@ -155,7 +143,6 @@ create table if not exists aoi_zones (
 -- ---------------------------------------------------------------------
 create index if not exists flight_data_ts_brin  on flight_data using brin (ts);
 create index if not exists eye_data_ts_brin      on eye_tracking_data using brin (ts);
-create index if not exists events_session_ts_idx on events (session_id, ts);
 
 -- ---------------------------------------------------------------------
 -- Single-user note:

@@ -35,7 +35,6 @@ export const api = {
   flight: (id, maxPoints = 200000) =>
     req(`/sessions/${id}/flight?max_points=${maxPoints}`),
   eye: (id, maxPoints = 200000) => req(`/sessions/${id}/eye?max_points=${maxPoints}`),
-  events: (id) => req(`/sessions/${id}/events`),
   analytics: (id) => req(`/sessions/${id}/analytics`),
 
   videosAvailable: () => req("/videos-available"),

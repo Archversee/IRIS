@@ -32,9 +32,8 @@ POLL_INTERVAL_SEC = 0.033 #30Hz
 #POLL_INTERVAL_SEC = 0.01665 #60hz
 
 LOG_DIR = os.path.join(os.getcwd(), "logs")
-os.makedirs(LOG_DIR, exist_ok=True) 
+os.makedirs(LOG_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(LOG_DIR, "simconnect_log.csv")
-EVENTS_CSV = os.path.join(LOG_DIR, "simconnect_events.csv")
 
 # Set False to log flight data only, without touching OBS.
 ENABLE_OBS_RECORDING = True
@@ -74,13 +73,6 @@ SIMVARS = {
 NAME_TO_FIELD = {simvar: field for field, (simvar, _) in SIMVARS.items()}
 
 
-def log_event(event_name):
-    ts = datetime.now(timezone.utc).isoformat()
-    print(f"[EVENT] {ts} — {event_name}")
-    with open(EVENTS_CSV, "a", newline="") as f:
-        csv.writer(f).writerow([ts, event_name])
-
-
 def connect_obs_clients():
     clients = []
     for cfg in OBS_INSTANCES:
@@ -95,14 +87,13 @@ def connect_obs_clients():
 def start_obs_recordings(clients):
     for name, client in clients:
         client.start_record()
-        log_event(f"obs_record_start:{name}")
+        print(f"OBS ({name}) recording started")
 
 
 def stop_obs_recordings(clients):
     for name, client in clients:
         try:
             resp = client.stop_record()
-            log_event(f"obs_record_stop:{name}:{resp.output_path}")
             print(f"OBS ({name}) saved recording to {resp.output_path}")
         except Exception as e:
             print(f"Failed to stop OBS ({name}) recording cleanly: {e}")

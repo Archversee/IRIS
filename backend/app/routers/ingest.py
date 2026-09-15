@@ -1,13 +1,9 @@
 """
-Batch ingestion of CSV files produced by the sim logger (MSFSAdapter.py)
-and the Smart Eye export.
+Batch ingestion of CSV files produced by the sim logger (MSFSAdapter.py) and the Smart Eye export.
 
 Endpoints:
-  POST /sessions/{id}/ingest/flight   (multipart file=<csv>)
-  POST /sessions/{id}/ingest/eye      (multipart file=<csv>)
-  POST /sessions/{id}/ingest/events   (multipart file=<csv>)
-
-After a flight upload we also backfill sessions.started_at / ended_at.
+  POST /sessions/{id}/ingest/flight
+  POST /sessions/{id}/ingest/eye
 """
 import csv
 import io
@@ -31,10 +27,7 @@ EYE_TEXT = {"aoi"}
 # ---- Smart Eye raw export auto-conversion ----------------------------
 # Smart Eye's own "Output Data" logger exports a wide, tab-separated file
 # rather than the flat CSV shape below. Detected by sniffing for its
-# RealTimeClock column (a Windows FILETIME -- 100ns ticks since 1601-01-01
-# UTC, i.e. an absolute wall-clock time already, no sync offset needed)
-# on a tab-delimited first line, so users can drop the raw .log straight
-# into the Upload page instead of running a converter by hand first.
+# RealTimeClock column
 _FILETIME_EPOCH_DELTA = 116444736000000000  # 100ns ticks between 1601-01-01 and 1970-01-01
 
 _SMARTEYE_DIRECT = {
@@ -66,10 +59,8 @@ _SMARTEYE_DEG = {
 
 
 # Last known Smart Eye field-selection order, used ONLY as a fallback when
-# an export is missing its header row (some Smart Eye logging modes drop
-# it). This is fragile: it silently misaligns data if the field selection
-# ever changes without headers to catch it. Fix "write header row" in
-# Smart Eye's export settings rather than relying on this long-term.
+# an export is missing its header. it silently misaligns data if the field selection
+# ever changes without headers to catch it.
 _SMARTEYE_KNOWN_HEADER = [
     "FrameNumber", "TimeStamp", "RealTimeClock",
     "HeadPosition.x", "HeadPosition.y", "HeadPosition.z",
@@ -103,9 +94,7 @@ def _is_smarteye_raw(raw: str) -> bool:
         return False
     if "RealTimeClock" in first_line:
         return True
-    # headerless export: only trust this if the column count matches the
-    # last known field selection exactly -- otherwise we can't tell a
-    # Smart Eye log from any other tab-separated data.
+    # headerless export: only trust this if the column count matches the last known field selection exactly       
     fields = first_line.split("\t")
     return not _smarteye_has_header(first_line) and len(fields) == len(_SMARTEYE_KNOWN_HEADER)
 
@@ -145,7 +134,7 @@ def _smarteye_rows(raw: str):
         for out_col, src_col in _SMARTEYE_DEG.items():
             v = row.get(src_col)
             out[out_col] = str(math.degrees(float(v))) if v not in (None, "") else None
-        # Blink is a blink-event id counter (0 = not blinking), not a 0/1 flag
+        # Blink is a blink-event id counter (0 = not blinking)
         blink_raw = row.get("Blink")
         out["blink"] = "0" if blink_raw in (None, "", "0") else "1"
         yield out
@@ -183,10 +172,6 @@ async def _session_exists(session_id: UUID) -> bool:
 
 
 def _decode_upload(raw_bytes: bytes) -> str:
-    # Windows export tools (Smart Eye included) often save as UTF-16 rather
-    # than UTF-8 -- decoding those bytes as UTF-8 doesn't raise, it just
-    # silently interleaves NUL bytes through the text, breaking any string
-    # match against the content. Detect the BOM and decode accordingly.
     if raw_bytes.startswith((b"\xff\xfe", b"\xfe\xff")):
         return raw_bytes.decode("utf-16")
     return raw_bytes.decode("utf-8-sig")
@@ -255,48 +240,6 @@ async def ingest_eye(session_id: UUID, file: UploadFile):
         records.append(tuple(rec))
 
     inserted = await db.copy_rows("eye_tracking_data", db.EYE_COLUMNS, records)
-    return IngestResult(inserted=inserted, skipped=skipped)
-
-
-# ---- events ---------------------------------------------------------
-@router.post("/events", response_model=IngestResult)
-async def ingest_events(session_id: UUID, file: UploadFile):
-    """
-    Accepts either:
-      - MSFSAdapter events CSV: two columns [timestamp, event_name], no header
-      - a headered CSV with columns: ts,event_type,label
-    """
-    if not await _session_exists(session_id):
-        raise HTTPException(404, "Session not found")
-
-    raw = (await file.read()).decode("utf-8-sig")
-    rows = list(csv.reader(io.StringIO(raw)))
-    if not rows:
-        return IngestResult(inserted=0)
-
-    inserted, skipped = 0, 0
-    header = [c.strip().lower() for c in rows[0]]
-    headered = "ts" in header or "timestamp" in header
-
-    async with db.acquire() as conn:
-        data_rows = rows[1:] if headered else rows
-        for cols in data_rows:
-            if len(cols) < 2:
-                skipped += 1
-                continue
-            ts_raw, label = cols[0], cols[-1]
-            event_type = cols[1] if len(cols) >= 3 else "system"
-            try:
-                ts = _to_ts(ts_raw)
-            except ValueError:
-                skipped += 1
-                continue
-            await conn.execute(
-                "insert into events (session_id, ts, event_type, label) values ($1,$2,$3,$4)",
-                session_id, ts, event_type, label,
-            )
-            inserted += 1
-
     return IngestResult(inserted=inserted, skipped=skipped)
 
 
