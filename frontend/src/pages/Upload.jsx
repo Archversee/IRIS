@@ -79,6 +79,14 @@ export default function Upload() {
     }
   }
 
+// Filter the shared video list down to files that belong to this screen's
+// folder (data/videos/Instruments or data/videos/OTW). Falls back to a
+// keyword match on the filename itself in case a file isn't in a subfolder.
+function filesForScreen(screen, allFiles) {
+  const keyword = screen === "instrument" ? "instrument" : "otw";
+  return allFiles.filter((f) => f.toLowerCase().includes(keyword));
+}
+
   return (
     <>
       <div className="card">
@@ -163,7 +171,7 @@ export default function Upload() {
                   }
                 >
                   <option value="">— none —</option>
-                  {videoFiles.map((f) => (
+                  {filesForScreen(screen, videoFiles).map((f) => (
                     <option key={f} value={f}>{f}</option>
                   ))}
                 </select>
