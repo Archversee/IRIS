@@ -25,14 +25,10 @@ const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
-// const SCAN_ROW_CAP = 5; // fixations per scan-path row — row 1 fills before row 2 starts
-
 const VIDEO_SYNC_TOLERANCE = 0.15; // seconds of drift tolerated before re-seeking a paused/scrubbed video
-const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing — natural decode jitter shouldn't trigger a seek every tick
-
-const MIN_AOI_DWELL_SEC_DEFAULT = 0.5; // AOI glances shorter than this are treated as tracking artifacts, not real looks
-
-const CHART_MAX_POINTS = 2000; // the timeline chart has a few hundred pixels of width -- thinning it for display loses nothing visible, unlike thinning the playback/gaze data itself
+const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75; // looser while playing 
+const MIN_AOI_DWELL_SEC_DEFAULT = 0.1; // AOI glances shorter than this are treated as tracking artifacts, not real looks
+const CHART_MAX_POINTS = 2000; // thinning the timeline chart for display
 
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
@@ -62,10 +58,7 @@ function nearestIndexForTime(arr, t) {
   return lo;
 }
 
-// linear interpolation between the two eye samples bracketing t, for a
-// smooth sub-sample gaze position instead of snapping to the nearest
-// discrete sample. Never interpolates across a blink or an AOI change --
-// those are real saccades/occlusions, not sensor jitter to smooth over.
+// linear interpolation between the two eye samples bracketing t, for a smooth sub-sample gaze position 
 function interpolatedGaze(eyeArr, timeline, t) {
   if (!eyeArr.length) return null;
   const i = nearestIndexForTime(timeline, t);
@@ -89,7 +82,7 @@ function interpolatedGaze(eyeArr, timeline, t) {
   };
 }
 
-// name of the drawn AOI zone (if any) containing a gaze point, in the
+// name of the drawn AOI zone containing a gaze point, in the
 // instrument recording's native pixel space -- see AoiEditor.jsx
 function zoneForPoint(zones, x, y) {
   for (const z of zones) {
@@ -100,9 +93,7 @@ function zoneForPoint(zones, x, y) {
   return null;
 }
 
-// refines the broad "Instruments" AOI into a specific dial when the gaze
-// point falls inside a drawn zone; any other AOI (OTW, blink, etc.) passes
-// through unchanged, since zones only make sense in the panel's own pixel space
+// refines the broad "Instruments" AOI into a specific dial when the gaze point falls inside a drawn zone
 function effectiveAoi(e, zones) {
   if (e.aoi === "Instruments" && e.gaze_point_x != null && e.gaze_point_y != null) {
     const zoneName = zoneForPoint(zones, e.gaze_point_x, e.gaze_point_y);
@@ -111,9 +102,7 @@ function effectiveAoi(e, zones) {
   return e.aoi || "unlabelled";
 }
 
-// Keeps one <video> element following the app's cursor-driven clock (the master clock),
-// rather than letting the video run free — offsetSec accounts for that recording's start
-// not lining up exactly with the flight-data log's first sample.
+// Keep one <video> element following the app's cursor-driven clock (the master clock),
 function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
   useEffect(() => {
     const video = ref.current;
@@ -123,7 +112,6 @@ function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
     if (Math.abs(video.currentTime - target) > tolerance) {
       video.currentTime = target;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curT, src, playing]);
 
   useEffect(() => {
@@ -139,9 +127,7 @@ function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
   }, [speed, src]);
 }
 
-// tracks the previous gaze point + time to derive a direction and speed,
-// so the marker elongates like a comet while the eye is moving fast and
-// relaxes back to a circle when it settles -- classic squash-and-stretch
+// Eye Gaze Animations
 function useGazeStretch(gaze, curT) {
   const prevRef = useRef(null); // { x, y, t }
   const [stretch, setStretch] = useState({ angleDeg: 0, factor: 1 });
@@ -177,17 +163,12 @@ export default function Review() {
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
-  // kept as raw text (not a number) so a controlled input doesn't fight
-  // the user mid-edit -- e.g. typing "0.5" passes through an "0." state
-  // that would otherwise get snapped back to "0" on every keystroke
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
   const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
-
-  // To make ground track clickable
   const [groundScrubbing, setGroundScrubbing] = useState(false);
   const groundTrackRef = useRef(null);
   useEffect(() => {
@@ -211,13 +192,10 @@ export default function Review() {
 
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
   const elapsed = (ts) => (new Date(ts).getTime() - t0) / 1000;
-  // hoisted above the early returns below: the video-sync effect closes over this
-  // and still fires (after commit) even on a render that bails out early with no
-  // flight data yet, so it must never be left in the temporal dead zone.
   const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
   const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
 
-  // nearest eye sample for each flight sample (two-pointer, once)
+  // nearest eye sample for each flight sample
   const eyeForFlight = useMemo(() => {
     const map = new Array(flight.length).fill(-1);
     let j = 0;
@@ -231,14 +209,8 @@ export default function Review() {
     return map;
   }, [flight, eye]);
 
-  // eye samples run far denser than flight's 10Hz poll rate (often 60Hz+),
-  // so the live gaze dot/tag look up the nearest eye sample directly by
-  // playback time instead of going through eyeForFlight -- routing it
-  // through the flight-sample grid would throw away most of that resolution
+
   const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
-  // full-precision flight timeline for the playback loop below -- `series`
-  // (used for chart ticks) rounds .t to 0.1s, which would cap playback
-  // resolution at 100ms regardless of the log's actual sampling rate
   const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
   const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
   const gazeStretch = useGazeStretch(gaze, curT);
@@ -287,9 +259,7 @@ export default function Review() {
     }));
   }, [flight, workloadRaw]);
 
-  // downsampled purely for the chart's own rendering -- seeking still
-  // resolves against the full-resolution flightTimeline in seekTo, so this
-  // only affects how many points Recharts has to draw, not accuracy
+  // downsampled purely for the chart's own rendering 
   const chartSeries = useMemo(() => {
     if (series.length <= CHART_MAX_POINTS) return series;
     const stride = Math.ceil(series.length / CHART_MAX_POINTS);
@@ -300,8 +270,7 @@ export default function Review() {
     return out;
   }, [series]);
 
-  // x-axis ticks every 10s (Recharts' auto ticks land on round numbers like
-  // every 100s for a long session, which is too coarse to read the timeline by)
+  // x-axis ticks every 10s
   const timelineTicks = useMemo(() => {
     if (!series.length) return [];
     const maxT = series[series.length - 1].t;
@@ -310,10 +279,7 @@ export default function Review() {
     return ticks;
   }, [series]);
 
-  // Raw AOI transitions (collapse consecutive identical AOIs) -- blinks are
-  // excluded rather than shown as "unlabelled": the eye tracker can't
-  // resolve gaze position while the eyelid is closed, so those frames
-  // aren't a real (if brief) look at nothing, they're just missing data.
+  // Raw AOI transitions (collapse consecutive identical AOIs)
   const rawRuns = useMemo(() => {
     const out = [];
     let prev = null;
@@ -328,9 +294,8 @@ export default function Review() {
   const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
 
   // Merge transitions that don't hold for at least minAoiDwellSec: glasses
-  // (or other tracking artifacts) throw brief spurious AOI blips into the
-  // gaze stream, so a "look" shorter than this threshold is folded back
-  // into whichever AOI it interrupted rather than counted as a real glance.
+  // (or other tracking artifacts) throw brief AOI blips into the gaze stream, so a threshold is 
+  // set to fold back into whichever AOI it interrupted rather than counted as a real glance.
   const runs = useMemo(() => {
     if (rawRuns.length < 2) return rawRuns;
     let merged = rawRuns.map((r) => ({ ...r }));
@@ -355,9 +320,7 @@ export default function Review() {
     return merged;
   }, [rawRuns, minAoiDwellSec, lastEyeT]);
 
-  // region dwell, cumulative up to the current playback position -- built
-  // from the cleaned runs above, so blinks and sub-threshold blips are
-  // already excluded; dwell is time-weighted rather than sample-counted.
+  // region dwell, cumulative up to the current playback position dwell is time-weighted rather than sample-counted.
   const regions = useMemo(() => {
     const durations = {};
     for (let i = 0; i < runs.length && runs[i].t <= curT; i++) {
@@ -372,7 +335,7 @@ export default function Review() {
 
   // ground track: lat/long positions normalized into a square 0-100 viewBox,
   // preserving true relative shape (equal scale on both axes, longitude
-  // corrected by cos(latitude) so the path isn't stretched east-west)
+  // corrected by cos(latitude))
   const groundTrack = useMemo(() => {
     const pts = flight
       .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
@@ -397,10 +360,7 @@ export default function Review() {
     }));
   }, [flight]);
 
-  // static full-route path never changes after load; only the "flown so
-  // far" slice and current-position marker need to track curT. Splitting
-  // these out avoids rebuilding the whole path string on every tick now
-  // that the playback loop can fire up to 60x/sec.
+  // static full-route: path never changes after load;
   const groundFullPath = useMemo(
     () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
     [groundTrack]
@@ -412,26 +372,20 @@ export default function Review() {
   }, [groundTrack, groundFlownIdx]);
   const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
-    // Chronological AOI log — one row per completed (or ongoing) run, built
-  // once from `runs` with explicit start/end/duration, independent of
-  // playback position. Only the "current" flag below depends on curT, so
-  // the list itself never reflows while scrubbing — just the highlight
-  // moves.
+  // Chronological AOI log, one row per completed (or ongoing) run, built
+  // once from `runs` with explicit start/end/duration, independent of playback position.
   const scanLog = useMemo(() => {
     const out = [];
     for (let i = 0; i < runs.length; i++) {
       const start = runs[i].t;
       const end = i + 1 < runs.length ? runs[i + 1].t : lastEyeT;
-      // order is fixed at chronological position in the whole session —
-      // assigned here, before filtering/reversing, so it never shifts as
-      // rows enter/leave the visible (curT-filtered) log below.
+      // assign order at chronological position in the whole session
       out.push({ order: i + 1, aoi: runs[i].aoi, start, end, dur: Math.max(0, end - start) });
     }
     return out;
   }, [runs, lastEyeT]);;
 
-  // Color assigned by first appearance in the session, not by render-time
-  // index — so a given AOI's color never shifts as new rows are added.
+  // Color assigned by first appearance in the session
   const scanLogColor = useMemo(() => {
     const map = new Map();
     let i = 0;
@@ -441,12 +395,7 @@ export default function Review() {
     return map;
   }, [scanLog]);
 
-  // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); // newest first
-    // Only rows whose glance has actually started by the playhead are shown,
-  // newest first. The in-progress row (if curT falls inside it) is clipped
-  // to "now" rather than showing its real future end/duration — so
-  // rewinding or scrubbing backward makes rows disappear immediately, and
-  // nothing reveals what hasn't been "played" yet.
+  // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); newest first
   const scanLogRows = useMemo(() => {
     const rows = [];
     for (let i = scanLog.length - 1; i >= 0; i--) {
@@ -468,24 +417,17 @@ export default function Review() {
   }, [scrubbing]);
 
   // playback loop -- advances the cursor by actual elapsed wall-clock time
-  // (times speed), not a fixed sample count per tick, so it plays at the
-  // correct rate and updates smoothly regardless of the flight log's own
-  // sampling rate (10Hz, 30Hz, 60Hz, whatever). Ticks at ~60fps so the UI
-  // itself isn't the bottleneck, independent of how dense the data is.
+  // (times speed), not a fixed sample count per tick.
   useEffect(() => {
     if (playing && flight.length) {
-      // start from the currently displayed position, not from whatever
-      // virtualT held from a previous play/pause cycle
+      // start from the currently displayed position
       virtualT.current = curT;
       let lastTick = performance.now();
       timer.current = setInterval(() => {
         const now = performance.now();
         const dtSec = (now - lastTick) / 1000;
         lastTick = now;
-        // accumulate on the continuous clock itself -- never re-derive the
-        // next target from the already-snapped displayed sample, or any
-        // advance smaller than half the sample spacing gets rounded away
-        // and playback stalls
+        // accumulate on the continuous clock itself
         virtualT.current += dtSec * speed;
         if (virtualT.current >= totalT) virtualT.current = 0;
         setCursor(nearestIndexForTime(flightTimeline, virtualT.current));
@@ -516,11 +458,8 @@ export default function Review() {
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
   const lookingAtOtw = curEye && !curEye.blink && curEye.aoi === "OTW";
   const lookingAtInstruments = curEye && !curEye.blink && curEye.aoi === "Instruments";
-  // single entry point for every user-initiated jump (seek buttons, chart
-  // click, ground-track click, scan-log rows): the playback loop now runs
-  // off its own continuous virtualT clock, so any seek that only sets
-  // `cursor` gets silently overwritten by the very next 16ms tick unless
-  // virtualT is moved to match
+
+  // single entry point for every user-initiated jump (seek buttons, chart click, ground-track click, scan-log rows)
   const seekTo = (targetT) => {
     const clamped = Math.max(0, Math.min(totalT, targetT));
     virtualT.current = clamped;
@@ -528,15 +467,13 @@ export default function Review() {
   };
   const seek = (deltaSec) => seekTo(curT + deltaSec);
 
-  // clicking/dragging directly on the timeline chart scrubs playback,
-  // replacing a separate range-input scrub bar
+  // clicking/dragging directly on the timeline chart scrubs playback
   const seekToChartEvent = (chartEvent) => {
     if (!chartEvent || chartEvent.activeLabel == null) return;
     seekTo(chartEvent.activeLabel);
   };
 
-  // Ground track is drawn in a 100x100 viewBox with preserveAspectRatio
-  // "xMidYMid meet" inside a 16:9 box, so clicks are letterboxed — convert
+  // Ground track is drawn in a 100x100 viewBox with preserveAspectRatio, convert
   // screen coords into the track's own square coordinate space first, then
   // snap to whichever flown point is physically closest to the click.
   const seekToGroundEvent = (clientX, clientY) => {
@@ -559,9 +496,6 @@ export default function Review() {
     seekTo(groundTrack[bestIdx].t);
   };
 
-
-  // const visibleRuns = runs.filter((r) => r.t <= curT + 0.05).slice(-(SCAN_ROW_CAP * 2));
-
   return (
     <div className="rev">
       {/* toolbar rail */}
@@ -583,7 +517,7 @@ export default function Review() {
         {/* screens */}
         <div className="rev-screens">
           <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
-            <div className="head">OTW screen</div>
+            <div className="head">OTW</div>
             <div className="body">
               {otwVideoSrc && (
                 <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
@@ -603,7 +537,7 @@ export default function Review() {
           </div>
 
           <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
-            <div className="head">Instrument screen</div>
+            <div className="head">Instruments</div>
             <div className="body">
               {instrumentVideoSrc && (
                 <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
@@ -696,6 +630,7 @@ export default function Review() {
               )}
               <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
             </LineChart>
+          {/* playback controls */}
           </ResponsiveContainer>
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
@@ -721,11 +656,10 @@ export default function Review() {
             <div className="card-head">
               <h3>Scan path</h3>
               <span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span>
-              <label className="min-dwell" title="Glances shorter than this are treated as tracking artifacts (e.g. glasses reflections) and folded into the AOI they interrupted">
+              <label className="min-dwell" title="Minimum fixation time">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
                   onChange={(e) => setMinAoiDwellInput(e.target.value)} />
-                s
               </label>
             </div>
             {scanLogRows.length === 0 ? (
@@ -761,7 +695,7 @@ export default function Review() {
             )}
           </div>
 
-          {/* readouts */}
+          {/* Flight Telemetry */}
           <div className="rev-card">
             <h3>Live state</h3>
             <div className="readout-cols">
@@ -790,7 +724,7 @@ export default function Review() {
             </div>
           </div>
 
-          {/* region viewing */}
+          {/* region viewing % */}
           <div className="rev-card">
             <h3>Region viewing %</h3>
             {regions.length === 0 ? (
