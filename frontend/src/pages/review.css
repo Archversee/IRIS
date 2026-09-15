@@ -1,8 +1,5 @@
-/* ============================================================
-   Review dashboard — glass-cockpit layout
-   Palette is avionics symbology: cyan=primary flight data,
-   green=nominal, amber=caution/events, teal=screen feeds.
-   ============================================================ */
+/* Review dashboard — glass-cockpit layout Palette: cyan=primary flight data,
+   green=nominal, amber=caution/events, teal=screen feeds. */
 .rev {
   --rev-bg: #0a0e14;
   --rev-panel: #121a24;

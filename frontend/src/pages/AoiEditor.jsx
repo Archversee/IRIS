@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client.js";
 
-// Must match the instrument recording's native resolution -- this is the
-// same pixel space Smart Eye reports gaze_point_x/y in, so zones drawn
-// here line up directly with gaze samples with no scaling.
+// match the instrument recording's native resolution 
 const NATIVE_W = 1920;
 const NATIVE_H = 1080;
 
@@ -51,8 +49,7 @@ export default function AoiEditor() {
     const video = videoRef.current;
     if (!video) return;
     setDuration(video.duration || 0);
-    // skip a possible black lead-in frame at t=0 (common right after OBS
-    // starts recording) by seeking a little in before the first capture
+    // skip a possible black lead-in frame at t=0 by seeking a little in before the first capture
     const t = Math.min(1, (video.duration || 2) / 2);
     setPreviewTime(t);
     video.currentTime = t;

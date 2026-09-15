@@ -1,9 +1,5 @@
 """
 Thin async data-access layer over asyncpg.
-
-We use asyncpg directly (no ORM) because the hot path is bulk-loading
-time-series rows, and asyncpg's copy_records_to_table is the fastest way
-to do that from Python.
 """
 from contextlib import asynccontextmanager
 

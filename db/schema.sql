@@ -1,21 +1,10 @@
 -- =====================================================================
 --  Flight Review System — database schema
 --  Target: Supabase Postgres 17 (plain Postgres; NO TimescaleDB)
---
---  TimescaleDB is deprecated on Supabase and removed from the PG17
---  bundle, so we use ordinary tables with time-aware indexes instead.
---  At this project's scale (10 Hz => ~36k rows per flight-hour) plain
---  Postgres is more than fast enough. If you ever outgrow it, convert
---  flight_data / eye_tracking_data to native RANGE partitions on ts
---  (managed by pg_partman) without changing the application code.
---
---  Run this in the Supabase SQL editor, or:
---    psql "$DATABASE_URL" -f db/schema.sql
 -- =====================================================================
 
--- ---------------------------------------------------------------------
+
 -- sessions: one row per recorded flight / review session
--- ---------------------------------------------------------------------
 create table if not exists sessions (
     id           uuid primary key default gen_random_uuid(),
     name         text not null,
@@ -27,17 +16,13 @@ create table if not exists sessions (
     ended_at     timestamptz,                -- flight end (from data)
     created_at   timestamptz not null default now(),
 
-    -- Separate recordings per screen, both filenames inside settings.video_dir.
-    -- Offsets account for each recording's start vs the first flight-data sample, seconds.
     instrument_video_filename    text,
     instrument_video_offset_sec  double precision not null default 0,
     otw_video_filename           text,
     otw_video_offset_sec         double precision not null default 0
 );
 
--- ---------------------------------------------------------------------
 -- flight_data: time-series flight state (schema mirrors MSFSAdapter.py)
--- ---------------------------------------------------------------------
 create table if not exists flight_data (
     session_id            uuid not null references sessions(id) on delete cascade,
     ts                    timestamptz not null,       -- timestamp_utc from the logger
@@ -74,10 +59,8 @@ create table if not exists flight_data (
     primary key (session_id, ts)
 );
 
--- ---------------------------------------------------------------------
 -- eye_tracking_data: time-series gaze data (Smart Eye SEP subset)
 -- Adjust columns to the exact SEP fields you export.
--- ---------------------------------------------------------------------
 create table if not exists eye_tracking_data (
     session_id             uuid not null references sessions(id) on delete cascade,
     ts                     timestamptz not null,
@@ -118,13 +101,8 @@ create table if not exists eye_tracking_data (
     primary key (session_id, ts)
 );
 
--- ---------------------------------------------------------------------
--- aoi_zones: named rectangles on the instrument panel, in the same pixel
--- space as eye_tracking_data.gaze_point_x/y (the instrument recording's
--- native resolution). Used to reclassify a raw "Instruments" gaze sample
--- into a specific dial (e.g. "Airspeed", "Altimeter"). One shared layout
--- across all sessions, since the simulator's panel layout is fixed.
--- ---------------------------------------------------------------------
+-- aoi_zones: named rectangles on the instrument panel, in the same pixel space as eye_tracking_data.gaze_point_x/y 
+-- Used to reclassify a raw "Instruments" gaze sample into a specific dial (e.g. "Airspeed", "Altimeter"). 
 create table if not exists aoi_zones (
     id          bigint generated always as identity primary key,
     name        text not null,
@@ -135,19 +113,8 @@ create table if not exists aoi_zones (
     created_at  timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
 -- Indexes
---   The (session_id, ts) PKs already cover the common
---   "one session, time-ordered" access pattern. BRIN indexes on ts are
---   tiny and speed up wide time-range scans on big append-only tables.
--- ---------------------------------------------------------------------
+--   The (session_id, ts) PKs already cover the common "one session, time-ordered" access pattern.
 create index if not exists flight_data_ts_brin  on flight_data using brin (ts);
 create index if not exists eye_data_ts_brin      on eye_tracking_data using brin (ts);
 
--- ---------------------------------------------------------------------
--- Single-user note:
---   Row Level Security is left OFF for this single-user build. Before you
---   add auth / multi-user, enable RLS on every table and add policies:
---     alter table sessions enable row level security;
---     ... etc.
--- ---------------------------------------------------------------------
