@@ -166,6 +166,9 @@ export default function Review() {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const [openPhases, setOpenPhases] = useState([]); // multiple floating analytics windows, each { ...phase, winId, x, y, z }
   const zCounter = useRef(10);
+  const [hiddenAois, setHiddenAois] = useState(new Set()); // scan-path filter -- AOIs unchecked in the dropdown
+  const [aoiFilterOpen, setAoiFilterOpen] = useState(false);
+  const aoiFilterRef = useRef(null);
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
   const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
@@ -462,18 +465,40 @@ export default function Review() {
     return map;
   }, [scanLog]);
 
+  // distinct AOI names available to filter by, in the same order they were first colored
+  const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
+
   // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); newest first
   const scanLogRows = useMemo(() => {
     const rows = [];
     for (let i = scanLog.length - 1; i >= 0; i--) {
       const r = scanLog[i];
       if (r.start > curT) continue;
+      if (hiddenAois.has(r.aoi)) continue;
       const isCurrent = curT < r.end;
       const end = isCurrent ? curT : r.end;
       rows.push({ ...r, end, dur: Math.max(0, end - r.start), isCurrent });
     }
     return rows;
-  }, [scanLog, curT]);
+  }, [scanLog, curT, hiddenAois]);
+
+  // close the AOI filter dropdown on any click outside it
+  useEffect(() => {
+    if (!aoiFilterOpen) return;
+    const onDocClick = (e) => {
+      if (aoiFilterRef.current && !aoiFilterRef.current.contains(e.target)) setAoiFilterOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [aoiFilterOpen]);
+
+  const toggleAoiHidden = (name) => {
+    setHiddenAois((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
 
   // end a chart drag-scrub even if the mouse is released outside the chart
   useEffect(() => {
@@ -763,7 +788,7 @@ export default function Review() {
                 return (
                   <ReferenceArea key={p.key} x1={x1} x2={x2}
                     fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
-                    onClick={() => openPhase(p)} style={{ cursor: "pointer" }}
+                    onClick={() => seekTo(p.start)} style={{ cursor: "pointer" }}
                     label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
                 );
               })}
@@ -778,19 +803,22 @@ export default function Review() {
           {/* playback controls */}
           </ResponsiveContainer>
           {flightPhases.length > 0 && (
-            // positioned by the same time-domain fraction as each phase's
-            // ReferenceArea, so each button sits directly under its band
-            <div className="phase-buttons-row">
-              {flightPhases.map((p) => {
-                const leftPct = chartMaxT > chartMinT ? ((p.start - chartMinT) / (chartMaxT - chartMinT)) * 100 : 0;
-                return (
-                  <button key={p.key} className="phase-btn" style={{ left: `${leftPct}%`, borderColor: p.color, color: p.color }}
-                    onClick={() => openPhase(p)} title={`${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`}>
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              <div className="phase-buttons-label">Events:</div>
+              {/* positioned by the same time-domain fraction as each phase's
+                  ReferenceArea, so each button sits directly under its band */}
+              <div className="phase-buttons-row">
+                {flightPhases.map((p) => {
+                  const leftPct = chartMaxT > chartMinT ? ((p.start - chartMinT) / (chartMaxT - chartMinT)) * 100 : 0;
+                  return (
+                    <button key={p.key} className="phase-btn" style={{ left: `${leftPct}%`, borderColor: p.color, color: p.color }}
+                      onClick={() => openPhase(p)} title={`${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
@@ -816,6 +844,23 @@ export default function Review() {
             <div className="card-head">
               <h3>Scan path</h3>
               <span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span>
+              <div className="aoi-filter" ref={aoiFilterRef}>
+                <button type="button" className="aoi-filter-btn" onClick={() => setAoiFilterOpen((o) => !o)}>
+                  Instruments {hiddenAois.size > 0 ? `(${allAois.length - hiddenAois.size}/${allAois.length})` : ""} ▾
+                </button>
+                {aoiFilterOpen && (
+                  <div className="aoi-filter-menu">
+                    {allAois.map((name) => (
+                      <label key={name} className="aoi-filter-item">
+                        <input type="checkbox" checked={!hiddenAois.has(name)}
+                          onChange={() => toggleAoiHidden(name)} />
+                        <span className="swatch" style={{ background: scanLogColor.get(name) }} />
+                        {name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
               <label className="min-dwell" title="Minimum fixation time">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
