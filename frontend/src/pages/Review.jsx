@@ -164,8 +164,8 @@ export default function Review() {
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
-  const [selectedPhase, setSelectedPhase] = useState(null);
-  const [phasePos, setPhasePos] = useState({ x: 0, y: 0 }); // floating popup position, top-left in viewport px
+  const [openPhases, setOpenPhases] = useState([]); // multiple floating analytics windows, each { ...phase, winId, x, y, z }
+  const zCounter = useRef(10);
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
   const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
@@ -271,6 +271,11 @@ export default function Review() {
     if (out[out.length - 1] !== last) out.push(last);
     return out;
   }, [series]);
+
+  // the chart's actual time domain -- shared by the ReferenceArea widening
+  // logic and the button row below, so both agree on the same left/right edges
+  const chartMinT = series.length ? series[0].t : 0;
+  const chartMaxT = series.length ? series[series.length - 1].t : totalT;
 
   // x-axis ticks every 10s
   const timelineTicks = useMemo(() => {
@@ -558,24 +563,49 @@ export default function Review() {
     seekTo(groundTrack[bestIdx].t);
   };
 
-  // opens the phase popup centered on screen the first time it's used for this phase
+  // opens a new floating analytics window for this phase -- multiple can be
+  // open at once, each independently draggable; re-clicking an already-open
+  // phase just brings its existing window to front rather than duplicating it
   const openPhase = (p) => {
-    setSelectedPhase(p);
-    setPhasePos({
-      x: Math.max(16, window.innerWidth / 2 - 360),
-      y: Math.max(16, window.innerHeight / 2 - 220),
+    setOpenPhases((prev) => {
+      const existing = prev.find((w) => w.key === p.key);
+      if (existing) {
+        zCounter.current += 1;
+        return prev.map((w) => (w.key === p.key ? { ...w, z: zCounter.current } : w));
+      }
+      zCounter.current += 1;
+      const stagger = prev.length * 28;
+      return [...prev, {
+        ...p,
+        winId: p.key,
+        x: Math.max(16, window.innerWidth / 2 - 360 + stagger),
+        y: Math.max(16, window.innerHeight / 2 - 220 + stagger),
+        z: zCounter.current,
+      }];
     });
   };
 
-  // drag the popup by its title bar -- closures capture the drag's own
+  const closePhase = (winId) => setOpenPhases((prev) => prev.filter((w) => w.winId !== winId));
+
+  const bringToFront = (winId) => {
+    zCounter.current += 1;
+    const z = zCounter.current;
+    setOpenPhases((prev) => prev.map((w) => (w.winId === winId ? { ...w, z } : w)));
+  };
+
+  // drag a window by its title bar -- closures capture the drag's own
   // starting point so add/remove listener references always match, and
-  // dragging one popup can't get confused by a later render's state
-  const onPhaseDragStart = (e) => {
+  // dragging one window can't get confused by another window's state
+  const onPhaseDragStart = (winId, e) => {
     if (e.target.closest(".phase-modal-close")) return;
+    bringToFront(winId);
     const startX = e.clientX, startY = e.clientY;
-    const origin = phasePos;
+    const win = openPhases.find((w) => w.winId === winId);
+    if (!win) return;
+    const originX = win.x, originY = win.y;
     const onMove = (ev) => {
-      setPhasePos({ x: origin.x + (ev.clientX - startX), y: origin.y + (ev.clientY - startY) });
+      const nx = originX + (ev.clientX - startX), ny = originY + (ev.clientY - startY);
+      setOpenPhases((prev) => prev.map((w) => (w.winId === winId ? { ...w, x: nx, y: ny } : w)));
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
@@ -719,8 +749,6 @@ export default function Review() {
                 // Landing sits at the chart's right edge, so there's often
                 // no room to extend forward -- fall back to widening
                 // backward (or vice-versa for a phase pinned to the left edge).
-                const chartMinT = series.length ? series[0].t : 0;
-                const chartMaxT = series.length ? series[series.length - 1].t : totalT;
                 const minSpan = Math.max(1, totalT * 0.008);
                 let x1 = p.start, x2 = p.end;
                 if (x2 - x1 < minSpan) {
@@ -750,13 +778,18 @@ export default function Review() {
           {/* playback controls */}
           </ResponsiveContainer>
           {flightPhases.length > 0 && (
-            <div className="phase-buttons">
-              {flightPhases.map((p) => (
-                <button key={p.key} className="phase-btn" style={{ borderColor: p.color, color: p.color }}
-                  onClick={() => openPhase(p)}>
-                  {p.label} · {p.start.toFixed(1)}s–{p.end.toFixed(1)}s
-                </button>
-              ))}
+            // positioned by the same time-domain fraction as each phase's
+            // ReferenceArea, so each button sits directly under its band
+            <div className="phase-buttons-row">
+              {flightPhases.map((p) => {
+                const leftPct = chartMaxT > chartMinT ? ((p.start - chartMinT) / (chartMaxT - chartMinT)) * 100 : 0;
+                return (
+                  <button key={p.key} className="phase-btn" style={{ left: `${leftPct}%`, borderColor: p.color, color: p.color }}
+                    onClick={() => openPhase(p)} title={`${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`}>
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
@@ -881,53 +914,53 @@ export default function Review() {
         </div>
       </div>
 
-      {selectedPhase && (
-        <div className="phase-modal" style={{ left: phasePos.x, top: phasePos.y }}>
-          <div className="phase-modal-head" onMouseDown={onPhaseDragStart}>
-            <h3>{selectedPhase.label}</h3>
-            <button className="phase-modal-close" onClick={() => setSelectedPhase(null)}>×</button>
+      {openPhases.map((w) => (
+        <div key={w.winId} className="phase-modal" style={{ left: w.x, top: w.y, zIndex: w.z }}
+          onMouseDown={() => bringToFront(w.winId)}>
+          <div className="phase-modal-head" onMouseDown={(e) => onPhaseDragStart(w.winId, e)}>
+            <h3>{w.label}</h3>
+            <button className="phase-modal-close" onClick={() => closePhase(w.winId)}>×</button>
           </div>
-            <div className="phase-modal-sub">
-              {selectedPhase.start.toFixed(1)}s – {selectedPhase.end.toFixed(1)}s
-              <span className="phase-modal-dur">({(selectedPhase.end - selectedPhase.start).toFixed(1)}s)</span>
-              <button className="phase-modal-jump"
-                onClick={() => { seekTo(selectedPhase.start); setSelectedPhase(null); }}>
-                Jump to start
-              </button>
+          <div className="phase-modal-sub">
+            {w.start.toFixed(1)}s – {w.end.toFixed(1)}s
+            <span className="phase-modal-dur">({(w.end - w.start).toFixed(1)}s)</span>
+            <button className="phase-modal-jump" onClick={() => seekTo(w.start)}>
+              Jump to start
+            </button>
+          </div>
+          <div className="phase-pillars">
+            <div className="pillar">
+              <h4>Flight Precision Index</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Glideslope RMSE</span><span>—</span></li>
+                <li><span>Localizer RMSE</span><span>—</span></li>
+                <li><span>Airspeed RMSE</span><span>—</span></li>
+                <li><span>Altitude hold RMSE</span><span>—</span></li>
+                <li><span>Control smoothness</span><span>—</span></li>
+              </ul>
             </div>
-            <div className="phase-pillars">
-              <div className="pillar">
-                <h4>Flight Precision Index</h4>
-                <div className="pillar-score">—</div>
-                <ul>
-                  <li><span>Glideslope RMSE</span><span>—</span></li>
-                  <li><span>Localizer RMSE</span><span>—</span></li>
-                  <li><span>Airspeed RMSE</span><span>—</span></li>
-                  <li><span>Altitude hold RMSE</span><span>—</span></li>
-                  <li><span>Control smoothness</span><span>—</span></li>
-                </ul>
-              </div>
-              <div className="pillar">
-                <h4>Visual Attention &amp; Scan Quality</h4>
-                <div className="pillar-score">—</div>
-                <ul>
-                  <li><span>Cross-check freq (OTW↔PFD)</span><span>—</span></li>
-                  <li><span>Avg fixation duration</span><span>—</span></li>
-                  <li><span>Primary/secondary coverage</span><span>—</span></li>
-                </ul>
-              </div>
-              <div className="pillar">
-                <h4>Cognitive Cost Index</h4>
-                <div className="pillar-score">—</div>
-                <ul>
-                  <li><span>Workload (pupil Z-score)</span><span>—</span></li>
-                  <li><span>Stress/fatigue (blink rate)</span><span>—</span></li>
-                </ul>
-              </div>
+            <div className="pillar">
+              <h4>Visual Attention &amp; Scan Quality</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Cross-check freq (OTW↔PFD)</span><span>—</span></li>
+                <li><span>Avg fixation duration</span><span>—</span></li>
+                <li><span>Primary/secondary coverage</span><span>—</span></li>
+              </ul>
             </div>
-            <div className="phase-modal-note">Scoring engine not implemented yet — placeholder layout only.</div>
+            <div className="pillar">
+              <h4>Cognitive Cost Index</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Workload (pupil Z-score)</span><span>—</span></li>
+                <li><span>Stress/fatigue (blink rate)</span><span>—</span></li>
+              </ul>
+            </div>
+          </div>
+          <div className="phase-modal-note">Scoring engine not implemented yet — placeholder layout only.</div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
