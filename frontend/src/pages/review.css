@@ -259,3 +259,52 @@
   fill: none; stroke: #ff2e63; stroke-width: 6; opacity: 0.5;
   filter: drop-shadow(0 0 8px rgba(255,46,99,0.8));
 }
+
+/* ---- events row (below the timeline chart) ---- */
+.phase-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.phase-btn {
+  font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+  background: var(--rev-panel-2); border: 1px solid; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.phase-btn:hover { filter: brightness(1.25); }
+
+/* ---- flight-phase detail popup: a draggable floating window, not a
+   backdrop-blocked modal, so playback/the rest of the page stay usable
+   while it's open ---- */
+.phase-modal {
+  position: fixed; z-index: 50;
+  width: min(720px, 92vw); max-height: 86vh; overflow: auto;
+  background: var(--rev-panel); border: 1px solid var(--rev-line);
+  border-radius: 12px; padding: 18px 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.phase-modal-head { display: flex; align-items: center; gap: 10px; cursor: move; user-select: none; }
+.phase-modal-head h3 { margin: 0; flex: 1; font-size: 16px; }
+.phase-modal-close {
+  background: none; border: none; color: var(--rev-muted); font-size: 20px;
+  cursor: pointer; line-height: 1; padding: 2px 6px;
+}
+.phase-modal-close:hover { color: var(--rev-text); }
+.phase-modal-sub {
+  display: flex; align-items: center; gap: 10px; margin: 6px 0 16px;
+  font-size: 12px; color: var(--rev-muted); font-variant-numeric: tabular-nums;
+}
+.phase-modal-dur { color: var(--rev-text); }
+.phase-modal-jump {
+  margin-left: auto; font-size: 11px; padding: 4px 10px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 6px;
+  color: var(--rev-text); cursor: pointer;
+}
+.phase-modal-jump:hover { background: #21303f; }
+.phase-pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.pillar {
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 10px;
+  padding: 12px;
+}
+.pillar h4 { margin: 0 0 6px; font-size: 12px; color: var(--rev-teal); }
+.pillar-score { font-size: 26px; font-weight: 700; color: var(--rev-muted); margin-bottom: 8px; }
+.pillar ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pillar li { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--rev-muted); }
+.pillar li span:last-child { color: var(--rev-text); font-variant-numeric: tabular-nums; }
+.phase-modal-note { margin-top: 14px; font-size: 11px; color: var(--rev-amber); text-align: center; }
