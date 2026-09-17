@@ -64,6 +64,13 @@
 }
 .rev-titlebar .sub { color: var(--rev-muted); font-size: 13px; }
 .rev-titlebar .spacer { flex: 1; }
+.live-badge {
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); color: var(--rev-muted);
+}
+.live-badge.is-live { color: #ff5c5c; border-color: #ff5c5c; }
+.tl-btn.go-live { color: #ff5c5c; border-color: #ff5c5c; }
 
 /* ---- screens row ---- */
 .rev-screens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; min-height: 0; }

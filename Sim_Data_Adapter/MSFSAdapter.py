@@ -6,11 +6,18 @@ Corrected to use pysimconnect's actual documented API:
     datadef.simdata[name]        -> latest cached value
 
 INSTALL:
-    pip install pysimconnect obsws-python
+    pip install pysimconnect obsws-python requests
 
 OBS SETUP (two instances, one mp4 each — instrument view + OTW view):
     Run two separate OBS Studio processes  In each instance:
         Tools > WebSocket Server Settings > Enable WebSocket server
+
+LIVE STREAMING (stage 1 of real-time -- flight telemetry only):
+    1. Open the app's Live page and click "Go Live" -- this creates a new
+       session and shows its id.
+    2. Paste that id into SESSION_ID below.
+    3. Run this script; the Live page starts showing data as it streams in.
+    Leave SESSION_ID as None to skip streaming and just log CSV as before.
 
 Run this AFTER MSFS2020 is running with a flight loaded, and after both
 OBS instances are open with the WebSocket server enabled.
@@ -18,9 +25,12 @@ OBS instances are open with the WebSocket server enabled.
 
 import csv
 import os
+import queue
+import threading
 import time
 from datetime import datetime, timezone
 
+import requests
 from simconnect import SimConnect, PERIOD_VISUAL_FRAME
 import obsws_python as obsws
 
@@ -37,6 +47,11 @@ OUTPUT_CSV = os.path.join(LOG_DIR, "simconnect_log.csv")
 
 # Set False to log flight data only, without touching OBS.
 ENABLE_OBS_RECORDING = True
+
+# Live streaming -- see "LIVE STREAMING" note above. CSV logging (the
+# durable record) happens either way; this is purely additive.
+API_BASE_URL = "http://localhost:8000"
+SESSION_ID = None  # e.g. "3f9c1a2b-4d5e-4f6a-8b9c-0d1e2f3a4b5c"
 
 # One entry per OBS instance, it doesn't need to match anything in OBS.
 OBS_INSTANCES = [
@@ -73,6 +88,36 @@ SIMVARS = {
 NAME_TO_FIELD = {simvar: field for field, (simvar, _) in SIMVARS.items()}
 
 
+# ----------------------------------------------------------------------
+# Live streaming -- runs on its own thread so a slow/unreachable backend
+# can never stall the actual data-capture loop. Best-effort: a dropped
+# or failed sample is silently skipped rather than interrupting logging.
+# ----------------------------------------------------------------------
+_stream_queue = queue.Queue(maxsize=1000)
+
+
+def _stream_worker():
+    while True:
+        row = _stream_queue.get()
+        try:
+            requests.post(
+                f"{API_BASE_URL}/sessions/{SESSION_ID}/stream/flight",
+                json=row, timeout=1,
+            )
+        except Exception:
+            pass
+
+
+def stream_row(row):
+    if not SESSION_ID:
+        return
+    payload = {"ts": row["timestamp_utc"], **{k: v for k, v in row.items() if k != "timestamp_utc"}}
+    try:
+        _stream_queue.put_nowait(payload)
+    except queue.Full:
+        pass  # backend can't keep up -- drop the sample rather than pile up unbounded
+
+
 def connect_obs_clients():
     clients = []
     for cfg in OBS_INSTANCES:
@@ -101,6 +146,10 @@ def stop_obs_recordings(clients):
 
 def main():
     obs_clients = connect_obs_clients() if ENABLE_OBS_RECORDING else []
+
+    if SESSION_ID:
+        threading.Thread(target=_stream_worker, daemon=True).start()
+        print(f"Live streaming enabled -> {API_BASE_URL}/sessions/{SESSION_ID}/stream/flight")
 
     print("Connecting to SimConnect (make sure MSFS2020 is running with a flight loaded)...")
     sc = SimConnect()
@@ -146,6 +195,7 @@ def main():
 
                 writer.writerow(row)
                 f.flush()
+                stream_row(row)
                 time.sleep(POLL_INTERVAL_SEC)
         except KeyboardInterrupt:
             print("\nStopped logging.")
