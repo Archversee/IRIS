@@ -74,3 +74,20 @@ async def copy_rows(table: str, columns: list[str], records: list[tuple]) -> int
     async with acquire() as conn:
         await conn.copy_records_to_table(table, records=records, columns=columns)
     return len(records)
+
+
+async def replace_session_rows(table: str, session_id, columns: list[str], records: list[tuple]) -> int:
+    """Deletes this session's existing rows in `table` before inserting the
+    new batch, atomically, so re-uploading a file replaces it instead of
+    silently accumulating duplicate/overlapping rows alongside the old data.
+    A no-op (nothing deleted either) if the new batch has no valid rows, so
+    a bad upload can't wipe out previously-good data for the session.
+    `table` is always one of our own hardcoded constants, never user input.
+    """
+    if not records:
+        return 0
+    async with acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(f"delete from {table} where session_id = $1", session_id)
+            await conn.copy_records_to_table(table, records=records, columns=columns)
+    return len(records)

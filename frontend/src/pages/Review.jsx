@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
   PieChart, Pie, Cell,
 } from "recharts";
 import { api } from "../api/client.js";
@@ -164,6 +164,11 @@ export default function Review() {
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
+  const [openPhases, setOpenPhases] = useState([]); // multiple floating analytics windows, each { ...phase, winId, x, y, z }
+  const zCounter = useRef(10);
+  const [hiddenAois, setHiddenAois] = useState(new Set()); // scan-path filter -- AOIs unchecked in the dropdown
+  const [aoiFilterOpen, setAoiFilterOpen] = useState(false);
+  const aoiFilterRef = useRef(null);
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
   const timer = useRef(null);
   const virtualT = useRef(0); // continuous playback clock, independent of the snapped/displayed sample
@@ -270,6 +275,11 @@ export default function Review() {
     return out;
   }, [series]);
 
+  // the chart's actual time domain -- shared by the ReferenceArea widening
+  // logic and the button row below, so both agree on the same left/right edges
+  const chartMinT = series.length ? series[0].t : 0;
+  const chartMaxT = series.length ? series[series.length - 1].t : totalT;
+
   // x-axis ticks every 10s
   const timelineTicks = useMemo(() => {
     if (!series.length) return [];
@@ -372,6 +382,66 @@ export default function Review() {
   }, [groundTrack, groundFlownIdx]);
   const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
+  // Simple heuristic flight-phase detector (takeoff/landing only, from
+  // altitude/airspeed alone) -- a placeholder stand-in for the proper
+  // MSFS-event-flag segmenter (glideslope intercept, stall warning, etc.)
+  // described in the analytics plan. Swap this out once real telemetry
+  // event flags are wired up; the timeline/popup wiring doesn't change.
+  const flightPhases = useMemo(() => {
+    const alts = flight.map((r) => r.altitude_ft).filter((v) => v != null);
+    if (alts.length < 2) return [];
+    // a flight that barely changes altitude has nothing to detect -- guards
+    // against a recording that starts/ends already at cruise from tripping
+    // a false "takeoff"/"landing" on ordinary turbulence noise
+    if (Math.max(...alts) - Math.min(...alts) < 200) return [];
+
+    const phases = [];
+    const MARGIN = 50; // ft -- crude "still near the ground" proxy
+
+    // Takeoff: anchored to THIS flight's own starting altitude, not a
+    // shared/global minimum -- departure and arrival airports are commonly
+    // at different elevations, so a single ground reference for both ends
+    // silently breaks landing detection whenever they don't match.
+    const startAlt = flight[0].altitude_ft;
+    if (startAlt != null) {
+      const threshold = startAlt + MARGIN;
+      const climbIdx = flight.findIndex((r) => r.altitude_ft != null && r.altitude_ft > threshold);
+      if (climbIdx > 0) {
+        let rollStart = 0;
+        for (let i = climbIdx; i >= 0; i--) {
+          if (flight[i].airspeed_kt != null && flight[i].airspeed_kt < 20) { rollStart = i; break; }
+        }
+        // rounded the same way series[].t is, so a phase's end can't sit a
+        // hair past the chart's own domain max and get silently clipped
+        const start = +elapsed(flight[rollStart].ts).toFixed(1);
+        const end = +elapsed(flight[climbIdx].ts).toFixed(1);
+        if (end > start) phases.push({ key: "takeoff", label: "Takeoff", start, end, color: "#f5a623" });
+      }
+    }
+
+    // Landing: anchored to THIS flight's own ending altitude, same reasoning.
+    // Also requires the recording to actually end at taxi speed -- anchoring
+    // to "wherever the last sample is" can't otherwise tell a real touchdown
+    // apart from a recording that simply got stopped mid-descent, still airborne.
+    const lastIdx = flight.length - 1;
+    const endAlt = flight[lastIdx].altitude_ft;
+    const endSpeed = flight[lastIdx].airspeed_kt;
+    if (endAlt != null && endSpeed != null && endSpeed < 40) {
+      const threshold = endAlt + MARGIN;
+      let descentIdx = -1;
+      for (let i = lastIdx; i >= 0; i--) {
+        if (flight[i].altitude_ft != null && flight[i].altitude_ft > threshold) { descentIdx = i; break; }
+      }
+      if (descentIdx >= 0 && descentIdx < lastIdx) {
+        const start = +elapsed(flight[descentIdx].ts).toFixed(1);
+        const end = +elapsed(flight[lastIdx].ts).toFixed(1);
+        if (end > start) phases.push({ key: "landing", label: "Landing", start, end, color: "#38bdf8" });
+      }
+    }
+
+    return phases;
+  }, [flight]);
+
   // Chronological AOI log, one row per completed (or ongoing) run, built
   // once from `runs` with explicit start/end/duration, independent of playback position.
   const scanLog = useMemo(() => {
@@ -395,18 +465,40 @@ export default function Review() {
     return map;
   }, [scanLog]);
 
+  // distinct AOI names available to filter by, in the same order they were first colored
+  const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
+
   // const scanLogRows = useMemo(() => [...scanLog].reverse(), [scanLog]); newest first
   const scanLogRows = useMemo(() => {
     const rows = [];
     for (let i = scanLog.length - 1; i >= 0; i--) {
       const r = scanLog[i];
       if (r.start > curT) continue;
+      if (hiddenAois.has(r.aoi)) continue;
       const isCurrent = curT < r.end;
       const end = isCurrent ? curT : r.end;
       rows.push({ ...r, end, dur: Math.max(0, end - r.start), isCurrent });
     }
     return rows;
-  }, [scanLog, curT]);
+  }, [scanLog, curT, hiddenAois]);
+
+  // close the AOI filter dropdown on any click outside it
+  useEffect(() => {
+    if (!aoiFilterOpen) return;
+    const onDocClick = (e) => {
+      if (aoiFilterRef.current && !aoiFilterRef.current.contains(e.target)) setAoiFilterOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [aoiFilterOpen]);
+
+  const toggleAoiHidden = (name) => {
+    setHiddenAois((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
 
   // end a chart drag-scrub even if the mouse is released outside the chart
   useEffect(() => {
@@ -494,6 +586,58 @@ export default function Review() {
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
     seekTo(groundTrack[bestIdx].t);
+  };
+
+  // opens a new floating analytics window for this phase -- multiple can be
+  // open at once, each independently draggable; re-clicking an already-open
+  // phase just brings its existing window to front rather than duplicating it
+  const openPhase = (p) => {
+    setOpenPhases((prev) => {
+      const existing = prev.find((w) => w.key === p.key);
+      if (existing) {
+        zCounter.current += 1;
+        return prev.map((w) => (w.key === p.key ? { ...w, z: zCounter.current } : w));
+      }
+      zCounter.current += 1;
+      const stagger = prev.length * 28;
+      return [...prev, {
+        ...p,
+        winId: p.key,
+        x: Math.max(16, window.innerWidth / 2 - 360 + stagger),
+        y: Math.max(16, window.innerHeight / 2 - 220 + stagger),
+        z: zCounter.current,
+      }];
+    });
+  };
+
+  const closePhase = (winId) => setOpenPhases((prev) => prev.filter((w) => w.winId !== winId));
+
+  const bringToFront = (winId) => {
+    zCounter.current += 1;
+    const z = zCounter.current;
+    setOpenPhases((prev) => prev.map((w) => (w.winId === winId ? { ...w, z } : w)));
+  };
+
+  // drag a window by its title bar -- closures capture the drag's own
+  // starting point so add/remove listener references always match, and
+  // dragging one window can't get confused by another window's state
+  const onPhaseDragStart = (winId, e) => {
+    if (e.target.closest(".phase-modal-close")) return;
+    bringToFront(winId);
+    const startX = e.clientX, startY = e.clientY;
+    const win = openPhases.find((w) => w.winId === winId);
+    if (!win) return;
+    const originX = win.x, originY = win.y;
+    const onMove = (ev) => {
+      const nx = originX + (ev.clientX - startX), ny = originY + (ev.clientY - startY);
+      setOpenPhases((prev) => prev.map((w) => (w.winId === winId ? { ...w, x: nx, y: ny } : w)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   return (
@@ -622,6 +766,32 @@ export default function Review() {
                 stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
               <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
               <Tooltip content={<TLTooltip />} />
+              {flightPhases.map((p) => {
+                // widen only the drawn band, never the real start/end used
+                // by the popup/seek -- a genuinely short phase (e.g. a
+                // landing detected in the last couple seconds) can render
+                // as a sliver too thin to see or click on a long timeline.
+                // Landing sits at the chart's right edge, so there's often
+                // no room to extend forward -- fall back to widening
+                // backward (or vice-versa for a phase pinned to the left edge).
+                const minSpan = Math.max(1, totalT * 0.008);
+                let x1 = p.start, x2 = p.end;
+                if (x2 - x1 < minSpan) {
+                  const pad = (minSpan - (x2 - x1)) / 2;
+                  x1 = Math.max(chartMinT, p.start - pad);
+                  x2 = Math.min(chartMaxT, p.end + pad);
+                  if (x2 - x1 < minSpan) {
+                    if (x1 === chartMinT) x2 = Math.min(chartMaxT, x1 + minSpan);
+                    else if (x2 === chartMaxT) x1 = Math.max(chartMinT, x2 - minSpan);
+                  }
+                }
+                return (
+                  <ReferenceArea key={p.key} x1={x1} x2={x2}
+                    fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
+                    onClick={() => seekTo(p.start)} style={{ cursor: "pointer" }}
+                    label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
+                );
+              })}
               {METRICS.map((m) =>
                 filters[m.key] && !(m.key === "workload" && !hasEye) ? (
                   <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
@@ -632,6 +802,24 @@ export default function Review() {
             </LineChart>
           {/* playback controls */}
           </ResponsiveContainer>
+          {flightPhases.length > 0 && (
+            <>
+              <div className="phase-buttons-label">Events:</div>
+              {/* positioned by the same time-domain fraction as each phase's
+                  ReferenceArea, so each button sits directly under its band */}
+              <div className="phase-buttons-row">
+                {flightPhases.map((p) => {
+                  const leftPct = chartMaxT > chartMinT ? ((p.start - chartMinT) / (chartMaxT - chartMinT)) * 100 : 0;
+                  return (
+                    <button key={p.key} className="phase-btn" style={{ left: `${leftPct}%`, borderColor: p.color, color: p.color }}
+                      onClick={() => openPhase(p)} title={`${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
           <div className="tl-transport">
             <button className="tl-btn" title="Restart" onClick={() => { seekTo(0); setPlaying(false); }}>↺</button>
@@ -656,6 +844,25 @@ export default function Review() {
             <div className="card-head">
               <h3>Scan path</h3>
               <span className="tag">gaze · {curEye ? (curEye.blink ? "blinking" : curAoi) : "no eye data"}</span>
+              <div className="aoi-filter" ref={aoiFilterRef}>
+                <button type="button" className="aoi-filter-btn" onClick={() => setAoiFilterOpen((o) => !o)}>
+                  Instruments {hiddenAois.size > 0 ? `(${allAois.length - hiddenAois.size}/${allAois.length})` : ""} ▾
+                </button>
+                {aoiFilterOpen && (
+                  <div className="aoi-filter-menu">
+                    {allAois.map((name) => (
+                      <label key={name} className="aoi-filter-item">
+                        <span className="aoi-filter-name">
+                          <span className="swatch" style={{ background: scanLogColor.get(name) }} />
+                          {name}
+                        </span>
+                        <input type="checkbox" checked={!hiddenAois.has(name)}
+                          onChange={() => toggleAoiHidden(name)} />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
               <label className="min-dwell" title="Minimum fixation time">
                 min glance
                 <input type="number" min={0} step={0.1} value={minAoiDwellInput}
@@ -753,6 +960,54 @@ export default function Review() {
           </div>
         </div>
       </div>
+
+      {openPhases.map((w) => (
+        <div key={w.winId} className="phase-modal" style={{ left: w.x, top: w.y, zIndex: w.z }}
+          onMouseDown={() => bringToFront(w.winId)}>
+          <div className="phase-modal-head" onMouseDown={(e) => onPhaseDragStart(w.winId, e)}>
+            <h3>{w.label}</h3>
+            <button className="phase-modal-close" onClick={() => closePhase(w.winId)}>×</button>
+          </div>
+          <div className="phase-modal-sub">
+            {w.start.toFixed(1)}s – {w.end.toFixed(1)}s
+            <span className="phase-modal-dur">({(w.end - w.start).toFixed(1)}s)</span>
+            <button className="phase-modal-jump" onClick={() => seekTo(w.start)}>
+              Jump to start
+            </button>
+          </div>
+          <div className="phase-pillars">
+            <div className="pillar">
+              <h4>Flight Precision Index</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Glideslope RMSE</span><span>—</span></li>
+                <li><span>Localizer RMSE</span><span>—</span></li>
+                <li><span>Airspeed RMSE</span><span>—</span></li>
+                <li><span>Altitude hold RMSE</span><span>—</span></li>
+                <li><span>Control smoothness</span><span>—</span></li>
+              </ul>
+            </div>
+            <div className="pillar">
+              <h4>Visual Attention &amp; Scan Quality</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Cross-check freq (OTW↔PFD)</span><span>—</span></li>
+                <li><span>Avg fixation duration</span><span>—</span></li>
+                <li><span>Primary/secondary coverage</span><span>—</span></li>
+              </ul>
+            </div>
+            <div className="pillar">
+              <h4>Cognitive Cost Index</h4>
+              <div className="pillar-score">—</div>
+              <ul>
+                <li><span>Workload (pupil Z-score)</span><span>—</span></li>
+                <li><span>Stress/fatigue (blink rate)</span><span>—</span></li>
+              </ul>
+            </div>
+          </div>
+          <div className="phase-modal-note">Scoring engine not implemented yet — placeholder layout only.</div>
+        </div>
+      ))}
     </div>
   );
 }
