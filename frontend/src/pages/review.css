@@ -178,17 +178,19 @@
 .aoi-filter-btn:hover { background: #21303f; }
 .aoi-filter-menu {
   position: absolute; top: calc(100% + 4px); right: 0; z-index: 20;
-  min-width: 160px; max-height: 240px; overflow-y: auto;
+  width: max-content; max-width: 260px; max-height: 240px; overflow-y: auto;
   background: var(--rev-panel-2); border: 1px solid var(--rev-line);
   border-radius: 8px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 .aoi-filter-item {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 5px 6px; border-radius: 5px; font-size: 12px; cursor: pointer;
   white-space: nowrap;
 }
 .aoi-filter-item:hover { background: var(--rev-panel); }
+.aoi-filter-name { display: flex; align-items: center; gap: 7px; }
 .aoi-filter-item .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.aoi-filter-item input[type=checkbox] { flex: none; }
 
 /* scan path — chronological log, newest on top, scrollable, click a row
    to jump playback to that glance's start time. */

@@ -852,10 +852,12 @@ export default function Review() {
                   <div className="aoi-filter-menu">
                     {allAois.map((name) => (
                       <label key={name} className="aoi-filter-item">
+                        <span className="aoi-filter-name">
+                          <span className="swatch" style={{ background: scanLogColor.get(name) }} />
+                          {name}
+                        </span>
                         <input type="checkbox" checked={!hiddenAois.has(name)}
                           onChange={() => toggleAoiHidden(name)} />
-                        <span className="swatch" style={{ background: scanLogColor.get(name) }} />
-                        {name}
                       </label>
                     ))}
                   </div>

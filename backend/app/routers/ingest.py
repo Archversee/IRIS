@@ -208,7 +208,7 @@ async def ingest_flight(session_id: UUID, file: UploadFile):
             rec.append(_to_bool(val) if col in FLIGHT_BOOL else _to_float(val))
         records.append(tuple(rec))
 
-    inserted = await db.copy_rows("flight_data", db.FLIGHT_COLUMNS, records)
+    inserted = await db.replace_session_rows("flight_data", session_id, db.FLIGHT_COLUMNS, records)
     await _refresh_session_bounds(session_id)
     return IngestResult(inserted=inserted, skipped=skipped)
 
@@ -239,7 +239,7 @@ async def ingest_eye(session_id: UUID, file: UploadFile):
                 rec.append(_to_float(val))
         records.append(tuple(rec))
 
-    inserted = await db.copy_rows("eye_tracking_data", db.EYE_COLUMNS, records)
+    inserted = await db.replace_session_rows("eye_tracking_data", session_id, db.EYE_COLUMNS, records)
     return IngestResult(inserted=inserted, skipped=skipped)
 
 
