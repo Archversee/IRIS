@@ -10,6 +10,9 @@ export default function LiveStateCard({ cur }) {
   return (
     <div className="rev-card">
       <h3>Live state</h3>
+      {!cur ? (
+        <div className="scan-empty">No telemetry yet.</div>
+      ) : (
       <div className="readout-cols">
         <div className="ro-group">
           <h4>Flight state</h4>
@@ -34,6 +37,7 @@ export default function LiveStateCard({ cur }) {
           <RO k="Airspeed" v={`${fmt(cur.airspeed_kt)} kt`} />
         </div>
       </div>
+      )}
     </div>
   );
 }

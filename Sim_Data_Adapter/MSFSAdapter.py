@@ -38,8 +38,8 @@ import obsws_python as obsws
 # Config
 # ----------------------------------------------------------------------
 #POLL_INTERVAL_SEC = 0.1 #10Hz
-POLL_INTERVAL_SEC = 0.033 #30Hz
-#POLL_INTERVAL_SEC = 0.01665 #60hz
+#POLL_INTERVAL_SEC = 0.033 #30Hz
+POLL_INTERVAL_SEC = 0.01665 #60hz
 
 LOG_DIR = os.path.join(os.getcwd(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)

@@ -11,9 +11,9 @@ import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
 
 // Top-level "Live" nav destination. No session picker -- "Go Live" creates
-// a fresh session on the spot, then this renders the same viewer layout as
-// Review.jsx (via the shared useSessionData hook + components/session/*
-// pieces) polling that new session for data pushed by MSFSAdapter.py.
+// a fresh session on the spot, then this keeps rendering the same viewer
+// layout as Review.jsx (via the shared useSessionData hook + components/
+// session/* pieces), which fills in as MSFSAdapter.py streams data.
 export default function LiveSession() {
   const nav = useNavigate();
   const [sessionId, setSessionId] = useState(null);
@@ -36,66 +36,45 @@ export default function LiveSession() {
     }
   }
 
-  if (!sessionId) {
-    return (
-      <div className="rev">
-        <div className="rev-rail">
-          <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
-          <div className="rail-sep" />
-          <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
-        </div>
-        <div className="rev-main">
-          <div className="rev-titlebar">
-            <h1>Live</h1>
-            <span className="spacer" />
-            <button className="tl-btn go-live" disabled={starting} onClick={goLive}>
-              {starting ? "Starting…" : "● Go Live"}
-            </button>
-          </div>
-          <div className="rev-error">
-            {createErr ? <>Couldn't start a live session.<br />{createErr}</> : (
-              <>
-                Click "Go Live" to start a new live session.<br />
-                Once created, point MSFSAdapter.py's <code>SESSION_ID</code> at it and run the script.
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
-  if (!summary) return <div className="rev-loading">Loading session…</div>;
-  if (!flight.length)
-    return (
-      <div className="rev-error">
-        Waiting for live flight data…<br />
-        Point MSFSAdapter.py's <code>SESSION_ID</code> at <code>{sessionId}</code> and run it.
-        <br />
-        <button className="rail-btn" style={{ width: "auto", padding: "6px 14px", marginTop: 12 }}
-          onClick={() => nav("/sessions")}>
-          Back to Sessions
-        </button>
-      </div>
-    );
+
+  const notStarted = !sessionId;
+  const waitingForData = sessionId && summary && flight.length === 0;
 
   return (
     <div className="rev">
       <div className="rev-rail">
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
         <div className="rail-sep" />
-        <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>
+        {sessionId && <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>}
         <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
       </div>
 
       <div className="rev-main">
         <div className="rev-titlebar">
-          <h1>{summary.session.name}</h1>
-          <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
+          <h1>{summary?.session?.name || "Live"}</h1>
+          <span className="sub">
+            {summary ? `${summary.session.aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "no active session"}
+          </span>
           <span className="spacer" />
-          <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
+          {notStarted ? (
+            <button className="tl-btn go-live" disabled={starting} onClick={goLive}>
+              {starting ? "Starting…" : "● Go Live"}
+            </button>
+          ) : (
+            <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
+          )}
         </div>
+
+        {(notStarted || waitingForData || createErr) && (
+          <p className="sub" style={{ margin: "-4px 0 4px" }}>
+            {createErr
+              ? `Couldn't start a live session: ${createErr}`
+              : notStarted
+              ? "Click ● Go Live above to start a new live session."
+              : `Waiting for live flight data… point MSFSAdapter.py's SESSION_ID at ${sessionId} and run it.`}
+          </p>
+        )}
 
         <ScreensPanel {...screens} />
         <SessionTimeline {...timeline} />
