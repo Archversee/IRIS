@@ -112,43 +112,54 @@ _stream_queue = queue.Queue(maxsize=1000)
 
 
 def _stream_worker():
+    # WebSocketApp is websocket-client's supported pattern for a long-lived
+    # connection that needs both a background receive/ping-pong loop and
+    # sends from another thread -- its .send() takes an internal lock
+    # specifically so this combination is safe. (An earlier version of this
+    # hand-rolled the same idea with a raw create_connection() socket plus a
+    # second thread calling .recv() directly -- that pattern isn't actually
+    # synchronized by the library and could corrupt frame parsing under
+    # concurrent send/recv, which looks exactly like what was happening:
+    # the connection just silently closing every so often for no visible
+    # reason on either side.)
     url = f"{WS_BASE_URL}/sessions/{SESSION_ID}/stream/ws"
+
     while True:
-        try:
-            ws = websocket.create_connection(url, timeout=5)
-            print("[stream] connected to live dashboard")
+        stop_sender = threading.Event()
 
-            # This loop only ever sends. websocket-client only answers the
-            # server's keepalive PING with a PONG while it's inside a recv()
-            # call -- with nothing ever reading, uvicorn's ws-ping-timeout
-            # (20s default) sees no reply and drops the connection on a
-            # steady cycle. A dedicated reader thread just pumps recv() so
-            # that auto-pong logic actually runs; we don't expect the server
-            # to send us real messages on this connection, so the result is
-            # discarded -- this is purely to keep the socket alive.
-            stop_reader = threading.Event()
-
-            def _pump_keepalive():
+        def sender(wsapp):
+            while not stop_sender.is_set():
                 try:
-                    while not stop_reader.is_set():
-                        ws.recv()
+                    row = _stream_queue.get(timeout=1)
+                except queue.Empty:
+                    continue
+                try:
+                    wsapp.send(json.dumps(row))
                 except Exception:
-                    pass
+                    pass  # transient -- on_close (below) will stop this loop once the connection is actually dead
 
-            reader = threading.Thread(target=_pump_keepalive, daemon=True)
-            reader.start()
+        def on_open(wsapp):
+            print("[stream] connected to live dashboard")
+            # start sending only once the socket is confirmed open -- starting
+            # this eagerly races run_forever()'s own connect step, and a send
+            # attempted before it wins would kill this thread for good even
+            # though the connection goes on to succeed right after
+            threading.Thread(target=sender, args=(wsapp,), daemon=True).start()
 
-            try:
-                while True:
-                    row = _stream_queue.get()
-                    ws.send(json.dumps(row))
-            finally:
-                stop_reader.set()
-                ws.close()
-                reader.join(timeout=1)
-        except Exception as e:
-            print(f"[stream] connection lost ({e}); retrying in 2s")
-            time.sleep(2)
+        def on_error(wsapp, error):
+            print(f"[stream] error: {error}")
+
+        def on_close(wsapp, status_code, msg):
+            stop_sender.set()
+
+        wsapp = websocket.WebSocketApp(url, on_open=on_open, on_error=on_error, on_close=on_close)
+
+        # blocks until the connection closes; sends its own pings and
+        # answers the server's, so nothing extra is needed to stay alive
+        wsapp.run_forever(ping_interval=15, ping_timeout=10)
+        stop_sender.set()
+        print("[stream] connection lost; retrying in 2s")
+        time.sleep(2)
 
 
 def stream_row(row):
