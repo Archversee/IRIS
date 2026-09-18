@@ -117,12 +117,35 @@ def _stream_worker():
         try:
             ws = websocket.create_connection(url, timeout=5)
             print("[stream] connected to live dashboard")
+
+            # This loop only ever sends. websocket-client only answers the
+            # server's keepalive PING with a PONG while it's inside a recv()
+            # call -- with nothing ever reading, uvicorn's ws-ping-timeout
+            # (20s default) sees no reply and drops the connection on a
+            # steady cycle. A dedicated reader thread just pumps recv() so
+            # that auto-pong logic actually runs; we don't expect the server
+            # to send us real messages on this connection, so the result is
+            # discarded -- this is purely to keep the socket alive.
+            stop_reader = threading.Event()
+
+            def _pump_keepalive():
+                try:
+                    while not stop_reader.is_set():
+                        ws.recv()
+                except Exception:
+                    pass
+
+            reader = threading.Thread(target=_pump_keepalive, daemon=True)
+            reader.start()
+
             try:
                 while True:
                     row = _stream_queue.get()
                     ws.send(json.dumps(row))
             finally:
+                stop_reader.set()
                 ws.close()
+                reader.join(timeout=1)
         except Exception as e:
             print(f"[stream] connection lost ({e}); retrying in 2s")
             time.sleep(2)
