@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useSessionData } from "../components/session/useSessionData.js";
+import LoadingBar from "../components/session/LoadingBar.jsx";
 import ScreensPanel from "../components/session/ScreensPanel.jsx";
 import SessionTimeline from "../components/session/SessionTimeline.jsx";
 import ScanPathCard from "../components/session/ScanPathCard.jsx";
@@ -11,11 +12,12 @@ import "./review.css";
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { err, summary, flight, screens, timeline, scanPath, liveState, regionPie, phases } =
+  const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie, phases } =
     useSessionData({ id, live: false });
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
-  if (!summary) return <div className="rev-loading">Loading session…</div>;
+  if (!summary || !flightLoaded)
+    return <div className="rev-loading"><LoadingBar label="Loading session…" progress={loadProgress} /></div>;
   if (!flight.length)
     return (
       <div className="rev-error">

@@ -20,8 +20,3 @@ export const VIDEO_SYNC_TOLERANCE = 0.15;
 export const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75;
 export const MIN_AOI_DWELL_SEC_DEFAULT = 0.1;
 export const CHART_MAX_POINTS = 2000;
-
-// full re-fetch cadence while live -- fine for stage 1, but wasteful for a
-// long session (re-fetches the whole history each time); a `?since=`
-// incremental endpoint or a WebSocket push is the natural next optimization.
-export const POLL_MS = 2000;

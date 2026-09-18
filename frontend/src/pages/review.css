@@ -92,6 +92,12 @@
 .rev-screen .head .tag {
   margin-left: auto; font-size: 11px; color: #7fb5b0; font-weight: 500;
 }
+.rev-screen .head .capture-btn {
+  margin-left: auto; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: 1px solid #2f5b57; color: #9fd6d1;
+}
+.rev-screen .head .capture-btn:hover { border-color: #4ade80; color: #4ade80; }
 /* aspect-ratio goes on .body, not .rev-screen -- the head bar's own height
    would otherwise throw off the box's true shape, leaving the video
    slightly pillarboxed and the AOI overlay (which assumes an exact 16:9
@@ -274,6 +280,21 @@
   background: var(--rev-bg); color: var(--rev-muted);
 }
 .rev-error { color: #ff7a7a; padding: 40px; text-align: center; }
+
+.loading-box { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.loading-bar {
+  width: 240px; height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line);
+}
+.loading-bar-fill { height: 100%; background: var(--rev-green); border-radius: inherit; transition: width .15s ease; }
+.loading-bar.indeterminate .loading-bar-fill {
+  width: 40% !important; animation: loading-bar-sweep 1.1s ease-in-out infinite;
+}
+@keyframes loading-bar-sweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(350%); }
+}
+.loading-pct { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
   .rev-screens, .rev-bottom { grid-template-columns: 1fr; }

@@ -6,24 +6,32 @@ Corrected to use pysimconnect's actual documented API:
     datadef.simdata[name]        -> latest cached value
 
 INSTALL:
-    pip install pysimconnect obsws-python requests
+    pip install pysimconnect obsws-python requests websocket-client
 
 OBS SETUP (two instances, one mp4 each — instrument view + OTW view):
     Run two separate OBS Studio processes  In each instance:
         Tools > WebSocket Server Settings > Enable WebSocket server
 
-LIVE STREAMING (stage 1 of real-time -- flight telemetry only):
+LIVE STREAMING (flight telemetry only -- eye tracking + video are separate):
     1. Open the app's Live page and click "Go Live" -- this creates a new
        session and shows its id.
     2. Paste that id into SESSION_ID below.
     3. Run this script; the Live page starts showing data as it streams in.
     Leave SESSION_ID as None to skip streaming and just log CSV as before.
 
+    While the flight is in progress, samples go straight to the backend's
+    in-memory buffer over a WebSocket -- never the DB -- so there's no
+    per-sample network/DB round trip to keep up with. When this script
+    exits (Ctrl+C or the sim closes), it uploads the full CSV log to
+    Supabase in one batch via the same endpoint the Upload page uses, so
+    the flight becomes a normal reviewable session afterward.
+
 Run this AFTER MSFS2020 is running with a flight loaded, and after both
 OBS instances are open with the WebSocket server enabled.
 """
 
 import csv
+import json
 import os
 import queue
 import threading
@@ -31,6 +39,7 @@ import time
 from datetime import datetime, timezone
 
 import requests
+import websocket
 from simconnect import SimConnect, PERIOD_VISUAL_FRAME
 import obsws_python as obsws
 
@@ -51,6 +60,7 @@ ENABLE_OBS_RECORDING = True
 # Live streaming -- see "LIVE STREAMING" note above. CSV logging (the
 # durable record) happens either way; this is purely additive.
 API_BASE_URL = "http://localhost:8000"
+WS_BASE_URL = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
 SESSION_ID = None  # e.g. "3f9c1a2b-4d5e-4f6a-8b9c-0d1e2f3a4b5c"
 
 # One entry per OBS instance, it doesn't need to match anything in OBS.
@@ -90,22 +100,32 @@ NAME_TO_FIELD = {simvar: field for field, (simvar, _) in SIMVARS.items()}
 
 # ----------------------------------------------------------------------
 # Live streaming -- runs on its own thread so a slow/unreachable backend
-# can never stall the actual data-capture loop. Best-effort: a dropped
-# or failed sample is silently skipped rather than interrupting logging.
+# can never stall the actual data-capture loop. The backend only holds
+# these in memory (see stream.py) and relays them to the Live page; it
+# never touches the DB per-sample, so there's no per-row round trip to
+# keep up with and no need to throttle -- every row streams at full rate.
+# A dropped or failed sample is silently skipped rather than interrupting
+# logging; the CSV (written regardless) stays the source of truth and
+# gets batch-uploaded in _flush_full_log_to_supabase() once the flight ends.
 # ----------------------------------------------------------------------
 _stream_queue = queue.Queue(maxsize=1000)
 
 
 def _stream_worker():
+    url = f"{WS_BASE_URL}/sessions/{SESSION_ID}/stream/ws"
     while True:
-        row = _stream_queue.get()
         try:
-            requests.post(
-                f"{API_BASE_URL}/sessions/{SESSION_ID}/stream/flight",
-                json=row, timeout=1,
-            )
-        except Exception:
-            pass
+            ws = websocket.create_connection(url, timeout=5)
+            print("[stream] connected to live dashboard")
+            try:
+                while True:
+                    row = _stream_queue.get()
+                    ws.send(json.dumps(row))
+            finally:
+                ws.close()
+        except Exception as e:
+            print(f"[stream] connection lost ({e}); retrying in 2s")
+            time.sleep(2)
 
 
 def stream_row(row):
@@ -115,7 +135,29 @@ def stream_row(row):
     try:
         _stream_queue.put_nowait(payload)
     except queue.Full:
-        pass  # backend can't keep up -- drop the sample rather than pile up unbounded
+        pass  # backend/network can't keep up -- drop the sample rather than pile up unbounded
+
+
+def _flush_full_log_to_supabase():
+    """Uploads the full CSV log via the same batch-ingest endpoint the Upload
+    page uses, so a live-streamed flight becomes a normal reviewable session."""
+    if not SESSION_ID:
+        return
+    print("Uploading full flight log to the database...")
+    try:
+        with open(OUTPUT_CSV, "rb") as f:
+            resp = requests.post(
+                f"{API_BASE_URL}/sessions/{SESSION_ID}/ingest/flight",
+                files={"file": (os.path.basename(OUTPUT_CSV), f, "text/csv")},
+                timeout=60,
+            )
+        resp.raise_for_status()
+        print(f"Uploaded: {resp.json()}")
+    except Exception as e:
+        print(
+            f"Failed to upload the full log ({e}). The CSV at {OUTPUT_CSV} is "
+            "still on disk -- upload it manually via the Upload page."
+        )
 
 
 def connect_obs_clients():
@@ -149,7 +191,7 @@ def main():
 
     if SESSION_ID:
         threading.Thread(target=_stream_worker, daemon=True).start()
-        print(f"Live streaming enabled -> {API_BASE_URL}/sessions/{SESSION_ID}/stream/flight")
+        print(f"Live streaming enabled -> {WS_BASE_URL}/sessions/{SESSION_ID}/stream/ws")
 
     print("Connecting to SimConnect (make sure MSFS2020 is running with a flight loaded)...")
     sc = SimConnect()
@@ -203,6 +245,7 @@ def main():
             sc.Close()
             if obs_clients:
                 stop_obs_recordings(obs_clients)
+            _flush_full_log_to_supabase()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useSessionData } from "../components/session/useSessionData.js";
@@ -19,8 +19,10 @@ export default function LiveSession() {
   const [sessionId, setSessionId] = useState(null);
   const [starting, setStarting] = useState(false);
   const [createErr, setCreateErr] = useState(null);
+  const [otwStream, setOtwStream] = useState(null);
+  const [instrumentStream, setInstrumentStream] = useState(null);
 
-  const { err, summary, flight, screens, timeline, scanPath, liveState, regionPie, phases, followingLive } =
+  const { err, summary, flight, flightLoaded, screens, timeline, scanPath, liveState, regionPie, phases, followingLive } =
     useSessionData({ id: sessionId, live: true });
 
   async function goLive() {
@@ -36,10 +38,34 @@ export default function LiveSession() {
     }
   }
 
+  // Browser screen-capture for the two live monitors -- an in-progress OBS
+  // recording isn't a seekable/playable file, so the live view captures
+  // the screen directly instead. Each button opens the browser's own
+  // window/monitor picker.
+  function stopStream(stream) {
+    stream?.getTracks().forEach((t) => t.stop());
+  }
+  async function captureScreen(current, setter) {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      stopStream(current);
+      stream.getVideoTracks()[0].addEventListener("ended", () => setter(null));
+      setter(stream);
+    } catch {
+      // user cancelled the picker
+    }
+  }
+  const streamsRef = useRef({ otw: null, instrument: null });
+  useEffect(() => { streamsRef.current = { otw: otwStream, instrument: instrumentStream }; });
+  useEffect(() => () => {
+    stopStream(streamsRef.current.otw);
+    stopStream(streamsRef.current.instrument);
+  }, []);
+
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
 
   const notStarted = !sessionId;
-  const waitingForData = sessionId && summary && flight.length === 0;
+  const waitingForData = sessionId && summary && flightLoaded && flight.length === 0;
 
   return (
     <div className="rev">
@@ -76,7 +102,14 @@ export default function LiveSession() {
           </p>
         )}
 
-        <ScreensPanel {...screens} />
+        <ScreensPanel {...screens} live
+          otwStream={otwStream}
+          onCaptureOtw={() => captureScreen(otwStream, setOtwStream)}
+          onStopOtw={() => { stopStream(otwStream); setOtwStream(null); }}
+          instrumentStream={instrumentStream}
+          onCaptureInstrument={() => captureScreen(instrumentStream, setInstrumentStream)}
+          onStopInstrument={() => { stopStream(instrumentStream); setInstrumentStream(null); }}
+        />
         <SessionTimeline {...timeline} />
 
         <div className="rev-bottom">

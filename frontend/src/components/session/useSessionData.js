@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
-import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS, POLL_MS } from "./constants.js";
+import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
 // All state, data-fetching and derived computations behind a session
 // viewer (Review and Live pages both use this). `id` may be null/undefined
 // -- fetching just no-ops until a real session id is supplied, which is how
-// the Live page defers loading until "Go Live" creates a session. `live`
-// toggles polling + auto-follow-newest-sample on top of the one-shot fetch.
+// the Live page defers loading until "Go Live" creates a session.
+//
+// `live` swaps the flight data source: Review does a one-shot REST fetch;
+// Live opens a WebSocket to stream.py's in-memory buffer instead (no DB
+// round trip while the flight is in progress -- see stream.py) and also
+// turns on auto-follow-newest-sample.
 //
 // Returns prop groups meant to be spread straight onto the presentational
 // components in components/session/, plus the guard fields (`err`,
@@ -17,6 +21,8 @@ export function useSessionData({ id, live }) {
   const [summary, setSummary] = useState(null);
   const [flight, setFlight] = useState([]);
   const [eye, setEye] = useState([]);
+  const [flightLoaded, setFlightLoaded] = useState(false); // distinguishes "still fetching" from "fetched, genuinely empty"
+  const [loadProgress, setLoadProgress] = useState(null); // 0..1 while fetching (Review only); null = unknown/indeterminate
   const [aoiZones, setAoiZones] = useState([]);
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
@@ -46,27 +52,89 @@ export function useSessionData({ id, live }) {
     return () => window.removeEventListener("mouseup", stop);
   }, [groundScrubbing]);
 
-  // fetch once always; if live, also poll for new data on top of that -- see POLL_MS note in constants.js
+  // session metadata + AOI zones: always a one-shot REST fetch either way
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    const fetchOnce = async () => {
-      try {
-        const [sm, fl, ey] = await Promise.all([
-          api.summary(id), api.flight(id), api.eye(id),
-        ]);
-        if (cancelled) return;
-        setSummary(sm); setFlight(fl); setEye(ey);
-        setErr(null);
-      } catch (e) {
-        if (!cancelled) setErr(e.message);
-      }
-    };
-    fetchOnce();
+    api.summary(id).then((sm) => { if (!cancelled) setSummary(sm); })
+      .catch((e) => { if (!cancelled) setErr(e.message); });
     api.listAoiZones().then(setAoiZones).catch(() => {});
-    if (!live) return () => { cancelled = true; };
-    const intervalId = setInterval(fetchOnce, POLL_MS);
-    return () => { cancelled = true; clearInterval(intervalId); };
+    return () => { cancelled = true; };
+  }, [id]);
+
+  // flight (+ eye) data: Review fetches once over REST; Live streams over a
+  // WebSocket instead, since per-sample REST/DB round trips can't keep up
+  // with a real flight (see stream.py). Eye tracking stays post-session
+  // only for now, so `eye` just stays empty while live.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setFlightLoaded(false); // reset on every id/live change so a fresh fetch shows "loading", not "empty"
+    setLoadProgress(null);
+
+    if (!live) {
+      // The real bottleneck is usually the backend's own query+serialize
+      // time against a remote DB, which happens before any bytes reach the
+      // browser at all -- byte-download progress has nothing to show during
+      // that wait and just jumps at the end. So progress here is the max of
+      // that (genuinely useful if the payload itself is huge/slow to
+      // transfer) and a smooth time-based estimate that fills in the rest,
+      // so the bar keeps moving during the opaque server-side wait too.
+      const startedAt = performance.now();
+      const SIMULATED_CAP = 0.92; // never claims done on its own -- only real completion sets 100%
+      const SIMULATED_TAU_SEC = 3;
+      const tick = () => {
+        if (cancelled) return;
+        const elapsedSec = (performance.now() - startedAt) / 1000;
+        const simulated = SIMULATED_CAP * (1 - Math.exp(-elapsedSec / SIMULATED_TAU_SEC));
+        setLoadProgress((prev) => Math.max(prev ?? 0, simulated));
+      };
+      const simTimer = setInterval(tick, 150);
+      tick();
+
+      const loaded = { flight: 0, eye: 0 };
+      const totals = { flight: 0, eye: 0 };
+      const reportProgress = () => {
+        const total = totals.flight + totals.eye;
+        if (!cancelled && total > 0) {
+          const real = (loaded.flight + loaded.eye) / total;
+          setLoadProgress((prev) => Math.max(prev ?? 0, real));
+        }
+      };
+      Promise.all([
+        api.flight(id, undefined, (l, t) => { loaded.flight = l; totals.flight = t; reportProgress(); }),
+        api.eye(id, undefined, (l, t) => { loaded.eye = l; totals.eye = t; reportProgress(); }),
+      ])
+        .then(([fl, ey]) => { if (!cancelled) { setFlight(fl); setEye(ey); } })
+        .catch((e) => { if (!cancelled) setErr(e.message); })
+        .finally(() => {
+          clearInterval(simTimer);
+          if (!cancelled) { setFlightLoaded(true); setLoadProgress(1); }
+        });
+      return () => { cancelled = true; clearInterval(simTimer); };
+    }
+
+    let ws = null;
+    let reconnectTimer = null;
+    const connect = () => {
+      ws = new WebSocket(api.liveSocketUrl(id));
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "backlog") { setFlight(msg.samples); setFlightLoaded(true); }
+        else if (msg.type === "sample") setFlight((prev) => [...prev, msg.sample]);
+      };
+      ws.onclose = () => {
+        if (!cancelled) reconnectTimer = setTimeout(connect, 2000);
+      };
+    };
+    connect();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(reconnectTimer);
+      ws.onclose = null; // don't reconnect on our own cleanup close
+      ws.close();
+    };
   }, [id, live]);
 
   // live mode only: snap to the newest sample whenever new data lands, unless the user has scrubbed into history
@@ -457,7 +525,7 @@ export function useSessionData({ id, live }) {
   };
 
   return {
-    err, summary, flight,
+    err, summary, flight, flightLoaded, loadProgress,
 
     screens: {
       otwVideoRef, otwVideoSrc, lookingAtOtw,

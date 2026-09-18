@@ -1,23 +1,53 @@
+import { useEffect } from "react";
+
+// Binds a live MediaStream (browser screen-capture) to a <video> ref --
+// srcObject can't be set as a JSX attribute like src can.
+function useStreamBinding(ref, stream) {
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream || null;
+  }, [ref, stream]);
+}
+
 // The three video/track panels at the top of the session viewer: OTW,
 // Instruments (with AOI zone overlay), and the ground track map.
+//
+// A screen shows one of three things: a live-captured MediaStream (Live
+// page, via the browser's own screen-capture picker), a finished OBS file
+// (Review, `src=`), or neither (nothing linked/captured yet).
 export default function ScreensPanel({
-  otwVideoRef, otwVideoSrc, lookingAtOtw,
-  instrumentVideoRef, instrumentVideoSrc, lookingAtInstruments,
+  otwVideoRef, otwVideoSrc, otwStream, lookingAtOtw,
+  instrumentVideoRef, instrumentVideoSrc, instrumentStream, lookingAtInstruments,
   aoiZones, curAoi,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
+  live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
 }) {
+  useStreamBinding(otwVideoRef, otwStream);
+  useStreamBinding(instrumentVideoRef, instrumentStream);
+
+  const hasOtw = !!(otwStream || otwVideoSrc);
+  const hasInstrument = !!(instrumentStream || instrumentVideoSrc);
+
   return (
     <div className="rev-screens">
       <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
-        <div className="head">OTW</div>
+        <div className="head">
+          OTW
+          {live && (
+            <button className="capture-btn" onClick={otwStream ? onStopOtw : onCaptureOtw}>
+              {otwStream ? "■ Stop" : "◻ Capture"}
+            </button>
+          )}
+        </div>
         <div className="body">
-          {otwVideoSrc && (
+          {otwStream ? (
+            <video ref={otwVideoRef} className="screen-video" autoPlay muted playsInline />
+          ) : otwVideoSrc ? (
             <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
-          )}
-          {otwVideoSrc && lookingAtOtw && gaze?.x != null && gaze?.y != null && (
+          ) : null}
+          {hasOtw && lookingAtOtw && gaze?.x != null && gaze?.y != null && (
             <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
               <g className="gaze-cursor"
                 style={{
@@ -31,13 +61,22 @@ export default function ScreensPanel({
       </div>
 
       <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
-        <div className="head">Instruments</div>
+        <div className="head">
+          Instruments
+          {live && (
+            <button className="capture-btn" onClick={instrumentStream ? onStopInstrument : onCaptureInstrument}>
+              {instrumentStream ? "■ Stop" : "◻ Capture"}
+            </button>
+          )}
+        </div>
         <div className="body">
-          {instrumentVideoSrc && (
+          {instrumentStream ? (
+            <video ref={instrumentVideoRef} className="screen-video" autoPlay muted playsInline />
+          ) : instrumentVideoSrc ? (
             <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
-          )}
-          {instrumentVideoSrc && (
+          ) : null}
+          {hasInstrument && (
             <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
               {aoiZones.map((z) => {
                 const active = z.name === curAoi;
