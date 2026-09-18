@@ -122,12 +122,19 @@ export function useSessionData({ id, live }) {
     // no matter how fast data comes in.
     let ws = null;
     let reconnectTimer = null;
-    let pending = [];
+    let pendingFlight = [];
+    let pendingEye = [];
     const flush = () => {
-      if (!pending.length) return;
-      const batch = pending;
-      pending = [];
-      setFlight((prev) => prev.concat(batch));
+      if (pendingFlight.length) {
+        const batch = pendingFlight;
+        pendingFlight = [];
+        setFlight((prev) => prev.concat(batch));
+      }
+      if (pendingEye.length) {
+        const batch = pendingEye;
+        pendingEye = [];
+        setEye((prev) => prev.concat(batch));
+      }
     };
     const flushTimer = setInterval(flush, 250);
 
@@ -136,11 +143,16 @@ export function useSessionData({ id, live }) {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "backlog") {
-          pending = []; // backlog supersedes anything still buffered from before reconnect
+          // backlog supersedes anything still buffered from before reconnect
+          pendingFlight = [];
+          pendingEye = [];
           setFlight(msg.samples);
+          setEye(msg.eye_samples || []);
           setFlightLoaded(true);
         } else if (msg.type === "sample") {
-          pending.push(msg.sample);
+          pendingFlight.push(msg.sample);
+        } else if (msg.type === "eye_sample") {
+          pendingEye.push(msg.sample);
         }
       };
       ws.onclose = () => {

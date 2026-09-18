@@ -66,3 +66,30 @@ class FlightSample(BaseModel):
     ambient_temp_c: float | None = None
     sim_running: bool | None = None
     sim_paused: bool | None = None
+
+
+class EyeSample(BaseModel):
+    ts: datetime
+    # every field optional so partial samples still stream; names/shape
+    # match db.EYE_COLUMNS and the SmartEye* field mapping in ingest.py
+    gaze_origin_x: float | None = None
+    gaze_origin_y: float | None = None
+    gaze_origin_z: float | None = None
+    gaze_dir_x: float | None = None
+    gaze_dir_y: float | None = None
+    gaze_dir_z: float | None = None
+    gaze_point_x: float | None = None
+    gaze_point_y: float | None = None
+    pupil_diam_left_mm: float | None = None
+    pupil_diam_right_mm: float | None = None
+    eyelid_opening_mm: float | None = None
+    blink: bool | None = None
+    head_pos_x: float | None = None
+    head_pos_y: float | None = None
+    head_pos_z: float | None = None
+    head_heading_deg: float | None = None
+    head_pitch_deg: float | None = None
+    head_roll_deg: float | None = None
+    gaze_quality: float | None = None
+    aoi: str | None = None
+    fixation_id: int | None = None

@@ -68,6 +68,7 @@ OBS_INSTANCES = [
     dict(name="instrument", host="localhost", port=4456, password=""),
     dict(name="otw",        host="localhost", port=4455, password=""),
 ]
+# OBS vidoe file sizes: 15 min:1gb @720p
 
 # Canonical field -> (simvar name, unit)
 SIMVARS = {

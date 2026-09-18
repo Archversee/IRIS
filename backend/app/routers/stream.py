@@ -3,16 +3,21 @@ Real-time streaming.
 
 Live samples never touch the DB while a flight is in progress -- they're
 held in memory here and relayed straight to whoever's watching. The
-durable copy happens separately: MSFSAdapter.py POSTs the full CSV log to
-the existing /ingest/flight endpoint once the flight ends (see its LIVE
-STREAMING docstring), the same batch path the Upload page uses.
+durable copy happens separately, after the fact: MSFSAdapter.py POSTs the
+full CSV log to /ingest/flight once the flight ends (see its LIVE
+STREAMING docstring), and Smart Eye's own file export goes through
+/ingest/eye the normal way (Upload page) -- the live eye feed below is a
+preview only, it doesn't replace that.
 
-  WS   /sessions/{id}/stream/ws         producer -- MSFSAdapter.py connects
-                                         once and sends one JSON sample per
-                                         message (shape: FlightSample).
+  WS   /sessions/{id}/stream/ws         flight producer -- MSFSAdapter.py
+                                         connects once and sends one JSON
+                                         sample per message (FlightSample).
+  WS   /sessions/{id}/stream/eye/ws     eye producer -- SmartEyeLiveAdapter.py,
+                                         same pattern (EyeSample).
   WS   /sessions/{id}/stream/subscribe  consumer -- the Live page connects,
                                          gets the buffered backlog once,
-                                         then a live push per new sample.
+                                         then a live push per new sample of
+                                         either kind.
   POST /sessions/{id}/stream/flight     one-off sample straight to the DB,
                                          handy for curl testing -- unrelated
                                          to the in-memory paths above.
@@ -23,7 +28,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from .. import db
-from ..schemas import FlightSample
+from ..schemas import EyeSample, FlightSample
 
 router = APIRouter(prefix="/sessions/{session_id}/stream", tags=["stream"])
 
@@ -35,12 +40,14 @@ _BACKLOG_SIZE = 20_000
 
 
 class _LiveBuffer:
-    __slots__ = ("samples", "subscribers", "producer_connected")
+    __slots__ = ("flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected")
 
     def __init__(self):
-        self.samples: deque[dict] = deque(maxlen=_BACKLOG_SIZE)
+        self.flight_samples: deque[dict] = deque(maxlen=_BACKLOG_SIZE)
+        self.eye_samples: deque[dict] = deque(maxlen=_BACKLOG_SIZE)
         self.subscribers: set[WebSocket] = set()
-        self.producer_connected = False
+        self.flight_connected = False
+        self.eye_connected = False
 
 
 _live: dict[str, _LiveBuffer] = {}
@@ -52,7 +59,7 @@ def _buffer(session_id: UUID) -> _LiveBuffer:
 
 def _drop_if_idle(session_id: UUID, buf: _LiveBuffer):
     # nothing left producing or watching -- free the memory
-    if not buf.subscribers and not buf.producer_connected:
+    if not buf.subscribers and not buf.flight_connected and not buf.eye_connected:
         _live.pop(str(session_id), None)
 
 
@@ -77,7 +84,7 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
     """MSFSAdapter.py's live feed. Held in memory and relayed to subscribers -- not persisted here."""
     await websocket.accept()
     buf = _buffer(session_id)
-    buf.producer_connected = True
+    buf.flight_connected = True
     try:
         while True:
             try:
@@ -86,15 +93,41 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
             except WebSocketDisconnect:
                 raise
             except Exception as e:
-                print(f"[stream] dropped malformed sample: {e}")
+                print(f"[stream] dropped malformed flight sample: {e}")
                 continue
             record = sample.model_dump(mode="json")
-            buf.samples.append(record)
+            buf.flight_samples.append(record)
             await _broadcast(buf, {"type": "sample", "sample": record})
     except WebSocketDisconnect:
         pass
     finally:
-        buf.producer_connected = False
+        buf.flight_connected = False
+        _drop_if_idle(session_id, buf)
+
+
+@router.websocket("/eye/ws")
+async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
+    """SmartEyeLiveAdapter.py's live feed -- same pattern as stream_producer above, for gaze data."""
+    await websocket.accept()
+    buf = _buffer(session_id)
+    buf.eye_connected = True
+    try:
+        while True:
+            try:
+                data = await websocket.receive_json()
+                sample = EyeSample(**data)
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                print(f"[stream] dropped malformed eye sample: {e}")
+                continue
+            record = sample.model_dump(mode="json")
+            buf.eye_samples.append(record)
+            await _broadcast(buf, {"type": "eye_sample", "sample": record})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        buf.eye_connected = False
         _drop_if_idle(session_id, buf)
 
 
@@ -105,7 +138,11 @@ async def stream_subscriber(websocket: WebSocket, session_id: UUID):
     buf = _buffer(session_id)
     buf.subscribers.add(websocket)
     try:
-        await websocket.send_json({"type": "backlog", "samples": list(buf.samples)})
+        await websocket.send_json({
+            "type": "backlog",
+            "samples": list(buf.flight_samples),
+            "eye_samples": list(buf.eye_samples),
+        })
         while True:
             await websocket.receive_text()  # keep the socket open; client has nothing to say
     except WebSocketDisconnect:
