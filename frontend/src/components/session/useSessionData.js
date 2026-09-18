@@ -114,14 +114,34 @@ export function useSessionData({ id, live }) {
       return () => { cancelled = true; clearInterval(simTimer); };
     }
 
+    // Samples can arrive as fast as the sim polls (up to 60Hz) -- pushing
+    // every single one straight into React state would re-render, and
+    // recompute every heavy useMemo below over the whole (ever-growing)
+    // flight array, up to 60 times a second. Batch them into a buffer and
+    // flush into state on a timer instead, so the render rate is bounded
+    // no matter how fast data comes in.
     let ws = null;
     let reconnectTimer = null;
+    let pending = [];
+    const flush = () => {
+      if (!pending.length) return;
+      const batch = pending;
+      pending = [];
+      setFlight((prev) => prev.concat(batch));
+    };
+    const flushTimer = setInterval(flush, 250);
+
     const connect = () => {
       ws = new WebSocket(api.liveSocketUrl(id));
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "backlog") { setFlight(msg.samples); setFlightLoaded(true); }
-        else if (msg.type === "sample") setFlight((prev) => [...prev, msg.sample]);
+        if (msg.type === "backlog") {
+          pending = []; // backlog supersedes anything still buffered from before reconnect
+          setFlight(msg.samples);
+          setFlightLoaded(true);
+        } else if (msg.type === "sample") {
+          pending.push(msg.sample);
+        }
       };
       ws.onclose = () => {
         if (!cancelled) reconnectTimer = setTimeout(connect, 2000);
@@ -132,6 +152,7 @@ export function useSessionData({ id, live }) {
     return () => {
       cancelled = true;
       clearTimeout(reconnectTimer);
+      clearInterval(flushTimer);
       ws.onclose = null; // don't reconnect on our own cleanup close
       ws.close();
     };
