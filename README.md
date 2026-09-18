@@ -56,6 +56,7 @@ Interactive API docs: <http://localhost:8000/docs>.
 cd backend
 .venv\Scripts\activate
 uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --port 8000
 ```
 
 ## 3. Frontend
