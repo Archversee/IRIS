@@ -10,6 +10,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        ws: true, // needed for the live dashboard's WebSocket subscription
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
       // static video files served by FastAPI's StaticFiles mount at /videos
