@@ -65,16 +65,35 @@ async def launch_adapter(session_id: UUID):
     script = settings.adapter_script_path
     if not os.path.isfile(script):
         raise HTTPException(500, f"Adapter script not found at {script}")
+    script_dir = os.path.dirname(script)
 
-    # New console window so the script's own status output and Ctrl+C still
-    # work as if launched by hand; only meaningful on Windows.
-    creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
+    if os.name == "nt":
+        # A python.exe launched directly into CREATE_NEW_CONSOLE takes that
+        # console with it when it exits -- if the script dies immediately
+        # (e.g. a missing dependency in whichever "python" ADAPTER_PYTHON_PATH
+        # points at, or SimConnect/OBS not reachable yet), the window flashes
+        # and closes before anyone can read why. Routing through a small
+        # generated .bat that pauses after the script exits keeps the window
+        # up so the error is actually visible.
+        log_dir = os.path.join(script_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        bat_path = os.path.join(log_dir, "_launch_adapter.bat")
+        with open(bat_path, "w") as f:
+            f.write(
+                "@echo off\r\n"
+                f'"{settings.adapter_python_path}" "{script}" "{session_id}"\r\n'
+                "echo.\r\n"
+                "echo ==== LiveAdapter.py exited (exit code %errorlevel%) -- press any key to close ====\r\n"
+                "pause >nul\r\n"
+            )
+        args = ["cmd", "/c", bat_path]
+        creationflags = subprocess.CREATE_NEW_CONSOLE
+    else:
+        args = [settings.adapter_python_path, script, str(session_id)]
+        creationflags = 0
+
     try:
-        subprocess.Popen(
-            [settings.adapter_python_path, script, str(session_id)],
-            cwd=os.path.dirname(script),
-            creationflags=creationflags,
-        )
+        subprocess.Popen(args, cwd=script_dir, creationflags=creationflags)
     except OSError as e:
         raise HTTPException(500, f"Couldn't launch adapter script: {e}")
     return {"status": "launched"}
