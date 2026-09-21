@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from .. import db
 from ..config import settings
-from ..schemas import Session, SessionCreate
+from ..schemas import Session, SessionCreate, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -37,6 +37,28 @@ async def list_sessions():
 async def get_session(session_id: UUID):
     async with db.acquire() as conn:
         row = await conn.fetchrow("select * from sessions where id = $1", session_id)
+    if row is None:
+        raise HTTPException(404, "Session not found")
+    return dict(row)
+
+
+@router.patch("/{session_id}", response_model=Session)
+async def update_session(session_id: UUID, body: SessionUpdate):
+    """Fills in session details after the fact -- used by the End Session
+    flow, where the session was created upfront (with a placeholder name)
+    when "Go Live" was clicked, and the real name/pilot/aircraft/notes are
+    only known once the flight is over."""
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        row = await get_session(session_id)
+        return row
+
+    set_clause = ", ".join(f"{col} = ${i}" for i, col in enumerate(fields, start=2))
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            f"update sessions set {set_clause} where id = $1 returning *",
+            session_id, *fields.values(),
+        )
     if row is None:
         raise HTTPException(404, "Session not found")
     return dict(row)

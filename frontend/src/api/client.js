@@ -50,9 +50,19 @@ export const api = {
       body: JSON.stringify(body),
     }),
   deleteSession: (id) => req(`/sessions/${id}`, { method: "DELETE" }),
+  updateSession: (id, body) =>
+    req(`/sessions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   // Auto-launches LiveAdapter.py on the backend machine with this session's
   // id already filled in -- see LiveSession.jsx's goLive().
   launchLiveAdapter: (id) => req(`/sessions/${id}/launch-adapter`, { method: "POST" }),
+  // End Session button -- tells the connected LiveAdapter.py to shut down
+  // cleanly (SimConnect close, OBS stop, CSV batch-upload) instead of
+  // leaving it running after the user walks away from the Live page.
+  stopAdapter: (id) => req(`/sessions/${id}/stream/stop-adapter`, { method: "POST" }),
 
   ingest: (id, kind, file) => {
     const fd = new FormData();

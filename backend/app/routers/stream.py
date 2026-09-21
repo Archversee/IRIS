@@ -21,6 +21,13 @@ preview only, it doesn't replace that.
   POST /sessions/{id}/stream/flight     one-off sample straight to the DB,
                                          handy for curl testing -- unrelated
                                          to the in-memory paths above.
+  POST /sessions/{id}/stream/stop-adapter
+                                         End Session button -- pushes a stop
+                                         command down the flight producer's
+                                         own socket so LiveAdapter.py shuts
+                                         down the same clean way Ctrl+C does
+                                         (SimConnect close, OBS stop, CSV
+                                         batch-upload) instead of being killed.
 """
 from collections import deque
 from uuid import UUID
@@ -40,7 +47,7 @@ _BACKLOG_SIZE = 20_000
 
 
 class _LiveBuffer:
-    __slots__ = ("flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected")
+    __slots__ = ("flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected", "flight_ws")
 
     def __init__(self):
         self.flight_samples: deque[dict] = deque(maxlen=_BACKLOG_SIZE)
@@ -48,6 +55,10 @@ class _LiveBuffer:
         self.subscribers: set[WebSocket] = set()
         self.flight_connected = False
         self.eye_connected = False
+        # The producer socket itself (not just the `flight_connected` flag) --
+        # kept so stop_adapter() below can push a message to LiveAdapter.py
+        # the same way _broadcast() pushes to subscribers.
+        self.flight_ws: WebSocket | None = None
 
 
 _live: dict[str, _LiveBuffer] = {}
@@ -85,6 +96,7 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
     await websocket.accept()
     buf = _buffer(session_id)
     buf.flight_connected = True
+    buf.flight_ws = websocket
     try:
         while True:
             try:
@@ -102,6 +114,8 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
         pass
     finally:
         buf.flight_connected = False
+        if buf.flight_ws is websocket:
+            buf.flight_ws = None
         _drop_if_idle(session_id, buf)
 
 
@@ -161,3 +175,17 @@ async def push_flight_sample(session_id: UUID, sample: FlightSample):
         raise HTTPException(404, "Session not found")
     await db.copy_rows("flight_data", db.FLIGHT_COLUMNS, [_sample_to_record(session_id, sample)])
     return {"status": "accepted"}
+
+
+@router.post("/stop-adapter", status_code=202)
+async def stop_adapter(session_id: UUID):
+    """End Session button. Pushes {"type": "stop"} down the flight producer's
+    own socket -- LiveAdapter.py's on_message handler sets an Event that
+    breaks its capture loop, so it exits through the same cleanup path as
+    Ctrl+C (SimConnect close, OBS stop, CSV batch-upload) rather than being
+    killed and leaving OBS recording / the CSV never uploaded."""
+    buf = _live.get(str(session_id))
+    if buf is None or buf.flight_ws is None:
+        raise HTTPException(409, "No live adapter connected for this session")
+    await buf.flight_ws.send_json({"type": "stop"})
+    return {"status": "stop-requested"}

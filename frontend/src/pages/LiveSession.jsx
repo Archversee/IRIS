@@ -18,6 +18,7 @@ export default function LiveSession() {
   const nav = useNavigate();
   const [sessionId, setSessionId] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [createErr, setCreateErr] = useState(null);
   const [launchWarning, setLaunchWarning] = useState(null);
   const [otwStream, setOtwStream] = useState(null);
@@ -49,6 +50,23 @@ export default function LiveSession() {
     } finally {
       setStarting(false);
     }
+  }
+
+  // Tells LiveAdapter.py to shut down cleanly (see stopAdapter's docstring),
+  // then sends the user to Upload to fill in the name/pilot/aircraft/notes
+  // that weren't known yet when Go Live created this session, plus link
+  // the OBS video files -- same page the manual upload flow uses.
+  async function endSession() {
+    setEnding(true);
+    try {
+      await api.stopAdapter(sessionId);
+    } catch {
+      // best-effort -- adapter may already have disconnected/crashed, don't
+      // block the user from moving on to fill in the session details
+    } finally {
+      setEnding(false);
+    }
+    nav(`/upload?session=${sessionId}`);
   }
 
   // Browser screen-capture for the two live monitors -- an in-progress OBS
@@ -101,7 +119,12 @@ export default function LiveSession() {
               {starting ? "Starting…" : "● Go Live"}
             </button>
           ) : (
-            <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
+            <>
+              <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
+              <button className="tl-btn" disabled={ending} onClick={endSession} style={{ marginLeft: 8 }}>
+                {ending ? "Ending…" : "■ End Session"}
+              </button>
+            </>
           )}
         </div>
 
