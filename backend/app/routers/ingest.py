@@ -1,5 +1,5 @@
 """
-Batch ingestion of CSV files produced by the sim logger (MSFSAdapter.py) and the Smart Eye export.
+Batch ingestion of CSV files produced by the sim logger (Sim_Data_Adapter/LiveAdapter.py) and the Smart Eye export.
 
 Endpoints:
   POST /sessions/{id}/ingest/flight
@@ -162,7 +162,7 @@ def _to_int(v: str | None):
 
 
 def _to_ts(v: str) -> datetime:
-    # MSFSAdapter writes datetime.now(timezone.utc).isoformat()
+    # LiveAdapter.py writes datetime.now(timezone.utc).isoformat()
     return datetime.fromisoformat(v)
 
 

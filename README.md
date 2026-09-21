@@ -72,19 +72,37 @@ The dev server proxies `/api/*` to `http://localhost:8000` (see
 
 ## Data flow
 
-1. On the sim laptop, `MSFSAdapter.py` writes `logs/simconnect_log.csv`
-   (flight state), and — if OBS recording is enabled — starts/stops the
-   instrument and OTW recordings in step with the flight data (see below).
-2. Smart Eye (separate laptop) exports its gaze CSV.
+1. On the sim laptop, `Sim_Data_Adapter/LiveAdapter.py` writes
+   `logs/simconnect_log.csv` (flight state), and — if OBS recording is
+   enabled — starts/stops the instrument and OTW recordings in step with
+   the flight data (see below). The same script also bridges Smart Eye's
+   live UDP feed to the Live page when a session id is attached (see
+   "Going live" below) — flight telemetry, eye tracking and OBS recording
+   are all one process, one script, one session id.
+2. Smart Eye (separate laptop) exports its gaze CSV for durable, full-
+   resolution review after the flight.
 3. In the app: **Upload** → create a session → attach the CSVs → ingest.
 4. **Review** plays flight + gaze back on one synchronized timeline.
 5. **Analytics** shows derived metrics and gaze dwell per area of interest.
 
+### Going live
+
+Click **● Go Live** on the Live page: it creates the session and asks the
+backend to launch `LiveAdapter.py` for you, with that session's id already
+filled in — no copy-pasting an id into the script by hand. This only works
+when the backend runs on the same machine as MSFS/OBS/SEP (the assumed
+topology — see `LiveAdapter.py`'s docstring); if the launch can't find the
+script there, the Live page falls back to showing the command to run it
+yourself. The script path is `backend/app/config.py`'s
+`adapter_script_path` / `adapter_python_path` if you need to point it
+somewhere else (e.g. a different Python environment).
+
 ### Video recording (OBS)
 
-`MSFSAdapter.py` can drive two OBS Studio instances over `obs-websocket`
+`LiveAdapter.py` can drive two OBS Studio instances over `obs-websocket`
 so the instrument-view and OTW-view recordings start/stop automatically
-with flight data logging, instead of being triggered by hand.
+with flight data logging, instead of being triggered by hand. No password
+required — just leave authentication off in OBS.
 
 Setup (once):
 
@@ -97,13 +115,14 @@ Setup (once):
    misaligns any gaze-to-instrument-dial mapping built on top of it.
 2. In each instance: **Tools → WebSocket Server Settings → Enable
    WebSocket server**, using a different port per instance (e.g. `4455`
-   and `4456`, since both run on the same machine).
+   and `4456`, since both run on the same machine), and leave **Enable
+   Authentication unchecked** — `LiveAdapter.py` connects with no password.
 3. Point each instance's recording output path at `data/videos` (or
    wherever `backend/app/config.py`'s `video_dir` is set) so the files
    show up under **Upload** without moving them by hand.
-4. In `MSFSAdapter.py`, set `OBS_INSTANCES` to match each instance's
-   host/port/password (`ENABLE_OBS_RECORDING = False` to skip OBS
-   entirely and just log flight data).
+4. In `LiveAdapter.py`, set `OBS_INSTANCES` to match each instance's
+   host/port (`ENABLE_OBS_RECORDING = False` to skip OBS entirely and
+   just log flight data).
 5. `pip install obsws-python` (in addition to `pysimconnect`).
 
 At runtime: once SimConnect data starts flowing, the adapter calls
@@ -121,7 +140,7 @@ frame-accurate.
 
 ### CSV column expectations
 
-- **Flight** — headers matching `MSFSAdapter.py`'s `SIMVARS` keys plus
+- **Flight** — headers matching `LiveAdapter.py`'s `SIMVARS` keys plus
   `timestamp_utc`. Ingest maps `timestamp_utc → ts`.
 - **Eye** — a `ts` (ISO-8601) column plus any of the columns in
   `EYE_COLUMNS` (`backend/app/db.py`). Rename your Smart Eye export headers

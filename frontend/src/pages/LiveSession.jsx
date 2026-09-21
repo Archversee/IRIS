@@ -13,12 +13,13 @@ import "./review.css";
 // Top-level "Live" nav destination. No session picker -- "Go Live" creates
 // a fresh session on the spot, then this keeps rendering the same viewer
 // layout as Review.jsx (via the shared useSessionData hook + components/
-// session/* pieces), which fills in as MSFSAdapter.py streams data.
+// session/* pieces), which fills in as LiveAdapter.py streams data.
 export default function LiveSession() {
   const nav = useNavigate();
   const [sessionId, setSessionId] = useState(null);
   const [starting, setStarting] = useState(false);
   const [createErr, setCreateErr] = useState(null);
+  const [launchWarning, setLaunchWarning] = useState(null);
   const [otwStream, setOtwStream] = useState(null);
   const [instrumentStream, setInstrumentStream] = useState(null);
 
@@ -28,9 +29,21 @@ export default function LiveSession() {
   async function goLive() {
     setStarting(true);
     setCreateErr(null);
+    setLaunchWarning(null);
     try {
       const s = await api.createSession({ name: `Live – ${new Date().toLocaleString()}`, sim_source: "MSFS" });
       setSessionId(s.id);
+      // Auto-launches LiveAdapter.py on the backend machine with this
+      // session's id already filled in -- if that fails (e.g. the backend
+      // isn't running on the same machine as MSFS/OBS), fall back to
+      // telling the user to run it by hand instead of blocking Go Live.
+      try {
+        await api.launchLiveAdapter(s.id);
+      } catch (e) {
+        setLaunchWarning(
+          `Couldn't auto-launch LiveAdapter.py (${e.message}). Run it manually: python Sim_Data_Adapter/LiveAdapter.py ${s.id}`
+        );
+      }
     } catch (e) {
       setCreateErr(e.message);
     } finally {
@@ -92,13 +105,15 @@ export default function LiveSession() {
           )}
         </div>
 
-        {(notStarted || waitingForData || createErr) && (
+        {(notStarted || waitingForData || createErr || launchWarning) && (
           <p className="sub" style={{ margin: "-4px 0 4px" }}>
             {createErr
               ? `Couldn't start a live session: ${createErr}`
               : notStarted
               ? "Click ● Go Live above to start a new live session."
-              : `Waiting for live flight data… point MSFSAdapter.py's SESSION_ID at ${sessionId} and run it.`}
+              : launchWarning
+              ? launchWarning
+              : "Waiting for live flight data… LiveAdapter.py was launched automatically."}
           </p>
         )}
 

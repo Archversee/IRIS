@@ -3,17 +3,17 @@ Real-time streaming.
 
 Live samples never touch the DB while a flight is in progress -- they're
 held in memory here and relayed straight to whoever's watching. The
-durable copy happens separately, after the fact: MSFSAdapter.py POSTs the
+durable copy happens separately, after the fact: LiveAdapter.py POSTs the
 full CSV log to /ingest/flight once the flight ends (see its LIVE
 STREAMING docstring), and Smart Eye's own file export goes through
 /ingest/eye the normal way (Upload page) -- the live eye feed below is a
 preview only, it doesn't replace that.
 
-  WS   /sessions/{id}/stream/ws         flight producer -- MSFSAdapter.py
-                                         connects once and sends one JSON
-                                         sample per message (FlightSample).
-  WS   /sessions/{id}/stream/eye/ws     eye producer -- SmartEyeLiveAdapter.py,
-                                         same pattern (EyeSample).
+  WS   /sessions/{id}/stream/ws         flight producer -- LiveAdapter.py's
+                                         flight side connects once and sends
+                                         one JSON sample per message (FlightSample).
+  WS   /sessions/{id}/stream/eye/ws     eye producer -- LiveAdapter.py's eye
+                                         side, same pattern (EyeSample).
   WS   /sessions/{id}/stream/subscribe  consumer -- the Live page connects,
                                          gets the buffered backlog once,
                                          then a live push per new sample of
@@ -81,7 +81,7 @@ def _sample_to_record(session_id: UUID, s: FlightSample) -> tuple:
 
 @router.websocket("/ws")
 async def stream_producer(websocket: WebSocket, session_id: UUID):
-    """MSFSAdapter.py's live feed. Held in memory and relayed to subscribers -- not persisted here."""
+    """LiveAdapter.py's flight-side live feed. Held in memory and relayed to subscribers -- not persisted here."""
     await websocket.accept()
     buf = _buffer(session_id)
     buf.flight_connected = True
@@ -107,7 +107,7 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
 
 @router.websocket("/eye/ws")
 async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
-    """SmartEyeLiveAdapter.py's live feed -- same pattern as stream_producer above, for gaze data."""
+    """LiveAdapter.py's eye-side live feed -- same pattern as stream_producer above, for gaze data."""
     await websocket.accept()
     buf = _buffer(session_id)
     buf.eye_connected = True

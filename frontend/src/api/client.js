@@ -50,6 +50,9 @@ export const api = {
       body: JSON.stringify(body),
     }),
   deleteSession: (id) => req(`/sessions/${id}`, { method: "DELETE" }),
+  // Auto-launches LiveAdapter.py on the backend machine with this session's
+  // id already filled in -- see LiveSession.jsx's goLive().
+  launchLiveAdapter: (id) => req(`/sessions/${id}/launch-adapter`, { method: "POST" }),
 
   ingest: (id, kind, file) => {
     const fd = new FormData();
