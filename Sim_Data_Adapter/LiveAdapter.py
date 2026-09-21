@@ -139,6 +139,12 @@ NAME_TO_FIELD = {simvar: field for field, (simvar, _) in SIMVARS.items()}
 # gets batch-uploaded in _flush_full_log_to_supabase() once the flight ends.
 _stream_queue = queue.Queue(maxsize=1000)
 
+# Set by _stream_worker's on_message handler when the backend's End Session
+# button sends {"type": "stop"} -- checked each turn of flight_main()'s
+# capture loop so a remote stop exits through the same finally: block as
+# Ctrl+C (SimConnect close, OBS stop, CSV batch-upload).
+_stop_event = threading.Event()
+
 
 def _stream_worker():
     # WebSocketApp is websocket-client's supported pattern for a long-lived
@@ -165,15 +171,28 @@ def _stream_worker():
             print("[stream] connected to live dashboard")
             threading.Thread(target=sender, args=(wsapp,), daemon=True).start()
 
+        def on_message(wsapp, message):
+            try:
+                msg = json.loads(message)
+            except (TypeError, ValueError):
+                return
+            if msg.get("type") == "stop":
+                print("[stream] stop requested from the Live page")
+                _stop_event.set()
+
         def on_error(wsapp, error):
             print(f"[stream] error: {error}")
 
         def on_close(wsapp, status_code, msg):
             stop_sender.set()
 
-        wsapp = websocket.WebSocketApp(url, on_open=on_open, on_error=on_error, on_close=on_close)
+        wsapp = websocket.WebSocketApp(
+            url, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close
+        )
         wsapp.run_forever(ping_interval=15, ping_timeout=10)
         stop_sender.set()
+        if _stop_event.is_set():
+            return  # clean remote stop -- don't reconnect and retry
         print("[stream] connection lost; retrying in 2s")
         time.sleep(2)
 
@@ -266,9 +285,9 @@ def flight_main():
         writer.writeheader()
 
         print(f"Logging to {OUTPUT_CSV}")
-        print(f"Rate: {1 / POLL_INTERVAL_SEC:.0f} Hz. Ctrl+C to stop.")
+        print(f"Rate: {1 / POLL_INTERVAL_SEC:.0f} Hz. Ctrl+C (or End Session on the Live page) to stop.")
         try:
-            while True:
+            while not _stop_event.is_set():
                 while sc.receive():
                     pass
 
@@ -284,6 +303,7 @@ def flight_main():
                 f.flush()
                 stream_row(row)
                 time.sleep(POLL_INTERVAL_SEC)
+            print("\nStopped logging.")
         except KeyboardInterrupt:
             print("\nStopped logging.")
         finally:

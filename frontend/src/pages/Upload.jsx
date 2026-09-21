@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
+
+const EMPTY_DETAILS = { name: "", pilot_name: "", aircraft: "", sim_source: "", notes: "" };
 
 export default function Upload() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState([]);
-  const [sessionId, setSessionId] = useState("");
+  // Live page's End Session button lands here with ?session=<id> already
+  // picked -- same page the manual upload flow uses, so a live flight's
+  // name/pilot/aircraft/notes/videos get filled in the same way.
+  const [sessionId, setSessionId] = useState(searchParams.get("session") || "");
   const [form, setForm] = useState({ name: "", pilot_name: "", aircraft: "", sim_source: "MSFS" });
+  const [details, setDetails] = useState(EMPTY_DETAILS);
+  const [detailsBusy, setDetailsBusy] = useState(false);
   const [files, setFiles] = useState({ flight: null, eye: null });
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -22,6 +30,32 @@ export default function Upload() {
     api.listSessions().then(setSessions).catch((e) => setErr(e.message));
     api.videosAvailable().then(setVideoFiles).catch((e) => setErr(e.message));
   }, []);
+
+  // Keep the details form in sync with whichever existing session is picked.
+  useEffect(() => {
+    if (!sessionId) return setDetails(EMPTY_DETAILS);
+    const s = sessions.find((s) => s.id === sessionId);
+    if (s) {
+      setDetails({
+        name: s.name || "", pilot_name: s.pilot_name || "",
+        aircraft: s.aircraft || "", sim_source: s.sim_source || "", notes: s.notes || "",
+      });
+    }
+  }, [sessionId, sessions]);
+
+  async function saveDetails() {
+    setDetailsBusy(true);
+    setErr(null);
+    try {
+      const updated = await api.updateSession(sessionId, details);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? updated : s)));
+      addLog("Session details saved.");
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setDetailsBusy(false);
+    }
+  }
 
   async function saveVideo(screen) {
     if (!sessionId) return setErr("Pick or create a session first.");
@@ -124,6 +158,40 @@ function filesForScreen(screen, allFiles) {
             </div>
             <br />
             <button onClick={createSession}>Create session</button>
+          </>
+        )}
+        {sessionId && (
+          <>
+            <div className="row">
+              <div className="col">
+                <label>Name</label>
+                <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })} />
+              </div>
+              <div className="col">
+                <label>Pilot</label>
+                <input value={details.pilot_name} onChange={(e) => setDetails({ ...details, pilot_name: e.target.value })} />
+              </div>
+            </div>
+            <div className="row">
+              <div className="col">
+                <label>Aircraft</label>
+                <input value={details.aircraft} onChange={(e) => setDetails({ ...details, aircraft: e.target.value })} />
+              </div>
+              <div className="col">
+                <label>Sim source</label>
+                <input value={details.sim_source} onChange={(e) => setDetails({ ...details, sim_source: e.target.value })} />
+              </div>
+            </div>
+            <div className="row">
+              <div className="col" style={{ flex: 1 }}>
+                <label>Notes</label>
+                <textarea rows={3} value={details.notes} onChange={(e) => setDetails({ ...details, notes: e.target.value })} />
+              </div>
+            </div>
+            <br />
+            <button onClick={saveDetails} disabled={detailsBusy}>
+              {detailsBusy ? "Saving…" : "Save details"}
+            </button>
           </>
         )}
       </div>

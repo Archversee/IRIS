@@ -21,6 +21,17 @@ class Session(SessionCreate):
     created_at: datetime
 
 
+class SessionUpdate(BaseModel):
+    # Same fields as SessionCreate, all optional -- lets the End Session
+    # flow (or anyone else) fill in details after the session already
+    # exists without having to resend the ones that aren't changing.
+    name: str | None = None
+    pilot_name: str | None = None
+    aircraft: str | None = None
+    sim_source: str | None = None
+    notes: str | None = None
+
+
 # ---- AOI zones -------------------------------------------------------
 class AoiZoneCreate(BaseModel):
     name: str
