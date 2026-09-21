@@ -1,0 +1,7 @@
+name: Virpil Rudder Pedals
+match: { name_contains: "VPC", kind: rudder }   # Virpil devices report as "VPC ..."
+axes:
+  yaw: 0
+  brake_left: 1
+  brake_right: 2
+invert: { yaw: false }

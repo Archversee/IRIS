@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Out-the-window view mockup">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5eb0ff"/>
+      <stop offset="55%" stop-color="#9fd4ff"/>
+      <stop offset="100%" stop-color="#c8e8ff"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6f8f52"/>
+      <stop offset="100%" stop-color="#4f6d3a"/>
+    </linearGradient>
+    <linearGradient id="rw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8dde6"/>
+      <stop offset="100%" stop-color="#9aa3b2"/>
+    </linearGradient>
+    <radialGradient id="vig" cx="50%" cy="45%" r="70%">
+      <stop offset="55%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity=".28"/>
+    </radialGradient>
+    <filter id="haze" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1.2"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#sky)"/>
+  <path fill="#7aa06a" opacity=".55" d="M0 330 C180 280 320 300 520 270 S920 250 1280 290 L1280 420 L0 420 Z"/>
+  <path fill="#5d7d4f" opacity=".65" d="M0 360 C220 320 420 340 640 310 S980 300 1280 340 L1280 450 L0 450 Z"/>
+  <rect y="410" width="1280" height="310" fill="url(#ground)"/>
+  <rect y="395" width="1280" height="30" fill="#fff" opacity=".18" filter="url(#haze)"/>
+  <path fill="url(#rw)" d="M640 410 L420 720 L860 720 Z"/>
+  <path fill="#fff" opacity=".92" d="M640 410 L610 720 L670 720 Z"/>
+  <path fill="#fff" opacity=".75" d="M640 410 L595 720 L625 720 Z M640 410 L655 720 L685 720 Z"/>
+  <g fill="#fff" opacity=".85">
+    <rect x="612" y="680" width="56" height="8" rx="1"/>
+    <rect x="628" y="650" width="24" height="6" rx="1"/>
+    <rect x="628" y="620" width="24" height="6" rx="1"/>
+  </g>
+  <path fill="#1a2230" opacity=".35" d="M0 520 Q120 470 260 500 L0 720 Z"/>
+  <path fill="#1a2230" opacity=".35" d="M1280 520 Q1160 470 1020 500 L1280 720 Z"/>
+  <rect width="1280" height="720" fill="url(#vig)"/>
+  <text x="24" y="42" fill="rgba(255,255,255,.72)" font-family="Segoe UI, system-ui, sans-serif" font-size="22" letter-spacing="2">OUT THE WINDOW - MOCK</text>
+</svg>

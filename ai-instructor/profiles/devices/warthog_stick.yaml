@@ -1,0 +1,8 @@
+name: Thrustmaster Warthog Stick
+match: { name_contains: "Warthog" , kind: stick }
+axes:
+  roll: 0
+  pitch: 1
+buttons:
+  ptt: 2        # push-to-talk (Jun's stick: button 2; verify with tools/hid_forwarder.py --find-button)
+invert: { pitch: false, roll: false }

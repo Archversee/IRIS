@@ -1,0 +1,154 @@
+{
+  "title": "CESSNA 172 Flight Training",
+  "modules": [
+    {
+      "id": "preflight",
+      "title": "Preflight & Cockpit",
+      "subtitle": "Before you fly",
+      "lessons": [
+        {
+          "id": "lesson00_preflight",
+          "title": "External Walk-Around",
+          "subtitle": "C172 · tie-down to taxi readiness",
+          "available": true,
+          "kind": "reading",
+          "duration_min": 15
+        },
+        {
+          "id": "lesson00_cockpit",
+          "title": "Cockpit Familiarisation",
+          "subtitle": "G1000 PFD · controls, panel and switches",
+          "available": true,
+          "kind": "reading",
+          "duration_min": 20
+        }
+      ]
+    },
+    {
+      "id": "basics",
+      "title": "Basic Flight",
+      "subtitle": "C172 · Paya Lebar",
+      "lessons": [
+        {
+          "id": "lesson01_pattern",
+          "title": "Your First Circuit",
+          "subtitle": "One lap · take-off and land",
+          "available": true,
+          "duration_min": 25
+        },
+        {
+          "id": "lesson02_effects",
+          "title": "Effects of Controls",
+          "subtitle": "Pitch, roll, yaw · coordinated flight",
+          "available": false,
+          "duration_min": 22
+        },
+        {
+          "id": "lesson03_straight",
+          "title": "Straight & Level",
+          "subtitle": "Trim · power settings · lookout",
+          "available": false,
+          "duration_min": 18
+        },
+        {
+          "id": "lesson04_climbdesc",
+          "title": "Climbs & Descents",
+          "subtitle": "Vy · cruise climb · glide",
+          "available": false,
+          "duration_min": 20
+        },
+        {
+          "id": "lesson05_slowflight",
+          "title": "Slow Flight & Stalls",
+          "subtitle": "Recognition and recovery",
+          "available": false,
+          "duration_min": 22
+        },
+        {
+          "id": "lesson06_steep",
+          "title": "Steep Turns",
+          "subtitle": "45° · altitude hold · coordination",
+          "available": false,
+          "duration_min": 18
+        }
+      ]
+    },
+    {
+      "id": "circuit",
+      "title": "Circuit Variations",
+      "subtitle": "Pattern work & emergencies",
+      "lessons": [
+        {
+          "id": "lesson07_garound",
+          "title": "Go-Around",
+          "subtitle": "Rejected landing · power · flap sequence",
+          "available": false,
+          "duration_min": 18
+        },
+        {
+          "id": "lesson08_short",
+          "title": "Short-Field Landing",
+          "subtitle": "Stabilised approach · spot landing",
+          "available": false,
+          "duration_min": 20
+        },
+        {
+          "id": "lesson09_soft",
+          "title": "Soft-Field Technique",
+          "subtitle": "Soft take-off and landing roll",
+          "available": false,
+          "duration_min": 20
+        },
+        {
+          "id": "lesson10_night",
+          "title": "Night Circuit",
+          "subtitle": "Lighting cues · black-hole approach",
+          "available": true,
+          "duration_min": 24
+        }
+      ]
+    },
+    {
+      "id": "nav",
+      "title": "Navigation",
+      "subtitle": "Visual pilotage · WSAP area",
+      "lessons": [
+        {
+          "id": "lesson11_pilotage",
+          "title": "Map Reading & Pilotage",
+          "subtitle": "Hold a heading · find checkpoints",
+          "available": false,
+          "duration_min": 28
+        },
+        {
+          "id": "lesson12_diversion",
+          "title": "Diversion",
+          "subtitle": "Lost procedure · nearest suitable aerodrome",
+          "available": false,
+          "duration_min": 25
+        }
+      ]
+    },
+    {
+      "id": "instrument",
+      "title": "Instrument Basics",
+      "subtitle": "Partial panel · unusual attitudes",
+      "lessons": [
+        {
+          "id": "lesson13_partial",
+          "title": "Partial Panel Flying",
+          "subtitle": "AI and HI failure · scan discipline",
+          "available": false,
+          "duration_min": 22
+        },
+        {
+          "id": "lesson14_unusual",
+          "title": "Unusual Attitude Recovery",
+          "subtitle": "Nose high / nose low · IMC intro",
+          "available": false,
+          "duration_min": 20
+        }
+      ]
+    }
+  ]
+}

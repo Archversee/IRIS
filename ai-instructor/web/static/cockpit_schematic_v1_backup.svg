@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="system-ui, sans-serif">
+  <rect width="900" height="560" fill="#0e1420"/>
+  <text x="450" y="36" fill="#dce6f5" font-size="22" font-weight="600" text-anchor="middle">Your controls — where everything is</text>
+  <text x="450" y="58" fill="#7f93b8" font-size="13" text-anchor="middle">Throttle: LEFT hand · Stick: RIGHT hand · Pedals: FEET</text>
+
+  <!-- ===== THROTTLE (left) ===== -->
+  <g>
+    <rect x="60" y="110" width="230" height="240" rx="14" fill="#161f30" stroke="#2a3a5c"/>
+    <text x="175" y="140" fill="#3ddc84" font-size="16" font-weight="600" text-anchor="middle">THROTTLE (left hand)</text>
+    <!-- base -->
+    <rect x="95" y="250" width="160" height="70" rx="8" fill="#1c2740" stroke="#2a3a5c"/>
+    <!-- lever slot + lever -->
+    <rect x="150" y="165" width="10" height="95" rx="4" fill="#0a1526"/>
+    <rect x="135" y="170" width="40" height="22" rx="6" fill="#3ddc84"/>
+    <!-- arrows -->
+    <path d="M 200 175 L 200 155 M 193 162 L 200 154 L 207 162" stroke="#3ddc84" stroke-width="3" fill="none"/>
+    <text x="212" y="168" fill="#3ddc84" font-size="12">PUSH FORWARD</text>
+    <text x="212" y="183" fill="#3ddc84" font-size="12">= more power</text>
+    <path d="M 200 240 L 200 260 M 193 253 L 200 261 L 207 253" stroke="#ffb64d" stroke-width="3" fill="none"/>
+    <text x="212" y="248" fill="#ffb64d" font-size="12">PULL BACK</text>
+    <text x="212" y="263" fill="#ffb64d" font-size="12">= less power</text>
+    <!-- flaps switch -->
+    <rect x="110" y="285" width="26" height="14" rx="3" fill="#ffb64d"/>
+    <text x="145" y="296" fill="#dce6f5" font-size="12">FLAPS switch</text>
+    <text x="110" y="315" fill="#7f93b8" font-size="11">DOWN = flaps out (for landing)</text>
+    <text x="110" y="330" fill="#7f93b8" font-size="11">UP = flaps in (normal flying)</text>
+  </g>
+
+  <!-- ===== STICK (right) ===== -->
+  <g>
+    <rect x="610" y="110" width="230" height="240" rx="14" fill="#161f30" stroke="#2a3a5c"/>
+    <text x="725" y="140" fill="#4da3ff" font-size="16" font-weight="600" text-anchor="middle">STICK (right hand)</text>
+    <!-- stick -->
+    <ellipse cx="725" cy="300" rx="52" ry="16" fill="#1c2740" stroke="#2a3a5c"/>
+    <rect x="717" y="210" width="16" height="90" rx="7" fill="#2a3a5c"/>
+    <ellipse cx="725" cy="205" rx="24" ry="30" fill="#4da3ff"/>
+    <!-- arrows -->
+    <path d="M 725 165 L 725 185" stroke="#dce6f5" stroke-width="3" marker-end="none"/>
+    <path d="M 718 172 L 725 164 L 732 172" stroke="#dce6f5" stroke-width="3" fill="none"/>
+    <text x="740" y="172" fill="#dce6f5" font-size="12">PUSH = nose down</text>
+    <path d="M 718 248 L 725 256 L 732 248" stroke="#dce6f5" stroke-width="3" fill="none"/>
+    <text x="740" y="256" fill="#dce6f5" font-size="12">PULL = nose up</text>
+    <path d="M 664 205 L 646 205 M 653 198 L 645 205 L 653 212" stroke="#dce6f5" stroke-width="3" fill="none"/>
+    <text x="638" y="190" fill="#dce6f5" font-size="12" text-anchor="end">tilt LEFT</text>
+    <text x="638" y="205" fill="#dce6f5" font-size="12" text-anchor="end">= turn left</text>
+    <path d="M 786 205 L 804 205 M 797 198 L 805 205 L 797 212" stroke="#dce6f5" stroke-width="3" fill="none"/>
+    <text x="812" y="190" fill="#dce6f5" font-size="12">tilt RIGHT</text>
+    <text x="812" y="205" fill="#dce6f5" font-size="12">= turn right</text>
+    <text x="725" y="336" fill="#7f93b8" font-size="11" text-anchor="middle">small, gentle movements only</text>
+  </g>
+
+  <!-- ===== PEDALS (bottom center) ===== -->
+  <g>
+    <rect x="330" y="360" width="240" height="170" rx="14" fill="#161f30" stroke="#2a3a5c"/>
+    <text x="450" y="390" fill="#ffb64d" font-size="16" font-weight="600" text-anchor="middle">RUDDER PEDALS (feet)</text>
+    <rect x="365" y="410" width="70" height="90" rx="8" fill="#1c2740" stroke="#4da3ff"/>
+    <rect x="465" y="410" width="70" height="90" rx="8" fill="#1c2740" stroke="#4da3ff"/>
+    <text x="400" y="462" fill="#dce6f5" font-size="13" text-anchor="middle">LEFT</text>
+    <text x="500" y="462" fill="#dce6f5" font-size="13" text-anchor="middle">RIGHT</text>
+    <text x="450" y="518" fill="#7f93b8" font-size="11" text-anchor="middle">push a pedal to point the nose that way (mostly on the ground)</text>
+    <text x="620" y="430" fill="#ffb64d" font-size="12">TIP TOES FORWARD</text>
+    <text x="620" y="446" fill="#ffb64d" font-size="12">on both pedals = BRAKES</text>
+    <path d="M 610 435 L 545 435" stroke="#ffb64d" stroke-width="2" fill="none"/>
+  </g>
+
+  <!-- center note -->
+  <text x="450" y="180" fill="#7f93b8" font-size="12" text-anchor="middle">You mainly need just TWO things today:</text>
+  <text x="450" y="200" fill="#dce6f5" font-size="13" text-anchor="middle">throttle forward/back for power,</text>
+  <text x="450" y="218" fill="#dce6f5" font-size="13" text-anchor="middle">stick to steer gently.</text>
+  <text x="450" y="240" fill="#7f93b8" font-size="12" text-anchor="middle">Your instructor will tell you when to touch anything else.</text>
+</svg>

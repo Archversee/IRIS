@@ -1,0 +1,116 @@
+[
+{
+"name": "Jun Liang Chan",
+"given": "Jun Liang",
+"family": "Chan",
+"mode": "casual",
+"lesson": "lesson01_pattern",
+"ts": 1783433489.3351905,
+"scores": {
+"track": 88,
+"speed": 82,
+"altitude": 85,
+"landing": 79,
+"smoothness": 90
+},
+"retries": 2,
+"total": 84,
+"grade": "B",
+"capped": false
+},
+{
+"name": "Alex Tan",
+"given": "Alex",
+"family": "Tan",
+"mode": "casual",
+"lesson": "lesson01_pattern",
+"ts": 1783437089.3351905,
+"scores": {
+"track": 92,
+"speed": 88,
+"altitude": 90,
+"landing": 86,
+"smoothness": 88
+},
+"retries": 1,
+"total": 89,
+"grade": "A",
+"capped": false
+},
+{
+"name": "Sam Koh",
+"given": "Sam",
+"family": "Koh",
+"mode": "serious",
+"lesson": "lesson01_pattern",
+"ts": 1783440689.3351905,
+"scores": {
+"track": 78,
+"speed": 80,
+"altitude": 76,
+"landing": 72,
+"smoothness": 85
+},
+"retries": 1,
+"total": 76,
+"grade": "B",
+"capped": true
+},
+{
+"name": "Riya Menon",
+"given": "Riya",
+"family": "Menon",
+"mode": "serious",
+"lesson": "lesson01_pattern",
+"ts": 1783444289.3351905,
+"scores": {
+"track": 85,
+"speed": 84,
+"altitude": 88,
+"landing": 80,
+"smoothness": 82
+},
+"retries": 0,
+"total": 84,
+"grade": "B",
+"capped": false
+},
+{
+"name": "Chris Pang",
+"given": "Chris",
+"family": "Pang",
+"mode": "casual",
+"lesson": "lesson01_pattern",
+"ts": 1783447889.3351905,
+"scores": {
+"track": 70,
+"speed": 68,
+"altitude": 72,
+"landing": 65,
+"smoothness": 78
+},
+"retries": 3,
+"total": 70,
+"grade": "C",
+"capped": false
+},
+{
+"name": "Marc",
+"given": "Marc",
+"family": "",
+"mode": "visitor",
+"lesson": "lesson01_pattern",
+"ts": 1789543877.694451,
+"scores": {
+"track": 0,
+"speed": 0,
+"altitude": 0,
+"landing": 28,
+"smoothness": 100
+},
+"retries": 0,
+"total": 18,
+"grade": "F",
+"capped": false
+}
+]

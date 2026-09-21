@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a4353"/><stop offset="0.5" stop-color="#232a38"/><stop offset="1" stop-color="#161b26"/>
+    </linearGradient>
+    <linearGradient id="metalV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#454f61"/><stop offset="1" stop-color="#1a202c"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4b5568"/><stop offset="0.45" stop-color="#2e3646"/><stop offset="1" stop-color="#1c222e"/>
+    </linearGradient>
+    <linearGradient id="baseplate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#222937"/><stop offset="1" stop-color="#12161f"/>
+    </linearGradient>
+    <radialGradient id="dome" cx="0.35" cy="0.3" r="1">
+      <stop offset="0" stop-color="#3d4656"/><stop offset="1" stop-color="#14181f"/>
+    </radialGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3DDC84"/>
+    </marker>
+    <marker id="arrA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#FFB64D"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4DA3FF"/>
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect width="1600" height="900" fill="#0A0E18"/>
+  <g stroke="#141b2b" stroke-width="1">
+    <path d="M0 150 H1600 M0 300 H1600 M0 450 H1600 M0 600 H1600 M0 750 H1600"/>
+    <path d="M200 0 V900 M400 0 V900 M600 0 V900 M800 0 V900 M1000 0 V900 M1200 0 V900 M1400 0 V900"/>
+  </g>
+
+  <!-- header -->
+  <text x="70" y="64" fill="#4DA3FF" font-size="17" font-weight="700" letter-spacing="5">YOUR CONTROLS</text>
+  <text x="70" y="104" fill="#E8EEFB" font-size="34" font-weight="700">Left hand throttle · Right hand stick · Feet on the pedals</text>
+
+  <!-- ══════════════ THROTTLE (left) ══════════════ -->
+  <g filter="url(#soft)">
+    <!-- base plate -->
+    <rect x="120" y="330" width="340" height="300" rx="18" fill="url(#baseplate)" stroke="#2c3548" stroke-width="1.5"/>
+    <rect x="138" y="348" width="304" height="10" rx="5" fill="#0d1119"/>
+    <!-- lever slots -->
+    <rect x="196" y="380" width="14" height="190" rx="7" fill="#07090f"/>
+    <rect x="252" y="380" width="14" height="190" rx="7" fill="#07090f"/>
+    <!-- twin throttle grips (Warthog split handles), mid travel -->
+    <g>
+      <rect x="168" y="428" width="70" height="46" rx="10" fill="url(#grip)" stroke="#4a5468" stroke-width="1.2"/>
+      <rect x="168" y="424" width="70" height="9" rx="4.5" fill="#4b5568"/>
+      <rect x="240" y="428" width="70" height="46" rx="10" fill="url(#grip)" stroke="#4a5468" stroke-width="1.2"/>
+      <rect x="240" y="424" width="70" height="9" rx="4.5" fill="#4b5568"/>
+      <!-- slew nub on right grip -->
+      <circle cx="292" cy="451" r="7" fill="#0e1219" stroke="#4DA3FF" stroke-width="1.4"/>
+    </g>
+    <!-- switch row on base -->
+    <g>
+      <rect x="150" y="588" width="260" height="26" rx="6" fill="#0d1119"/>
+      <g fill="#39445a">
+        <rect x="166" y="593" width="8" height="16" rx="4"/>
+        <rect x="196" y="593" width="8" height="16" rx="4"/>
+        <rect x="226" y="593" width="8" height="16" rx="4"/>
+        <rect x="256" y="593" width="8" height="16" rx="4"/>
+      </g>
+      <!-- flaps switch: highlighted -->
+      <rect x="342" y="588" width="14" height="26" rx="6" fill="#FFB64D"/>
+      <circle cx="349" cy="601" r="17" fill="none" stroke="#FFB64D" stroke-width="1.6" opacity="0.6"/>
+    </g>
+  </g>
+  <!-- throttle motion arrows -->
+  <line x1="360" y1="415" x2="360" y2="370" stroke="#3DDC84" stroke-width="4" marker-end="url(#arrG)"/>
+  <line x1="360" y1="490" x2="360" y2="535" stroke="#FFB64D" stroke-width="4" marker-end="url(#arrA)"/>
+  <!-- throttle labels -->
+  <text x="120" y="300" fill="#E8EEFB" font-size="22" font-weight="700">THROTTLE <tspan fill="#8FA3C6" font-weight="400">— left hand</tspan></text>
+  <text x="392" y="384" fill="#3DDC84" font-size="15" font-weight="600">PUSH FORWARD</text>
+  <text x="392" y="404" fill="#8FA3C6" font-size="13">= more power</text>
+  <text x="392" y="524" fill="#FFB64D" font-size="15" font-weight="600">PULL BACK</text>
+  <text x="392" y="544" fill="#8FA3C6" font-size="13">= less power</text>
+  <line x1="349" y1="620" x2="349" y2="668" stroke="#FFB64D" stroke-width="1.4"/>
+  <circle cx="349" cy="620" r="2.5" fill="#FFB64D"/>
+  <text x="150" y="692" fill="#FFB64D" font-size="15" font-weight="600">FLAPS SWITCH</text>
+  <text x="150" y="712" fill="#8FA3C6" font-size="13">DOWN = flaps out, for landing · UP = flaps in</text>
+
+  <!-- ══════════════ STICK (right) ══════════════ -->
+  <g filter="url(#soft)">
+    <!-- round weighted base -->
+    <ellipse cx="1270" cy="620" rx="150" ry="34" fill="url(#dome)" stroke="#2c3548" stroke-width="1.5"/>
+    <ellipse cx="1270" cy="606" rx="118" ry="24" fill="#1a202c"/>
+    <!-- rubber boot -->
+    <path d="M1246 606 Q1252 570 1258 552 L1282 552 Q1288 570 1294 606 Z" fill="#10141c"/>
+    <!-- shaft -->
+    <rect x="1259" y="470" width="22" height="92" rx="8" fill="url(#metal)"/>
+    <!-- A-10 style grip: angular head, forward hump, trigger notch -->
+    <path d="M1252 470
+             L1247 430 Q1244 408 1252 392
+             L1236 372 Q1228 360 1238 350 L1258 332
+             Q1266 322 1280 324 L1300 330 Q1314 336 1314 352
+             L1312 398 Q1318 416 1306 428 L1296 470 Z"
+          fill="url(#grip)" stroke="#4a5468" stroke-width="1.4"/>
+    <!-- thumb hat switches -->
+    <circle cx="1262" cy="346" r="8" fill="#0e1219" stroke="#4DA3FF" stroke-width="1.4"/>
+    <circle cx="1296" cy="352" r="6" fill="#0e1219" stroke="#39445a" stroke-width="1.4"/>
+    <!-- trigger (index finger) -->
+    <path d="M1238 392 Q1226 400 1232 414 L1244 408 Z" fill="#39445a"/>
+    <!-- pinkie PTT paddle (Warthog stick, left/rear of grip) -->
+    <path d="M1224 444 L1236 438 L1242 458 L1230 466 Z" fill="#39445a" stroke="#4DA3FF" stroke-width="1.5"/>
+    <rect x="1228" y="444" width="8" height="14" rx="2.5" fill="#4DA3FF" opacity="0.88"/>
+  </g>
+  <!-- stick motion arrows -->
+  <line x1="1270" y1="252" x2="1270" y2="212" stroke="#4DA3FF" stroke-width="3.5" marker-end="url(#arrB)" marker-start="url(#arrB)"/>
+  <path d="M1178 580 Q1145 595 1125 615" fill="none" stroke="#4DA3FF" stroke-width="3.5" marker-end="url(#arrB)"/>
+  <path d="M1362 580 Q1395 595 1415 615" fill="none" stroke="#4DA3FF" stroke-width="3.5" marker-end="url(#arrB)"/>
+  <!-- stick labels -->
+  <text x="1120" y="300" fill="#E8EEFB" font-size="22" font-weight="700">STICK <tspan fill="#8FA3C6" font-weight="400">— right hand</tspan></text>
+  <text x="1292" y="208" fill="#4DA3FF" font-size="15" font-weight="600">PUSH / PULL</text>
+  <text x="1292" y="228" fill="#8FA3C6" font-size="13">push = nose down · pull = nose up</text>
+  <text x="1052" y="626" fill="#4DA3FF" font-size="15" font-weight="600" text-anchor="start">TILT LEFT</text>
+  <text x="1052" y="646" fill="#8FA3C6" font-size="13">= turn left</text>
+  <text x="1488" y="626" fill="#4DA3FF" font-size="15" font-weight="600" text-anchor="end">TILT RIGHT</text>
+  <text x="1488" y="646" fill="#8FA3C6" font-size="13" text-anchor="end">= turn right</text>
+  <line x1="1234" y1="452" x2="1188" y2="478" stroke="#4DA3FF" stroke-width="1.4"/>
+  <circle cx="1234" cy="452" r="2.5" fill="#4DA3FF"/>
+  <text x="1088" y="494" fill="#4DA3FF" font-size="15" font-weight="600">PTT BUTTON</text>
+  <text x="1088" y="514" fill="#8FA3C6" font-size="13">little finger — press to talk to MAVIS</text>
+  <text x="1270" y="700" fill="#8FA3C6" font-size="13" text-anchor="middle" font-style="italic">small, gentle movements — the aeroplane needs less than you think</text>
+
+  <!-- ══════════════ PEDALS (center) ══════════════ -->
+  <g filter="url(#soft)">
+    <!-- frame -->
+    <rect x="640" y="560" width="320" height="26" rx="10" fill="url(#metalV)" stroke="#2c3548" stroke-width="1.2"/>
+    <rect x="784" y="410" width="32" height="160" rx="8" fill="url(#metal)"/>
+    <!-- left pedal (pendular plates) -->
+    <g>
+      <path d="M672 420 L748 408 L756 528 L680 540 Z" fill="url(#grip)" stroke="#4a5468" stroke-width="1.3"/>
+      <path d="M676 452 L750 441" stroke="#10141c" stroke-width="3"/>
+      <path d="M681 500 L753 490" stroke="#10141c" stroke-width="3"/>
+      <path d="M672 420 L748 408 L750 428 L674 440 Z" fill="#4b5568" opacity="0.55"/>
+    </g>
+    <!-- right pedal -->
+    <g>
+      <path d="M852 408 L928 420 L920 540 L844 528 Z" fill="url(#grip)" stroke="#4a5468" stroke-width="1.3"/>
+      <path d="M850 441 L924 452" stroke="#10141c" stroke-width="3"/>
+      <path d="M847 490 L919 500" stroke="#10141c" stroke-width="3"/>
+      <path d="M852 408 L928 420 L926 440 L850 428 Z" fill="#4b5568" opacity="0.55"/>
+    </g>
+  </g>
+  <!-- pedal arrows: push directions -->
+  <line x1="712" y1="574" x2="712" y2="618" stroke="#4DA3FF" stroke-width="3.5" marker-end="url(#arrB)" transform="rotate(180 712 596)"/>
+  <line x1="886" y1="574" x2="886" y2="618" stroke="#4DA3FF" stroke-width="3.5" marker-end="url(#arrB)" transform="rotate(180 886 596)"/>
+  <!-- toe brake arcs -->
+  <path d="M700 402 Q712 384 726 400" fill="none" stroke="#FFB64D" stroke-width="3" marker-end="url(#arrA)"/>
+  <path d="M874 400 Q888 384 900 402" fill="none" stroke="#FFB64D" stroke-width="3" marker-end="url(#arrA)"/>
+  <!-- pedal labels -->
+  <text x="640" y="300" fill="#E8EEFB" font-size="22" font-weight="700">RUDDER PEDALS <tspan fill="#8FA3C6" font-weight="400">— feet</tspan></text>
+  <text x="640" y="330" fill="#8FA3C6" font-size="13">push a pedal and the nose points that way — mostly used on the ground</text>
+  <text x="712" y="648" fill="#4DA3FF" font-size="14" font-weight="600" text-anchor="middle">push LEFT</text>
+  <text x="886" y="648" fill="#4DA3FF" font-size="14" font-weight="600" text-anchor="middle">push RIGHT</text>
+  <text x="800" y="372" fill="#FFB64D" font-size="14" font-weight="600" text-anchor="middle">TIP TOES FORWARD on both = BRAKES</text>
+
+</svg>
