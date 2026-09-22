@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db, mavis_bridge, videos
 from .config import settings
-from .routers import aoi_zones, analytics, data, ingest, sessions, stream
+from .routers import adapter, aoi_zones, analytics, data, ingest, sessions, stream
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
@@ -34,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(sessions.router)
+app.include_router(adapter.router)
 app.include_router(aoi_zones.router)
 app.include_router(ingest.router)
 app.include_router(data.router)

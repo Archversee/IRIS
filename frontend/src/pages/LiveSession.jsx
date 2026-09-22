@@ -10,10 +10,14 @@ import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
 
-// Top-level "Live" nav destination. No session picker -- "Go Live" creates
-// a fresh session on the spot, then this keeps rendering the same viewer
+// Top-level "Live" nav destination. No session picker -- MAVIS mints
+// session_id now (not IRIS), so "Go Live" starts the OBS/Smart-Eye adapter
+// and then polls for whichever session MAVIS reports as current, rather
+// than creating one itself. Once attached, this renders the same viewer
 // layout as Review.jsx (via the shared useSessionData hook + components/
-// session/* pieces), which fills in as LiveAdapter.py streams data.
+// session/* pieces), which fills in as mavis_bridge/the adapter stream data.
+const POLL_INTERVAL_MS = 2000;
+
 export default function LiveSession() {
   const nav = useNavigate();
   const [sessionId, setSessionId] = useState(null);
@@ -23,49 +27,55 @@ export default function LiveSession() {
   const [launchWarning, setLaunchWarning] = useState(null);
   const [otwStream, setOtwStream] = useState(null);
   const [instrumentStream, setInstrumentStream] = useState(null);
+  const pollRef = useRef(null);
 
   const { err, summary, flight, flightLoaded, screens, timeline, scanPath, liveState, regionPie, phases, followingLive } =
     useSessionData({ id: sessionId, live: true });
+
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+  useEffect(() => () => stopPolling(), []);
 
   async function goLive() {
     setStarting(true);
     setCreateErr(null);
     setLaunchWarning(null);
+    // Best-effort -- if the launcher script already started the adapter
+    // (or MAVIS is being driven from its own tablet UI without OBS/eye
+    // tracking at all), a failure here shouldn't block waiting for a
+    // session below; the adapter's own lock file makes a second launch
+    // from here a safe no-op either way.
     try {
-      const s = await api.createSession({ name: `Live – ${new Date().toLocaleString()}`, sim_source: "MSFS" });
-      setSessionId(s.id);
-      // Auto-launches LiveAdapter.py on the backend machine with this
-      // session's id already filled in -- if that fails (e.g. the backend
-      // isn't running on the same machine as MSFS/OBS), fall back to
-      // telling the user to run it by hand instead of blocking Go Live.
-      try {
-        await api.launchLiveAdapter(s.id);
-      } catch (e) {
-        setLaunchWarning(
-          `Couldn't auto-launch LiveAdapter.py (${e.message}). Run it manually: python Sim_Data_Adapter/LiveAdapter.py ${s.id}`
-        );
-      }
+      await api.launchAdapter();
     } catch (e) {
-      setCreateErr(e.message);
-    } finally {
-      setStarting(false);
+      setLaunchWarning(`Couldn't auto-launch the OBS/Smart-Eye adapter (${e.message}). Continuing to wait for MAVIS anyway.`);
     }
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api.getLiveSession();
+        stopPolling();
+        setSessionId(s.id);
+        setStarting(false);
+      } catch {
+        // no MAVIS session yet -- keep polling, nothing to show the user
+        // beyond the "waiting" message below
+      }
+    }, POLL_INTERVAL_MS);
   }
 
-  // Tells LiveAdapter.py to shut down cleanly (see stopAdapter's docstring),
-  // then sends the user to Upload to fill in the name/pilot/aircraft/notes
-  // that weren't known yet when Go Live created this session, plus link
-  // the OBS video files -- same page the manual upload flow uses.
-  async function endSession() {
+  // MAVIS/the adapter own their own lifecycle now -- there's no remote
+  // "stop" signal to send (the old one pushed a message down a flight-
+  // telemetry socket the adapter no longer opens). This just stops
+  // watching and sends the user to Upload to fill in the name/pilot/
+  // aircraft/notes, plus link the OBS video files -- same page the manual
+  // upload flow uses.
+  function endSession() {
     setEnding(true);
-    try {
-      await api.stopAdapter(sessionId);
-    } catch {
-      // best-effort -- adapter may already have disconnected/crashed, don't
-      // block the user from moving on to fill in the session details
-    } finally {
-      setEnding(false);
-    }
     nav(`/upload?session=${sessionId}`);
   }
 
@@ -132,11 +142,13 @@ export default function LiveSession() {
           <p className="sub" style={{ margin: "-4px 0 4px" }}>
             {createErr
               ? `Couldn't start a live session: ${createErr}`
+              : notStarted && starting
+              ? "Waiting for a MAVIS session to start… (press Start in MAVIS)"
               : notStarted
               ? "Click ● Go Live above to start a new live session."
               : launchWarning
               ? launchWarning
-              : "Waiting for live flight data… LiveAdapter.py was launched automatically."}
+              : "Waiting for live flight data…"}
           </p>
         )}
 

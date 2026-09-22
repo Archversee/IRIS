@@ -56,13 +56,15 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  // Auto-launches LiveAdapter.py on the backend machine with this session's
-  // id already filled in -- see LiveSession.jsx's goLive().
-  launchLiveAdapter: (id) => req(`/sessions/${id}/launch-adapter`, { method: "POST" }),
-  // End Session button -- tells the connected LiveAdapter.py to shut down
-  // cleanly (SimConnect close, OBS stop, CSV batch-upload) instead of
-  // leaving it running after the user walks away from the Live page.
-  stopAdapter: (id) => req(`/sessions/${id}/stream/stop-adapter`, { method: "POST" }),
+  // MAVIS mints session_id now, not IRIS -- Go Live discovers whichever
+  // session MAVIS is currently running instead of creating one itself.
+  // 404 (via req()'s thrown Error) means no MAVIS session has started yet.
+  getLiveSession: () => req(`/sessions/live`),
+  // Starts the OBS/Smart-Eye adapter (Sim_Data_Adapter/LiveAdapter.py) --
+  // safe to call even if the launcher script already started it (the
+  // adapter's own lock file makes a second launch a no-op). See
+  // LiveSession.jsx's goLive().
+  launchAdapter: () => req(`/adapter/launch`, { method: "POST" }),
 
   ingest: (id, kind, file) => {
     const fd = new FormData();
