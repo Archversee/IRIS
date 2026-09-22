@@ -128,7 +128,14 @@ setup:
 cd MAVIS/ai-instructor
 py -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install SimConnect pygame pyttsx3 kokoro soundfile sounddevice
 ```
+
+The second line is deliberately separate from `requirements.txt` (see the
+commented-out block at its end) — these are Windows/sim-PC-only (SimConnect
+for `sim.adapter: msfs`, pygame for local joystick/HID, the rest for real
+TTS instead of console-only fallback) and would fail to install on a
+non-Windows dev machine, so they're not pulled in by default.
 
 On the actual sim PC, edit `config.yaml` → `sim.adapter: msfs` (it defaults
 to `replay`, which expects a pre-recorded flight CSV that doesn't ship in

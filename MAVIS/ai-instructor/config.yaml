@@ -1,6 +1,6 @@
 # AI Flight Instructor - main configuration
 sim:
-  adapter: replay          # mock | msfs | replay - overridden by: python main.py --sim <adapter>
+  adapter: msfs          # mock | msfs | replay - overridden by: python main.py --sim <adapter>
   replay:                  # --sim replay: play a logged flight back as live telemetry.
                            # To test a new flight, overwrite these two files - nothing else changes:
     file: data/recordings/replay/flight.csv   # the logger's CSV export
