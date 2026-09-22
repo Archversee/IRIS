@@ -22,5 +22,9 @@ class Settings(BaseSettings):
     adapter_script_path: str = str(_REPO_ROOT / "Sim_Data_Adapter" / "LiveAdapter.py")
     adapter_python_path: str = "python"
 
+    # mavis_bridge connects here as a WS client to pull MAVIS's live state
+    # feed into Postgres -- see docs/INTEGRATION_PLAN.md §1b.
+    mavis_ws_url: str = "ws://localhost:6945/ws"
+
 
 settings = Settings()

@@ -1,0 +1,33 @@
+.live-coach {
+  min-height: 100vh;
+  padding: 16px;
+  background: #0b0e13;
+  color: #d7e0ea;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+.live-coach__status {
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: inline-block;
+  font-weight: 600;
+  background: #2a1414;
+  color: #ff8a8a;
+}
+
+.live-coach__status--open {
+  background: #12261a;
+  color: #7ee6a6;
+}
+
+.live-coach__dump {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+  background: #10141b;
+  border: 1px solid #1f2733;
+  border-radius: 8px;
+  padding: 12px;
+}

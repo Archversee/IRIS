@@ -166,6 +166,19 @@ async def stream_subscriber(websocket: WebSocket, session_id: UUID):
         _drop_if_idle(session_id, buf)
 
 
+async def ingest_external_sample(session_id: UUID, record: dict) -> None:
+    """Feeds a sample from a producer other than the WS endpoints above
+    (currently: mavis_bridge, reading MAVIS's own WS feed instead of
+    SimConnect) into the same in-memory backlog/broadcast used by
+    stream_producer, so the Live page's subscriber feed sees MAVIS-sourced
+    telemetry the same way it sees LiveAdapter.py's. Does not touch the
+    DB -- the caller is responsible for persistence (mavis_bridge batches
+    its own writes to flight_data)."""
+    buf = _buffer(session_id)
+    buf.flight_samples.append(record)
+    await _broadcast(buf, {"type": "sample", "sample": record})
+
+
 @router.post("/flight", status_code=202)
 async def push_flight_sample(session_id: UUID, sample: FlightSample):
     """One-off sample straight to the DB -- handy for curl testing, unrelated to the live dashboard path above."""
