@@ -14,6 +14,7 @@ import signal
 import re
 import tempfile
 import time
+import uuid
 import wave
 from pathlib import Path
 
@@ -137,7 +138,8 @@ async def amain(cfg):
     # independent (Settings). Defaults are safe before the menu sends anything.
     _default_policy = policy_for("visitor")
     session = {"mode": "visitor", "jargon": "layman", "tone": "warm", "name": "",
-               "reference": "planned", "instructor_unlocked": False, "policy": _default_policy}
+               "reference": "planned", "instructor_unlocked": False, "policy": _default_policy,
+               "session_id": None}
     instructor_pin = str(cfg.get("instructor", {}).get("pin", "1234"))
     engine = LessonEngine(lesson, aircraft, sim_adapter=cfg["sim"]["adapter"])
     scorer = Scorer(lesson, aircraft)
@@ -159,6 +161,7 @@ async def amain(cfg):
     # track is a list of SEGMENTS; a retry/teleport starts a new segment so
     # old attempts render dim and there's no false line across the jump
     state: dict = {"phase": engine.phase, "circuit": 1, "total_circuits": int(lesson.get("total_circuits", 1)),
+                   "session_id": None,
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "theme": cfg["web"].get("theme", {}),
@@ -317,6 +320,8 @@ async def amain(cfg):
         if started.is_set():
             return
         started.set()
+        session["session_id"] = str(uuid.uuid4())
+        state["session_id"] = session["session_id"]
         if (lesson.get("night_event") or {}).get("at") == "start":
             await _apply_lesson_clock()
             engine.mark_night_done()
