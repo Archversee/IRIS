@@ -1,0 +1,27 @@
+name: Cessna 172SP G1000
+v_speeds:
+  vr: 55
+  vy: 74
+  pattern_downwind: 85
+  base: 75
+  final: 65
+  vs0: 40
+  vne: 163
+flaps:
+  detents_deg: [0, 10, 20, 30]
+  downwind: 10
+  base: 20
+  final: 30
+  control_style: switch    # switch = up/down clicks (Warthog toggle) | notches = lever
+power:
+  abeam_rpm: 1500
+pattern:
+  altitude_agl_ft: 1000
+limits:
+  max_alt_ft: 14000
+  max_takeoff_weight_lb: 2550
+facts: |
+  Cessna 172SP with Garmin G1000 glass cockpit. Service ceiling 14,000 ft.
+  Max takeoff weight 2,550 lb. Fuel capacity 56 gal (53 usable). Cruise ~124 KTAS.
+  Vne 163, Vno 129, Va 105 (at max weight), Vfe 110 (10 deg) / 85 (full), Vs0 40, Vs1 48.
+  Engine: Lycoming IO-360-L2A, 180 hp. Range ~640 nm.

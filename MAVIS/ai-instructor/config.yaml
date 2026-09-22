@@ -1,0 +1,83 @@
+# AI Flight Instructor - main configuration
+sim:
+  adapter: replay          # mock | msfs | replay - overridden by: python main.py --sim <adapter>
+  replay:                  # --sim replay: play a logged flight back as live telemetry.
+                           # To test a new flight, overwrite these two files - nothing else changes:
+    file: data/recordings/replay/flight.csv   # the logger's CSV export
+    video: videos/replay.mp4                  # screen recording of the same flight (under web.media_dir);
+                                              # prepared for the browser automatically on first start
+    # session: <session_id> # pick one flight when the CSV holds several
+  host: 192.168.1.101       # SIM PC's LAN IP (app runs on the laptop). Use 127.0.0.1 if same PC
+  port: 500
+  tick_hz: 10              # telemetry poll rate
+  # Weather is NOT settable via SimConnect on MSFS 2020 (leave method: none).
+  # MSFS 2024's SDK is more capable, but the exact weather trigger still has to be
+  # confirmed at the sim - discover the event/var (SimConnect Inspector or SDK docs)
+  # and drop it in below. method: event fires a key event; simvar sets a variable.
+  weather:
+    method: none           # none | event | simvar
+    presets:               # canonical name -> trigger (fill event/value or var/value)
+      clear:  { event: "", value: 0 }
+      cloudy: { event: "", value: 0 }
+      rain:   { event: "", value: 0 }
+      storm:  { event: "", value: 0 }
+      fog:    { event: "", value: 0 }
+
+aircraft_profile: profiles/aircraft/c172sp_g1000.yaml
+lesson: lessons/lesson01_pattern.yaml
+
+input:
+  mode: none               # overridden by: python main.py --input udp
+                           # udp = hid_forwarder.py on sim PC (Warthog PTT + raw axes)
+                           # local_hid = devices plugged into THIS machine
+  udp_port: 6947
+  profiles:                # used by local_hid mode only
+    - profiles/devices/warthog_stick.yaml
+    - profiles/devices/warthog_throttle.yaml
+    - profiles/devices/virpil_rudder.yaml
+
+coach:
+  ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
+  model: qwen2.5:14b-instruct
+  timeout_s: 1.0           # fall back to template phrase beyond this
+  min_speak_interval_s: 3  # gentleness vs latency: nudges wait at most this long
+                           # (corrections/turn cues jump ahead at ~2 s)
+
+voice:
+  engine: auto             # auto | kokoro | piper | pyttsx3 | none (auto falls back)
+  output: tablet           # tablet (voice plays in the browser) | sim_pc (PC speakers)
+  kokoro_voice: af_heart   # female MAVIS voice (Kokoro)
+  piper_model: ""          # path to .onnx if using piper
+  rate: 175                # pyttsx3 words/min
+  sapi_voice: zira|female  # pyttsx3 fallback: prefer female Windows voice
+  # --- STT / speaker enrolment (local; tablet mic) ---
+  stt_model: medium         # faster-whisper size: tiny|base|small|medium|large-v3
+  stt_device: auto         # auto | cuda (keep on GPU, CPU is too slow for live PTT)
+  stt_compute: auto        # auto | float16 | int8 | float32
+  stt_initial_prompt: >-
+    Student pilot asking questions during circuit training.
+    Flaps, rudder, throttle, ailerons, stick, yoke, downwind, base leg,
+    final approach, crosswind, airspeed, altitude, heading, runway, pattern.
+  speaker_threshold: 0.35  # ECAPA cosine accept threshold (tune on device)
+  enrol_seconds: 10        # UI capture length
+  enrol_min_seconds: 2.0   # reject shorter / quieter captures
+  voices_dir: data/voices  # local voice prints (json + embeddings)
+
+web:
+  host: 0.0.0.0            # tablet connects over LAN
+  port: 6945
+  media_dir: media         # avatar: intro_beginner.mp4, intro_training.mp4, idle.mp4
+                           # videos: mock_video_beginner.mp4, mock_video_training.mp4
+  theme:
+    accent: blue           # blue | red | green | purple | amber | teal | pink,
+                           # or any hex like "#4da3ff"
+    success: green         # color for 'good/completed' (same choices)
+    warning: amber         # color for cautions/flaps
+  monitor_sources:         # video feeds of the trainee station (instructor monitor)
+    # url examples: http://<ip>:8080/stream.mjpg (MJPEG), http://<ip>/video.mp4
+    - { name: "Out the window", url: "" }
+    - { name: "Left panel (PFD)", url: "" }
+    - { name: "Right panel (MFD)", url: "" }
+
+instructor:
+  pin: "123456"            # bootstrap PIN for first-run Iceman seed (see data/instructors.json)

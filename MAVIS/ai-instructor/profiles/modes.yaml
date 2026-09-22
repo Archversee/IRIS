@@ -1,0 +1,43 @@
+# Training-mode policies (main menu). Config-over-code, see design doc §12.
+# Mode IDs: visitor | trainee | pilot | exam
+# Legacy aliases: casual → visitor, serious → pilot
+
+visitor:
+  label: Visitor
+  expected_jargon: layman
+  force_repeat: false
+  coaching: turn_by_turn   # TURN_* + PHASE_ENTER + direct nudges
+  guidance: direct
+  chat: true
+  score_caps: false
+  auto_practice_summary: false
+
+trainee:
+  label: Trainee
+  expected_jargon: pilot
+  force_repeat: true
+  coaching: reactive       # clearance + safety only; no PHASE/TURN/nudge guidance
+  guidance: direct
+  chat: true
+  score_caps: true
+  auto_practice_summary: false
+
+pilot:
+  label: Pilot
+  expected_jargon: pilot
+  force_repeat: true
+  coaching: reactive       # same quiet filter as trainee; guidance style unused while quiet
+  guidance: indirect
+  chat: true
+  score_caps: true
+  auto_practice_summary: false
+
+exam:
+  label: Exam
+  expected_jargon: pilot
+  force_repeat: false
+  coaching: silent         # safety-only
+  guidance: direct
+  chat: false
+  score_caps: false
+  auto_practice_summary: true
