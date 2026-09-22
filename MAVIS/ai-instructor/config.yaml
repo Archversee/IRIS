@@ -7,7 +7,7 @@ sim:
     video: videos/replay.mp4                  # screen recording of the same flight (under web.media_dir);
                                               # prepared for the browser automatically on first start
     # session: <session_id> # pick one flight when the CSV holds several
-  host: 192.168.1.101       # SIM PC's LAN IP (app runs on the laptop). Use 127.0.0.1 if same PC
+  host: 127.0.0.1       # SIM PC's LAN IP (app runs on the laptop). Use 127.0.0.1 if same PC
   port: 500
   tick_hz: 10              # telemetry poll rate
   # Weather is NOT settable via SimConnect on MSFS 2020 (leave method: none).
