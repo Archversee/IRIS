@@ -1,6 +1,21 @@
 """MSFS (and Prepar3D) adapter via SimConnect.
 
-Requires: pip install SimConnect   (Python-SimConnect)
+Requires: pip install SimConnect   (Python-SimConnect)  -- via `pysimconnect`
+(the `simconnect` package, note lowercase) instead, for now: the
+`SimConnect` package's Open() call was failing with a generic E_FAIL on a
+specific sim PC/Sim Update combination that `pysimconnect` connects to
+successfully, so this adapter was ported to it. See git history for the
+AircraftRequests/AircraftEvents-based version this replaced.
+
+Event-SENDING (day/night time-of-day switch, experimental teleport, weather)
+is not wired up for `pysimconnect` yet -- `set_local_time()` always returns
+False (its documented "unsupported" contract, so callers already fall back
+gracefully), and `set_position()`/`set_weather()` are omitted entirely
+(both are called via hasattr/getattr elsewhere in MAVIS, so their absence
+degrades gracefully too, by the same design). Only telemetry READING is
+ported. Restoring event-sending on `pysimconnect` -- or switching back once
+`SimConnect` is fixed -- is follow-up work, not done here.
+
 Run on the sim PC. Variable/event names may need per-sim-version tweaks --
 this is the milestone-1 spike surface. Everything sim-specific lives here.
 """
@@ -14,15 +29,37 @@ log = logging.getLogger(__name__)
 
 RAD2DEG = 180.0 / math.pi
 
+# (canonical SimConnect name, unit string) -- pysimconnect's subscribe API
+# takes both explicitly (no implicit radians-then-convert the AircraftRequests
+# wrapper used to do), so angles are requested pre-converted to degrees here.
+_SIMVARS = [
+    ("PLANE LATITUDE", "degrees"),
+    ("PLANE LONGITUDE", "degrees"),
+    ("PLANE ALTITUDE", "feet"),
+    ("PLANE ALT ABOVE GROUND", "feet"),
+    ("AIRSPEED INDICATED", "knots"),
+    ("PLANE HEADING DEGREES TRUE", "degrees"),
+    ("PLANE BANK DEGREES", "degrees"),
+    ("PLANE PITCH DEGREES", "degrees"),
+    ("TRAILING EDGE FLAPS LEFT ANGLE", "degrees"),
+    ("SIM ON GROUND", "bool"),
+    ("GENERAL ENG RPM:1", "Rpm"),
+    ("AILERON POSITION", "Position"),
+    ("ELEVATOR POSITION", "Position"),
+    ("RUDDER POSITION", "Position"),
+    ("GENERAL ENG THROTTLE LEVER POSITION:1", "Percent"),
+    ("BRAKE LEFT POSITION", "Position"),
+    ("BRAKE RIGHT POSITION", "Position"),
+    ("LOCAL TIME", "seconds"),
+]
+
 
 class MSFSAdapter:
     def __init__(self, host: str = "127.0.0.1", port: int = 500, weather: dict | None = None):
         self.host, self.port = host, port
         self._sm = None
-        self._req = None
-        self._events = {}
-        self._weather = weather or {}      # config.yaml sim.weather
-        self._weather_events = {}          # cache of resolved weather key events
+        self._datadef = None
+        self._weather = weather or {}      # config.yaml sim.weather -- unused for now, see module docstring
         self._prev_alt = None   # for self-computed, smoothed vertical speed
         self._prev_t = 0.0
         self._vs = 0.0
@@ -47,7 +84,7 @@ class MSFSAdapter:
                 log.warning("could not write %s: %s", p, e)
 
     def connect(self) -> None:
-        from SimConnect import SimConnect, AircraftRequests, AircraftEvents
+        from simconnect import SimConnect, PERIOD_VISUAL_FRAME
         if self.host not in ("127.0.0.1", "localhost"):
             self._write_simconnect_cfg()
             # fail fast with a useful message if the sim PC isn't reachable
@@ -63,36 +100,40 @@ class MSFSAdapter:
                     "it, (3) firewall allows TCP 500. Verify with: "
                     f"Test-NetConnection {self.host} -Port {self.port}") from e
         self._sm = SimConnect()
-        self._req = AircraftRequests(self._sm, _time=50)  # ms cache
-        ae = AircraftEvents(self._sm)
-        for name in ("ZULU_HOURS_SET", "ZULU_MINUTES_SET",
-                     "CLOCK_HOURS_SET", "CLOCK_MINUTES_SET"):
-            try:
-                self._events[name] = ae.find(name)
-            except Exception:
-                log.warning("event %s unavailable", name)
-        log.info("SimConnect connected")
+        subscribe_list = [dict(name=n, units=u) for n, u in _SIMVARS]
+        self._datadef = self._sm.subscribe_simdata(subscribe_list, period=PERIOD_VISUAL_FRAME)
+
+        import time as _time
+        deadline = _time.time() + 10
+        while not self._datadef.simdata and _time.time() < deadline:
+            self._sm.receive()
+            _time.sleep(0.05)
+        if not self._datadef.simdata:
+            raise ConnectionError(
+                "SimConnect connected but no telemetry arrived within 10s -- "
+                "make sure MSFS has an active flight loaded, not just the main menu.")
+        log.info("SimConnect connected (pysimconnect)")
 
     def _get(self, name: str, default=0.0):
-        try:
-            v = self._req.get(name)
-            return default if v is None else v
-        except Exception:
-            return default
+        v = (self._datadef.simdata or {}).get(name)
+        return default if v is None else v
 
-    def _brake(self, name: str) -> float:
+    def _brake(self, v: float) -> float:
         """Toe-brake position normalized to 0..1. SimConnect reports brake
         position either as 0..1 or as a 0..16383 integer depending on version;
         normalize both so the UI threshold is stable."""
-        v = self._get(name, 0.0)
         if v > 1.5:
             v = v / 16383.0
         return max(0.0, min(1.0, v))
 
     def get_telemetry(self) -> Telemetry:
         import time as _time
+        # Drain any buffered messages so self._datadef.simdata reflects the
+        # latest frame -- same pump pattern the old LiveAdapter.py used.
+        while self._sm.receive():
+            pass
         g = self._get
-        alt = g("PLANE_ALTITUDE")
+        alt = g("PLANE ALTITUDE")
         # vertical speed: computed from altitude ourselves (sim var units are
         # inconsistent across versions and were reading garbage) + smoothing
         now = _time.time()
@@ -102,103 +143,37 @@ class MSFSAdapter:
             self._vs += 0.25 * (raw - self._vs)
         self._prev_alt, self._prev_t = alt, now
         return Telemetry(
-            lat=g("PLANE_LATITUDE"),
-            lon=g("PLANE_LONGITUDE"),
+            lat=g("PLANE LATITUDE"),
+            lon=g("PLANE LONGITUDE"),
             alt_msl=alt,
-            alt_agl=g("PLANE_ALT_ABOVE_GROUND"),
-            ias=g("AIRSPEED_INDICATED"),
+            alt_agl=g("PLANE ALT ABOVE GROUND"),
+            ias=g("AIRSPEED INDICATED"),
             vs=self._vs,
-            hdg=(g("PLANE_HEADING_DEGREES_TRUE") * RAD2DEG) % 360,
-            bank=-g("PLANE_BANK_DEGREES") * RAD2DEG,  # sim: + left -> ours: + right
-            pitch=-g("PLANE_PITCH_DEGREES") * RAD2DEG,
-            flaps_deg=g("TRAILING_EDGE_FLAPS_LEFT_ANGLE") * RAD2DEG,
-            on_ground=bool(g("SIM_ON_GROUND", 1)),
-            rpm=g("GENERAL_ENG_RPM:1"),
-            aileron=g("AILERON_POSITION"),
-            elevator=g("ELEVATOR_POSITION"),
-            rudder=g("RUDDER_POSITION"),
-            throttle=g("GENERAL_ENG_THROTTLE_LEVER_POSITION:1") / 100.0,
-            brake_left=self._brake("BRAKE_LEFT_POSITION"),
-            brake_right=self._brake("BRAKE_RIGHT_POSITION"),
-            local_time_h=g("LOCAL_TIME", 43200) / 3600.0,
+            hdg=g("PLANE HEADING DEGREES TRUE") % 360,
+            bank=-g("PLANE BANK DEGREES"),           # sim: + left -> ours: + right
+            pitch=-g("PLANE PITCH DEGREES"),
+            flaps_deg=g("TRAILING EDGE FLAPS LEFT ANGLE"),
+            on_ground=bool(g("SIM ON GROUND", 1)),
+            rpm=g("GENERAL ENG RPM:1"),
+            aileron=g("AILERON POSITION"),
+            elevator=g("ELEVATOR POSITION"),
+            rudder=g("RUDDER POSITION"),
+            throttle=g("GENERAL ENG THROTTLE LEVER POSITION:1") / 100.0,
+            brake_left=self._brake(g("BRAKE LEFT POSITION", 0.0)),
+            brake_right=self._brake(g("BRAKE RIGHT POSITION", 0.0)),
+            local_time_h=g("LOCAL TIME", 43200) / 3600.0,
         )
 
     def set_local_time(self, hour: int, minute: int) -> bool:
-        """Day/night switch. Uses zulu-set events; returns False if unsupported
-        so the caller can fall back (e.g. instruct a pre-bound keybind)."""
-        # WSAP is UTC+8: local 20:30 -> zulu 12:30
-        zh, zm = (hour - 8) % 24, minute
-        ok = False
-        for name, val in (("ZULU_HOURS_SET", zh), ("ZULU_MINUTES_SET", zm)):
-            ev = self._events.get(name)
-            if ev:
-                try:
-                    ev(val)
-                    ok = True
-                except Exception as e:
-                    log.error("time set %s failed: %s", name, e)
-        return ok
-
-    def set_weather(self, condition: str) -> bool:
-        """Set weather to a named preset. EXPERIMENTAL and version-dependent.
-
-        MSFS 2020 CANNOT set weather via SimConnect (deprecated weather API,
-        read-only ambient vars) -> leave config sim.weather.method=none and this
-        returns False, so the caller degrades gracefully.
-
-        MSFS 2024's SDK is more capable, but the exact programmatic trigger for a
-        weather preset is not a settled/documented one-liner yet - so rather than
-        hardcode a call that may not exist, this fires whatever event or settable
-        var you CONFIRM works at your sim, mapped in config.yaml (sim.weather):
-          method: event  -> AircraftEvents.find(<event>)(<value>)
-          method: simvar -> AircraftRequests.set(<var>, <value>)
-        Always returns a bool and never raises, so testing is safe.
-        """
-        method = self._weather.get("method", "none")
-        entry = (self._weather.get("presets") or {}).get((condition or "").lower())
-        if method == "none" or not entry:
-            return False
-        try:
-            if method == "event":
-                name = entry.get("event")
-                if not name:
-                    return False
-                ev = self._weather_events.get(name)
-                if ev is None:
-                    from SimConnect import AircraftEvents
-                    ev = AircraftEvents(self._sm).find(name)
-                    self._weather_events[name] = ev
-                ev(int(entry.get("value", 0)))
-                log.info("set_weather(%s) via event %s", condition, name)
-                return True
-            if method == "simvar":
-                var = entry.get("var")
-                if not var:
-                    return False
-                self._req.set(var, entry.get("value", 0))
-                log.info("set_weather(%s) via simvar %s", condition, var)
-                return True
-        except Exception as e:
-            log.warning("set_weather(%s) via %s failed: %s", condition, method, e)
+        """Event-sending isn't ported to pysimconnect yet (see module
+        docstring) -- always False, which is this method's documented
+        "unsupported" contract, so callers (night-lesson switch, the ground
+        clock chat command) already fall back gracefully rather than error."""
         return False
-
-    def set_position(self, lat: float, lon: float, alt_ft: float,
-                     hdg_deg: float, ias_kt: float = 70.0) -> bool:
-        """Teleport for 'try that again' checkpoints. Best-effort via settable
-        sim vars - EXPERIMENTAL, verify at the sim (milestone-2 item)."""
-        ok = True
-        for name, val in (("PLANE_LATITUDE", lat),
-                          ("PLANE_LONGITUDE", lon),
-                          ("PLANE_ALTITUDE", alt_ft),
-                          ("PLANE_HEADING_DEGREES_TRUE", math.radians(hdg_deg)),
-                          ("VELOCITY_BODY_Z", ias_kt * 1.68781)):  # kt -> ft/s
-            try:
-                self._req.set(name, val)
-            except Exception as e:
-                log.warning("teleport: set %s failed: %s", name, e)
-                ok = False
-        return ok
 
     def close(self) -> None:
         if self._sm:
-            self._sm.exit()
+            try:
+                self._sm.Close()
+            except Exception:
+                pass
