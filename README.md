@@ -118,32 +118,110 @@ npm run dev                    # http://localhost:5173
 The dev server proxies `/api/*` to `http://localhost:8000` (see
 `vite.config.js`), so no CORS headaches locally.
 
+## 4. MAVIS
+
+MAVIS (`MAVIS/`) is a separate app with its own dependencies — see
+`docs/INTEGRATION_PLAN.md` for how it fits together with IRIS. One-time
+setup:
+
+```bash
+cd MAVIS/ai-instructor
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+On the actual sim PC, edit `config.yaml` → `sim.adapter: msfs` (it defaults
+to `replay`, which expects a pre-recorded flight CSV that doesn't ship in
+this repo — `mock` also works with no MSFS at all, for testing). Run:
+
+```bash
+.venv\Scripts\python main.py
+```
+
+MAVIS serves its own UI at <http://localhost:6945> (also reachable through
+the reverse proxy at `/mavis/`, see §6) — that's what you actually fly the
+lesson from; nothing else in this repo talks to SimConnect.
+
+## 5. OBS / Smart-Eye adapter (optional)
+
+`Sim_Data_Adapter/LiveAdapter.py` no longer reads SimConnect (MAVIS is the
+only SimConnect reader) — it just drives OBS recording and bridges Smart
+Eye's live UDP feed, self-syncing to whichever session MAVIS starts. Setup:
+
+```bash
+cd Sim_Data_Adapter
+py -m venv .venv
+.venv\Scripts\pip install obsws-python websocket-client
+```
+
+Skip this entirely if you're not recording video/live gaze preview for a
+given session — Smart Eye's own file export + the Upload page (§"Data
+flow" below) is still the durable path regardless. Run by hand with
+`.venv\Scripts\python LiveAdapter.py`, or let the launcher (§7) start it,
+or trigger it from IRIS's Live page's "Go Live" button — all three are
+safe to combine (see the script's own lock-file docstring).
+
+## 6. Reverse proxy
+
+The single URL you actually open — `/` serves the built React app, `/api/*`
+proxies to IRIS's backend, `/mavis/*` proxies to MAVIS. Setup:
+
+```bash
+cd proxy
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+Needs `frontend/dist` to exist (`cd frontend && npm run build`). Run:
+
+```bash
+.venv\Scripts\python -m uvicorn app:app --port 3000
+```
+
+Then open <http://localhost:3000>.
+
+## 7. Launcher (start everything at once)
+
+Once every component above has its venv set up once, `scripts/launch_all.ps1`
+starts all of them in order (Postgres → MSFS check → MAVIS → IRIS backend →
+OBS/Smart-Eye adapter → proxy), health-checking each step but never hard-
+stopping on a failure — the dashboard still comes up showing whichever
+services are actually available. Ctrl+C stops everything it started.
+
+```powershell
+./scripts/launch_all.ps1                  # everything
+./scripts/launch_all.ps1 -SkipAdapter      # no OBS/Smart-Eye this session
+./scripts/launch_all.ps1 -DryRun           # print what it would do, start nothing
+```
+
 ## Data flow
 
-1. On the sim laptop, `Sim_Data_Adapter/LiveAdapter.py` writes
-   `logs/simconnect_log.csv` (flight state), and — if OBS recording is
-   enabled — starts/stops the instrument and OTW recordings in step with
-   the flight data (see below). The same script also bridges Smart Eye's
-   live UDP feed to the Live page when a session id is attached (see
-   "Going live" below) — flight telemetry, eye tracking and OBS recording
-   are all one process, one script, one session id.
-2. Smart Eye (separate laptop) exports its gaze CSV for durable, full-
-   resolution review after the flight.
-3. In the app: **Upload** → create a session → attach the CSVs → ingest.
-4. **Review** plays flight + gaze back on one synchronized timeline.
-5. **Analytics** shows derived metrics and gaze dwell per area of interest.
+1. Fly the lesson in MAVIS (§4) — it mints the session id everything else
+   joins on, coaches live, and scores the run.
+2. IRIS's backend (`app/mavis_bridge.py`) watches MAVIS's own WebSocket
+   feed in the background and writes flight telemetry, coaching events,
+   the scorecard, and leaderboard updates into Postgres as they happen —
+   no manual step, no separate script for this part.
+3. If the OBS/Smart-Eye adapter (§5) is running: OBS records the
+   instrument + OTW views automatically, and Smart Eye's live feed streams
+   to the Live page as a preview. The *durable* gaze log is still Smart
+   Eye's own file export, imported via **Upload → ingest** after the
+   flight (live streaming was always best-effort preview only, not a
+   replacement for this).
+4. In the app: **Upload** → link the OBS video files to the session →
+   ingest the Smart Eye export CSV.
+5. **Review** plays flight + gaze back on one synchronized timeline, phase
+   by phase, with MAVIS's coaching callouts alongside.
+6. **Analytics** shows derived metrics and gaze dwell per area of interest;
+   **Leaderboard** shows MAVIS's scored runs across sessions.
 
-### Going live
+### Live page ("Go Live")
 
-Click **● Go Live** on the Live page: it creates the session and asks the
-backend to launch `LiveAdapter.py` for you, with that session's id already
-filled in — no copy-pasting an id into the script by hand. This only works
-when the backend runs on the same machine as MSFS/OBS/SEP (the assumed
-topology — see `LiveAdapter.py`'s docstring); if the launch can't find the
-script there, the Live page falls back to showing the command to run it
-yourself. The script path is `backend/app/config.py`'s
-`adapter_script_path` / `adapter_python_path` if you need to point it
-somewhere else (e.g. a different Python environment).
+The Live page no longer creates a session itself (MAVIS does that) — Go
+Live starts the OBS/Smart-Eye adapter (safe to click even if the launcher
+already started it) and polls `GET /sessions/live` for whichever session
+MAVIS most recently reported, then attaches to it the same way it always
+has. If MAVIS hasn't been started yet, it just waits.
 
 ### Video recording (OBS)
 
@@ -188,8 +266,10 @@ frame-accurate.
 
 ### CSV column expectations
 
-- **Flight** — headers matching `LiveAdapter.py`'s `SIMVARS` keys plus
-  `timestamp_utc`. Ingest maps `timestamp_utc → ts`.
+- **Flight** — headers matching `db.FLIGHT_COLUMNS` (`backend/app/db.py`)
+  plus `timestamp_utc`. Ingest maps `timestamp_utc → ts`. This is for a
+  manually-exported CSV; a MAVIS-driven session doesn't need this step at
+  all (`mavis_bridge.py` writes flight_data directly — see "Data flow").
 - **Eye** — a `ts` (ISO-8601) column plus any of the columns in
   `EYE_COLUMNS` (`backend/app/db.py`). Rename your Smart Eye export headers
   to match, or edit that list to match your export. `aoi` (area of interest)
