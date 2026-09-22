@@ -5,11 +5,23 @@ Tracking Data within Flight Simulators*.
 
 - **Backend:** FastAPI + asyncpg
 - **Frontend:** React (Vite) + recharts
-- **Database:** Supabase Postgres (plain Postgres)
+- **Database:** local Postgres (plain Postgres, no Supabase — see §1)
+
+This repo also hosts **MAVIS** (`MAVIS/`), a separate live AI flight
+instructor app (its own FastAPI + WS server on :6945) that IRIS integrates
+with. See `docs/INTEGRATION_PLAN.md` for the full architecture; this
+README covers running IRIS's own backend/frontend.
+
+> **Note on machines:** the real target machine is the sim PC (runs MSFS,
+> Ollama, Postgres, both backends). If you're setting this up on a
+> different dev machine first, everything below still works — MAVIS runs
+> fine without MSFS (defaults to a replay/mock adapter) and IRIS's Postgres
+> is just a local install, same steps either way.
 
 ```
 flight-review-system/
-├── db/schema.sql              # tables + indexes (run in Supabase)
+├── db/schema.sql              # tables + indexes (run against local Postgres — see §1)
+├── db/schema_mavis_integration.sql  # additive migration for the MAVIS integration
 ├── backend/                   # FastAPI app
 │   ├── app/
 │   │   ├── main.py            # entrypoint, CORS, router wiring
@@ -29,14 +41,50 @@ flight-review-system/
         └── pages/{Sessions,Upload,Review,Analytics}.jsx
 ```
 
-## 1. Database
+## 1. Database (local Postgres)
 
-In the Supabase dashboard → SQL Editor, paste and run `db/schema.sql`.
-Or from a terminal:
+**1a. Install PostgreSQL 17** (Windows):
+
+1. Download the installer from postgresql.org's Windows download page (the
+   EDB installer) — pick version **17** to match `db/schema.sql`.
+2. Run it. Keep the defaults (install dir, port **5432**, locale). When it
+   asks for a superuser (`postgres`) password, **set it to `postgres`** —
+   that matches this app's built-in local default
+   (`backend/app/config.py`'s fallback `DATABASE_URL`), so you may not even
+   need a `.env` file afterward. Use a different password if you prefer;
+   you'll just need to put it in `.env` explicitly (step 1c).
+3. Keep "Command Line Tools" checked in the component list — that's what
+   gives you `psql` on PATH. If the installer doesn't offer to add
+   `C:\Program Files\PostgreSQL\17\bin` to your PATH, add it yourself
+   (System Properties → Environment Variables), then open a **new**
+   terminal so it takes effect.
+4. Verify it's up:
+   ```bash
+   pg_isready
+   # should print: .../postgres:5432 - accepting connections
+   ```
+
+**1b. Apply the schema** — the base schema, then the MAVIS-integration
+migration on top of it (both are plain SQL, idempotent — safe to re-run):
 
 ```bash
-psql "$DATABASE_URL" -f db/schema.sql
+psql -U postgres -d postgres -f db/schema.sql
+psql -U postgres -d postgres -f db/schema_mavis_integration.sql
 ```
+
+(It'll prompt for the postgres user's password each time unless you set
+`PGPASSWORD` in your shell first.)
+
+**1c. Point the backend at it** — copy the example env file and edit if
+your password/port differ from the defaults:
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+`.env.example` already has `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres`
+— if you set a different password in step 1a.2, edit that line to match.
 
 ## 2. Backend
 
