@@ -11,17 +11,14 @@ import LiveCoach from "./live/LiveCoach.jsx";
 
 export default function App() {
   const { pathname } = useLocation();
-  // /monitor (IRIS eye+flight spectator) and /review stay fullscreen,
-  // sidebar-less screens for an immersive watch -- /live (MAVIS coaching)
-  // now keeps the sidebar so you can jump to IRIS's debrief screens
-  // without losing the "one dashboard" nav.
-  const isFullscreenPage = /^\/(sessions\/[^/]+\/review|monitor)$/.test(pathname);
+  // Only the per-session Review page stays fullscreen/sidebar-less, for an
+  // immersive watch. /live and /monitor both keep the sidebar now.
+  const isFullscreenPage = /^\/sessions\/[^/]+\/review$/.test(pathname);
 
   if (isFullscreenPage) {
     return (
       <Routes>
         <Route path="/sessions/:id/review" element={<Review />} />
-        <Route path="/monitor" element={<LiveSession />} />
       </Routes>
     );
   }
@@ -33,6 +30,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<div className="container"><Home /></div>} />
           <Route path="/live" element={<LiveCoach />} />
+          <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />
           <Route path="/sessions/:id/analytics" element={<div className="container"><Analytics /></div>} />
