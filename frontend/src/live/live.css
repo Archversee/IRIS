@@ -26,6 +26,13 @@
   color: #7ee6a6;
 }
 
+.mavis-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 /* ---- Main menu shell ---- */
 .mavis-shell {
   min-height: 100%;
@@ -263,3 +270,32 @@
 }
 .mavis-vbar__fill { background: #3ddc84; }
 .mavis-vbar__label { font-size: 10px; color: #8b98a5; }
+
+/* ---- Reading lessons (preflight/cockpit) ---- */
+.mavis-pf3d {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  background: #0b1220;
+  border: 1px solid #232f3d;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mavis-pf3d-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #8b98a5; font-size: 13px;
+}
+.mavis-pf-list { display: flex; flex-direction: column; gap: 10px; }
+.mavis-pf-item {
+  background: #131922; border: 1px solid #232f3d; border-radius: 10px;
+  padding: 12px 14px; cursor: pointer;
+}
+.mavis-pf-item.is-selected { border-color: #4aa8ff; }
+.mavis-pf-item__head { display: flex; align-items: center; gap: 10px; }
+.mavis-pf-item__head h4 { margin: 0; flex: 1; }
+.mavis-pf-item__num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #4aa8ff; color: #06121f; font-size: 12px; font-weight: 700;
+}

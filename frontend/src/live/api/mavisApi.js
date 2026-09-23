@@ -27,7 +27,10 @@ export const mavisApi = {
   configureSession: (body) => postJson("/session", body),
   selectLesson: (id) => postJson("/lesson/select", { id }),
   start: () => postJson("/demo/start"),
+  quit: () => postJson("/demo/quit"),
   chat: (text) => postJson("/chat", { text }),
+  // On-demand TTS narration for one reading-lesson checkpoint -> {ok, url}
+  readingSay: (id, lesson) => postJson("/reading/say", { id, lesson }),
   // {stem: "/media/filename.ext"} for whichever of splash-bg/menu-bg/
   // mode-{visitor,trainee,pilot} exist on disk -- see web/server.py's
   // /media/manifest. Paths are root-relative from MAVIS's own origin, so

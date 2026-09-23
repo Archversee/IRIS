@@ -45,6 +45,24 @@ a { color: var(--accent); text-decoration: none; }
 .sidebar__link:hover { color: var(--text); background: var(--panel-2); }
 .sidebar__link.active { color: var(--text); background: var(--panel-2); border-right: 3px solid var(--accent); }
 
+.sidebar__lesson-tree { margin-top: 4px; }
+.sidebar__lesson-tree--empty { padding: 6px 18px; font-size: 12px; color: var(--muted); }
+.sidebar__module-head {
+  width: 100%; text-align: left; background: none; border: none;
+  color: var(--muted); font-size: 12px; font-weight: 600;
+  padding: 6px 18px 6px 26px; cursor: pointer;
+}
+.sidebar__module-head:hover { color: var(--text); }
+.sidebar__module-lessons { display: flex; flex-direction: column; }
+.sidebar__lesson {
+  text-align: left; background: none; border: none;
+  color: var(--muted); font-size: 12px;
+  padding: 5px 18px 5px 38px; cursor: pointer;
+}
+.sidebar__lesson:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+.sidebar__lesson.is-active { color: var(--accent); font-weight: 600; }
+.sidebar__lesson:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
 .card {
   background: var(--panel); border: 1px solid var(--border);
@@ -66,6 +84,7 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 14px; }
 th { color: var(--muted); font-weight: 600; }
 .row { display: flex; gap: 16px; flex-wrap: wrap; }
+.spacer { flex: 1; }
 .col { flex: 1; min-width: 260px; }
 .metric { background: var(--panel-2); border-radius: 8px; padding: 12px; }
 .metric .k { font-size: 12px; color: var(--muted); }

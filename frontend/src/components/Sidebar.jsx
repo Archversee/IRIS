@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
+import LessonTree from "./LessonTree.jsx";
 
 // The app's one main menu: MAVIS (live -- flying, coaching, real-time
 // monitoring) grouped separately from IRIS (debrief -- everything that
@@ -48,6 +49,7 @@ export default function Sidebar() {
                 {link.label}
               </NavLink>
             ))}
+            {section.label === "MAVIS" && <LessonTree />}
           </div>
         );
       })}
