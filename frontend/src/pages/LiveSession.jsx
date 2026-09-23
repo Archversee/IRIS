@@ -109,7 +109,7 @@ export default function LiveSession() {
   const waitingForData = sessionId && summary && flightLoaded && flight.length === 0;
 
   return (
-    <div className="rev">
+    <div className="rev rev--embedded">
       <div className="rev-rail">
         <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
         <div className="rail-sep" />

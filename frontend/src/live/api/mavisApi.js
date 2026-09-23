@@ -28,17 +28,4 @@ export const mavisApi = {
   selectLesson: (id) => postJson("/lesson/select", { id }),
   start: () => postJson("/demo/start"),
   chat: (text) => postJson("/chat", { text }),
-  // {stem: "/media/filename.ext"} for whichever of splash-bg/menu-bg/
-  // mode-{visitor,trainee,pilot} exist on disk -- see web/server.py's
-  // /media/manifest. Paths are root-relative from MAVIS's own origin, so
-  // mediaUrl() below re-bases them through the /mavis proxy prefix.
-  mediaManifest: () => req("/media/manifest"),
 };
-
-// A manifest path like "/media/splash-bg.jpg" is relative to MAVIS's own
-// origin, not this app's -- re-base it through the same /mavis prefix
-// every other MAVIS request uses, so it resolves correctly through both
-// the dev proxy and the production reverse proxy.
-export function mediaUrl(path) {
-  return path ? BASE + path : null;
-}

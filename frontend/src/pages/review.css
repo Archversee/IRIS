@@ -24,6 +24,16 @@
 }
 .rev * { box-sizing: border-box; }
 
+/* Live Monitor (/monitor) sits inside the app's own sidebar shell instead
+   of taking the whole viewport -- Review (/sessions/:id/review) keeps the
+   plain fixed-fullscreen .rev above unchanged. */
+.rev--embedded {
+  position: static;
+  inset: auto;
+  height: 100%;
+  min-height: 100%;
+}
+
 /* ---- left toolbar rail ---- */
 .rev-rail {
   display: flex;
