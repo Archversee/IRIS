@@ -299,3 +299,47 @@
   width: 22px; height: 22px; border-radius: 50%;
   background: #4aa8ff; color: #06121f; font-size: 12px; font-weight: 700;
 }
+
+/* ---- Scorecard overlay -- grade-pill gradients ported from the
+   original app's #gradePill.grade-* rules ---- */
+.mavis-score-overlay {
+  position: fixed; inset: 0;
+  background: rgba(6, 9, 16, 0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.mavis-score-card {
+  width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
+  background: #131922; border: 1px solid #232f3d; border-radius: 14px;
+  padding: 24px;
+  color: #d7e0ea;
+}
+.mavis-score-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mavis-score-head h2 { margin: 0; font-size: 1.4rem; }
+.mavis-grade-pill {
+  font-size: 1.4rem; font-weight: 800; border-radius: 12px;
+  padding: 4px 16px; min-width: 54px; text-align: center;
+  background: #4aa8ff; color: #06121f;
+}
+.mavis-grade-pill--A { background: linear-gradient(135deg, #ffe566, #ffd700 40%, #e6a800); color: #3d2e00; box-shadow: 0 0 14px rgba(255,215,0,.35); }
+.mavis-grade-pill--B { background: linear-gradient(135deg, #f4f7fb, #c5d0de 45%, #9aafc4); color: #2a3544; box-shadow: 0 0 12px rgba(180,195,215,.3); }
+.mavis-grade-pill--C { background: linear-gradient(135deg, #e8a86a, #cd7f32); color: #fff; }
+.mavis-grade-pill--D { background: linear-gradient(135deg, #8a9ab0, #5c6d82); color: #fff; }
+.mavis-grade-pill--F { background: linear-gradient(135deg, #6a4048, #4a2830); color: #f0d0d4; }
+.mavis-grade-pill--S {
+  background: linear-gradient(120deg, #e8f4ff, #fff 18%, #d4c4ff 36%, #fff 54%, #c8e8ff 72%, #fff 90%, #e0f0ff);
+  background-size: 300% 300%; color: #1a2840; animation: mavis-diamond-shine 3.2s ease infinite;
+  box-shadow: 0 0 22px rgba(180,200,255,.55), inset 0 1px 0 rgba(255,255,255,.8);
+}
+@keyframes mavis-diamond-shine { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.mavis-score-total { font-size: 0.9rem; color: #8b98a5; margin: 4px 0 16px; }
+.mavis-score-total b { color: #d7e0ea; font-size: 1.05rem; }
+.mavis-score-metrics { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.mavis-score-metric { display: grid; grid-template-columns: 90px 1fr 32px; align-items: center; gap: 8px; }
+.mavis-score-metric__label { font-size: 12px; color: #8b98a5; text-transform: capitalize; }
+.mavis-score-metric__bar { height: 8px; background: #1a222c; border-radius: 4px; overflow: hidden; }
+.mavis-score-metric__fill { height: 100%; background: #4aa8ff; transition: width 0.5s ease; }
+.mavis-score-metric__val { font-size: 12px; text-align: right; font-weight: 600; }
+.mavis-score-btns { display: flex; gap: 10px; margin-top: 18px; }
+.mavis-score-btns button { flex: 1; }

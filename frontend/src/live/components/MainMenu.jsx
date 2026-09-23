@@ -6,7 +6,7 @@ import { mavisApi, mediaUrl } from "../api/mavisApi.js";
 // Mirrors the original app's proceed(): configure the session, then start
 // flying immediately (the original also plays an intro video first --
 // that's a later slice; skipping straight to Start keeps this usable now).
-export default function MainMenu({ state, onStarting }) {
+export default function MainMenu({ state, onStarting, onOpenReading }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -41,6 +41,12 @@ export default function MainMenu({ state, onStarting }) {
   }
 
   async function selectLesson(lesson) {
+    // Reading-kind lessons (preflight/cockpit) are never selected
+    // server-side -- see LessonTree.jsx's comment on why.
+    if (lesson.kind === "reading") {
+      onOpenReading(lesson.id);
+      return;
+    }
     try {
       await mavisApi.selectLesson(lesson.id);
     } catch (e) {

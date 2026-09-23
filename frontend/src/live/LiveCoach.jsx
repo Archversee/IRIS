@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMavisState, useMavisStatus } from "./hooks/useMavisSocket.js";
 import { mavisApi } from "./api/mavisApi.js";
 import MainMenu from "./components/MainMenu.jsx";
@@ -7,23 +8,18 @@ import ReadingLesson from "./components/reading/ReadingLesson.jsx";
 import "./live.css";
 
 // Slice B/C/I: main menu -> reading lesson (preflight/cockpit walk-around,
-// no telemetry) OR in-flight HUD. Embedded in the shared sidebar shell,
-// not fullscreen. See docs/LIVE_REBUILD_PLAN.md.
+// no telemetry, shown via ?reading=<id> -- these are never selected
+// server-side, see LessonTree.jsx's comment) OR in-flight HUD. Embedded
+// in the shared sidebar shell, not fullscreen. See docs/LIVE_REBUILD_PLAN.md.
 export default function LiveCoach() {
   const status = useMavisStatus();
   const state = useMavisState();
+  const [searchParams, setSearchParams] = useSearchParams();
   // Also true if a session is already active (e.g. navigated back to
   // /live mid-lesson) so this doesn't force you back through the menu.
   const [startedHere, setStartedHere] = useState(false);
-  const [dismissedReading, setDismissedReading] = useState(false);
   const inLesson = startedHere || Boolean(state?.session_id);
-  const isReading = state?.active_lesson?.kind === "reading";
-
-  // Picking a different (or the same) reading lesson always shows it,
-  // even if a previous one was dismissed back to the menu.
-  useEffect(() => {
-    setDismissedReading(false);
-  }, [state?.lesson_id]);
+  const readingId = searchParams.get("reading");
 
   async function endSession() {
     if (!window.confirm("End this lesson and go back to the main menu?")) return;
@@ -35,13 +31,22 @@ export default function LiveCoach() {
     setStartedHere(false);
   }
 
-  if (isReading && !dismissedReading && !inLesson) {
+  async function backToMenuFromScorecard() {
+    try {
+      await mavisApi.quit();
+    } catch {
+      // best-effort
+    }
+    setStartedHere(false);
+  }
+
+  if (readingId && !inLesson) {
     return (
       <div className="mavis-shell">
         <ReadingLesson
-          lessonId={state.lesson_id}
-          data={state?.reading_lessons?.[state.lesson_id]}
-          onExit={() => setDismissedReading(true)}
+          lessonId={readingId}
+          data={state?.reading_lessons?.[readingId]}
+          onExit={() => setSearchParams({}, { replace: true })}
         />
       </div>
     );
@@ -58,9 +63,13 @@ export default function LiveCoach() {
         )}
       </div>
       {inLesson ? (
-        <InFlightPanel state={state} />
+        <InFlightPanel state={state} onMainMenu={backToMenuFromScorecard} />
       ) : (
-        <MainMenu state={state} onStarting={() => setStartedHere(true)} />
+        <MainMenu
+          state={state}
+          onStarting={() => setStartedHere(true)}
+          onOpenReading={(id) => setSearchParams({ reading: id })}
+        />
       )}
     </div>
   );

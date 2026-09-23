@@ -3,10 +3,11 @@ import ChatPanel from "./ChatPanel.jsx";
 import MapCanvas from "./MapCanvas.jsx";
 import Gauges from "./Gauges.jsx";
 import ControlBars from "./ControlBars.jsx";
+import ScorecardOverlay from "./ScorecardOverlay.jsx";
 
 // Two-column layout matching the original app's #left (avatar + chat) /
 // #right (map, then a bottom row of lesson info / gauges / controls).
-export default function InFlightPanel({ state }) {
+export default function InFlightPanel({ state, onMainMenu }) {
   const tel = state?.tel || {};
 
   return (
@@ -38,21 +39,7 @@ export default function InFlightPanel({ state }) {
         </div>
       </div>
 
-      {state?.scorecard && (
-        <div className="mavis-hud__scorecard">
-          <h3>Scorecard</h3>
-          <div className="readout">
-            {Object.entries(state.scorecard.scores || {}).map(([k, v]) => (
-              <div className="metric" key={k}>
-                <div className="k">{k}</div>
-                <div className="v">{v ?? "—"}</div>
-              </div>
-            ))}
-            <div className="metric"><div className="k">Total</div><div className="v">{state.scorecard.total ?? "—"}</div></div>
-            <div className="metric"><div className="k">Grade</div><div className="v">{state.scorecard.grade ?? "—"}</div></div>
-          </div>
-        </div>
-      )}
+      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} />}
     </div>
   );
 }

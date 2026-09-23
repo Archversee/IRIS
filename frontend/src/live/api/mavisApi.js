@@ -28,6 +28,7 @@ export const mavisApi = {
   selectLesson: (id) => postJson("/lesson/select", { id }),
   start: () => postJson("/demo/start"),
   quit: () => postJson("/demo/quit"),
+  restart: () => postJson("/demo/restart"),
   chat: (text) => postJson("/chat", { text }),
   // On-demand TTS narration for one reading-lesson checkpoint -> {ok, url}
   readingSay: (id, lesson) => postJson("/reading/say", { id, lesson }),

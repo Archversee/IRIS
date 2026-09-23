@@ -7,13 +7,15 @@ import LessonTree from "./LessonTree.jsx";
 // MAVIS is the only SimConnect reader in this system, so "live" is always
 // MAVIS's section regardless of which backend actually serves a given
 // screen (Live Monitor is IRIS-backed, but it's a live-flight experience,
-// so it belongs here, not under IRIS).
+// so it belongs here, not under IRIS). Curriculum's lesson tree nests
+// directly under that one link, not the whole section, so it doesn't read
+// as if it belongs under Live Monitor.
 const SECTIONS = [
   {
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live", label: "Live Coach" },
+      { to: "/live", label: "Curriculum", nested: <LessonTree /> },
       { to: "/monitor", label: "Live Monitor" },
     ],
   },
@@ -45,11 +47,13 @@ export default function Sidebar() {
               <span className="sidebar__section-sub">{section.sub}</span>
             </div>
             {section.links.map((link) => (
-              <NavLink key={link.to} to={link.to} className="sidebar__link">
-                {link.label}
-              </NavLink>
+              <div key={link.to}>
+                <NavLink to={link.to} className="sidebar__link">
+                  {link.label}
+                </NavLink>
+                {link.nested}
+              </div>
             ))}
-            {section.label === "MAVIS" && <LessonTree />}
           </div>
         );
       })}

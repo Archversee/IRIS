@@ -5,9 +5,12 @@ import { mavisApi } from "../live/api/mavisApi.js";
 
 // Expandable module -> lesson tree over MAVIS's live state.lesson_catalog,
 // living in the persistent sidebar so any lesson/module is reachable from
-// anywhere in the app, not just from within /live's own menu screen.
-// Picking a lesson selects it in MAVIS (POST /lesson/select) and jumps to
-// /live to fly it.
+// anywhere in the app. "reading"-kind lessons (preflight/cockpit) are
+// never selected server-side (see /live's own comment on this) -- they're
+// shown entirely client-side via /live?reading=<id>, since MAVIS's
+// state.reading_lessons has every reading lesson's data preloaded
+// regardless of which flying lesson is currently active. Flying lessons
+// still go through POST /lesson/select as normal.
 export default function LessonTree() {
   const state = useMavisState();
   const catalog = state?.lesson_catalog;
@@ -20,6 +23,10 @@ export default function LessonTree() {
   }
 
   async function pick(lesson) {
+    if (lesson.kind === "reading") {
+      nav(`/live?reading=${encodeURIComponent(lesson.id)}`);
+      return;
+    }
     try {
       await mavisApi.selectLesson(lesson.id);
     } catch {
