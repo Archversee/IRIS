@@ -31,3 +31,142 @@
   border-radius: 8px;
   padding: 12px;
 }
+
+/* ---- Splash ---- */
+.mavis-splash {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: radial-gradient(circle at 50% 30%, #1a2436 0%, #0b0e13 70%);
+  color: #d7e0ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  user-select: none;
+}
+.mavis-splash__word {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #4aa8ff;
+}
+.mavis-splash__tag { font-size: 18px; color: #8b98a5; }
+.mavis-splash__hint {
+  margin-top: 24px;
+  font-size: 13px;
+  color: #5a6672;
+  animation: mavis-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mavis-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ---- Main menu shell ---- */
+.mavis-shell {
+  min-height: 100vh;
+  background: #0b0e13;
+  color: #d7e0ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 16px;
+}
+
+.mavis-menu {
+  display: flex;
+  gap: 20px;
+  max-width: 1100px;
+  margin: 24px auto 0;
+}
+
+/* ---- Lesson sidebar ---- */
+.mavis-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #131922;
+  border: 1px solid #232f3d;
+  border-radius: 10px;
+  padding: 12px 0;
+}
+.mavis-sidebar--empty { padding: 16px; color: #8b98a5; font-size: 13px; }
+.mavis-sidebar__title {
+  padding: 0 14px 10px;
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid #232f3d;
+  margin-bottom: 8px;
+}
+.mavis-mod__head {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #d7e0ea;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+.mavis-mod.is-open .mavis-mod__head { color: #4aa8ff; }
+.mavis-mod__sub { font-size: 11px; font-weight: 400; color: #8b98a5; }
+.mavis-mod__lessons { list-style: none; margin: 0; padding: 0 0 8px; }
+.mavis-lesson {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #b7c2cc;
+  padding: 6px 14px 6px 26px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mavis-lesson:hover:not(:disabled) { color: #d7e0ea; background: #1a222c; }
+.mavis-lesson.is-active { color: #4aa8ff; font-weight: 600; }
+.mavis-lesson.is-locked { opacity: 0.4; cursor: not-allowed; }
+.mavis-lesson__tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #2b5c85;
+  color: #d7e0ea;
+}
+.mavis-lesson__dur { margin-left: auto; font-size: 11px; color: #8b98a5; }
+
+/* ---- Menu main (name input + mode cards) ---- */
+.mavis-menu__main { flex: 1; min-width: 0; }
+.mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+.mavis-menu__name {
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: #131922;
+  border: 1px solid #232f3d;
+  border-radius: 8px;
+  color: #d7e0ea;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.mavis-menu__error { margin-top: 12px; color: #ff8a8a; font-size: 13px; }
+
+.mavis-modes { display: flex; gap: 16px; flex-wrap: wrap; }
+.mavis-mode-card {
+  flex: 1;
+  min-width: 200px;
+  text-align: left;
+  background: #131922;
+  border: 1px solid #232f3d;
+  border-radius: 10px;
+  padding: 18px;
+  color: #d7e0ea;
+  cursor: pointer;
+}
+.mavis-mode-card:hover:not(:disabled) { border-color: #4aa8ff; }
+.mavis-mode-card:disabled { opacity: 0.5; cursor: not-allowed; }
+.mavis-mode-card__label { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.mavis-mode-card__desc { font-size: 13px; color: #8b98a5; line-height: 1.4; }

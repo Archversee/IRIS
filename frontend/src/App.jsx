@@ -1,4 +1,6 @@
-import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import Sidebar from "./components/Sidebar.jsx";
+import Home from "./pages/Home.jsx";
 import Sessions from "./pages/Sessions.jsx";
 import Upload from "./pages/Upload.jsx";
 import Review from "./pages/Review.jsx";
@@ -10,33 +12,32 @@ import LiveCoach from "./live/LiveCoach.jsx";
 export default function App() {
   const { pathname } = useLocation();
   // /live (MAVIS coaching) and /monitor (IRIS eye+flight spectator) are
-  // both fullscreen, nav-less screens -- same as /review always was.
+  // both fullscreen, sidebar-less screens -- same as /review always was.
   const isFullscreenPage = /^\/(sessions\/[^/]+\/review|live|monitor)$/.test(pathname);
 
-  return (
-    <>
-      {!isFullscreenPage && (
-        <nav className="nav">
-          <span className="brand">✈ Flight Review System</span>
-          <NavLink to="/sessions">Sessions</NavLink>
-          <NavLink to="/upload">Upload</NavLink>
-          <NavLink to="/live">Live Coach</NavLink>
-          <NavLink to="/monitor">Monitor</NavLink>
-          <NavLink to="/aoi-zones">AOI Zones</NavLink>
-        </nav>
-      )}
+  if (isFullscreenPage) {
+    return (
       <Routes>
-        <Route path="/" element={<Navigate to="/sessions" replace />} />
-        <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
-        <Route path="/upload" element={<div className="container"><Upload /></div>} />
         <Route path="/sessions/:id/review" element={<Review />} />
-        {/* MAVIS live coaching HUD -- talks to MAVIS (:6945), not IRIS's backend. */}
         <Route path="/live" element={<LiveCoach />} />
-        {/* IRIS's own eye+flight spectator view (was /live before the MAVIS rebuild). */}
         <Route path="/monitor" element={<LiveSession />} />
-        <Route path="/sessions/:id/analytics" element={<div className="container"><Analytics /></div>} />
-        <Route path="/aoi-zones" element={<div className="container"><AoiEditor /></div>} />
       </Routes>
-    </>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <Sidebar />
+      <main className="shell__main">
+        <Routes>
+          <Route path="/" element={<div className="container"><Home /></div>} />
+          <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
+          <Route path="/upload" element={<div className="container"><Upload /></div>} />
+          <Route path="/sessions/:id/analytics" element={<div className="container"><Analytics /></div>} />
+          <Route path="/aoi-zones" element={<div className="container"><AoiEditor /></div>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
