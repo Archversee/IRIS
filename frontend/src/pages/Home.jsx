@@ -12,7 +12,7 @@ export default function Home() {
         <div className="col card">
           <h3>MAVIS -- fly now</h3>
           <p className="muted">Live AI coaching and real-time flight monitoring.</p>
-          <NavLink to="/live"><button>Live Coach</button></NavLink>
+          <NavLink to="/live?reading=lesson00_preflight"><button>Live Coach</button></NavLink>
         </div>
         <div className="col card">
           <h3>IRIS -- review</h3>

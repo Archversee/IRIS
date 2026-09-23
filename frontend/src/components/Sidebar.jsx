@@ -10,22 +10,25 @@ import LessonTree from "./LessonTree.jsx";
 // so it belongs here, not under IRIS). Curriculum's lesson tree nests
 // directly under that one link, not the whole section, so it doesn't read
 // as if it belongs under Live Monitor.
+// Curriculum defaults to Preflight & Cockpit (the walk-around) rather than
+// the bare mode-selection screen -- that's the natural first stop before
+// "Basic Flight", matching how the curriculum is meant to be entered.
 const SECTIONS = [
   {
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live", label: "Curriculum", nested: <LessonTree /> },
-      { to: "/monitor", label: "Live Monitor" },
+      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", nested: <LessonTree /> },
+      { to: "/monitor", path: "/monitor", label: "Live Monitor" },
     ],
   },
   {
     label: "IRIS",
     sub: "Debrief & Analysis",
     links: [
-      { to: "/sessions", label: "Sessions" },
-      { to: "/upload", label: "Upload" },
-      { to: "/aoi-zones", label: "AOI Zones" },
+      { to: "/sessions", path: "/sessions", label: "Sessions" },
+      { to: "/upload", path: "/upload", label: "Upload" },
+      { to: "/aoi-zones", path: "/aoi-zones", label: "AOI Zones" },
     ],
   },
 ];
@@ -39,7 +42,7 @@ export default function Sidebar() {
         ✈ Flight Review System
       </NavLink>
       {SECTIONS.map((section) => {
-        const isActive = section.links.some((l) => pathname.startsWith(l.to));
+        const isActive = section.links.some((l) => pathname.startsWith(l.path));
         return (
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
             <div className="sidebar__section-head">

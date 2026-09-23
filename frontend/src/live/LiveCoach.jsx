@@ -17,11 +17,14 @@ export default function LiveCoach() {
   const state = useMavisState();
   const [searchParams, setSearchParams] = useSearchParams();
   const nav = useNavigate();
-  // Also true if a session is already active (e.g. navigated back to
-  // /live mid-lesson) so this doesn't force you back through the menu.
+  // Purely local, deliberately -- MAVIS never nulls out session_id on
+  // quit (it only mints a fresh one on the next /demo/start), so deriving
+  // "in lesson" from its mere presence shows a stale scorecard/session
+  // forever after ending one. The original app owns this the same way
+  // (a client-side body.inlesson flag), not from server state.
   const [startedHere, setStartedHere] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
-  const inLesson = startedHere || Boolean(state?.session_id);
+  const inLesson = startedHere;
   const readingId = searchParams.get("reading");
 
   async function confirmEndSession() {
