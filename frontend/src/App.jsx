@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar.jsx";
 import Home from "./pages/Home.jsx";
 import Sessions from "./pages/Sessions.jsx";
@@ -10,22 +11,20 @@ import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
 
 export default function App() {
-  const { pathname } = useLocation();
-  // Only the per-session Review page stays fullscreen/sidebar-less, for an
-  // immersive watch. /live and /monitor both keep the sidebar now.
-  const isFullscreenPage = /^\/sessions\/[^/]+\/review$/.test(pathname);
-
-  if (isFullscreenPage) {
-    return (
-      <Routes>
-        <Route path="/sessions/:id/review" element={<Review />} />
-      </Routes>
-    );
-  }
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
     <div className="shell">
-      <Sidebar />
+      {sidebarOpen && <Sidebar />}
+      <button
+        type="button"
+        className="shell__sidebar-toggle"
+        style={{ left: sidebarOpen ? 220 : 0 }}
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        onClick={() => setSidebarOpen((v) => !v)}
+      >
+        {sidebarOpen ? "‹" : "›"}
+      </button>
       <main className="shell__main">
         <Routes>
           <Route path="/" element={<div className="container"><Home /></div>} />
@@ -33,6 +32,7 @@ export default function App() {
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />
+          <Route path="/sessions/:id/review" element={<Review />} />
           <Route path="/sessions/:id/analytics" element={<div className="container"><Analytics /></div>} />
           <Route path="/aoi-zones" element={<div className="container"><AoiEditor /></div>} />
           <Route path="*" element={<Navigate to="/" replace />} />

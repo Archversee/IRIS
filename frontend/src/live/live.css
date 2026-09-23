@@ -114,7 +114,7 @@
 /* ---- Menu main (name input + mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
-.mavis-menu--solo { max-width: 640px; }
+.mavis-menu--solo { max-width: none; width: 100%; }
 .mavis-menu__names { display: flex; gap: 10px; margin-bottom: 20px; }
 .mavis-menu__names input {
   flex: 1;
@@ -166,8 +166,7 @@
   display: flex;
   gap: 14px;
   align-items: stretch;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
 }
 .mavis-hud__left {
   width: 320px;

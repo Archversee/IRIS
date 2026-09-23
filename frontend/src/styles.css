@@ -19,8 +19,19 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 
-.shell { display: flex; height: 100vh; overflow: hidden; }
+.shell { position: relative; display: flex; height: 100vh; overflow: hidden; }
 .shell__main { flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
+.shell__sidebar-toggle {
+  position: absolute; top: 14px;
+  width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  color: var(--muted); font-size: 13px; font-weight: 700;
+  z-index: 10;
+  transition: left 0.15s ease;
+}
+.shell__sidebar-toggle:hover { color: var(--text); }
 
 .sidebar {
   width: 220px; flex-shrink: 0;
