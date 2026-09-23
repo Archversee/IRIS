@@ -85,8 +85,14 @@ class MSFSAdapter:
 
     def connect(self) -> None:
         from simconnect import SimConnect, PERIOD_VISUAL_FRAME
+        # Always rewritten, regardless of host -- a previous bug here skipped
+        # this for host in (127.0.0.1, localhost), which let a bad value
+        # written before a config fix get permanently frozen (the DLL kept
+        # reading the stale file forever, since nothing ever touched it
+        # again once host "looked" local). Every connect() call now
+        # guarantees these files match config.yaml's current sim.host/port.
+        self._write_simconnect_cfg()
         if self.host not in ("127.0.0.1", "localhost"):
-            self._write_simconnect_cfg()
             # fail fast with a useful message if the sim PC isn't reachable
             import socket
             try:
