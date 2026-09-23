@@ -110,11 +110,11 @@ export default function LiveSession() {
 
   return (
     <div className="rev rev--embedded">
+      {/* No back button here -- the sidebar (outside .rev) already covers
+          Sessions/AOI Zones now that this view is embedded, not fullscreen. */}
       <div className="rev-rail">
-        <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
-        <div className="rail-sep" />
         {sessionId && <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>}
-        <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
+        <div className="rail-sep" />
       </div>
 
       <div className="rev-main">
