@@ -1,5 +1,5 @@
 .live-coach {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 16px;
   background: #0b0e13;
   color: #d7e0ea;
@@ -32,41 +32,9 @@
   padding: 12px;
 }
 
-/* ---- Splash ---- */
-.mavis-splash {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: radial-gradient(circle at 50% 30%, #1a2436 0%, #0b0e13 70%);
-  color: #d7e0ea;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  cursor: pointer;
-  user-select: none;
-}
-.mavis-splash__word {
-  font-size: 64px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #4aa8ff;
-}
-.mavis-splash__tag { font-size: 18px; color: #8b98a5; }
-.mavis-splash__hint {
-  margin-top: 24px;
-  font-size: 13px;
-  color: #5a6672;
-  animation: mavis-pulse 1.8s ease-in-out infinite;
-}
-@keyframes mavis-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-
 /* ---- Main menu shell ---- */
 .mavis-shell {
-  min-height: 100vh;
+  min-height: 100%;
   background: #0b0e13;
   color: #d7e0ea;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -78,6 +46,10 @@
   gap: 20px;
   max-width: 1100px;
   margin: 24px auto 0;
+  padding: 20px;
+  border-radius: 14px;
+  background-size: cover;
+  background-position: center;
 }
 
 /* ---- Lesson sidebar ---- */
@@ -158,8 +130,11 @@
 .mavis-mode-card {
   flex: 1;
   min-width: 200px;
+  min-height: 120px;
   text-align: left;
-  background: #131922;
+  background-color: #131922;
+  background-size: cover;
+  background-position: center;
   border: 1px solid #232f3d;
   border-radius: 10px;
   padding: 18px;
