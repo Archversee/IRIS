@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState, useMavisStatus } from "./hooks/useMavisSocket.js";
 import { mavisApi } from "./api/mavisApi.js";
 import MainMenu from "./components/MainMenu.jsx";
 import InFlightPanel from "./components/InFlightPanel.jsx";
 import ReadingLesson from "./components/reading/ReadingLesson.jsx";
+import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import "./live.css";
 
 // Slice B/C/I: main menu -> reading lesson (preflight/cockpit walk-around,
@@ -15,14 +16,16 @@ export default function LiveCoach() {
   const status = useMavisStatus();
   const state = useMavisState();
   const [searchParams, setSearchParams] = useSearchParams();
+  const nav = useNavigate();
   // Also true if a session is already active (e.g. navigated back to
   // /live mid-lesson) so this doesn't force you back through the menu.
   const [startedHere, setStartedHere] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
   const inLesson = startedHere || Boolean(state?.session_id);
   const readingId = searchParams.get("reading");
 
-  async function endSession() {
-    if (!window.confirm("End this lesson and go back to the main menu?")) return;
+  async function confirmEndSession() {
+    setConfirmingEnd(false);
     try {
       await mavisApi.quit();
     } catch {
@@ -31,13 +34,15 @@ export default function LiveCoach() {
     setStartedHere(false);
   }
 
-  async function backToMenuFromScorecard() {
+  // From the scorecard's "Main menu" -- goes all the way back to the
+  // dashboard's own home page, not just MAVIS's mode-selection screen.
+  async function backToDashboardHome() {
     try {
       await mavisApi.quit();
     } catch {
       // best-effort
     }
-    setStartedHere(false);
+    nav("/");
   }
 
   if (readingId && !inLesson) {
@@ -57,18 +62,23 @@ export default function LiveCoach() {
       <div className="mavis-topbar">
         <span className={`live-coach__status live-coach__status--${status}`}>MAVIS: {status}</span>
         {inLesson && (
-          <button type="button" className="secondary" onClick={endSession}>
+          <button type="button" className="secondary" onClick={() => setConfirmingEnd(true)}>
             ‹ End Session
           </button>
         )}
       </div>
       {inLesson ? (
-        <InFlightPanel state={state} onMainMenu={backToMenuFromScorecard} />
+        <InFlightPanel state={state} onMainMenu={backToDashboardHome} />
       ) : (
-        <MainMenu
-          state={state}
-          onStarting={() => setStartedHere(true)}
-          onOpenReading={(id) => setSearchParams({ reading: id })}
+        <MainMenu state={state} onStarting={() => setStartedHere(true)} />
+      )}
+      {confirmingEnd && (
+        <ConfirmDialog
+          title="End session?"
+          message="This will end the current lesson and take you back to the main menu."
+          confirmLabel="End session"
+          onConfirm={confirmEndSession}
+          onCancel={() => setConfirmingEnd(false)}
         />
       )}
     </div>

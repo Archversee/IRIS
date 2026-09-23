@@ -114,6 +114,17 @@
 /* ---- Menu main (name input + mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+.mavis-menu--solo { max-width: 640px; }
+.mavis-menu__names { display: flex; gap: 10px; margin-bottom: 20px; }
+.mavis-menu__names input {
+  flex: 1;
+  padding: 10px 12px;
+  background: #131922;
+  border: 1px solid #232f3d;
+  border-radius: 8px;
+  color: #d7e0ea;
+  font-size: 14px;
+}
 .mavis-menu__name {
   width: 100%;
   max-width: 320px;
@@ -236,6 +247,7 @@
 
 /* ---- Map ---- */
 .mavis-map {
+  position: relative;
   flex: 1;
   min-height: 320px;
   background: #06090f;
@@ -243,7 +255,22 @@
   border-radius: 10px;
   overflow: hidden;
 }
-.mavis-map canvas { width: 100%; height: 100%; display: block; }
+.mavis-map canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.mavis-map__zoom {
+  position: absolute; left: 10px; bottom: 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.mavis-map__zoom button {
+  width: 28px; height: 28px; padding: 0;
+  background: rgba(6,9,16,0.78); border: 1px solid #232f3d; color: #d7e0ea;
+  font-size: 16px; font-weight: 700; border-radius: 6px;
+}
+.mavis-map__hover {
+  position: absolute;
+  background: rgba(6,9,16,0.85); border: 1px solid #232f3d; border-radius: 6px;
+  padding: 4px 8px; font-size: 12px; color: #d7e0ea;
+  pointer-events: none; white-space: nowrap;
+}
 
 /* ---- Gauges (vertical tapes) ---- */
 .mavis-gauges { display: flex; gap: 14px; justify-content: space-around; }
@@ -343,3 +370,27 @@
 .mavis-score-metric__val { font-size: 12px; text-align: right; font-weight: 600; }
 .mavis-score-btns { display: flex; gap: 10px; margin-top: 18px; }
 .mavis-score-btns button { flex: 1; }
+
+/* ---- Confirm dialog (replaces window.confirm) ---- */
+.mavis-confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(6, 9, 16, 0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 60;
+  padding: 20px;
+}
+.mavis-confirm-card {
+  width: 100%; max-width: 360px;
+  background: #131922; border: 1px solid #232f3d; border-radius: 12px;
+  padding: 20px; color: #d7e0ea;
+}
+.mavis-confirm-card h3 { margin: 0 0 8px; }
+.mavis-confirm-btns { display: flex; gap: 10px; margin-top: 16px; }
+.mavis-confirm-btns button { flex: 1; }
+
+/* ---- Scoring guide ---- */
+.mavis-guide-card { max-width: 440px; max-height: 85vh; overflow-y: auto; }
+.mavis-guide-list { margin: 8px 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.mavis-guide-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.mavis-guide-table th, .mavis-guide-table td { border: 1px solid #232f3d; padding: 4px 8px; text-align: center; }
+.mavis-guide-table th { color: #8b98a5; font-weight: 600; }

@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { mavisApi } from "../api/mavisApi.js";
+import ScoringGuide from "./ScoringGuide.jsx";
 
 const GRADE_LABEL = { S: "S", A: "A", B: "B", C: "C", D: "D", F: "F" };
 
 // Ported to match the original app's #scoreView styling (grade-pill
-// gradients, metric bars, debrief text) -- not the leaderboard-post /
-// scoring-guide / leaderboard buttons yet, since those screens don't
-// exist in this rebuild. Fly Again / Main Menu are wired up.
+// gradients, metric bars, debrief text, scoring guide) -- not the
+// leaderboard-post fields / leaderboard button yet, since that screen
+// doesn't exist in this rebuild.
 export default function ScorecardOverlay({ scorecard, onMainMenu }) {
   const scores = scorecard.scores || {};
+  const [showGuide, setShowGuide] = useState(false);
 
   // No parent callback needed here -- MAVIS clears state.scorecard on
   // restart, so this overlay just disappears once the new attempt begins.
@@ -62,9 +65,11 @@ export default function ScorecardOverlay({ scorecard, onMainMenu }) {
 
         <div className="mavis-score-btns">
           <button type="button" onClick={flyAgain}>↻ Fly again</button>
+          <button type="button" className="secondary" onClick={() => setShowGuide(true)}>Scoring guide</button>
           <button type="button" className="secondary" onClick={onMainMenu}>Main menu</button>
         </div>
       </div>
+      {showGuide && <ScoringGuide onClose={() => setShowGuide(false)} />}
     </div>
   );
 }
