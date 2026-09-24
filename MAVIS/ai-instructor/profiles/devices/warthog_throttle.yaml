@@ -1,0 +1,5 @@
+name: Thrustmaster Warthog Throttle
+match: { name_contains: "Throttle", kind: throttle }
+axes:
+  throttle: 2
+invert: { throttle: true }   # Warthog throttle axis is typically reversed

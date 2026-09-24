@@ -1,0 +1,59 @@
+name: "Lesson 1: Your First Circuit"
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }   # approx RWY 02 threshold - verify in sim
+  length_m: 3780
+pattern:
+  side: left               # left traffic RWY 02 -> circuit west of runway
+  altitude_msl_ft: 1100    # 65 ft elev + ~1000 AGL, rounded
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  # Crosswind-turn cue: past runway end (m along from threshold). Default = length_m + 120.
+  # crosswind_turn_min_along_m: 3900
+  centerline_offset_m: 18   # calibrate: if centred in sim reads right on map, increase; left, decrease
+  # Distance past abeam threshold (along runway axis) before the base turn.
+  # 1100 m, ~100 m past mock geometry; grey planned circuit + MSFS use base_turn_past_abeam_m.
+  # Mock autopilot + voice cues in mock mode use mock_base_turn_past_abeam_m (unchanged).
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+  # Downwind turn: end of crosswind leg (~88% of pattern offset). Defaults below.
+  # downwind_turn_cross_frac: 0.88
+  # downwind_turn_along_margin_m: 250
+  # turn_cue_min_gap_s: 14
+total_circuits: 1          # one take-off, one full-stop landing, no touch-and-go
+phases:
+  # ordered; transition logic lives in core/phase_detector.py (parameterized by this file)
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - CROSSWIND
+  - DOWNWIND
+  - BASE
+  - FINAL
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:                    # values may reference aircraft profile keys
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  CROSSWIND:     { speed: "{vy}" }
+  DOWNWIND:      { speed: "{pattern_downwind}", alt: 1100, flaps_abeam: 10 }
+  BASE:          { speed: "{base}", flaps: 20 }
+  FINAL:         { speed: "{final}", flaps: 30 }
+
+# Scoring (design spec §14). All optional - core/scoring.py has these defaults.
+# weights sum is normalised; scale = the error that scores ~37/100 (bigger = more forgiving).
+scoring:
+  weights:    { track: 25, speed: 15, altitude: 20, landing: 30, smoothness: 10 }
+  scales:     { track: 55, speed: 9, altitude: 120, smoothness: 0.22,
+                land_sink: 300, land_center: 40, land_speed: 10 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]   # else "F"
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }                  # trainee/pilot; 4+ -> floor
+  retry_cap_floor: 60
+  final_length_m: 1100

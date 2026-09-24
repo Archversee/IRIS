@@ -1,0 +1,98 @@
+name: "Lesson 10: Night Circuit"
+# Same circuit as Lesson 1, flown after dark. The geometry, phases, targets and
+# scoring are identical so the phase detector, mock aircraft and map are shared;
+# what changes is the clock and the teaching points spoken on each leg.
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+phases:
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - CROSSWIND
+  - DOWNWIND
+  - BASE
+  - FINAL
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  CROSSWIND:     { speed: "{vy}" }
+  DOWNWIND:      { speed: "{pattern_downwind}", alt: 1100, flaps_abeam: 10 }
+  BASE:          { speed: "{base}", flaps: 20 }
+  FINAL:         { speed: "{final}", flaps: 30 }
+
+# The sim clock is set before the briefing (at: start), not revealed mid-flight
+# like the circuit/phase form of night_event.
+night_event:
+  at: start
+  local_time: "20:30"
+
+# Spoken in place of the standard opening briefing line. Picked by jargon.
+briefing:
+  layman: >-
+    Tonight we fly the same rectangle as before, but in the dark. Your lights are
+    on, the runway is lit, and I'll point out what looks different as we go.
+  pilot: >-
+    Night circuit, same pattern. Nav, beacon and strobes on, landing light for
+    take-off and landing. Expect a reduced horizon, so back up every leg with
+    the instruments.
+
+# Teaching point for the leg, spoken after the standard phase call. One per
+# phase, picked by jargon; {speed} and {alt} come from the phase targets.
+phase_notes:
+  CLIMB_OUT:
+    layman: >-
+      It's dark out there, so there's no horizon to look at. Keep the wings
+      level using the screen in front of you, and climb straight ahead.
+    pilot: >-
+      No visual horizon. Wings level on the attitude indicator, positive rate,
+      and hold {speed} knots on the tape.
+  DOWNWIND:
+    layman: >-
+      Look left. That line of white lights is the runway. Keep it sitting in
+      the same place on your window, and that's your spacing.
+    pilot: >-
+      Runway edge lights on your left. Use them for spacing, and cross-check
+      {alt} feet on the altimeter, there's no ground reference at night.
+  FINAL:
+    layman: >-
+      At night the runway can look further away than it is, and you might feel
+      too high. You're not. Hold the descent, and don't go low.
+    pilot: >-
+      Black-hole approach, nothing lit before the threshold, so it feels high.
+      Fly the PAPI, hold {speed} knots, and don't duck under.
+  FLARE_TOUCHDOWN:
+    layman: >-
+      Judge your height from the edge lights coming up either side of you, not
+      from the ground. You won't see the ground.
+    pilot: >-
+      Height from the edge lights, not the surface. Landing light on, look to
+      the far end, and hold it off.
+
+scoring:
+  weights:    { track: 25, speed: 15, altitude: 20, landing: 30, smoothness: 10 }
+  scales:     { track: 55, speed: 9, altitude: 120, smoothness: 0.22,
+                land_sink: 300, land_center: 40, land_speed: 10 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60
+  final_length_m: 1100

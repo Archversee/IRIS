@@ -18,6 +18,15 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // MAVIS's own FastAPI+WS server (live coaching) -- proxied under
+      // /mavis so the unified dashboard is same-origin here too, matching
+      // the /mavis/* rule the production reverse proxy uses.
+      "/mavis": {
+        target: "http://localhost:6945",
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/mavis/, ""),
+      },
     },
   },
 });

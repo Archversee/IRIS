@@ -1,20 +1,32 @@
 """
-Combined live data collector: MSFS flight telemetry + Smart Eye Pro (SEP)
-gaze tracking + OBS recording, all in one process/one SESSION_ID, run on
-the sim/backend device.
+Live adapter: OBS recording control + Smart Eye Pro (SEP) live gaze bridge,
+synced to whichever session MAVIS is currently running.
+
+MAVIS is the only process that ever talks to SimConnect (hard constraint --
+see docs/INTEGRATION_PLAN.md). This script no longer reads flight telemetry
+itself; it watches MAVIS's own WS state feed (MAVIS_WS_URL below) purely for
+the session_id MAVIS mints when the trainee presses Start, and uses that as
+the trigger to start OBS recording and attach the Smart Eye bridge to the
+right session. Flight telemetry reaches IRIS via a separate path entirely
+(IRIS backend's app/mavis_bridge.py, also watching MAVIS's WS) -- this
+script has nothing to do with flight_data anymore.
+
+Runs continuously across MANY flights, not just one: MAVIS mints a fresh
+session_id on every Start (Basic Flight, Free Flight, whichever), which
+session_watcher() below notices and uses to start a new OBS recording and
+retarget the eye bridge's forward socket, without needing this process
+restarted between flights. Separately, session_end_watcher() polls IRIS's
+own session record for ended_at (set the moment MAVIS's End Session/Main-
+menu flow actually quits -- see frontend/src/live/LiveCoach.jsx) and stops
+that recording right away, since MAVIS's own WS state never nulls
+session_id on quit (only the *next* Start mints a new one), so
+session_watcher() alone can't tell "this flight just ended" from "nothing
+has happened yet". It's launched once per boot now (by the launcher
+script, or automatically by IRIS backend's app/mavis_bridge.py the first
+time it sees a session), not once per flight.
 
 INSTALL:
-    pip install pysimconnect obsws-python requests websocket-client
-
-SESSION ID:
-    Normally you don't set this by hand -- clicking "Go Live" on the app's
-    Live page creates the session AND launches this script for you with the
-    session id already attached (see backend's POST /sessions/{id}/launch-adapter).
-    If you're running this by hand instead (script and app on different
-    machines, or the auto-launch didn't fire), pass the id as an argument:
-        python LiveAdapter.py <session-id>
-    or paste it into SESSION_ID below. Leave both empty to just log CSV
-    locally with no live streaming.
+    pip install obsws-python websocket-client
 
 OBS RECORDING (two instances, one mp4 each -- instrument view + OTW view):
     Run two separate OBS Studio processes. In each instance:
@@ -39,56 +51,138 @@ SMART EYE (on the Smart Eye machine, separate from this one):
     isn't running or the feed drops, nothing about post-session review is
     affected.
 
-Run this AFTER MSFS2020 is running with a flight loaded, both OBS
-instances are open with their WebSocket servers enabled, and (if using
-Smart Eye) SEP is running and tracking.
+Run this AFTER MAVIS is running (it supplies the session_id this script
+waits for), and after both OBS instances are open with their WebSocket
+servers enabled, and (if using Smart Eye) SEP is running and tracking.
 
-SHUTDOWN: Ctrl+C stops the flight side the normal clean way -- SimConnect
-closes, OBS recordings stop, the full CSV log gets batch-uploaded to
-Supabase. The eye-tracking side is best-effort and just stops with the
-process.
+SHUTDOWN: Ctrl+C stops OBS recording cleanly. The eye-tracking bridge is
+best-effort and just stops with the process.
 """
 
-import csv
 import json
 import math
 import os
 import queue
 import socket
 import struct
+import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
-import requests
 import websocket
-from simconnect import SimConnect, PERIOD_VISUAL_FRAME
 import obsws_python as obsws
+
+# Python only line-buffers stdout when it's a real console; redirected to a
+# file or pipe (e.g. launch_all.ps1's -RedirectStandardOutput, or IRIS
+# backend's own Popen capturing this process's output), it silently
+# switches to block buffering instead. This script now runs indefinitely
+# and prints only a handful of short lines across an entire flight, so
+# that buffer would otherwise never fill -- meaning the log file stays
+# empty no matter how long it's been running or what it's actually seen.
+# Force line buffering unconditionally so every print() lands immediately
+# regardless of how this process was launched.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # ----------------------------------------------------------------------
 # Shared config
 # ----------------------------------------------------------------------
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:8000"  # IRIS backend -- eye samples go here
 WS_BASE_URL = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
+MAVIS_WS_URL = "ws://localhost:6945/ws"  # MAVIS -- source of the session_id this script waits for
 
-# Auto-filled by the backend when launched from the Live page's "Go Live"
-# button (python LiveAdapter.py <session-id>). Set manually only for a
-# standalone run -- leave both this and the CLI arg empty to skip live
-# streaming and just log CSV.
-SESSION_ID = sys.argv[1] if len(sys.argv) > 1 else None
+# Updated by session_watcher() every time MAVIS mints a new session_id --
+# read by _forward_worker() (eye bridge) to know which session to forward
+# to; main() also reads it right after pulling a fresh id off _session_queue.
+SESSION_ID: str | None = None
+
+# One ("start", session_id) or ("end", session_id) event per session
+# lifecycle change, from session_watcher/session_end_watcher respectively,
+# in order -- main() consumes these to know when to start a new OBS
+# recording, stop the current one, or both. The session_id travels with
+# every event (rather than a bare sentinel) so an "end" that was queued
+# just before a new "start" can't be mistaken, once main() gets around to
+# it, for ending the NEW session instead of the one it actually applies to.
+_session_queue: "queue.Queue[tuple[str, str]]" = queue.Queue()
 
 
 # ========================================================================
-# Flight telemetry (MSFS / SimConnect)
+# MAVIS session watcher -- the only thing that decides when to start/roll
+# over to a new flight. Runs for the lifetime of the process on its own
+# thread (started from main()), reconnecting if MAVIS isn't up yet.
 # ========================================================================
-POLL_INTERVAL_SEC = 0.01665  # 60hz
+def session_watcher() -> None:
+    print(f"Waiting for MAVIS to start a session ({MAVIS_WS_URL})...")
+    last_sid = None
+    while True:
+        try:
+            ws = websocket.create_connection(MAVIS_WS_URL, timeout=10)
+        except Exception as e:
+            print(f"Can't reach MAVIS yet ({e}); retrying in 2s")
+            time.sleep(2)
+            continue
+        try:
+            while True:
+                msg = ws.recv()
+                if not msg:
+                    break
+                try:
+                    state = json.loads(msg)
+                except (TypeError, ValueError):
+                    continue
+                sid = state.get("session_id")
+                if sid and sid != last_sid:
+                    last_sid = sid
+                    _session_queue.put(("start", sid))
+        except Exception as e:
+            print(f"Lost connection to MAVIS ({e}); retrying")
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
+        time.sleep(2)
 
-LOG_DIR = os.path.join(os.getcwd(), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-OUTPUT_CSV = os.path.join(LOG_DIR, "simconnect_log.csv")
 
-# Set False to log flight data only, without touching OBS.
+# ========================================================================
+# End-of-session watcher -- session_watcher() above only ever learns about
+# a NEW session starting; MAVIS deliberately never nulls its own
+# session_id on quit (a fresh one is only minted on the next Start), so
+# there's no way to notice "this flight just ended" from MAVIS's own WS
+# feed alone. Without this, OBS just kept recording until the NEXT flight
+# started, ignoring End Session entirely. IRIS's own sessions.ended_at is
+# what LiveCoach.jsx's End Session/Main-menu flow sets the moment the
+# trainee actually quits (see backend/app/schemas.py's SessionUpdate) --
+# polling that here is what makes End Session actually stop the recording.
+# ========================================================================
+def _session_has_ended(session_id: str) -> bool:
+    url = f"{API_BASE_URL}/sessions/{session_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return False  # IRIS backend down/unreachable -- assume still running, don't stop on a guess
+    return bool(data.get("ended_at"))
+
+
+def session_end_watcher() -> None:
+    signaled_for = None
+    while True:
+        sid = SESSION_ID
+        if sid and sid != signaled_for and _session_has_ended(sid):
+            signaled_for = sid
+            _session_queue.put(("end", sid))
+        time.sleep(2)
+
+
+# ========================================================================
+# OBS recording control
+# ========================================================================
+# Set False to skip OBS entirely and just run the Smart Eye bridge.
 ENABLE_OBS_RECORDING = True
 
 # One entry per OBS instance, it doesn't need to match anything in OBS.
@@ -98,135 +192,6 @@ OBS_INSTANCES = [
     dict(name="instrument", host="localhost", port=4456),
     dict(name="otw",        host="localhost", port=4455),
 ]
-# OBS vidoe file sizes: 15 min:1gb @720p
-
-# Canonical field -> (simvar name, unit)
-SIMVARS = {
-    "altitude_ft":            ("PLANE ALTITUDE", "feet"),
-    "airspeed_kt":             ("AIRSPEED INDICATED", "knots"),
-    "vertical_speed_fpm":      ("VERTICAL SPEED", "feet/minute"),
-    "heading_true_deg":        ("PLANE HEADING DEGREES TRUE", "degrees"),
-    "pitch_deg":                ("PLANE PITCH DEGREES", "degrees"),
-    "bank_deg":                 ("PLANE BANK DEGREES", "degrees"),
-    "yaw_rate_radps":          ("ROTATION VELOCITY BODY Z", "Radians per second"),
-    "fuel_total_qty_gal":      ("FUEL TOTAL QUANTITY", "gallons"),
-
-    "throttle_pct":             ("GENERAL ENG THROTTLE LEVER POSITION:1", "Percent"),
-    "elevator_trim_pct":       ("ELEVATOR TRIM PCT", "Percent"),
-    "elevator_position":       ("ELEVATOR POSITION", "Position"),
-    "rudder_position":          ("RUDDER POSITION", "Position"),
-    "flaps_handle_pct":        ("FLAPS HANDLE PERCENT", "Percent"),
-    "gear_handle_position":    ("GEAR HANDLE POSITION", "bool"),
-
-    "latitude":                  ("PLANE LATITUDE", "degrees"),
-    "longitude":                 ("PLANE LONGITUDE", "degrees"),
-    "ambient_visibility_m":    ("AMBIENT VISIBILITY", "meters"),
-    "ambient_wind_kt":          ("AMBIENT WIND VELOCITY", "knots"),
-    "ambient_temp_c":           ("AMBIENT TEMPERATURE", "celsius"),
-}
-
-# Map simvar name -> canonical field name, for pulling values back out
-NAME_TO_FIELD = {simvar: field for field, (simvar, _) in SIMVARS.items()}
-
-
-# Live streaming -- runs on its own thread so a slow/unreachable backend
-# can never stall the actual data-capture loop. The backend only holds
-# these in memory (see stream.py) and relays them to the Live page; it
-# never touches the DB per-sample, so there's no per-row round trip to
-# keep up with and no need to throttle -- every row streams at full rate.
-# A dropped or failed sample is silently skipped rather than interrupting
-# logging; the CSV (written regardless) stays the source of truth and
-# gets batch-uploaded in _flush_full_log_to_supabase() once the flight ends.
-_stream_queue = queue.Queue(maxsize=1000)
-
-# Set by _stream_worker's on_message handler when the backend's End Session
-# button sends {"type": "stop"} -- checked each turn of flight_main()'s
-# capture loop so a remote stop exits through the same finally: block as
-# Ctrl+C (SimConnect close, OBS stop, CSV batch-upload).
-_stop_event = threading.Event()
-
-
-def _stream_worker():
-    # WebSocketApp is websocket-client's supported pattern for a long-lived
-    # connection that needs both a background receive/ping-pong loop and
-    # sends from another thread -- its .send() takes an internal lock
-    # specifically so this combination is safe.
-    url = f"{WS_BASE_URL}/sessions/{SESSION_ID}/stream/ws"
-
-    while True:
-        stop_sender = threading.Event()
-
-        def sender(wsapp):
-            while not stop_sender.is_set():
-                try:
-                    row = _stream_queue.get(timeout=1)
-                except queue.Empty:
-                    continue
-                try:
-                    wsapp.send(json.dumps(row))
-                except Exception:
-                    pass  # transient -- on_close (below) will stop this loop once the connection is actually dead
-
-        def on_open(wsapp):
-            print("[stream] connected to live dashboard")
-            threading.Thread(target=sender, args=(wsapp,), daemon=True).start()
-
-        def on_message(wsapp, message):
-            try:
-                msg = json.loads(message)
-            except (TypeError, ValueError):
-                return
-            if msg.get("type") == "stop":
-                print("[stream] stop requested from the Live page")
-                _stop_event.set()
-
-        def on_error(wsapp, error):
-            print(f"[stream] error: {error}")
-
-        def on_close(wsapp, status_code, msg):
-            stop_sender.set()
-
-        wsapp = websocket.WebSocketApp(
-            url, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close
-        )
-        wsapp.run_forever(ping_interval=15, ping_timeout=10)
-        stop_sender.set()
-        if _stop_event.is_set():
-            return  # clean remote stop -- don't reconnect and retry
-        print("[stream] connection lost; retrying in 2s")
-        time.sleep(2)
-
-
-def stream_row(row):
-    if not SESSION_ID:
-        return
-    payload = {"ts": row["timestamp_utc"], **{k: v for k, v in row.items() if k != "timestamp_utc"}}
-    try:
-        _stream_queue.put_nowait(payload)
-    except queue.Full:
-        pass  # backend/network can't keep up -- drop the sample rather than pile up unbounded
-
-
-def _flush_full_log_to_supabase():
-    """Uploads the full CSV log via the same batch-ingest endpoint the Upload
-    page uses, so a live-streamed flight becomes a normal reviewable session."""
-    if not SESSION_ID:
-        return
-    print("Uploading full flight log to the database...")
-    try:
-        with open(OUTPUT_CSV, "rb") as f:
-            resp = requests.post(
-                f"{API_BASE_URL}/sessions/{SESSION_ID}/ingest/flight",
-                files={"file": (os.path.basename(OUTPUT_CSV), f, "text/csv")},
-                timeout=60,
-            )
-        resp.raise_for_status()
-        print(f"Uploaded: {resp.json()}")
-    except Exception as e:
-        print(
-            f"Failed to upload the full log ({e}). The CSV at {OUTPUT_CSV} is "
-            "still on disk -- upload it manually via the Upload page."
-        )
 
 
 def connect_obs_clients():
@@ -253,68 +218,9 @@ def stop_obs_recordings(clients):
             print(f"Failed to stop OBS ({name}) recording cleanly: {e}")
 
 
-def flight_main():
-    obs_clients = connect_obs_clients() if ENABLE_OBS_RECORDING else []
-
-    if SESSION_ID:
-        threading.Thread(target=_stream_worker, daemon=True).start()
-        print(f"Live streaming enabled -> {WS_BASE_URL}/sessions/{SESSION_ID}/stream/ws")
-
-    print("Connecting to SimConnect (make sure MSFS2020 is running with a flight loaded)...")
-    sc = SimConnect()
-
-    subscribe_list = [
-        dict(name=simvar, units=unit) for simvar, unit in
-        [SIMVARS[f] for f in SIMVARS]
-    ]
-    datadef = sc.subscribe_simdata(subscribe_list, period=PERIOD_VISUAL_FRAME)
-
-    print("Waiting for first data batch...")
-    while not datadef.simdata:
-        sc.receive()
-        time.sleep(0.05)
-    print("Connected, data flowing.")
-
-    if obs_clients:
-        start_obs_recordings(obs_clients)
-
-    fieldnames = ["timestamp_utc"] + list(SIMVARS.keys())
-
-    with open(OUTPUT_CSV, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-
-        print(f"Logging to {OUTPUT_CSV}")
-        print(f"Rate: {1 / POLL_INTERVAL_SEC:.0f} Hz. Ctrl+C (or End Session on the Live page) to stop.")
-        try:
-            while not _stop_event.is_set():
-                while sc.receive():
-                    pass
-
-                row = {"timestamp_utc": datetime.now(timezone.utc).isoformat()}
-                for field, (simvar, _unit) in SIMVARS.items():
-                    try:
-                        row[field] = datadef.simdata[simvar]
-                    except KeyError as e:
-                        print(f"FAILED: {field} ({simvar}) -> {e}")
-                        row[field] = None
-
-                writer.writerow(row)
-                f.flush()
-                stream_row(row)
-                time.sleep(POLL_INTERVAL_SEC)
-            print("\nStopped logging.")
-        except KeyboardInterrupt:
-            print("\nStopped logging.")
-        finally:
-            sc.Close()
-            if obs_clients:
-                stop_obs_recordings(obs_clients)
-            _flush_full_log_to_supabase()
-
-
 # ========================================================================
-# Eye tracking (Smart Eye Pro live gaze bridge)
+# Eye tracking (Smart Eye Pro live gaze bridge) -- unchanged from before;
+# SESSION_ID is now set by wait_for_mavis_session() instead of argv.
 # ========================================================================
 USE_RPC_TO_OPEN_STREAM = False  # leave False if SEP's own Communication Settings already has a UDP destination configured
 SEP_RPC_HOST = "<smarteye-device-lan-ip>"  # only used if USE_RPC_TO_OPEN_STREAM is True
@@ -487,15 +393,23 @@ def _build_sample(fields: dict):
     }
 
 
-# Forwarding to the backend -- identical reconnect/keepalive pattern to
-# _stream_worker above (WebSocketApp's run_forever() handles ping/pong;
-# sender only starts once the connection is actually open).
+# Forwarding to the backend -- WebSocketApp's run_forever() handles
+# ping/pong; sender only starts once the connection is actually open.
 _forward_queue = queue.Queue(maxsize=2000)
+
+# The live wsapp instance, so main() can force it closed on a session
+# transition -- that's what makes _forward_worker's reconnect below pick up
+# the new SESSION_ID instead of continuing to stream to the flight that just
+# ended.
+_current_wsapp = None
+_wsapp_lock = threading.Lock()
 
 
 def _forward_worker():
-    url = f"{WS_BASE_URL}/sessions/{SESSION_ID}/stream/eye/ws"
+    global _current_wsapp
     while True:
+        sid = SESSION_ID  # snapshot -- may change again while this connection is up
+        url = f"{WS_BASE_URL}/sessions/{sid}/stream/eye/ws"
         stop_sender = threading.Event()
 
         def sender(wsapp):
@@ -510,7 +424,7 @@ def _forward_worker():
                     pass  # transient -- on_close will stop this loop once the connection is actually dead
 
         def on_open(wsapp):
-            print("[eye-stream] connected to live dashboard")
+            print(f"[eye-stream] connected to live dashboard ({sid})")
             threading.Thread(target=sender, args=(wsapp,), daemon=True).start()
 
         def on_error(wsapp, error):
@@ -520,19 +434,22 @@ def _forward_worker():
             stop_sender.set()
 
         wsapp = websocket.WebSocketApp(url, on_open=on_open, on_error=on_error, on_close=on_close)
+        with _wsapp_lock:
+            _current_wsapp = wsapp
         wsapp.run_forever(ping_interval=15, ping_timeout=10)
         stop_sender.set()
-        print("[eye-stream] connection lost; retrying in 2s")
-        time.sleep(2)
+        if SESSION_ID == sid:
+            # Dropped on its own (network blip) -- reconnect to the same session.
+            print("[eye-stream] connection lost; retrying in 2s")
+            time.sleep(2)
+        # else: main() closed this on purpose because a new session started --
+        # loop straight back around and pick up the new SESSION_ID, no delay.
 
 
 def eye_main():
     """Best-effort eye-tracking bridge -- runs on its own daemon thread from
     main() below, and just stops with the process rather than getting its
     own clean shutdown (see module docstring)."""
-    if not SESSION_ID:
-        return  # no session to stream to -- eye tracking is live-preview only, nothing to do
-
     if USE_RPC_TO_OPEN_STREAM:
         open_smarteye_stream()
     threading.Thread(target=_forward_worker, daemon=True).start()
@@ -541,11 +458,25 @@ def eye_main():
     sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
     print(f"[eye] listening for Smart Eye UDP packets on :{UDP_LISTEN_PORT}")
 
+    got_first_packet = False
     try:
         while True:
             data, _addr = sock.recvfrom(65536)
-            fields = _parse_packet(data)
-            sample = _build_sample(fields)
+            if not got_first_packet:
+                got_first_packet = True
+                print(f"[eye] first UDP packet received from {_addr[0]} ({len(data)} bytes)")
+            # Parsing/decoding errors used to be uncaught here -- one
+            # unexpected packet shape would raise something other than
+            # OSError, which the except below doesn't catch, silently
+            # killing this whole listener thread with no output at all
+            # (looks exactly like "logged nothing after 'listening'").
+            # Drop just that packet and keep going instead.
+            try:
+                fields = _parse_packet(data)
+                sample = _build_sample(fields)
+            except Exception as e:
+                print(f"[eye] dropped a packet we couldn't parse: {e}")
+                continue
             if sample is None:
                 continue
             try:
@@ -561,17 +492,140 @@ def eye_main():
 
 
 # ========================================================================
-# Entry point -- flight telemetry drives the main loop and owns the clean
-# shutdown (SimConnect close, OBS stop, CSV batch-upload); eye tracking
-# runs alongside on a background thread, best-effort (see eye_main()).
+# Single-instance lock -- this script can now be started two ways (the
+# launcher script, or IRIS backend's app/mavis_bridge.py auto-launching it
+# the first time it sees a MAVIS session) that don't know about each other.
+# A stale lock (process no longer alive) is treated as free -- good enough
+# for a single sim PC, not a distributed lock. If already running, this
+# instance prints why and exits immediately rather than fighting the other
+# one for the same OBS/UDP-port resources. One lock for the whole process
+# lifetime now, not per flight -- see module docstring.
+# ========================================================================
+LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "adapter.lock")
+
+
+def _is_pid_running(pid: int) -> bool:
+    if os.name == "nt":
+        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True)
+        return str(pid) in out.stdout
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _acquire_lock() -> bool:
+    os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+    if os.path.exists(LOCK_PATH):
+        try:
+            with open(LOCK_PATH) as f:
+                pid = int(f.read().strip())
+            if _is_pid_running(pid):
+                print(f"Another adapter instance is already running (pid {pid}). Exiting.")
+                return False
+        except (OSError, ValueError):
+            pass  # unreadable/corrupt lock file -- treat as stale, safe to take over
+    with open(LOCK_PATH, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def _release_lock() -> None:
+    try:
+        os.remove(LOCK_PATH)
+    except OSError:
+        pass
+
+
+# ========================================================================
+# Entry point -- runs for the whole boot, not just one flight. Consumes
+# _session_queue one event at a time, from either watcher thread: a new
+# session_id (start recording, or roll over from whichever one was
+# active), or the end sentinel (stop recording, wait for the next one).
+# Ctrl+C stops cleanly and exits.
 # ========================================================================
 def main():
-    if SESSION_ID:
-        threading.Thread(target=eye_main, daemon=True).start()
-    else:
-        print("No SESSION_ID -- logging flight CSV only, no live streaming, no eye tracking.")
+    if not _acquire_lock():
+        return
+    global SESSION_ID
+    obs_clients: list = []
+    eye_bridge_started = False
+    recording = False  # whether OBS is currently recording for SESSION_ID
+    try:
+        threading.Thread(target=session_watcher, daemon=True).start()
+        threading.Thread(target=session_end_watcher, daemon=True).start()
+        while True:
+            kind, sid = _session_queue.get()
 
-    flight_main()
+            if kind == "end":
+                # Only act if this "end" still applies to whichever session
+                # is actually current -- if a newer "start" already arrived
+                # and was processed first (both watchers poll/push
+                # independently, so ordering isn't guaranteed under a race),
+                # this is a stale event for a session that was already
+                # rolled over, and must NOT stop the new one's recording.
+                if sid != SESSION_ID:
+                    continue
+                print(f"Session {sid} ended -- stopping recording.")
+                if recording and obs_clients:
+                    stop_obs_recordings(obs_clients)
+                recording = False
+                continue
+
+            # kind == "start" -- if the previous session is still recording
+            # (e.g. this adapter was launched mid-flight and never saw that
+            # session's own "end" event), stop it before starting the new one.
+            if recording and obs_clients:
+                print(f"New session started before {SESSION_ID} was seen as ended -- stopping its recording.")
+                stop_obs_recordings(obs_clients)
+                recording = False
+
+            SESSION_ID = sid
+            print(f"MAVIS session started: {SESSION_ID}")
+
+            # Eye tracking first and unconditionally -- it must not depend on
+            # OBS being reachable at all. A previous version called
+            # connect_obs_clients() first with no try/except: if OBS wasn't
+            # running or refused the connection, that exception propagated
+            # all the way out of main() and killed the whole adapter process
+            # before eye_main() ever started, silently taking Smart Eye
+            # logging down with it.
+            if not eye_bridge_started:
+                threading.Thread(target=eye_main, daemon=True).start()
+                eye_bridge_started = True
+            else:
+                # Force the eye forwarder's socket closed so it reconnects
+                # against the SESSION_ID just set above, instead of
+                # continuing to stream to the flight that just ended.
+                with _wsapp_lock:
+                    if _current_wsapp is not None:
+                        try:
+                            _current_wsapp.close()
+                        except Exception:
+                            pass
+
+            if ENABLE_OBS_RECORDING and not obs_clients:
+                try:
+                    obs_clients = connect_obs_clients()
+                except Exception as e:
+                    print(f"[obs] couldn't connect ({e}); continuing without video recording this session.")
+                    obs_clients = []
+            if obs_clients:
+                try:
+                    start_obs_recordings(obs_clients)
+                    recording = True
+                except Exception as e:
+                    print(f"[obs] couldn't start recording ({e}); continuing without video recording this session.")
+                    obs_clients = []
+
+            print("Recording. Ctrl+C to stop the adapter entirely (fine to leave running between flights).")
+    except KeyboardInterrupt:
+        print("\nStopping...")
+        if recording and obs_clients:
+            stop_obs_recordings(obs_clients)
+    finally:
+        _release_lock()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,38 @@
+# Python virtual environments
+ai-instructor/.venv/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Downloaded model checkpoints
+ai-instructor/data/models/ecapa/*.ckpt
+
+# Downloaded 3D assets (large binaries — keep locally, don't commit).
+# cockpit.glb (the preflight/cockpit walk-around model) goes here.
+ai-instructor/web/static/models/*
+!ai-instructor/web/static/models/.gitkeep
+
+# Mock-mode out-the-window clips (~900 MB each; distributed by folder copy, not git)
+ai-instructor/media/videos/mock_video_*.mp4
+
+# Runtime-generated state
+ai-instructor/data/recordings/last_run.json
+
+# Local session notes for Claude Code (not shared)
+CLAUDE.md
+report.md
+report.docx
+MAVIS_AI_Instructor.pptx
+# Supabase telemetry exports (raw trainee data, local only)
+ai-instructor/data/recordings/supabase/
+# Replay placeholders: the logged flight + its screen recording (raw trainee data, large)
+ai-instructor/data/recordings/replay/
+ai-instructor/media/videos/replay.mp4
+ai-instructor/media/videos/replay.web.mp4
+# Runtime state with credentials / biometrics (seeded or enrolled on first run)
+ai-instructor/data/instructors.json
+ai-instructor/data/voices/*
+!ai-instructor/data/voices/.gitkeep
+# Office lock files
+~$*

@@ -31,14 +31,9 @@ export default function Review() {
     );
 
   return (
-    <div className="rev">
-      <div className="rev-rail">
-        <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
-        <div className="rail-sep" />
-        <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${id}/analytics`)} href="#">▦</a>
-        <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
-      </div>
-
+    <div className="rev rev--embedded rev--no-rail">
+      {/* No rail here -- the sidebar (outside .rev) already covers
+          Sessions/Analytics/AOI Zones now that this view is embedded. */}
       <div className="rev-main">
         <div className="rev-titlebar">
           <h1>{summary.session.name}</h1>

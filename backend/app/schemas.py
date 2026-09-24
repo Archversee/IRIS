@@ -30,6 +30,11 @@ class SessionUpdate(BaseModel):
     aircraft: str | None = None
     sim_source: str | None = None
     notes: str | None = None
+    # Set by MAVIS's own End Session/Main-menu flow the moment the trainee
+    # actually quits (not on every scorecard -- "Fly again" keeps the same
+    # session_id going for another circuit). This is what Live Monitor's
+    # /sessions/running filters on to know a session is still in progress.
+    ended_at: datetime | None = None
 
 
 # ---- AOI zones -------------------------------------------------------

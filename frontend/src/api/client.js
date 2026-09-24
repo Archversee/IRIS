@@ -56,13 +56,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  // Auto-launches LiveAdapter.py on the backend machine with this session's
-  // id already filled in -- see LiveSession.jsx's goLive().
-  launchLiveAdapter: (id) => req(`/sessions/${id}/launch-adapter`, { method: "POST" }),
-  // End Session button -- tells the connected LiveAdapter.py to shut down
-  // cleanly (SimConnect close, OBS stop, CSV batch-upload) instead of
-  // leaving it running after the user walks away from the Live page.
-  stopAdapter: (id) => req(`/sessions/${id}/stream/stop-adapter`, { method: "POST" }),
+  // MAVIS-sourced sessions still in progress -- Live Monitor's picker.
+  // MAVIS mints session_id and owns starting/stopping everything (OBS,
+  // Smart Eye, flight logging); IRIS only ever views here.
+  listRunningSessions: () => req(`/sessions/running`),
 
   ingest: (id, kind, file) => {
     const fd = new FormData();

@@ -7,7 +7,7 @@ import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 // All state, data-fetching and derived computations behind a session
 // viewer (Review and Live pages both use this). `id` may be null/undefined
 // -- fetching just no-ops until a real session id is supplied, which is how
-// the Live page defers loading until "Go Live" creates a session.
+// the Live page defers loading until a running MAVIS session is picked.
 //
 // `live` swaps the flight data source: Review does a one-shot REST fetch;
 // Live opens a WebSocket to stream.py's in-memory buffer instead (no DB
@@ -62,10 +62,11 @@ export function useSessionData({ id, live }) {
     return () => { cancelled = true; };
   }, [id]);
 
-  // flight (+ eye) data: Review fetches once over REST; Live streams over a
-  // WebSocket instead, since per-sample REST/DB round trips can't keep up
-  // with a real flight (see stream.py). Eye tracking stays post-session
-  // only for now, so `eye` just stays empty while live.
+  // flight (+ eye) data: Review fetches once over REST; Live streams both
+  // over a WebSocket instead, since per-sample REST/DB round trips can't
+  // keep up with a real flight (see stream.py) -- eye samples arrive here
+  // the same way flight samples do (msg.type "eye_sample"/backlog's
+  // eye_samples), which is what drives ScreensPanel's live gaze halo.
   useEffect(() => {
     if (!id) return;
     let cancelled = false;

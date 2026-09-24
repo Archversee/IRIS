@@ -1,13 +1,22 @@
 """
 Real-time streaming.
 
-Live samples never touch the DB while a flight is in progress -- they're
-held in memory here and relayed straight to whoever's watching. The
-durable copy happens separately, after the fact: LiveAdapter.py POSTs the
-full CSV log to /ingest/flight once the flight ends (see its LIVE
-STREAMING docstring), and Smart Eye's own file export goes through
-/ingest/eye the normal way (Upload page) -- the live eye feed below is a
-preview only, it doesn't replace that.
+Flight samples never touch the DB while a flight is in progress here --
+they're held in memory and relayed to whoever's watching; the durable
+copy happens separately (LiveAdapter.py's end-of-flight CSV POST to
+/ingest/flight for a manual run, or app/mavis_bridge.py's own batched
+writes for a MAVIS-driven one).
+
+Eye samples are different: every live sample is *also* persisted to
+eye_tracking_data as it arrives (see eye_stream_producer's flush below),
+batched every EYE_FLUSH_INTERVAL_S, `ON CONFLICT DO NOTHING` so a
+reconnect resending an overlapping timestamp can't crash the batch. This
+runs for every session automatically, whether or not the UI is showing a
+live gaze overlay for it. Smart Eye's own file export + /ingest/eye (the
+Upload page) remains the durable, full-resolution path -- uploading it
+after the flight *replaces* whatever partial live capture already landed
+here (ingest.py's replace-on-upload semantics), so live capture is a
+safety net, not a competing source of truth.
 
   WS   /sessions/{id}/stream/ws         flight producer -- LiveAdapter.py's
                                          flight side connects once and sends
@@ -29,6 +38,8 @@ preview only, it doesn't replace that.
                                          (SimConnect close, OBS stop, CSV
                                          batch-upload) instead of being killed.
 """
+import logging
+import time
 from collections import deque
 from uuid import UUID
 
@@ -36,6 +47,8 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from .. import db
 from ..schemas import EyeSample, FlightSample
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions/{session_id}/stream", tags=["stream"])
 
@@ -45,9 +58,22 @@ router = APIRouter(prefix="/sessions/{session_id}/stream", tags=["stream"])
 # upload) always has the full log regardless.
 _BACKLOG_SIZE = 20_000
 
+# Eye samples DO get batch-persisted live (unlike flight samples -- see
+# module docstring); matches mavis_bridge.py's own flush cadence.
+_EYE_FLUSH_INTERVAL_S = 1.0
+
+_EYE_INSERT_SQL = (
+    f"insert into eye_tracking_data ({', '.join(db.EYE_COLUMNS)}) "
+    f"values ({', '.join(f'${i}' for i in range(1, len(db.EYE_COLUMNS) + 1))}) "
+    "on conflict (session_id, ts) do nothing"
+)
+
 
 class _LiveBuffer:
-    __slots__ = ("flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected", "flight_ws")
+    __slots__ = (
+        "flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected", "flight_ws",
+        "eye_row_buffer", "last_eye_flush",
+    )
 
     def __init__(self):
         self.flight_samples: deque[dict] = deque(maxlen=_BACKLOG_SIZE)
@@ -59,6 +85,10 @@ class _LiveBuffer:
         # kept so stop_adapter() below can push a message to LiveAdapter.py
         # the same way _broadcast() pushes to subscribers.
         self.flight_ws: WebSocket | None = None
+        # Rows waiting to be flushed to eye_tracking_data -- see
+        # eye_stream_producer/_flush_eye_rows below.
+        self.eye_row_buffer: list[tuple] = []
+        self.last_eye_flush: float = 0.0
 
 
 _live: dict[str, _LiveBuffer] = {}
@@ -88,6 +118,28 @@ async def _broadcast(buf: _LiveBuffer, message: dict):
 def _sample_to_record(session_id: UUID, s: FlightSample) -> tuple:
     d = s.model_dump()
     return tuple([session_id, d["ts"]] + [d[c] for c in db.FLIGHT_COLUMNS[2:]])
+
+
+def _eye_sample_to_row(session_id: UUID, s: EyeSample) -> tuple:
+    d = s.model_dump()
+    return tuple([session_id, d["ts"]] + [d[c] for c in db.EYE_COLUMNS[2:]])
+
+
+async def _flush_eye_rows(buf: _LiveBuffer) -> None:
+    """Best-effort persist of whatever's buffered. Not fatal if it fails --
+    e.g. a brief race where this session's `sessions` row hasn't been
+    created yet by mavis_bridge (both it and LiveAdapter.py start watching
+    MAVIS's feed at roughly the same time) would raise a FK violation here;
+    losing a second of live-preview persistence to that race is fine, the
+    Upload page's full-file replace is still the durable source of truth."""
+    if not buf.eye_row_buffer:
+        return
+    rows, buf.eye_row_buffer = buf.eye_row_buffer, []
+    try:
+        async with db.acquire() as conn:
+            await conn.executemany(_EYE_INSERT_SQL, rows)
+    except Exception as e:
+        log.warning("[stream] eye sample flush failed (%d rows dropped): %s", len(rows), e)
 
 
 @router.websocket("/ws")
@@ -121,7 +173,10 @@ async def stream_producer(websocket: WebSocket, session_id: UUID):
 
 @router.websocket("/eye/ws")
 async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
-    """LiveAdapter.py's eye-side live feed -- same pattern as stream_producer above, for gaze data."""
+    """LiveAdapter.py's eye-side live feed -- same pattern as stream_producer
+    above, for gaze data, plus a live batched persist to eye_tracking_data
+    (see _flush_eye_rows) so every session's Smart Eye data lands in the DB
+    even if nothing ever views the live overlay for it."""
     await websocket.accept()
     buf = _buffer(session_id)
     buf.eye_connected = True
@@ -137,11 +192,17 @@ async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
                 continue
             record = sample.model_dump(mode="json")
             buf.eye_samples.append(record)
+            buf.eye_row_buffer.append(_eye_sample_to_row(session_id, sample))
             await _broadcast(buf, {"type": "eye_sample", "sample": record})
+            now = time.monotonic()
+            if now - buf.last_eye_flush >= _EYE_FLUSH_INTERVAL_S:
+                buf.last_eye_flush = now
+                await _flush_eye_rows(buf)
     except WebSocketDisconnect:
         pass
     finally:
         buf.eye_connected = False
+        await _flush_eye_rows(buf)
         _drop_if_idle(session_id, buf)
 
 
@@ -164,6 +225,19 @@ async def stream_subscriber(websocket: WebSocket, session_id: UUID):
     finally:
         buf.subscribers.discard(websocket)
         _drop_if_idle(session_id, buf)
+
+
+async def ingest_external_sample(session_id: UUID, record: dict) -> None:
+    """Feeds a sample from a producer other than the WS endpoints above
+    (currently: mavis_bridge, reading MAVIS's own WS feed instead of
+    SimConnect) into the same in-memory backlog/broadcast used by
+    stream_producer, so the Live page's subscriber feed sees MAVIS-sourced
+    telemetry the same way it sees LiveAdapter.py's. Does not touch the
+    DB -- the caller is responsible for persistence (mavis_bridge batches
+    its own writes to flight_data)."""
+    buf = _buffer(session_id)
+    buf.flight_samples.append(record)
+    await _broadcast(buf, {"type": "sample", "sample": record})
 
 
 @router.post("/flight", status_code=202)

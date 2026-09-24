@@ -10,64 +10,51 @@ import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
 
-// Top-level "Live" nav destination. No session picker -- "Go Live" creates
-// a fresh session on the spot, then this keeps rendering the same viewer
-// layout as Review.jsx (via the shared useSessionData hook + components/
-// session/* pieces), which fills in as LiveAdapter.py streams data.
+// Pure viewer now -- MAVIS is the only thing that ever starts, stops, or
+// logs a session (see mavis_bridge.py/LiveAdapter.py), so this page never
+// mints or ends anything. It just lists whichever MAVIS sessions are
+// currently in progress (GET /sessions/running, i.e. source='mavis' with
+// no ended_at yet) and lets you watch one -- same viewer layout as
+// Review.jsx (via the shared useSessionData hook), just fed live instead
+// of from a finished DB record. Screen capture uses the browser's own
+// getDisplayMedia() picker per screen (see ScreensPanel), not a server-run
+// recording -- that's OBS's job now, owned entirely by MAVIS/LiveAdapter.py.
+const POLL_INTERVAL_MS = 3000;
+
 export default function LiveSession() {
   const nav = useNavigate();
+  const [running, setRunning] = useState([]);
   const [sessionId, setSessionId] = useState(null);
-  const [starting, setStarting] = useState(false);
-  const [ending, setEnding] = useState(false);
-  const [createErr, setCreateErr] = useState(null);
-  const [launchWarning, setLaunchWarning] = useState(null);
+  const [listErr, setListErr] = useState(null);
   const [otwStream, setOtwStream] = useState(null);
   const [instrumentStream, setInstrumentStream] = useState(null);
+  const pollRef = useRef(null);
 
   const { err, summary, flight, flightLoaded, screens, timeline, scanPath, liveState, regionPie, phases, followingLive } =
     useSessionData({ id: sessionId, live: true });
 
-  async function goLive() {
-    setStarting(true);
-    setCreateErr(null);
-    setLaunchWarning(null);
-    try {
-      const s = await api.createSession({ name: `Live – ${new Date().toLocaleString()}`, sim_source: "MSFS" });
-      setSessionId(s.id);
-      // Auto-launches LiveAdapter.py on the backend machine with this
-      // session's id already filled in -- if that fails (e.g. the backend
-      // isn't running on the same machine as MSFS/OBS), fall back to
-      // telling the user to run it by hand instead of blocking Go Live.
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
       try {
-        await api.launchLiveAdapter(s.id);
+        const rows = await api.listRunningSessions();
+        if (cancelled) return;
+        setRunning(rows);
+        setListErr(null);
+        // The session being watched ended (or was never in the list) --
+        // drop back to the picker rather than keep polling a dead session.
+        if (sessionId && !rows.some((r) => r.id === sessionId)) setSessionId(null);
       } catch (e) {
-        setLaunchWarning(
-          `Couldn't auto-launch LiveAdapter.py (${e.message}). Run it manually: python Sim_Data_Adapter/LiveAdapter.py ${s.id}`
-        );
+        if (!cancelled) setListErr(e.message);
       }
-    } catch (e) {
-      setCreateErr(e.message);
-    } finally {
-      setStarting(false);
     }
-  }
-
-  // Tells LiveAdapter.py to shut down cleanly (see stopAdapter's docstring),
-  // then sends the user to Upload to fill in the name/pilot/aircraft/notes
-  // that weren't known yet when Go Live created this session, plus link
-  // the OBS video files -- same page the manual upload flow uses.
-  async function endSession() {
-    setEnding(true);
-    try {
-      await api.stopAdapter(sessionId);
-    } catch {
-      // best-effort -- adapter may already have disconnected/crashed, don't
-      // block the user from moving on to fill in the session details
-    } finally {
-      setEnding(false);
-    }
-    nav(`/upload?session=${sessionId}`);
-  }
+    poll();
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(pollRef.current);
+    };
+  }, [sessionId]);
 
   // Browser screen-capture for the two live monitors -- an in-progress OBS
   // recording isn't a seekable/playable file, so the live view captures
@@ -95,50 +82,67 @@ export default function LiveSession() {
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
 
-  const notStarted = !sessionId;
-  const waitingForData = sessionId && summary && flightLoaded && flight.length === 0;
+  if (!sessionId) {
+    return (
+      <div className="rev rev--embedded">
+        <div className="rev-main">
+          <div className="rev-titlebar">
+            <h1>Live Monitor</h1>
+            <span className="sub">Pick a session MAVIS is currently running to watch it live.</span>
+          </div>
+          {listErr && <p className="sub">Couldn't load running sessions: {listErr}</p>}
+          {running.length === 0 ? (
+            <p className="sub">
+              No MAVIS session is running right now. Start Basic Flight or Free Flight in MAVIS, then come back here.
+            </p>
+          ) : (
+            <div className="rev-bottom" style={{ flexWrap: "wrap" }}>
+              {running.map((s) => (
+                <button
+                  key={s.id}
+                  className="card"
+                  style={{ textAlign: "left", cursor: "pointer", minWidth: 220 }}
+                  onClick={() => setSessionId(s.id)}
+                >
+                  <strong>{s.name || "MAVIS session"}</strong>
+                  <div className="muted">
+                    {s.aircraft || "aircraft n/a"} · {s.sim_source || "sim n/a"}
+                  </div>
+                  <div className="muted">
+                    started {s.started_at ? new Date(s.started_at).toLocaleTimeString() : "—"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const waitingForData = summary && flightLoaded && flight.length === 0;
 
   return (
-    <div className="rev">
+    <div className="rev rev--embedded">
       <div className="rev-rail">
-        <a className="rail-btn" title="Sessions" onClick={() => nav("/sessions")} href="#">‹</a>
+        <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>
         <div className="rail-sep" />
-        {sessionId && <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>}
-        <a className="rail-btn" title="AOI zones" onClick={() => nav("/aoi-zones")} href="#">▢</a>
       </div>
 
       <div className="rev-main">
         <div className="rev-titlebar">
           <h1>{summary?.session?.name || "Live"}</h1>
           <span className="sub">
-            {summary ? `${summary.session.aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "no active session"}
+            {summary ? `${summary.session.aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "loading…"}
           </span>
           <span className="spacer" />
-          {notStarted ? (
-            <button className="tl-btn go-live" disabled={starting} onClick={goLive}>
-              {starting ? "Starting…" : "● Go Live"}
-            </button>
-          ) : (
-            <>
-              <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
-              <button className="tl-btn" disabled={ending} onClick={endSession} style={{ marginLeft: 8 }}>
-                {ending ? "Ending…" : "■ End Session"}
-              </button>
-            </>
-          )}
+          <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
+          <button className="tl-btn" onClick={() => setSessionId(null)} style={{ marginLeft: 8 }}>
+            ‹ Back to sessions
+          </button>
         </div>
 
-        {(notStarted || waitingForData || createErr || launchWarning) && (
-          <p className="sub" style={{ margin: "-4px 0 4px" }}>
-            {createErr
-              ? `Couldn't start a live session: ${createErr}`
-              : notStarted
-              ? "Click ● Go Live above to start a new live session."
-              : launchWarning
-              ? launchWarning
-              : "Waiting for live flight data… LiveAdapter.py was launched automatically."}
-          </p>
-        )}
+        {waitingForData && <p className="sub" style={{ margin: "-4px 0 4px" }}>Waiting for live flight data…</p>}
 
         <ScreensPanel {...screens} live
           otwStream={otwStream}
