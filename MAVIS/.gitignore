@@ -8,8 +8,10 @@ __pycache__/
 # Downloaded model checkpoints
 ai-instructor/data/models/ecapa/*.ckpt
 
-# Downloaded 3D assets (large binaries — keep locally, don't commit)
-ai-instructor/web/static/models/
+# Downloaded 3D assets (large binaries — keep locally, don't commit).
+# cockpit.glb (the preflight/cockpit walk-around model) goes here.
+ai-instructor/web/static/models/*
+!ai-instructor/web/static/models/.gitkeep
 
 # Mock-mode out-the-window clips (~900 MB each; distributed by folder copy, not git)
 ai-instructor/media/videos/mock_video_*.mp4
