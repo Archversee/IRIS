@@ -252,11 +252,22 @@ export function useSessionData({ id, live }) {
   const chartMinT = series.length ? series[0].t : 0;
   const chartMaxT = series.length ? series[series.length - 1].t : totalT;
 
+  // "Nice" round step sizes (seconds) to pick from, smallest first -- a
+  // fixed 10s step used to mean a long flight's x-axis got cluttered with
+  // hundreds of ticks. Instead, pick the smallest of these that keeps the
+  // total tick count within MAX_TIMELINE_TICKS, so the interval naturally
+  // grows coarser (10s -> 1min -> 5min -> ...) as the flight gets longer.
+  const NICE_TIMELINE_STEPS_SEC = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400];
+  const MAX_TIMELINE_TICKS = 25;
+
   const timelineTicks = useMemo(() => {
     if (!series.length) return [];
     const maxT = series[series.length - 1].t;
+    if (maxT <= 0) return [0];
+    const step = NICE_TIMELINE_STEPS_SEC.find((s) => Math.floor(maxT / s) + 1 <= MAX_TIMELINE_TICKS)
+      ?? Math.ceil(maxT / (MAX_TIMELINE_TICKS - 1) / 3600) * 3600; // longer than a full day -- fall back to a round number of hours
     const ticks = [];
-    for (let t = 0; t <= maxT; t += 10) ticks.push(t);
+    for (let t = 0; t <= maxT; t += step) ticks.push(t);
     return ticks;
   }, [series]);
 
