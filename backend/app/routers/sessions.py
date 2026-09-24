@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from .. import db
+from .. import db, mavis_bridge
 from ..schemas import Session, SessionCreate, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -58,10 +58,10 @@ async def get_session(session_id: UUID):
 
 @router.patch("/{session_id}", response_model=Session)
 async def update_session(session_id: UUID, body: SessionUpdate):
-    """Fills in session details after the fact -- used by the End Session
-    flow, where the session was created upfront (with a placeholder name)
-    when "Go Live" was clicked, and the real name/pilot/aircraft/notes are
-    only known once the flight is over."""
+    """Fills in session details after the fact -- Upload's own form uses
+    this for name/pilot/aircraft/notes, and MAVIS's End Session/Main-menu
+    flow (LiveCoach.jsx) uses it to set ended_at the moment the trainee
+    actually quits."""
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         row = await get_session(session_id)
@@ -75,6 +75,12 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         )
     if row is None:
         raise HTTPException(404, "Session not found")
+    if fields.get("ended_at") is not None:
+        # In-process, no polling -- stops mavis_bridge from buffering/
+        # relaying any more flight_data for this session on its very next
+        # state push from MAVIS (which otherwise keeps polling/broadcasting
+        # telemetry regardless of whether a lesson was quit).
+        mavis_bridge.mark_ended(session_id)
     return dict(row)
 
 

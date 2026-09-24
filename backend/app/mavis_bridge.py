@@ -129,10 +129,20 @@ def map_scorecard_row(session_id: UUID, state: dict, sc: dict) -> tuple:
 
 
 class _SessionCursor:
-    __slots__ = ("seen", "transcript_len", "last_scorecard_seq", "row_buffer")
+    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer")
 
     def __init__(self):
         self.seen = False
+        # Set by mark_ended() the instant routers/sessions.py's PATCH
+        # handler sees ended_at get set (LiveCoach.jsx's End Session/Main-
+        # menu flow) -- stops buffering/relaying any MORE telemetry for
+        # this session. MAVIS's own tick loop keeps polling and
+        # broadcasting telemetry regardless of whether a lesson was quit
+        # (a lower-level, always-on loop this integration doesn't touch --
+        # see main.py's ticker()), so without this, flight data would keep
+        # streaming in and dragging out Live Monitor/Upload until the NEXT
+        # session started.
+        self.ended = False
         self.transcript_len = 0
         self.last_scorecard_seq = None
         self.row_buffer: list[tuple] = []
@@ -205,7 +215,7 @@ class MavisBridge:
                 log.warning("mavis_bridge: couldn't auto-launch the OBS/Smart-Eye adapter: %s", e)
 
         fields = map_telemetry_fields(state)
-        if fields is not None:
+        if fields is not None and not cur.ended:
             # fields has every FLIGHT_COLUMNS key except session_id (index 0);
             # FLIGHT_COLUMNS[1:] (starting at "ts") lines up with its keys exactly.
             cur.row_buffer.append((session_id, *(fields[c] for c in FLIGHT_COLUMNS[1:])))
@@ -312,3 +322,15 @@ async def stop() -> None:
     if _bridge is not None:
         await _bridge.stop()
         _bridge = None
+
+
+def mark_ended(session_id) -> None:
+    """Called synchronously from routers/sessions.py's PATCH handler the
+    moment a session's ended_at gets set. In-process, no polling -- takes
+    effect on this bridge's very next state push from MAVIS. A session
+    this bridge was never tracking (e.g. ended_at set on a non-MAVIS
+    session) is just a no-op."""
+    if _bridge is not None:
+        cur = _bridge._sessions.get(str(session_id))
+        if cur is not None:
+            cur.ended = True
