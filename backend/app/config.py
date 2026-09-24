@@ -12,6 +12,14 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://postgres:postgres@localhost:5432/postgres"
     frontend_origin: str = "http://localhost:5173"
+    # The reverse proxy (proxy/app.py) is a *separate* browser-visible
+    # origin from frontend_origin above -- when the dashboard is opened
+    # through it (the normal way, via launch_all.ps1), video tags load
+    # video_dir's absolute http://localhost:8000/videos/... URLs
+    # (public_base_url below) directly from this backend with
+    # crossOrigin="anonymous" (see AoiEditor.jsx), so the proxy's origin
+    # needs to be CORS-allowed here too, not just the Vite dev server's.
+    proxy_origin: str = "http://localhost:3000"
     video_dir: str = "../data/videos"
     public_base_url: str = "http://localhost:8000"
 

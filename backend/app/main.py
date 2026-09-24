@@ -28,7 +28,7 @@ app = FastAPI(title="Flight Review System API", version="0.1.0", lifespan=lifesp
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=[settings.frontend_origin, settings.proxy_origin],
     allow_methods=["*"],
     allow_headers=["*"],
 )
