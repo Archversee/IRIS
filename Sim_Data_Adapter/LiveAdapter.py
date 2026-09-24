@@ -66,6 +66,7 @@ import queue
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -74,6 +75,18 @@ from datetime import datetime, timedelta, timezone
 
 import websocket
 import obsws_python as obsws
+
+# Python only line-buffers stdout when it's a real console; redirected to a
+# file or pipe (e.g. launch_all.ps1's -RedirectStandardOutput, or IRIS
+# backend's own Popen capturing this process's output), it silently
+# switches to block buffering instead. This script now runs indefinitely
+# and prints only a handful of short lines across an entire flight, so
+# that buffer would otherwise never fill -- meaning the log file stays
+# empty no matter how long it's been running or what it's actually seen.
+# Force line buffering unconditionally so every print() lands immediately
+# regardless of how this process was launched.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # ----------------------------------------------------------------------
 # Shared config
