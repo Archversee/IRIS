@@ -84,6 +84,8 @@ class MSFSAdapter:
                 log.warning("could not write %s: %s", p, e)
 
     def connect(self) -> None:
+        if self._sm is not None:
+            return  # idempotent -- safe to call again from a retry loop once already connected
         from simconnect import SimConnect, PERIOD_VISUAL_FRAME
         # Always rewritten, regardless of host -- a previous bug here skipped
         # this for host in (127.0.0.1, localhost), which let a bad value
@@ -134,6 +136,13 @@ class MSFSAdapter:
 
     def get_telemetry(self) -> Telemetry:
         import time as _time
+        if self._sm is None:
+            # Not connected yet -- connect() is deferred to start() now, but
+            # the tick loop polls telemetry continuously from process boot
+            # regardless of whether a lesson has started. A default/zeroed
+            # Telemetry is a safe placeholder; crashing here would take the
+            # whole asyncio.gather()'d process down (confirmed by testing).
+            return Telemetry()
         # Drain any buffered messages so self._datadef.simdata reflects the
         # latest frame -- same pump pattern the old LiveAdapter.py used.
         while self._sm.receive():

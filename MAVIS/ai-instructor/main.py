@@ -119,7 +119,13 @@ async def amain(cfg):
     lesson = load_yaml(cfg["lesson"])
     aircraft = load_yaml(cfg["aircraft_profile"])
     sim = make_adapter(cfg, lesson)
-    sim.connect()
+    # msfs's connect() is the real SimConnect handshake, which needs MSFS
+    # already running with a flight loaded -- deferred to start() (below,
+    # with retries) so the web server/menu/reading-lessons all come up
+    # regardless of MSFS's state. mock/replay have no such dependency, so
+    # they still connect immediately as before.
+    if cfg["sim"]["adapter"] != "msfs":
+        sim.connect()
     lesson = lesson_for_sim(cfg, sim, lesson)
 
     hid = None
@@ -316,9 +322,32 @@ async def amain(cfg):
         if not await loop.run_in_executor(None, sim.set_local_time, h, m):
             log.error("sim rejected time change - use fallback keybind")
 
+    async def _connect_msfs_with_retries(attempts: int = 5, delay_s: float = 2.0) -> None:
+        """Only called from start() -- i.e. only when a session is actually
+        about to be minted, not at process boot. Raises (propagating as a
+        500 through POST /demo/start) if every attempt fails, so the
+        frontend's existing error handling shows it and no session gets
+        minted; pressing Start again retries the whole thing."""
+        last_err = None
+        for i in range(attempts):
+            try:
+                await loop.run_in_executor(None, sim.connect)
+                return
+            except Exception as e:
+                last_err = e
+                log.warning("SimConnect connect attempt %d/%d failed: %s", i + 1, attempts, e)
+                if i < attempts - 1:
+                    await asyncio.sleep(delay_s)
+        raise ConnectionError(
+            f"Couldn't connect to MSFS after {attempts} attempts -- make sure it's "
+            "running with a flight loaded, then press Start again."
+        ) from last_err
+
     async def start():
         if started.is_set():
             return
+        if cfg["sim"]["adapter"] == "msfs":
+            await _connect_msfs_with_retries()
         started.set()
         session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
