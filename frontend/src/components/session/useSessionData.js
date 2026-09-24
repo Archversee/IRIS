@@ -62,10 +62,11 @@ export function useSessionData({ id, live }) {
     return () => { cancelled = true; };
   }, [id]);
 
-  // flight (+ eye) data: Review fetches once over REST; Live streams over a
-  // WebSocket instead, since per-sample REST/DB round trips can't keep up
-  // with a real flight (see stream.py). Eye tracking stays post-session
-  // only for now, so `eye` just stays empty while live.
+  // flight (+ eye) data: Review fetches once over REST; Live streams both
+  // over a WebSocket instead, since per-sample REST/DB round trips can't
+  // keep up with a real flight (see stream.py) -- eye samples arrive here
+  // the same way flight samples do (msg.type "eye_sample"/backlog's
+  // eye_samples), which is what drives ScreensPanel's live gaze halo.
   useEffect(() => {
     if (!id) return;
     let cancelled = false;

@@ -12,14 +12,18 @@ right session. Flight telemetry reaches IRIS via a separate path entirely
 script has nothing to do with flight_data anymore.
 
 Runs continuously across MANY flights, not just one: MAVIS mints a fresh
-session_id on every Start (Basic Flight, Free Flight, whichever), and
-session_watcher() below notices each new one and treats it as "the
-previous flight (if any) just ended" -- stopping the old OBS recording and
-starting a new one, and retargeting the eye bridge's forward socket at the
-new session, all without needing this process restarted between flights.
-It's launched once per boot now (by the launcher script, or automatically
-by IRIS backend's app/mavis_bridge.py the first time it sees a session),
-not once per flight.
+session_id on every Start (Basic Flight, Free Flight, whichever), which
+session_watcher() below notices and uses to start a new OBS recording and
+retarget the eye bridge's forward socket, without needing this process
+restarted between flights. Separately, session_end_watcher() polls IRIS's
+own session record for ended_at (set the moment MAVIS's End Session/Main-
+menu flow actually quits -- see frontend/src/live/LiveCoach.jsx) and stops
+that recording right away, since MAVIS's own WS state never nulls
+session_id on quit (only the *next* Start mints a new one), so
+session_watcher() alone can't tell "this flight just ended" from "nothing
+has happened yet". It's launched once per boot now (by the launcher
+script, or automatically by IRIS backend's app/mavis_bridge.py the first
+time it sees a session), not once per flight.
 
 INSTALL:
     pip install obsws-python websocket-client
@@ -64,6 +68,8 @@ import struct
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import websocket
@@ -81,11 +87,14 @@ MAVIS_WS_URL = "ws://localhost:6945/ws"  # MAVIS -- source of the session_id thi
 # to; main() also reads it right after pulling a fresh id off _session_queue.
 SESSION_ID: str | None = None
 
-# One entry per newly-seen session_id, in order -- main() consumes these to
-# know when to stop the previous flight's OBS recording and start the next
-# one. Kept small (unbounded but sessions are minted at human speed, not a
-# stream) since nothing ever needs to see more than the next one.
-_session_queue: "queue.Queue[str]" = queue.Queue()
+# One ("start", session_id) or ("end", session_id) event per session
+# lifecycle change, from session_watcher/session_end_watcher respectively,
+# in order -- main() consumes these to know when to start a new OBS
+# recording, stop the current one, or both. The session_id travels with
+# every event (rather than a bare sentinel) so an "end" that was queued
+# just before a new "start" can't be mistaken, once main() gets around to
+# it, for ending the NEW session instead of the one it actually applies to.
+_session_queue: "queue.Queue[tuple[str, str]]" = queue.Queue()
 
 
 # ========================================================================
@@ -115,7 +124,7 @@ def session_watcher() -> None:
                 sid = state.get("session_id")
                 if sid and sid != last_sid:
                     last_sid = sid
-                    _session_queue.put(sid)
+                    _session_queue.put(("start", sid))
         except Exception as e:
             print(f"Lost connection to MAVIS ({e}); retrying")
         finally:
@@ -123,6 +132,37 @@ def session_watcher() -> None:
                 ws.close()
             except Exception:
                 pass
+        time.sleep(2)
+
+
+# ========================================================================
+# End-of-session watcher -- session_watcher() above only ever learns about
+# a NEW session starting; MAVIS deliberately never nulls its own
+# session_id on quit (a fresh one is only minted on the next Start), so
+# there's no way to notice "this flight just ended" from MAVIS's own WS
+# feed alone. Without this, OBS just kept recording until the NEXT flight
+# started, ignoring End Session entirely. IRIS's own sessions.ended_at is
+# what LiveCoach.jsx's End Session/Main-menu flow sets the moment the
+# trainee actually quits (see backend/app/schemas.py's SessionUpdate) --
+# polling that here is what makes End Session actually stop the recording.
+# ========================================================================
+def _session_has_ended(session_id: str) -> bool:
+    url = f"{API_BASE_URL}/sessions/{session_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return False  # IRIS backend down/unreachable -- assume still running, don't stop on a guess
+    return bool(data.get("ended_at"))
+
+
+def session_end_watcher() -> None:
+    signaled_for = None
+    while True:
+        sid = SESSION_ID
+        if sid and sid != signaled_for and _session_has_ended(sid):
+            signaled_for = sid
+            _session_queue.put(("end", sid))
         time.sleep(2)
 
 
@@ -405,11 +445,25 @@ def eye_main():
     sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
     print(f"[eye] listening for Smart Eye UDP packets on :{UDP_LISTEN_PORT}")
 
+    got_first_packet = False
     try:
         while True:
             data, _addr = sock.recvfrom(65536)
-            fields = _parse_packet(data)
-            sample = _build_sample(fields)
+            if not got_first_packet:
+                got_first_packet = True
+                print(f"[eye] first UDP packet received from {_addr[0]} ({len(data)} bytes)")
+            # Parsing/decoding errors used to be uncaught here -- one
+            # unexpected packet shape would raise something other than
+            # OSError, which the except below doesn't catch, silently
+            # killing this whole listener thread with no output at all
+            # (looks exactly like "logged nothing after 'listening'").
+            # Drop just that packet and keep going instead.
+            try:
+                fields = _parse_packet(data)
+                sample = _build_sample(fields)
+            except Exception as e:
+                print(f"[eye] dropped a packet we couldn't parse: {e}")
+                continue
             if sample is None:
                 continue
             try:
@@ -472,10 +526,11 @@ def _release_lock() -> None:
 
 
 # ========================================================================
-# Entry point -- runs for the whole boot, not just one flight. Waits for
-# MAVIS to mint a session, starts OBS + the eye-tracking bridge for it,
-# then waits for either the NEXT session (stop this recording, start the
-# next one, retarget the eye bridge) or Ctrl+C (stop cleanly and exit).
+# Entry point -- runs for the whole boot, not just one flight. Consumes
+# _session_queue one event at a time, from either watcher thread: a new
+# session_id (start recording, or roll over from whichever one was
+# active), or the end sentinel (stop recording, wait for the next one).
+# Ctrl+C stops cleanly and exits.
 # ========================================================================
 def main():
     if not _acquire_lock():
@@ -483,18 +538,46 @@ def main():
     global SESSION_ID
     obs_clients: list = []
     eye_bridge_started = False
+    recording = False  # whether OBS is currently recording for SESSION_ID
     try:
         threading.Thread(target=session_watcher, daemon=True).start()
-        pending_sid = _session_queue.get()  # blocks for the first session of this boot
+        threading.Thread(target=session_end_watcher, daemon=True).start()
         while True:
-            SESSION_ID = pending_sid
+            kind, sid = _session_queue.get()
+
+            if kind == "end":
+                # Only act if this "end" still applies to whichever session
+                # is actually current -- if a newer "start" already arrived
+                # and was processed first (both watchers poll/push
+                # independently, so ordering isn't guaranteed under a race),
+                # this is a stale event for a session that was already
+                # rolled over, and must NOT stop the new one's recording.
+                if sid != SESSION_ID:
+                    continue
+                print(f"Session {sid} ended -- stopping recording.")
+                if recording and obs_clients:
+                    stop_obs_recordings(obs_clients)
+                recording = False
+                continue
+
+            # kind == "start" -- if the previous session is still recording
+            # (e.g. this adapter was launched mid-flight and never saw that
+            # session's own "end" event), stop it before starting the new one.
+            if recording and obs_clients:
+                print(f"New session started before {SESSION_ID} was seen as ended -- stopping its recording.")
+                stop_obs_recordings(obs_clients)
+                recording = False
+
+            SESSION_ID = sid
             print(f"MAVIS session started: {SESSION_ID}")
 
-            if ENABLE_OBS_RECORDING and not obs_clients:
-                obs_clients = connect_obs_clients()
-            if obs_clients:
-                start_obs_recordings(obs_clients)
-
+            # Eye tracking first and unconditionally -- it must not depend on
+            # OBS being reachable at all. A previous version called
+            # connect_obs_clients() first with no try/except: if OBS wasn't
+            # running or refused the connection, that exception propagated
+            # all the way out of main() and killed the whole adapter process
+            # before eye_main() ever started, silently taking Smart Eye
+            # logging down with it.
             if not eye_bridge_started:
                 threading.Thread(target=eye_main, daemon=True).start()
                 eye_bridge_started = True
@@ -509,14 +592,24 @@ def main():
                         except Exception:
                             pass
 
-            print("Recording. Ctrl+C to stop the adapter entirely (fine to leave running between flights).")
-            pending_sid = _session_queue.get()  # blocks until the NEXT session starts
-            print(f"New MAVIS session detected -- ending recording for {SESSION_ID}")
+            if ENABLE_OBS_RECORDING and not obs_clients:
+                try:
+                    obs_clients = connect_obs_clients()
+                except Exception as e:
+                    print(f"[obs] couldn't connect ({e}); continuing without video recording this session.")
+                    obs_clients = []
             if obs_clients:
-                stop_obs_recordings(obs_clients)
+                try:
+                    start_obs_recordings(obs_clients)
+                    recording = True
+                except Exception as e:
+                    print(f"[obs] couldn't start recording ({e}); continuing without video recording this session.")
+                    obs_clients = []
+
+            print("Recording. Ctrl+C to stop the adapter entirely (fine to leave running between flights).")
     except KeyboardInterrupt:
         print("\nStopping...")
-        if obs_clients:
+        if recording and obs_clients:
             stop_obs_recordings(obs_clients)
     finally:
         _release_lock()
