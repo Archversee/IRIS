@@ -1,15 +1,14 @@
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 
-// The app's one main menu: MAVIS (live -- flying, coaching, real-time
-// monitoring) grouped separately from IRIS (debrief -- everything that
-// only makes sense once a flight is over and its data is in Postgres).
-// MAVIS is the only SimConnect reader in this system, so "live" is always
-// MAVIS's section regardless of which backend actually serves a given
-// screen (Live Monitor is IRIS-backed, but it's a live-flight experience,
-// so it belongs here, not under IRIS). Curriculum's lesson tree nests
-// directly under that one link, not the whole section, so it doesn't read
-// as if it belongs under Live Monitor.
+// The app's one main menu: MAVIS (live -- flying and coaching, the only
+// thing that ever starts a session or logs anything) grouped separately
+// from IRIS (view/debrief -- everything that only reads sessions MAVIS
+// already created, whether in progress or finished). Live Monitor is a
+// pure viewer with no start/stop control of its own now, so it lives under
+// IRIS alongside Sessions/Upload even though what it shows is live.
+// Curriculum's lesson tree nests directly under that one link, not the
+// whole section, so it doesn't read as if it belongs under Free Flight.
 // Curriculum defaults to Preflight & Cockpit (the walk-around) rather than
 // the bare mode-selection screen -- that's the natural first stop before
 // "Basic Flight", matching how the curriculum is meant to be entered.
@@ -19,13 +18,14 @@ const SECTIONS = [
     sub: "Live",
     links: [
       { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", nested: <LessonTree /> },
-      { to: "/monitor", path: "/monitor", label: "Live Monitor" },
+      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight" },
     ],
   },
   {
     label: "IRIS",
     sub: "Debrief & Analysis",
     links: [
+      { to: "/monitor", path: "/monitor", label: "Live Monitor" },
       { to: "/sessions", path: "/sessions", label: "Sessions" },
       { to: "/upload", path: "/upload", label: "Upload" },
       { to: "/aoi-zones", path: "/aoi-zones", label: "AOI Zones" },

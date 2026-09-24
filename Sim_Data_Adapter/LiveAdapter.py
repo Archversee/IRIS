@@ -11,6 +11,16 @@ right session. Flight telemetry reaches IRIS via a separate path entirely
 (IRIS backend's app/mavis_bridge.py, also watching MAVIS's WS) -- this
 script has nothing to do with flight_data anymore.
 
+Runs continuously across MANY flights, not just one: MAVIS mints a fresh
+session_id on every Start (Basic Flight, Free Flight, whichever), and
+session_watcher() below notices each new one and treats it as "the
+previous flight (if any) just ended" -- stopping the old OBS recording and
+starting a new one, and retargeting the eye bridge's forward socket at the
+new session, all without needing this process restarted between flights.
+It's launched once per boot now (by the launcher script, or automatically
+by IRIS backend's app/mavis_bridge.py the first time it sees a session),
+not once per flight.
+
 INSTALL:
     pip install obsws-python websocket-client
 
@@ -66,19 +76,26 @@ API_BASE_URL = "http://localhost:8000"  # IRIS backend -- eye samples go here
 WS_BASE_URL = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
 MAVIS_WS_URL = "ws://localhost:6945/ws"  # MAVIS -- source of the session_id this script waits for
 
-# Set once by wait_for_mavis_session() before anything else starts -- one
-# session per process run, same lifetime assumption the old script made
-# when a session id was passed in as argv[1].
+# Updated by session_watcher() every time MAVIS mints a new session_id --
+# read by _forward_worker() (eye bridge) to know which session to forward
+# to; main() also reads it right after pulling a fresh id off _session_queue.
 SESSION_ID: str | None = None
 
+# One entry per newly-seen session_id, in order -- main() consumes these to
+# know when to stop the previous flight's OBS recording and start the next
+# one. Kept small (unbounded but sessions are minted at human speed, not a
+# stream) since nothing ever needs to see more than the next one.
+_session_queue: "queue.Queue[str]" = queue.Queue()
+
 
 # ========================================================================
-# MAVIS session watcher -- the only thing that decides when to start
+# MAVIS session watcher -- the only thing that decides when to start/roll
+# over to a new flight. Runs for the lifetime of the process on its own
+# thread (started from main()), reconnecting if MAVIS isn't up yet.
 # ========================================================================
-def wait_for_mavis_session() -> str:
-    """Blocks until MAVIS reports a session_id (i.e. the trainee pressed
-    Start), reconnecting if MAVIS isn't up yet. Returns that id."""
+def session_watcher() -> None:
     print(f"Waiting for MAVIS to start a session ({MAVIS_WS_URL})...")
+    last_sid = None
     while True:
         try:
             ws = websocket.create_connection(MAVIS_WS_URL, timeout=10)
@@ -96,10 +113,11 @@ def wait_for_mavis_session() -> str:
                 except (TypeError, ValueError):
                     continue
                 sid = state.get("session_id")
-                if sid:
-                    return sid
+                if sid and sid != last_sid:
+                    last_sid = sid
+                    _session_queue.put(sid)
         except Exception as e:
-            print(f"Lost connection to MAVIS before a session started ({e}); retrying")
+            print(f"Lost connection to MAVIS ({e}); retrying")
         finally:
             try:
                 ws.close()
@@ -326,10 +344,19 @@ def _build_sample(fields: dict):
 # ping/pong; sender only starts once the connection is actually open.
 _forward_queue = queue.Queue(maxsize=2000)
 
+# The live wsapp instance, so main() can force it closed on a session
+# transition -- that's what makes _forward_worker's reconnect below pick up
+# the new SESSION_ID instead of continuing to stream to the flight that just
+# ended.
+_current_wsapp = None
+_wsapp_lock = threading.Lock()
+
 
 def _forward_worker():
-    url = f"{WS_BASE_URL}/sessions/{SESSION_ID}/stream/eye/ws"
+    global _current_wsapp
     while True:
+        sid = SESSION_ID  # snapshot -- may change again while this connection is up
+        url = f"{WS_BASE_URL}/sessions/{sid}/stream/eye/ws"
         stop_sender = threading.Event()
 
         def sender(wsapp):
@@ -344,7 +371,7 @@ def _forward_worker():
                     pass  # transient -- on_close will stop this loop once the connection is actually dead
 
         def on_open(wsapp):
-            print("[eye-stream] connected to live dashboard")
+            print(f"[eye-stream] connected to live dashboard ({sid})")
             threading.Thread(target=sender, args=(wsapp,), daemon=True).start()
 
         def on_error(wsapp, error):
@@ -354,10 +381,16 @@ def _forward_worker():
             stop_sender.set()
 
         wsapp = websocket.WebSocketApp(url, on_open=on_open, on_error=on_error, on_close=on_close)
+        with _wsapp_lock:
+            _current_wsapp = wsapp
         wsapp.run_forever(ping_interval=15, ping_timeout=10)
         stop_sender.set()
-        print("[eye-stream] connection lost; retrying in 2s")
-        time.sleep(2)
+        if SESSION_ID == sid:
+            # Dropped on its own (network blip) -- reconnect to the same session.
+            print("[eye-stream] connection lost; retrying in 2s")
+            time.sleep(2)
+        # else: main() closed this on purpose because a new session started --
+        # loop straight back around and pick up the new SESSION_ID, no delay.
 
 
 def eye_main():
@@ -393,11 +426,13 @@ def eye_main():
 
 # ========================================================================
 # Single-instance lock -- this script can now be started two ways (the
-# launcher script, or IRIS's "Go Live" button calling POST /adapter/launch)
-# that don't know about each other. A stale lock (process no longer alive)
-# is treated as free -- good enough for a single sim PC, not a distributed
-# lock. If already running, this instance prints why and exits immediately
-# rather than fighting the other one for the same OBS/UDP-port resources.
+# launcher script, or IRIS backend's app/mavis_bridge.py auto-launching it
+# the first time it sees a MAVIS session) that don't know about each other.
+# A stale lock (process no longer alive) is treated as free -- good enough
+# for a single sim PC, not a distributed lock. If already running, this
+# instance prints why and exits immediately rather than fighting the other
+# one for the same OBS/UDP-port resources. One lock for the whole process
+# lifetime now, not per flight -- see module docstring.
 # ========================================================================
 LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "adapter.lock")
 
@@ -437,33 +472,52 @@ def _release_lock() -> None:
 
 
 # ========================================================================
-# Entry point -- wait for MAVIS to mint a session, then start OBS + the
-# eye-tracking bridge for that session. Ctrl+C stops OBS cleanly; the eye
-# bridge is best-effort and just stops with the process.
+# Entry point -- runs for the whole boot, not just one flight. Waits for
+# MAVIS to mint a session, starts OBS + the eye-tracking bridge for it,
+# then waits for either the NEXT session (stop this recording, start the
+# next one, retarget the eye bridge) or Ctrl+C (stop cleanly and exit).
 # ========================================================================
 def main():
     if not _acquire_lock():
         return
+    global SESSION_ID
+    obs_clients: list = []
+    eye_bridge_started = False
     try:
-        global SESSION_ID
-        SESSION_ID = wait_for_mavis_session()
-        print(f"MAVIS session started: {SESSION_ID}")
+        threading.Thread(target=session_watcher, daemon=True).start()
+        pending_sid = _session_queue.get()  # blocks for the first session of this boot
+        while True:
+            SESSION_ID = pending_sid
+            print(f"MAVIS session started: {SESSION_ID}")
 
-        obs_clients = connect_obs_clients() if ENABLE_OBS_RECORDING else []
-        if obs_clients:
-            start_obs_recordings(obs_clients)
+            if ENABLE_OBS_RECORDING and not obs_clients:
+                obs_clients = connect_obs_clients()
+            if obs_clients:
+                start_obs_recordings(obs_clients)
 
-        threading.Thread(target=eye_main, daemon=True).start()
+            if not eye_bridge_started:
+                threading.Thread(target=eye_main, daemon=True).start()
+                eye_bridge_started = True
+            else:
+                # Force the eye forwarder's socket closed so it reconnects
+                # against the SESSION_ID just set above, instead of
+                # continuing to stream to the flight that just ended.
+                with _wsapp_lock:
+                    if _current_wsapp is not None:
+                        try:
+                            _current_wsapp.close()
+                        except Exception:
+                            pass
 
-        print("Recording. Ctrl+C to stop.")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nStopping...")
-        finally:
+            print("Recording. Ctrl+C to stop the adapter entirely (fine to leave running between flights).")
+            pending_sid = _session_queue.get()  # blocks until the NEXT session starts
+            print(f"New MAVIS session detected -- ending recording for {SESSION_ID}")
             if obs_clients:
                 stop_obs_recordings(obs_clients)
+    except KeyboardInterrupt:
+        print("\nStopping...")
+        if obs_clients:
+            stop_obs_recordings(obs_clients)
     finally:
         _release_lock()
 

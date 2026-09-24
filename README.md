@@ -164,9 +164,13 @@ py -m venv .venv
 Skip this entirely if you're not recording video/live gaze preview for a
 given session — Smart Eye's own file export + the Upload page (§"Data
 flow" below) is still the durable path regardless. Run by hand with
-`.venv\Scripts\python LiveAdapter.py`, or let the launcher (§7) start it,
-or trigger it from IRIS's Live page's "Go Live" button — all three are
-safe to combine (see the script's own lock-file docstring).
+`.venv\Scripts\python LiveAdapter.py`, let the launcher (§7) start it, or
+just start flying in MAVIS — IRIS's backend auto-launches it the first
+time it sees a MAVIS session, so nothing in IRIS's UI needs to be clicked
+for this. All three ways of starting it are safe to combine (see the
+script's own lock-file docstring), and it stays running across many
+flights, not just one — it restarts OBS recording and retargets the eye
+bridge on its own every time MAVIS mints a new session.
 
 ## 6. Reverse proxy
 
@@ -203,32 +207,40 @@ services are actually available. Ctrl+C stops everything it started.
 
 ## Data flow
 
-1. Fly the lesson in MAVIS (§4) — it mints the session id everything else
-   joins on, coaches live, and scores the run.
+1. Fly in MAVIS (§4) — Basic Flight or Free Flight, either mints a fresh
+   session id everything else joins on, coaches live, and scores the run.
+   MAVIS is the only thing that ever starts or ends a session; IRIS never
+   logs anything on its own, only views.
 2. IRIS's backend (`app/mavis_bridge.py`) watches MAVIS's own WebSocket
    feed in the background and writes flight telemetry, coaching events,
    the scorecard, and leaderboard updates into Postgres as they happen —
-   no manual step, no separate script for this part.
-3. If the OBS/Smart-Eye adapter (§5) is running: OBS records the
-   instrument + OTW views automatically, and Smart Eye's live feed streams
-   to the Live page as a preview. The *durable* gaze log is still Smart
-   Eye's own file export, imported via **Upload → ingest** after the
-   flight (live streaming was always best-effort preview only, not a
-   replacement for this).
-4. In the app: **Upload** → link the OBS video files to the session →
-   ingest the Smart Eye export CSV.
+   no manual step, no separate script for this part. The first time it
+   sees a session, it also auto-launches the OBS/Smart-Eye adapter (§5).
+3. OBS records the instrument + OTW views automatically, and Smart Eye's
+   live feed is now persisted to Postgres as it streams in (not just held
+   for live preview), same as flight telemetry. Smart Eye's own file
+   export, imported via **Upload → ingest** after the flight, is still the
+   durable, full-resolution path and replaces whatever the live feed
+   captured for that session.
+4. Ending the flight in MAVIS shows the scorecard, then routes straight
+   into **Upload**, pre-filled with that session — fill in
+   name/pilot/aircraft/notes, link the OBS video files, and ingest the
+   Smart Eye export CSV if you have one.
 5. **Review** plays flight + gaze back on one synchronized timeline, phase
    by phase, with MAVIS's coaching callouts alongside.
 6. **Analytics** shows derived metrics and gaze dwell per area of interest;
    **Leaderboard** shows MAVIS's scored runs across sessions.
 
-### Live page ("Go Live")
+### Live Monitor (view-only)
 
-The Live page no longer creates a session itself (MAVIS does that) — Go
-Live starts the OBS/Smart-Eye adapter (safe to click even if the launcher
-already started it) and polls `GET /sessions/live` for whichever session
-MAVIS most recently reported, then attaches to it the same way it always
-has. If MAVIS hasn't been started yet, it just waits.
+Live Monitor (under IRIS in the sidebar) never starts or stops anything —
+it lists whichever MAVIS sessions are currently in progress
+(`GET /sessions/running`) and lets you pick one to watch, attaching to it
+the same way Review attaches to a finished one. A session drops off that
+list the moment its MAVIS End Session/Main-menu flow finishes (§ above),
+not merely because a scorecard appeared ("Fly again" keeps the same
+session going). Screen capture for the two views uses the browser's own
+picker (`getDisplayMedia`), independent of OBS's own recording.
 
 ### Video recording (OBS)
 

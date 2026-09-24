@@ -29,6 +29,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<div className="container"><Home /></div>} />
           <Route path="/live" element={<LiveCoach />} />
+          <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />

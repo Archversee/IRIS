@@ -2,11 +2,13 @@
 
 The adapter no longer takes a session id -- it self-discovers whichever
 session MAVIS is currently running via MAVIS's own WS feed (see
-LiveAdapter.py's wait_for_mavis_session()). The launcher script normally
-starts it automatically alongside MAVIS/IRIS; this endpoint lets the Live
-page trigger it by hand too (e.g. the launcher wasn't used, or the process
-died) -- both paths are safe to use together since the script's own
-lock file (see LiveAdapter.py's _acquire_lock) refuses a second instance.
+LiveAdapter.py's session_watcher()), and keeps running across many flights,
+not just one. Three things can call launch_adapter(): the launcher script
+at boot, app/mavis_bridge.py automatically the first time it sees a MAVIS
+session (so OBS/Smart Eye recording never depends on anyone clicking
+anything in IRIS), and this POST endpoint for manual use if the process
+died. All three are safe to use together since the script's own lock file
+(see LiveAdapter.py's _acquire_lock) refuses a second instance.
 """
 import os
 import subprocess

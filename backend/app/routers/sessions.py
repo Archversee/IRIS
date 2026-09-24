@@ -9,20 +9,21 @@ from ..schemas import Session, SessionCreate, SessionUpdate
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-@router.get("/live", response_model=Session)
-async def get_live_session():
-    """The most recently started MAVIS-sourced session -- how the Live page
-    finds out which session to attach to now that MAVIS (not IRIS) mints
-    session_id. Populated by backend/app/mavis_bridge.py the instant MAVIS
-    reports one, independent of whether the OBS/Smart-Eye adapter (see
-    routers/adapter.py) is running."""
+@router.get("/running", response_model=list[Session])
+async def list_running_sessions():
+    """MAVIS-sourced sessions still in progress -- Live Monitor's picker
+    lists these instead of owning any start/end lifecycle itself (MAVIS is
+    the only thing that logs anything; IRIS only views). A session counts
+    as "still running" until its End Session/Main-menu flow in MAVIS's own
+    UI explicitly PATCHes ended_at (see LiveCoach.jsx) -- not merely
+    because a scorecard appeared, since "Fly again" keeps flying under the
+    same session_id."""
     async with db.acquire() as conn:
-        row = await conn.fetchrow(
-            "select * from sessions where source = 'mavis' order by created_at desc limit 1"
+        rows = await conn.fetch(
+            "select * from sessions where source = 'mavis' and ended_at is null "
+            "order by started_at desc nulls last, created_at desc"
         )
-    if row is None:
-        raise HTTPException(404, "No MAVIS session yet -- press Start in MAVIS first")
-    return dict(row)
+    return [dict(r) for r in rows]
 
 
 @router.post("", response_model=Session, status_code=201)

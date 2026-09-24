@@ -66,7 +66,7 @@ export default function ScorecardOverlay({ scorecard, onMainMenu }) {
         <div className="mavis-score-btns">
           <button type="button" onClick={flyAgain}>↻ Fly again</button>
           <button type="button" className="secondary" onClick={() => setShowGuide(true)}>Scoring guide</button>
-          <button type="button" className="secondary" onClick={onMainMenu}>Main menu</button>
+          <button type="button" className="secondary" onClick={onMainMenu}>Finish &amp; save ›</button>
         </div>
       </div>
       {showGuide && <ScoringGuide onClose={() => setShowGuide(false)} />}

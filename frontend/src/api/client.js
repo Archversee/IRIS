@@ -56,15 +56,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  // MAVIS mints session_id now, not IRIS -- Go Live discovers whichever
-  // session MAVIS is currently running instead of creating one itself.
-  // 404 (via req()'s thrown Error) means no MAVIS session has started yet.
-  getLiveSession: () => req(`/sessions/live`),
-  // Starts the OBS/Smart-Eye adapter (Sim_Data_Adapter/LiveAdapter.py) --
-  // safe to call even if the launcher script already started it (the
-  // adapter's own lock file makes a second launch a no-op). See
-  // LiveSession.jsx's goLive().
-  launchAdapter: () => req(`/adapter/launch`, { method: "POST" }),
+  // MAVIS-sourced sessions still in progress -- Live Monitor's picker.
+  // MAVIS mints session_id and owns starting/stopping everything (OBS,
+  // Smart Eye, flight logging); IRIS only ever views here.
+  listRunningSessions: () => req(`/sessions/running`),
 
   ingest: (id, kind, file) => {
     const fd = new FormData();

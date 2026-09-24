@@ -24,6 +24,7 @@ import websockets
 
 from . import db
 from .config import settings
+from .routers import adapter
 from .routers.stream import ingest_external_sample
 
 log = logging.getLogger(__name__)
@@ -191,6 +192,17 @@ class MavisBridge:
         if not cur.seen:
             await self._ensure_session_row(session_id, state)
             cur.seen = True
+            # Every MAVIS session (Basic Flight, Free Flight, any mode) gets
+            # OBS + Smart Eye recording automatically now -- MAVIS is the
+            # only thing that starts a session, so this is the one place
+            # that's true for all of them. Best-effort: LiveAdapter.py's own
+            # lock file makes a duplicate launch a safe no-op, and if OBS/
+            # the adapter script isn't set up on this machine at all, a
+            # session should still proceed without it.
+            try:
+                await adapter.launch_adapter()
+            except Exception as e:
+                log.warning("mavis_bridge: couldn't auto-launch the OBS/Smart-Eye adapter: %s", e)
 
         fields = map_telemetry_fields(state)
         if fields is not None:
