@@ -21,6 +21,13 @@
           "available": true,
           "kind": "reading",
           "duration_min": 20
+        },
+        {
+          "id": "sop_library",
+          "title": "Aircraft SOPs",
+          "subtitle": "Upload & verify SOP rules per aircraft",
+          "available": true,
+          "kind": "sop"
         }
       ]
     },

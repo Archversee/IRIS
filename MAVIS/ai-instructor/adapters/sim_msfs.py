@@ -126,6 +126,32 @@ class MSFSAdapter:
         v = (self._datadef.simdata or {}).get(name)
         return default if v is None else v
 
+    def aircraft_ident(self) -> dict | None:
+        """Which aircraft is loaded -- used to pick the matching SOP (sop/runtime.py).
+        String simvars go in their own data definition so a sim/pysimconnect
+        version that can't serve them can never break the telemetry one.
+        Returns None if nothing could be read; callers fall back to config."""
+        if self._sm is None:
+            return None
+        import time as _time
+        names = ("TITLE", "ATC MODEL", "ATC TYPE")
+        for spec in ([dict(name=n) for n in names], [dict(name=n, units="string") for n in names]):
+            try:
+                from simconnect import PERIOD_VISUAL_FRAME
+                dd = self._sm.subscribe_simdata(spec, period=PERIOD_VISUAL_FRAME)
+                deadline = _time.time() + 2.0
+                while not dd.simdata and _time.time() < deadline:
+                    self._sm.receive()
+                    _time.sleep(0.05)
+                out = {k.lower().replace(" ", "_"): (v.decode(errors="ignore") if isinstance(v, bytes) else str(v))
+                       for k, v in (dd.simdata or {}).items() if v not in (None, "", b"")}
+                if out:
+                    log.info("sim aircraft: %s", out)
+                    return out
+            except Exception as e:
+                log.info("aircraft ident via %s failed: %s", spec[0], e)
+        return None
+
     def _brake(self, v: float) -> float:
         """Toe-brake position normalized to 0..1. SimConnect reports brake
         position either as 0..1 or as a 0..16383 integer depending on version;

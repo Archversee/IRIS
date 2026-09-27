@@ -1,4 +1,8 @@
 name: Cessna 172SP G1000
+# How the simulator names this aircraft (MSFS TITLE / ATC MODEL / ATC TYPE,
+# case-insensitive substring). Used at lesson start to pick the SOP bound to
+# this profile -- see docs/sop-rules.md. Longest match wins across profiles.
+sim_match: ["C172", "Cessna 172", "Skyhawk", "172SP"]
 v_speeds:
   vr: 55
   vy: 74

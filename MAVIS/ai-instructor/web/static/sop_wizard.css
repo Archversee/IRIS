@@ -175,3 +175,19 @@ body.light .sopField select option{background:#fff;color:#12233d}
   .sopS2{grid-template-columns:1fr;height:auto}
   .sopRuleList{max-height:40vh}
 }
+
+/* ---- curriculum page: Preflight & Cockpit -> Aircraft SOPs ---- */
+#sopPanel{flex:1;min-height:0;overflow-y:auto;padding-right:4px}
+#sopPanel[hidden]{display:none}
+.sopLib{display:flex;flex-direction:column;gap:12px;max-width:980px}
+.sopH4{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);font-weight:700;margin-top:6px}
+.sopAc.sopAcCard{cursor:default}
+.sopAc.sopAcCard:hover{border-color:var(--line)}
+.sopAcBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.sopNoSop{font-size:12px;color:var(--warn);font-weight:600}
+.sopLast{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:rgba(255,255,255,.03)}
+.sopLib code{font-size:.85em;padding:1px 5px;border-radius:5px;background:var(--panel2)}
+
+/* in-lesson chip: which SOP this flight is using */
+#sopChip{color:var(--good);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22rem}
+#sopChip.sopChipOff{color:var(--dim)}

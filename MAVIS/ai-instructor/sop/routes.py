@@ -1,8 +1,10 @@
 """FastAPI routes for the SOP wizard (mounted into MAVIS's app at /sop).
 
 Every write needs the instructor area unlocked (same PIN session as the rest
-of the instructor tools). GET /sop/active/{profile} is open: it is what the
-runtime -- and IRIS, read-only -- use to load an aircraft's verified rules.
+of the instructor tools). The library listing (/meta, /status, /rulesets,
+/bindings) and GET /sop/active/{profile} are read-only and open: the
+curriculum page shows them to everyone, and the runtime -- and IRIS -- use
+/active to load an aircraft's verified rules.
 """
 from __future__ import annotations
 
@@ -72,6 +74,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
     tess = sop_cfg.get("tesseract_cmd") or None
 
     def is_flying() -> bool:
+        # main.py publishes state["flying"] every tick; the phase is only a
+        # fallback (it stays mid-circuit after the trainee quits a lesson)
+        if "flying" in state:
+            return bool(state["flying"])
         return str(state.get("phase") or "BRIEFING") not in NOT_FLYING_PHASES
 
     jobs = JobManager(store, parser, app_root / sop_cfg.get("pdf_dir", "data/sop"), is_flying,
@@ -106,7 +112,8 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             "metrics": [{"id": k, "label": v[3], "unit": v[1], "range": v[2]} for k, v in METRICS.items()],
             "aircraft": [{"id": a["id"], "name": a["name"],
                           "v_speeds": (a["profile"].get("v_speeds") or {}),
-                          "flaps": (a["profile"].get("flaps") or {}).get("detents_deg")}
+                          "flaps": (a["profile"].get("flaps") or {}).get("detents_deg"),
+                          "sim_match": a["profile"].get("sim_match") or []}
                          for a in aircraft_profiles()],
         }
 
@@ -184,9 +191,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     # ------------------------------------------------------------ rulesets
+    # Read-only library views are open (the curriculum's Aircraft SOPs page
+    # shows them to everyone); every change still needs the instructor PIN.
     @r.get("/rulesets")
     async def rulesets():
-        who()
         return await db(store.list_rulesets())
 
     @r.get("/rulesets/{rs}")
@@ -340,7 +348,6 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
 
     @r.get("/bindings")
     async def bindings():
-        who()
         return await db(store.bindings())
 
     @r.delete("/bindings/{profile}")
