@@ -72,29 +72,85 @@ function describe(r){
 }
 const STATUS_TXT={draft:"Needs review",approved:"Approved",rejected:"Rejected",auto_rejected:"Auto-rejected"};
 
-/* ---------- instructor-area tab: list of rulesets ---------- */
-async function renderTab(){
-  const wrap=$("sopTabList");if(!wrap)return;
-  wrap.innerHTML='<p class="sopEmpty">Loading…</p>';
+/* ---------- curriculum page: Preflight & Cockpit -> Aircraft SOPs ---------- */
+const curS=()=>(typeof S!=="undefined"&&S)?S:null;
+function withPin(fn){      // wizard actions need the instructor PIN; lock again when the wizard closes
+  const go=()=>{W.lockOnClose=true;fn();};
+  if(typeof requireInstructorPin==="function")requireInstructorPin(go);else go();
+}
+function rulesetMeta(rs){
+  return rs.status==="processing"?`Processing… ${rs.chunks_done}/${rs.chunks_total} sections`:
+    rs.status==="failed"?esc(rs.error||"Failed"):
+    `${rs.n_approved} approved · ${rs.n_draft} to review · ${rs.n_rejected} rejected`+
+    (rs.n_auto_rejected?` · ${rs.n_auto_rejected} auto-rejected`:"");
+}
+function lastFlightNote(){
+  const sop=curS()&&curS().sop;
+  if(!sop)return "";
+  const how=sop.source==="sim"?`Simulator reported <b>${esc(sop.detected||"?")}</b> → `:
+    sop.source==="override"?"Forced by config → ":"No aircraft reported by the simulator, used the default → ";
+  const what=sop.status==="active"?`<b>${esc(sop.aircraft_name)}</b> with <b>${esc(sop.filename)} v${sop.version}</b> (${sop.n_rules} rules)`:
+    sop.status==="none"?`<b>${esc(sop.aircraft_name)}</b>, which has no verified SOP`:
+    sop.status==="no_profile"?"no matching aircraft profile, so no SOP was applied":
+    `SOP rules couldn't be loaded (${esc(sop.error||"database unavailable")})`;
+  return `<p class="sopNote sopLast">Last flight: ${how}${what}.</p>`;
+}
+async function renderPanel(){
+  const wrap=$("sopPanel");if(!wrap)return;
+  if(!wrap.firstChild)wrap.innerHTML='<p class="sopEmpty">Loading SOP library…</p>';
   let list,binds;
-  try{[list,binds]=await Promise.all([api("GET","/rulesets"),api("GET","/bindings")]);}
-  catch(e){wrap.innerHTML=`<div class="sopErr">${esc(e.message)}</div>`;return;}
-  const bound=binds.length?`<p class="sopNote" style="margin-bottom:10px">Active: ${binds.map(b=>
-    `<b>${esc(acName(b.aircraft_profile))}</b> ← ${esc(b.filename)} v${b.version}`).join(" · ")}</p>`:"";
-  if(!list.length){wrap.innerHTML=bound+'<p class="sopEmpty">No SOPs yet. Upload one to get started.</p>';return;}
-  wrap.innerHTML=bound+'<div class="sopList">'+list.map(rs=>{
-    const n=rs.n_draft+rs.n_approved+rs.n_rejected;
-    const meta=rs.status==="processing"?`Processing… ${rs.chunks_done}/${rs.chunks_total} sections`:
-      rs.status==="failed"?esc(rs.error||"Failed"):
-      `${rs.n_approved} approved · ${rs.n_draft} to review · ${rs.n_rejected} rejected`+
-      (rs.n_auto_rejected?` · ${rs.n_auto_rejected} auto-rejected`:"");
-    return `<button class="sopItem" data-rs="${rs.id}">
+  try{await ensureMeta();[list,binds]=await Promise.all([api("GET","/rulesets"),api("GET","/bindings")]);}
+  catch(e){wrap.innerHTML=`<div class="sopErr">SOP library unavailable: ${esc(e.message)}</div>`;return;}
+  const byAc=Object.fromEntries(binds.map(b=>[b.aircraft_profile,b]));
+  const byRs=Object.fromEntries(list.map(r=>[r.id,r]));
+  const activeIds=new Set(binds.map(b=>b.ruleset_id));
+  const cards=W.meta.aircraft.map(a=>{
+    const b=byAc[a.id],rs=b&&byRs[b.ruleset_id];
+    const match=(a.sim_match&&a.sim_match.length)?a.sim_match.map(esc).join(", "):"<i>profile name only</i>";
+    return `<div class="sopAc sopAcCard">
+      <b>${esc(a.name)}</b>
+      <small>Recognised in the simulator as: ${match}</small>
+      ${b?`<span class="sopBound">● ${esc(b.filename)} v${b.version}${rs?` · ${rs.n_approved} rules`:""}</span>
+           <small>Verified${rs&&rs.verified_by?" by "+esc(rs.verified_by):""}${b.bound_at?" · active since "+new Date(b.bound_at).toLocaleDateString():""}</small>`
+         :`<span class="sopNoSop">No SOP yet — flights in this aircraft use none</span>`}
+      <div class="sopAcBtns">
+        ${b?`<button class="sopBtn small" data-open="${b.ruleset_id}">View rules</button>`:""}
+        <button class="sopBtn small ${b?"":"primary"}" data-up="${a.id}">${b?"Upload new version":"Upload SOP"}</button>
+      </div></div>`;}).join("");
+  const others=list.filter(r=>!activeIds.has(r.id));
+  wrap.innerHTML=`<div class="sopLib">
+    <div class="sopTabHead">
+      <p>When a flight starts, MAVIS checks which aircraft is loaded in the simulator and uses the verified SOP bound to it. You can keep many SOPs — one active per aircraft.</p>
+      <button type="button" class="instPrimaryBtn" data-up="">Upload SOP</button>
+    </div>
+    ${lastFlightNote()}
+    <h4 class="sopH4">Aircraft</h4>
+    <div class="sopAircraft">${cards}</div>
+    <h4 class="sopH4">Drafts &amp; other versions</h4>
+    ${others.length?'<div class="sopList">'+others.map(rs=>`<button class="sopItem" data-open="${rs.id}">
       <b>${esc(rs.filename)} <span style="color:var(--dim);font-weight:500">v${rs.version}</span></b>
-      <span class="meta">${meta}${n?"":""} · ${new Date(rs.created_at).toLocaleDateString()}${rs.created_by?" · "+esc(rs.created_by):""}</span>
-      <span class="right"><span class="sopChip ${rs.status}">${rs.status==="draft"?"Needs verification":rs.status}</span>
-        ${(rs.bound_to||[]).map(a=>`<span class="sopBound">● ${esc(acName(a))}</span>`).join("")}</span>
-    </button>`;}).join("")+"</div>";
-  wrap.querySelectorAll(".sopItem").forEach(b=>b.onclick=()=>openRuleset(b.dataset.rs));
+      <span class="meta">${rulesetMeta(rs)} · ${new Date(rs.created_at).toLocaleDateString()}${rs.created_by?" · "+esc(rs.created_by):""}</span>
+      <span class="right"><span class="sopChip ${rs.status}">${rs.status==="draft"?"Needs verification":rs.status}</span></span>
+    </button>`).join("")+"</div>":'<p class="sopNote">None.</p>'}
+    <p class="sopNote" style="margin-top:14px">Uploading, reviewing and binding need the instructor PIN. A new aircraft type needs its own profile in <code>profiles/aircraft/</code> first.</p>
+  </div>`;
+  wrap.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>withPin(()=>openRuleset(b.dataset.open)));
+  wrap.querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>withPin(()=>startNew(b.dataset.up||null)));
+}
+let chipSig="";
+function syncChip(sop){
+  const el=$("sopChip");if(!el)return;
+  const sig=JSON.stringify(sop||null);
+  if(sig===chipSig)return;chipSig=sig;
+  if(!sop){el.hidden=true;return;}
+  el.hidden=false;
+  el.classList.toggle("sopChipOff",sop.status!=="active");
+  el.textContent=sop.status==="active"?`SOP · ${sop.filename.replace(/\.pdf$/i,"")} v${sop.version}`:
+    sop.status==="none"?`No SOP for ${sop.aircraft_name}`:
+    sop.status==="no_profile"?"No SOP · unknown aircraft":"SOP unavailable";
+  el.title=sop.status==="active"
+    ?`${sop.n_rules} verified rules for ${sop.aircraft_name}`+(sop.detected?` (simulator: ${sop.detected})`:" (default aircraft)")
+    :(sop.detected?`Simulator reported: ${sop.detected} — ${sop.why}`:sop.why||"");
 }
 function acName(id){const a=W.meta&&W.meta.aircraft.find(x=>x.id===id);return a?a.name:id;}
 
@@ -103,7 +159,9 @@ async function ensureMeta(){if(!W.meta)W.meta=await api("GET","/meta");}
 function open(){$("sopOverlay").classList.add("on");document.addEventListener("keydown",onKey);}
 function close(){
   const go=()=>{hideConfirm();restoreOrig();$("sopOverlay").classList.remove("on");stopPoll();
-    document.removeEventListener("keydown",onKey);W.dirty=false;renderTab();};
+    document.removeEventListener("keydown",onKey);W.dirty=false;
+    if(W.lockOnClose){W.lockOnClose=false;fetch("/instructor/lock",{method:"POST"}).catch(()=>{});}
+    renderPanel();};
   if(W.dirty)confirmDialog("Discard changes?","You have unsaved edits to this rule.",[
     {label:"Keep editing",fn:hideConfirm},{label:"Discard",cls:"danger",fn:go}]);
   else go();
@@ -118,13 +176,14 @@ function head(){
 }
 function foot(html){$("sopFoot").innerHTML=html;}
 
-async function startNew(){
+async function startNew(aircraft){
   try{await ensureMeta();}catch(e){toast("SOP rules unavailable",e.message);return;}
-  Object.assign(W,{stage:1,rsId:null,rs:null,job:null,selId:null,dirty:false,filter:"draft"});
+  Object.assign(W,{stage:1,rsId:null,rs:null,job:null,selId:null,dirty:false,filter:"draft",acSel:aircraft||null});
   open();renderStage1();
 }
 async function openRuleset(id){
   try{await ensureMeta();W.rs=await api("GET","/rulesets/"+id);}catch(e){toast("Could not open",e.message);return;}
+  if(W.rsId!==id&&!W.job)W.acSel=null;      // keep an aircraft picked for this upload
   Object.assign(W,{rsId:id,job:null,selId:null,dirty:false,filter:"draft"});
   open();
   if(W.rs.status==="processing"){W.stage=1;renderStage1(true);}
@@ -551,6 +610,5 @@ async function unbind(){
 /* ---------- wiring ---------- */
 $("sopClose").onclick=close;
 $("sopOverlay").addEventListener("click",e=>{if(e.target===$("sopOverlay"))close();});
-$("sopUploadBtn").onclick=startNew;
-window.sopWizard={renderTab:async()=>{try{await ensureMeta();}catch(_){}renderTab();},open:startNew,openRuleset,_W:W,_describe:describe};
+window.sopWizard={renderPanel,syncChip,open:startNew,openRuleset,_W:W,_describe:describe};
 })();

@@ -6,7 +6,7 @@ This feature builds the **bindings** step from [`acs-guided-instruction.md`](acs
 
 ## Instructor workflow
 
-1. Open **Instructor area → Aircraft SOPs → Upload SOP**. The area is PIN-gated and is only available when no lesson is running.
+1. Open the **Curriculum → Preflight & Cockpit → Aircraft SOPs** page. Anyone can see it: one card per aircraft profile, showing the names the simulator is recognised by, the active SOP, and what the last flight used. Drafts and older versions are listed below the cards. Press **Upload SOP**, or **Upload new version** on an aircraft's card, and enter the instructor PIN. The PIN session locks again when the wizard closes. Uploading is refused while a lesson is running.
 2. **Upload & process.** Drop the PDF. The screen shows the state of the local services (database, LLM, OCR, no flight running) and a progress bar with three steps: read pages → draft rules → check rules. You can close the window while it runs; processing continues in the background.
 3. **Verify.** Every drafted rule is listed by SOP page, with a plain-English summary. For example: *"Hold indicated airspeed at 74 kt +10 / −5 kt during Climb out."* Selecting a rule opens:
    - an editor for type, metric, numbers, phases, conditions and severity;
@@ -17,7 +17,33 @@ This feature builds the **bindings** step from [`acs-guided-instruction.md`](acs
    - You can also add rules by hand.
    - **Approve all without warnings** approves in bulk, but only rules whose quote matches the SOP word for word and whose numbers appear in that quote.
    - **Mark as verified** stays disabled until every rule has a decision. Once verified, the rules are frozen; use **Revise** to create an editable copy as a new version.
-4. **Bind to aircraft.** Pick a `profiles/aircraft/*.yaml`. MAVIS cross-checks the approved rules against that profile: speeds above Vne or below Vs0, flap values that aren't a real detent, and altitudes above the ceiling. Binding replaces whatever SOP that aircraft had before; each aircraft has one active SOP.
+4. **Bind to aircraft.** Pick a `profiles/aircraft/*.yaml`; the aircraft is preselected if you started from its card. MAVIS cross-checks the approved rules against that profile: speeds above Vne or below Vs0, flap values that aren't a real detent, and altitudes above the ceiling. Binding replaces whatever SOP that aircraft had before; each aircraft has one active SOP.
+
+## Which SOP a flight uses
+
+You can keep many SOPs: one is active per aircraft profile. When a lesson starts, `sop/runtime.py` picks the SOP for the aircraft actually being flown:
+
+1. MAVIS asks the simulator what is loaded. For MSFS this is `TITLE`, `ATC MODEL` and `ATC TYPE`, read by `adapters/sim_msfs.py::aircraft_ident`.
+2. The answer is matched against each profile's `sim_match` list (case-insensitive substring; the longest match wins, so "Skyhawk Classic" beats "Skyhawk"). Example for `profiles/aircraft/c172sp_g1000.yaml`:
+   ```yaml
+   sim_match: ["C172", "Cessna 172", "Skyhawk", "172SP"]
+   ```
+3. MAVIS loads the verified SOP bound to that profile. The SOP rules are kept in `sop_rt.active` for the in-flight evaluator. The result goes to the tablet as `state["sop"]` and shows as a chip next to the phase chip: **SOP · C172 SOP rev3 v2**.
+
+The fallback rules:
+
+| Situation | What happens |
+|---|---|
+| `sop.aircraft_override` is set in `config.yaml` | That profile's SOP is used, whatever the simulator reports |
+| The simulator reports nothing (mock, replay, or a pysimconnect build that can't read string simvars) | Config's `aircraft_profile` is used |
+| The simulator reports an aircraft that matches **no** profile | **No SOP is applied** (the chip reads *No SOP · unknown aircraft*); a C172 SOP must never be applied to another type |
+| The matched profile has no verified SOP | The flight runs with none (the chip reads *No SOP for <aircraft>*) |
+
+Loading never blocks the start of a lesson: it runs in the background with a 4 s database timeout.
+
+**To add an aircraft type:** copy a profile YAML, set its `name`, speeds, flaps and `sim_match`, restart MAVIS, then upload and bind that aircraft's SOP.
+
+**Still to confirm on the sim PC:** that pysimconnect returns `TITLE`/`ATC MODEL` there. The MAVIS log prints `sim aircraft: {...}` at lesson start. If the log shows nothing, set `sop.aircraft_override` meanwhile.
 
 ## Pipeline (`sop/`)
 
@@ -98,4 +124,4 @@ Configuration lives in `config.yaml` under `database:` and `sop:`. The `DATABASE
 
 ## Tests
 
-- `python -m sop.selftest`: validator, quote matching, units, dedupe, aircraft checks and chunking. Needs no Ollama, no Postgres and no PDF.
+- `python -m sop.selftest`: validator, quote matching, units, dedupe, aircraft checks, chunking, and aircraft → profile matching. Needs no Ollama, no Postgres and no PDF.

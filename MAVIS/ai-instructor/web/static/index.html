@@ -902,6 +902,7 @@
             <p>Silent practice for prepared flyers. Forced repeats when a leg isn’t to tolerance.</p>
           </div>
         </div>
+        <div id="sopPanel" hidden></div>
         <div id="readingPanel" hidden>
           <div class="rdHead">
             <p class="rdSub">Read-only for now. Walk through it at your own pace before you fly.</p>
@@ -975,6 +976,7 @@
     <div id="mapHeadChips">
       <div class="chip" id="phaseChip">Phase <b id="phaseName">BRIEFING</b> · Circuit <b id="circuitNo">1</b> of <b id="circuitTotal">1</b></div>
       <div class="chip examPillChip" id="examLessonPill" hidden title="Silent assessment. Coaching and chat are off">Exam</div>
+      <div class="chip" id="sopChip" hidden></div>
     </div>
     <div class="chip" id="nightChip">☀️ Day</div>
     <div id="demoBar">
@@ -1187,12 +1189,11 @@
     <div id="instHead">
       <h2>Instructor area</h2>
     </div>
-    <p id="instIntro">Record reference flights, edit saved runs, manage instructors, or set up aircraft SOP rules.</p>
+    <p id="instIntro">Record reference flights, edit saved runs, or manage instructors.</p>
     <div id="instTabs">
       <button type="button" class="instTab on" data-tab="record">Record reference</button>
       <button type="button" class="instTab" data-tab="manage">Manage runs</button>
       <button type="button" class="instTab" data-tab="people">Instructors</button>
-      <button type="button" class="instTab" data-tab="sop">Aircraft SOPs</button>
     </div>
     <div id="instBody">
       <div id="instTabRecord" class="instTabPanel on">
@@ -1215,13 +1216,6 @@
           <input id="instAddPin" type="password" inputmode="numeric" maxlength="32" placeholder="PIN (min 6)" autocomplete="off">
           <button type="button" class="instPrimaryBtn" id="instAddBtn">Add instructor</button>
         </div>
-      </div>
-      <div id="instTabSop" class="instTabPanel">
-        <div class="sopTabHead">
-          <p>Upload an aircraft's SOP and MAVIS drafts checkable rules from it with the local model. You verify every rule, then bind the SOP to an aircraft.</p>
-          <button type="button" class="instPrimaryBtn" id="sopUploadBtn">Upload SOP</button>
-        </div>
-        <div id="sopTabList"></div>
       </div>
     </div>
   </div>
@@ -1529,10 +1523,11 @@ function currentLessonId(){
     const p=lessonPick(sel);
     // reading-kind entries (e.g. External Walk-Around) are never a flyable
     // selection, ignore a stale/stored value pointing at one.
-    if(!p||p.kind!=="reading")return sel;
+    if(!p||!nonFlying(p))return sel;
   }
   return (S&&S.lesson_id)||"lesson01_pattern";
 }
+function nonFlying(les){return !!les&&(les.kind==="reading"||les.kind==="sop");}
 function lessonPick(id){
   return ((S&&S.lesson_list)||[]).find(l=>l.id===id)||null;
 }
@@ -1567,7 +1562,7 @@ async function selectFlyingLesson(id){
   updateMenuForLesson();
   syncRefPickers();
   const les=lessonPick(id);
-  if(!les||les.kind==="reading"||!les.available)return;
+  if(!les||nonFlying(les)||!les.available)return;
   try{
     await fetch("/lesson/select",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({id})});
@@ -1598,7 +1593,8 @@ function updateSidebarSelection(){
   const selId=currentLessonId();
   nav.querySelectorAll(".lesLink").forEach(row=>{
     // whichever lesson owns the main panel is the highlighted one
-    row.classList.toggle("on",pfLesson?row.dataset.id===pfLesson:row.dataset.id===selId);
+    const owner=sopPanelOpen?"sop_library":pfLesson;
+    row.classList.toggle("on",owner?row.dataset.id===owner:row.dataset.id===selId);
   });
 }
 function buildLessonSidebar(){
@@ -1638,12 +1634,15 @@ function buildLessonSidebar(){
     lessons.className="modLessons";
     (mod.lessons||[]).forEach(les=>{
       const row=document.createElement("div");
-      const badge=les.kind==="reading"?"Read":(les.available?"Ready":"Soon");
-      const isOn=pfLesson?les.id===pfLesson:les.id===selId;
+      const badge=les.kind==="reading"?"Read":(les.kind==="sop"?"SOP":(les.available?"Ready":"Soon"));
+      const owner=sopPanelOpen?"sop_library":pfLesson;
+      const isOn=owner?les.id===owner:les.id===selId;
       row.className="lesLink"+(isOn?" on":"")+(!les.available?" locked":"");
       row.dataset.id=les.id;
       row.innerHTML=`<span class="lesDot"></span><span class="lesMeta"><b>${escHtml(les.title)}</b><span>${escHtml(les.subtitle||"")}${les.duration_min?` · ~${les.duration_min} min`:""}</span></span><span class="lesBadge">${badge}</span>`;
       row.onclick=()=>{
+        if(les.kind==="sop"){closeReadingLesson();openSopPanel();updateSidebarSelection();return;}
+        closeSopPanel();
         if(les.kind==="reading"){openReadingLesson(les.id);updateSidebarSelection();return;}
         closeReadingLesson();
         if(les.id===currentLessonId())return;
@@ -1665,8 +1664,27 @@ function lessonHiLine(les,playable){
   if(!playable) return core+`, not available in this demo yet. Pick an open lesson to fly.`;
   return settings.examMode?`${core} · Exam mode, choose Trainee or Pilot`:core;
 }
+/* Aircraft SOPs page (catalog kind "sop"): takes over the menu's main panel
+   like a reading lesson does; the page itself lives in sop_wizard.js. */
+let sopPanelOpen=false;
+function openSopPanel(){
+  sopPanelOpen=true;
+  ["nameWrap","modeCards","lessonLocked"].forEach(id=>{const el=$(id);if(el)el.style.display="none";});
+  $("menuHi").innerHTML=`Aircraft SOPs<small>Preflight &amp; Cockpit · the SOP each aircraft is flown to</small>`;
+  $("sopPanel").hidden=false;
+  if(window.sopWizard)window.sopWizard.renderPanel();
+  updateFoot();
+}
+function closeSopPanel(){
+  if(!sopPanelOpen)return;
+  sopPanelOpen=false;
+  $("sopPanel").hidden=true;
+  ["nameWrap","modeCards"].forEach(id=>{const el=$(id);if(el)el.style.display="";});
+  lastMenuLessonSig="";
+  updateMenuForLesson();
+}
 function updateMenuForLesson(){
-  if(pfLesson)return;   // a reading lesson owns the main panel leave it alone
+  if(pfLesson||sopPanelOpen)return;   // a reading lesson owns the main panel leave it alone
   const id=currentLessonId();
   const playable=lessonIsPlayable(id);
   const sig=id+"|"+fmtName()+"|"+(settings.examMode?"exam":"")+"|"+(playable?"p":"");
@@ -2311,6 +2329,7 @@ function render(){
   if(S.app_version)$("appVersion").textContent="v"+String(S.app_version).replace(/^v/,"");
   const tel=S.tel||{};
   $("phaseName").textContent=(S.phase||"").replaceAll("_"," ");
+  if(window.sopWizard)window.sopWizard.syncChip(S.sop);
   $("circuitNo").textContent=S.circuit;
   $("lessonTitle").textContent=`Lesson · Circuit ${S.circuit} of ${S.total_circuits||1}`;
   $("circuitTotal").textContent=S.total_circuits||1;
@@ -3637,13 +3656,21 @@ async function submitPin(){
   const j=await r.json();
   if(j.ok){
     if(j.instructor&&S)S.instructor=j.instructor;
-    closePin();openInstructor();
+    const then=pinThen;pinThen=null;
+    closePin();
+    if(then)then();else openInstructor();
   }
   else{$("pinErr").hidden=false;$("pinInput").select();}
 }
+let pinThen=null;
+/** Run fn once the instructor PIN session is unlocked (asks for the PIN if needed). */
+function requireInstructorPin(fn){
+  if(S&&S.instructor_unlocked){fn();return;}
+  pinThen=fn;openPin();
+}
 $("pinSubmit").onclick=submitPin;
 $("pinInput").onkeydown=e=>{if(e.key==="Enter")submitPin();};
-$("instructorBtn").onclick=()=>{if($("instructorBtn").disabled)return;openPin();};
+$("instructorBtn").onclick=()=>{if($("instructorBtn").disabled)return;pinThen=null;openPin();};
 function lessonTitle(id){
   const hit=(S.lesson_list||[]).find(l=>l.id===id);
   if(hit)return hit.title;
@@ -3759,8 +3786,6 @@ function switchInstTab(tab){
   $("instTabRecord").classList.toggle("on",tab==="record");
   $("instTabManage").classList.toggle("on",tab==="manage");
   $("instTabPeople").classList.toggle("on",tab==="people");
-  $("instTabSop").classList.toggle("on",tab==="sop");
-  if(tab==="sop"&&window.sopWizard)window.sopWizard.renderTab();
 }
 function fillInstRecLesson(){
   const sel=$("instRecLesson");
@@ -3769,6 +3794,7 @@ function fillInstRecLesson(){
   const prefer=currentLessonId();
   sel.innerHTML="";
   list.forEach(les=>{
+    if(nonFlying(les))return;     // reading pages / SOP library aren't flights
     const o=document.createElement("option");
     const ok=lessonIsPlayable(les.id);
     o.value=les.id;
@@ -3791,7 +3817,7 @@ function syncInstRecWho(){
 async function startInstRecording(){
   const lessonId=$("instRecLesson").value;
   const pick=lessonPick(lessonId);
-  if(!pick||!pick.available||pick.kind==="reading"){
+  if(!pick||!pick.available||nonFlying(pick)){
     confirmDialog("Lesson not available","Pick an available lesson to record.",[
       {label:"OK",cls:"primary",fn:hideConfirm}]);
     return;

@@ -121,6 +121,17 @@ def main() -> int:
         {"v_speeds": {"vne": 163, "vs0": 40}, "flaps": {"detents_deg": [0, 10, 20, 30]}})
     check("aircraft cross-check", len(warns) == 2, warns)
 
+    from .runtime import match_profile
+    profs = [{"id": "c172sp_g1000", "name": "Cessna 172SP G1000", "profile": {"sim_match": ["C172", "Skyhawk"]}},
+             {"id": "c172_classic", "name": "Cessna 172 Classic", "profile": {"sim_match": ["Skyhawk Classic"]}},
+             {"id": "da40", "name": "Diamond DA40", "profile": {"sim_match": ["DA40"]}}]
+    check("sim aircraft -> profile", match_profile({"title": "Cessna Skyhawk G1000 Asobo"}, profs)[0] == "c172sp_g1000")
+    check("most specific match wins",
+          match_profile({"title": "Cessna Skyhawk Classic Asobo"}, profs)[0] == "c172_classic")
+    check("ATC type code matches", match_profile({"title": "Foo", "atc_model": "TT:ATCCOM.AC_MODEL_DA40.0.text"}, profs)[0] == "da40")
+    check("unknown aircraft -> no profile", match_profile({"title": "Piper Cub"}, profs)[0] is None)
+    check("no ident -> no profile", match_profile(None, profs)[0] is None)
+
     check("tolerant LLM JSON parse", len(parse_llm_output('```json\n{"rules":[{"kind":"limit"}]}\n```')) == 1)
 
     pages = [extract.PageText(i, "para " * 400, "text") for i in (1, 2, 3)]
