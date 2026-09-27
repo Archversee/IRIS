@@ -272,7 +272,10 @@ function DraftReview({ id, meta, onGone }) {
         <h3>Processing failed</h3>
         <div className="sop-error">{d.error}</div>
         <div className="sop-btnrow">
-          <button type="button" onClick={async () => { try { await sopApi.reparse(id); setD({ ...d, status: "processing", _restart: Date.now() }); } catch (e) { setErr(e.message); } }}>Run the LLM again</button>
+          <button type="button" onClick={async () => {
+            try { await sopApi.reparse(id); loaded.current = false; setErr(null); setD({ ...d, status: "processing", _restart: Date.now() }); }
+            catch (e) { setErr(e.message); }
+          }}>Run again</button>
           <button type="button" className="secondary" onClick={() => setConfirm("discard")}>Discard draft</button>
           <Link to="/sop/new" className="sop-link-btn">Upload another file</Link>
         </div>

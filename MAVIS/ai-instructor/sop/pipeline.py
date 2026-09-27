@@ -68,17 +68,23 @@ class JobManager:
         return d
 
     def start_reparse(self, did: str) -> dict:
-        """Run the LLM again over the draft's already-extracted pages."""
+        """Run again: re-draft from the already-extracted pages, or -- if reading
+        the PDF never finished (e.g. it was interrupted) -- re-read the PDF kept
+        on this machine first."""
         if self.busy:
             raise RuntimeError("Another SOP is still being processed - wait for it to finish")
         d = self.drafts.get(did)
         if not d:
             raise KeyError(did)
+        data = None
         if not self.drafts.pages(did):
-            raise ValueError("This draft has no extracted pages - upload the PDF again")
+            pdf = Path(d.get("pdf_path") or "")
+            if not pdf.is_file():
+                raise ValueError("The PDF for this draft is no longer on this machine - upload it again")
+            data = pdf.read_bytes()
         d.update(status="processing", stage="queued", detail="", error=None, done=0, total=0)
         self.drafts.put(d)
-        self._task = asyncio.create_task(self._run(did, None))
+        self._task = asyncio.create_task(self._run(did, data))
         return d
 
     async def _run(self, did: str, data: bytes | None):
@@ -89,13 +95,21 @@ class JobManager:
             d.update(kw)
             self.drafts.put(d)
 
+        def progress_only(**kw):
+            # intermediate writes are cosmetic (the final save writes the whole
+            # draft again): a busy file on Windows must never kill the job
+            d.update(kw)
+            try:
+                self.drafts.put(d)
+            except OSError as e:
+                log.info("progress update skipped: %s", e)
+
         try:
             if data is not None:
-                save(stage="extracting", detail="Reading pages")
+                progress_only(stage="extracting", detail="Reading pages")
 
                 def prog(i, n):
-                    d.update(done=i, total=n, detail=f"Reading page {i} of {n}")
-                    self.drafts.put(d)
+                    progress_only(done=i, total=n, detail=f"Reading page {i} of {n}")
                 pages, warns = await loop.run_in_executor(
                     None, lambda: extract.extract_pages(data, self.tesseract_cmd, self.ocr_lang, prog))
                 if not any(p.text.strip() for p in pages):
@@ -103,7 +117,7 @@ class JobManager:
                                      + ("" if extract.ocr_available(self.tesseract_cmd)
                                         else " (it looks scanned and Tesseract OCR is not installed)"))
                 self.drafts.set_pages(did, [p.__dict__ for p in pages])
-                save(warnings=d["warnings"] + warns, page_count=len(pages),
+                progress_only(warnings=d["warnings"] + warns, page_count=len(pages),
                      ocr_pages=[p.page_no for p in pages if p.source == "ocr"])
             page_rows = self.drafts.pages(did)
             page_map = {p["page_no"]: p["text"] for p in page_rows}
@@ -114,7 +128,7 @@ class JobManager:
                 head = " ".join(p["text"] for p in page_rows[:3])[:20000]
                 guess, _ = match_profile({"text": head}, aircraft_profiles())
                 if guess:
-                    save(aircraft_profile=guess)
+                    progress_only(aircraft_profile=guess)
 
             if not await self.parser.available():
                 save(status="ready", stage="done", detail="LLM unavailable - add rules by hand",
@@ -128,15 +142,15 @@ class JobManager:
             phases = known_phases()
             schema = llm_json_schema(phases)
             system = system_prompt(phases, [a["name"] for a in aircraft_profiles()])
-            save(stage="parsing", done=0, total=len(chunks), llm_model=self.parser.model)
+            progress_only(stage="parsing", done=0, total=len(chunks), llm_model=self.parser.model)
             candidates: list[dict] = []
             for ch in chunks:
                 while self.is_flying():
                     if d["stage"] != "paused":
-                        save(stage="paused", detail="Paused while a lesson is being flown")
+                        progress_only(stage="paused", detail="Paused while a lesson is being flown")
                     await asyncio.sleep(2.0)
-                save(stage="parsing", detail=f"Section {ch.index + 1} of {len(chunks)} (page {ch.pages[0]}"
-                     + (f"-{ch.pages[-1]})" if len(ch.pages) > 1 else ")"))
+                progress_only(stage="parsing", detail=f"Section {ch.index + 1} of {len(chunks)} (page {ch.pages[0]}"
+                              + (f"-{ch.pages[-1]})" if len(ch.pages) > 1 else ")"))
                 for attempt in (1, 2):
                     try:
                         got = await self.parser.parse_chunk(ch.text, system, schema)
@@ -150,9 +164,9 @@ class JobManager:
                         if attempt == 2:
                             d["warnings"].append(f"Pages {ch.pages[0]}-{ch.pages[-1]}: the LLM failed ({e}); "
                                                  "check this section by hand")
-                save(done=ch.index + 1)
+                progress_only(done=ch.index + 1)
 
-            save(stage="validating", detail=f"Checking {len(candidates)} candidate rules")
+            progress_only(stage="validating", detail=f"Checking {len(candidates)} candidate rules")
             checked = [(validate.validate_candidate(c, phases, page_map, ocr_pages), c) for c in candidates]
             kept = validate.dedupe([c for c, _ in checked])
             kept_ids = {id(c) for c in kept}
@@ -169,4 +183,12 @@ class JobManager:
                  detail=f"{n_ok} rules drafted" + (f", {len(rules) - n_ok} set aside" if len(rules) > n_ok else ""))
         except Exception as e:
             log.exception("SOP draft %s failed", did)
-            save(status="failed", stage="failed", error=str(e))
+            msg = str(e)
+            if isinstance(e, PermissionError):
+                msg += (" - Windows blocked access to a MAVIS data file (often antivirus or OneDrive "
+                        "scanning it). Press 'Run again'; if it keeps happening, move the IRIS folder "
+                        "out of Downloads/OneDrive or exclude data/sop from scanning.")
+            try:
+                save(status="failed", stage="failed", error=msg)
+            except OSError:
+                log.error("could not record failure for draft %s", did)
