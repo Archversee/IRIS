@@ -1,8 +1,12 @@
-"""Stage 4: persistence in the shared Postgres (db/schema_sop_rules.sql).
+"""Persistence in the shared Postgres (db/schema_sop_rules.sql).
 
-MAVIS owns the sop_* tables end-to-end; IRIS only reads them. The pool is
+Nothing is written here until the instructor presses Save on a reviewed
+draft (drafts live in local JSON files, see drafts.py). After that, saved
+rules are edited in place and every change is logged in flight_rule_history.
+
+MAVIS owns these tables end-to-end; IRIS only reads them. The pool is
 created lazily, so MAVIS still boots (and flies) when Postgres is down --
-the SOP endpoints just answer 503 until it's back.
+the endpoints that need it answer 503 until it's back.
 """
 from __future__ import annotations
 
@@ -14,10 +18,12 @@ from uuid import UUID
 
 log = logging.getLogger(__name__)
 
+# columns of flight_rules the API reads/writes
 RULE_FIELDS = ("kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
                "min_value", "max_value", "op", "value", "gate_phase", "capture_at",
                "conditions", "severity", "source_quote", "source_page", "quote_score",
-               "as_written", "issues", "reviewer_note")
+               "note", "enabled")
+_JSONB = {"conditions", "llm_draft", "before", "after"}
 
 
 class DBUnavailable(RuntimeError):
@@ -53,8 +59,6 @@ class RuleStore:
                 yield conn
         except (OSError, asyncpg.PostgresConnectionError, asyncpg.InterfaceError,
                 asyncpg.CannotConnectNowError, TimeoutError) as e:
-            # Postgres went away after the pool was created -- same 503 path as
-            # "never reachable"; the pool reconnects by itself once it's back.
             raise DBUnavailable(f"Postgres connection lost: {e}") from e
 
     async def close(self):
@@ -65,32 +69,157 @@ class RuleStore:
     async def ping(self) -> bool:
         try:
             async with self.acquire() as c:
-                return bool(await c.fetchval("select to_regclass('public.sop_rules') is not null"))
+                return bool(await c.fetchval("select to_regclass('public.flight_rules') is not null"))
         except Exception:
             return False
 
-    # ------------------------------------------------------------ documents
-    async def find_document(self, sha: str) -> dict | None:
-        async with self.acquire() as c:
-            row = await c.fetchrow("select * from sop_documents where sha256 = $1", sha)
-        return dict(row) if row else None
-
-    async def create_document(self, filename, sha, page_count, ocr_pages, stored_path, by, pages) -> UUID:
+    # ------------------------------------------------------------ save a reviewed draft
+    async def save_draft(self, draft: dict, pages: list[dict], rules: list[dict],
+                         aircraft: str, name: str, by: str | None) -> str:
+        """One transaction: document + pages (reused if this PDF was saved
+        before), a new rule set with its rules, made the aircraft's active set."""
         async with self.acquire() as c, c.transaction():
-            doc_id = await c.fetchval(
-                "insert into sop_documents (filename, sha256, page_count, ocr_pages, stored_path, uploaded_by) "
-                "values ($1,$2,$3,$4,$5,$6) returning id",
-                filename, sha, page_count, ocr_pages, stored_path, by)
-            await c.executemany(
-                "insert into sop_pages (document_id, page_no, text, source, ocr_confidence) values ($1,$2,$3,$4,$5)",
-                [(doc_id, p.page_no, p.text, p.source, p.ocr_confidence) for p in pages])
-        return doc_id
+            doc_id = await c.fetchval("select id from sop_documents where sha256=$1", draft["sha256"])
+            if doc_id is None:
+                doc_id = await c.fetchval(
+                    "insert into sop_documents (filename, sha256, page_count, ocr_pages, stored_path, uploaded_by) "
+                    "values ($1,$2,$3,$4,$5,$6) returning id",
+                    draft["filename"], draft["sha256"], len(pages),
+                    [p["page_no"] for p in pages if p["source"] == "ocr"], draft["pdf_path"], by)
+                await c.executemany(
+                    "insert into sop_pages (document_id, page_no, text, source, ocr_confidence) values ($1,$2,$3,$4,$5)",
+                    [(doc_id, p["page_no"], p["text"], p["source"], p.get("ocr_confidence")) for p in pages])
+            rs = await c.fetchval(
+                "insert into flight_rule_sets (aircraft_profile, name, document_id, llm_model, created_by, updated_by) "
+                "values ($1,$2,$3,$4,$5,$5) returning id", aircraft, name, doc_id, draft.get("llm_model"), by)
+            for i, r in enumerate(rules):
+                row = await self._insert_rule(c, rs, r, i, by)
+                await self._log(c, rs, row["id"], "create", by, None, row)
+            await self._activate(c, rs, aircraft, by)
+        return str(rs)
 
-    async def page_texts(self, doc_id: UUID) -> tuple[dict[int, str], set[int]]:
+    # ------------------------------------------------------------ rule sets
+    async def list_sets(self, aircraft: str | None = None) -> list[dict]:
         async with self.acquire() as c:
-            rows = await c.fetch("select page_no, text, source from sop_pages where document_id = $1", doc_id)
-        return ({r["page_no"]: r["text"] for r in rows},
-                {r["page_no"] for r in rows if r["source"] == "ocr"})
+            rows = await c.fetch("""
+                select s.*, d.filename, d.page_count,
+                       count(r.id) as n_rules,
+                       count(r.id) filter (where r.enabled) as n_enabled
+                  from flight_rule_sets s
+                  left join sop_documents d on d.id = s.document_id
+                  left join flight_rules r on r.rule_set_id = s.id
+                 where ($1::text is null or s.aircraft_profile = $1)
+                 group by s.id, d.id
+                 order by s.active desc, s.updated_at desc""", aircraft)
+        return [_clean(r) for r in rows]
+
+    async def get_set(self, rs: UUID) -> dict | None:
+        async with self.acquire() as c:
+            head = await c.fetchrow("""
+                select s.*, d.filename, d.page_count, d.ocr_pages
+                  from flight_rule_sets s left join sop_documents d on d.id = s.document_id
+                 where s.id = $1""", rs)
+            if not head:
+                return None
+            rules = await c.fetch("select * from flight_rules where rule_set_id=$1 order by sort_order, id", rs)
+        out = _clean(head)
+        out["rules"] = [_clean(r) for r in rules]
+        return out
+
+    async def rename_set(self, rs: UUID, name: str, by: str | None) -> bool:
+        async with self.acquire() as c, c.transaction():
+            old = await c.fetchval("select name from flight_rule_sets where id=$1 for update", rs)
+            if old is None:
+                return False
+            await c.execute("update flight_rule_sets set name=$2, updated_by=$3, updated_at=now() where id=$1",
+                            rs, name, by)
+            await self._log(c, rs, None, "rename", by, {"name": old}, {"name": name})
+        return True
+
+    async def set_active(self, rs: UUID, active: bool, by: str | None) -> bool:
+        async with self.acquire() as c, c.transaction():
+            row = await c.fetchrow("select aircraft_profile, active from flight_rule_sets where id=$1 for update", rs)
+            if not row:
+                return False
+            if active:
+                await self._activate(c, rs, row["aircraft_profile"], by)
+            elif row["active"]:
+                await c.execute("update flight_rule_sets set active=false, updated_by=$2, updated_at=now() "
+                                "where id=$1", rs, by)
+                await self._log(c, rs, None, "deactivate", by, None, None)
+        return True
+
+    async def delete_set(self, rs: UUID) -> bool:
+        async with self.acquire() as c:
+            res = await c.execute("delete from flight_rule_sets where id=$1 and not active", rs)
+        return res.endswith("1")
+
+    async def _activate(self, c, rs, aircraft: str, by):
+        prev = await c.fetch("select id from flight_rule_sets where aircraft_profile=$1 and active and id<>$2",
+                             aircraft, rs)
+        for p in prev:
+            await c.execute("update flight_rule_sets set active=false, updated_by=$2, updated_at=now() where id=$1",
+                            p["id"], by)
+            await self._log(c, p["id"], None, "deactivate", by, None, {"replaced_by": str(rs)})
+        already = await c.fetchval("select active from flight_rule_sets where id=$1", rs)
+        if not already:
+            await c.execute("update flight_rule_sets set active=true, updated_by=$2, updated_at=now() where id=$1",
+                            rs, by)
+            await self._log(c, rs, None, "activate", by, None, {"aircraft_profile": aircraft})
+
+    # ------------------------------------------------------------ rules
+    async def get_rule(self, rule_id: int) -> dict | None:
+        async with self.acquire() as c:
+            row = await c.fetchrow("select * from flight_rules where id=$1", rule_id)
+        return _clean(row) if row else None
+
+    async def add_rule(self, rs: UUID, rule: dict, by: str | None) -> dict:
+        async with self.acquire() as c, c.transaction():
+            n = await c.fetchval("select coalesce(max(sort_order),-1)+1 from flight_rules where rule_set_id=$1", rs)
+            row = await self._insert_rule(c, rs, {**rule, "origin": "manual"}, n, by)
+            await self._log(c, rs, row["id"], "create", by, None, row)
+            await self._touch(c, rs, by)
+        return row
+
+    async def update_rule(self, rule_id: int, fields: dict, by: str | None) -> dict | None:
+        fields = {k: v for k, v in fields.items() if k in RULE_FIELDS}
+        async with self.acquire() as c, c.transaction():
+            before = await c.fetchrow("select * from flight_rules where id=$1 for update", rule_id)
+            if not before:
+                return None
+            if not fields:
+                return _clean(before)
+            sets = [f"{k} = ${i + 2}" for i, k in enumerate(fields)]
+            row = await c.fetchrow(
+                f"update flight_rules set {', '.join(sets)}, updated_by=${len(fields) + 2}, updated_at=now() "
+                "where id=$1 returning *", rule_id, *[_db_val(k, v) for k, v in fields.items()], by)
+            b, a = _clean(before), _clean(row)
+            await self._log(c, before["rule_set_id"], rule_id, "update", by, b, a)
+            await self._touch(c, before["rule_set_id"], by)
+        return a
+
+    async def delete_rule(self, rule_id: int, by: str | None) -> bool:
+        async with self.acquire() as c, c.transaction():
+            row = await c.fetchrow("delete from flight_rules where id=$1 returning *", rule_id)
+            if not row:
+                return False
+            await self._log(c, row["rule_set_id"], rule_id, "delete", by, _clean(row), None)
+            await self._touch(c, row["rule_set_id"], by)
+        return True
+
+    async def history(self, rs: UUID, rule_id: int | None = None, limit: int = 200) -> list[dict]:
+        async with self.acquire() as c:
+            rows = await c.fetch(
+                "select * from flight_rule_history where rule_set_id=$1 and ($2::bigint is null or rule_id=$2) "
+                "order by changed_at desc, id desc limit $3", rs, rule_id, limit)
+        return [_clean(r) for r in rows]
+
+    async def page_texts(self, doc_id) -> tuple[dict[int, str], set[int]]:
+        if not doc_id:
+            return {}, set()
+        async with self.acquire() as c:
+            rows = await c.fetch("select page_no, text, source from sop_pages where document_id=$1", UUID(str(doc_id)))
+        return ({r["page_no"]: r["text"] for r in rows}, {r["page_no"] for r in rows if r["source"] == "ocr"})
 
     async def get_page(self, doc_id: UUID, page_no: int) -> dict | None:
         async with self.acquire() as c:
@@ -102,205 +231,46 @@ class RuleStore:
             row = await c.fetchrow("select * from sop_documents where id=$1", doc_id)
         return dict(row) if row else None
 
-    # ------------------------------------------------------------ rulesets
-    async def create_ruleset(self, doc_id: UUID, by: str | None, model: str | None,
-                             parent: UUID | None = None, status: str = "processing") -> UUID:
-        async with self.acquire() as c, c.transaction():
-            await c.execute("select pg_advisory_xact_lock(hashtext($1::text))", str(doc_id))
-            ver = await c.fetchval("select coalesce(max(version),0)+1 from sop_rulesets where document_id=$1", doc_id)
-            return await c.fetchval(
-                "insert into sop_rulesets (document_id, version, parent_id, status, llm_model, created_by) "
-                "values ($1,$2,$3,$4,$5,$6) returning id", doc_id, ver, parent, status, model, by)
-
-    async def set_progress(self, rs: UUID, done: int, total: int):
-        async with self.acquire() as c:
-            await c.execute("update sop_rulesets set chunks_done=$2, chunks_total=$3 where id=$1", rs, done, total)
-
-    async def set_status(self, rs: UUID, status: str, error: str | None = None):
-        async with self.acquire() as c:
-            await c.execute("update sop_rulesets set status=$2, error=$3 where id=$1", rs, status, error)
-
-    async def insert_rules(self, rs: UUID, checked: list, origin: str = "llm"):
-        cols = RULE_FIELDS + ("review_status", "origin")
-        sql = (f"insert into sop_rules (ruleset_id, {', '.join(cols)}) values "
-               f"($1, {', '.join(f'${i + 2}' for i in range(len(cols)))})")
-        rows = []
-        for ch in checked:
-            r = dict(ch.rule)
-            r["issues"] = ch.issues + ([f"Auto-rejected: {ch.reject_reason}"] if ch.reject_reason else [])
-            r["review_status"] = ch.status
-            r["origin"] = origin
-            rows.append((rs, *[_db_val(k, r.get(k)) for k in cols]))
-        if rows:
-            async with self.acquire() as c:
-                await c.executemany(sql, rows)
-
-    async def list_rulesets(self) -> list[dict]:
-        async with self.acquire() as c:
-            rows = await c.fetch("""
-                select rs.*, d.filename, d.page_count, d.ocr_pages,
-                       count(r.*) filter (where r.review_status='draft')         as n_draft,
-                       count(r.*) filter (where r.review_status='approved')      as n_approved,
-                       count(r.*) filter (where r.review_status='rejected')      as n_rejected,
-                       count(r.*) filter (where r.review_status='auto_rejected') as n_auto_rejected,
-                       (select array_agg(b.aircraft_profile) from sop_aircraft_bindings b
-                         where b.ruleset_id = rs.id and b.active)                as bound_to
-                  from sop_rulesets rs
-                  join sop_documents d on d.id = rs.document_id
-                  left join sop_rules r on r.ruleset_id = rs.id
-                 group by rs.id, d.id
-                 order by rs.created_at desc""")
-        return [_clean(r) for r in rows]
-
-    async def get_ruleset(self, rs: UUID) -> dict | None:
-        async with self.acquire() as c:
-            head = await c.fetchrow("""
-                select rs.*, d.filename, d.page_count, d.ocr_pages,
-                       (select array_agg(b.aircraft_profile) from sop_aircraft_bindings b
-                         where b.ruleset_id = rs.id and b.active) as bound_to
-                  from sop_rulesets rs join sop_documents d on d.id = rs.document_id
-                 where rs.id = $1""", rs)
-            if not head:
-                return None
-            rules = await c.fetch("select * from sop_rules where ruleset_id=$1 "
-                                  "order by source_page nulls last, id", rs)
-        out = _clean(head)
-        out["rules"] = [_clean(r) for r in rules]
-        return out
-
-    async def delete_ruleset(self, rs: UUID) -> bool:
-        async with self.acquire() as c:
-            res = await c.execute("delete from sop_rulesets where id=$1 and status in ('draft','failed','processing') "
-                                  "and not exists (select 1 from sop_aircraft_bindings where ruleset_id=$1 and active)", rs)
-        return res.endswith("1")
-
-    # ------------------------------------------------------------ rules (review)
-    async def ruleset_status(self, c, rs: UUID) -> str | None:
-        return await c.fetchval("select status from sop_rulesets where id=$1", rs)
-
-    async def get_rule(self, rule_id: int) -> dict | None:
-        async with self.acquire() as c:
-            row = await c.fetchrow("select * from sop_rules where id=$1", rule_id)
-        return _clean(row) if row else None
-
-    async def update_rule(self, rule_id: int, fields: dict, by: str | None) -> dict | None:
-        """Only draft rulesets are editable (verified ones are frozen; revise instead)."""
-        allowed = {k: v for k, v in fields.items() if k in RULE_FIELDS + ("review_status",)}
-        async with self.acquire() as c, c.transaction():
-            rs = await c.fetchval("select ruleset_id from sop_rules where id=$1 for update", rule_id)
-            if rs is None or await self.ruleset_status(c, rs) != "draft":
-                return None
-            sets = [f"{k} = ${i + 2}" for i, k in enumerate(allowed)]
-            sets += [f"reviewed_by = ${len(allowed) + 2}", "reviewed_at = now()"]
-            row = await c.fetchrow(f"update sop_rules set {', '.join(sets)} where id=$1 returning *",
-                                   rule_id, *[_db_val(k, v) for k, v in allowed.items()], by)
-        return _clean(row)
-
-    async def add_manual_rule(self, rs: UUID, rule: dict, issues: list[str], by: str | None) -> dict | None:
-        cols = [k for k in RULE_FIELDS if k in rule or k == "issues"]
-        async with self.acquire() as c, c.transaction():
-            if await self.ruleset_status(c, rs) != "draft":
-                return None
-            vals = [_db_val(k, issues if k == "issues" else rule.get(k)) for k in cols]
-            row = await c.fetchrow(
-                f"insert into sop_rules (ruleset_id, origin, review_status, reviewed_by, reviewed_at, {', '.join(cols)}) "
-                f"values ($1, 'manual', 'draft', ${len(cols) + 2}, now(), "
-                f"{', '.join(f'${i + 2}' for i in range(len(cols)))}) returning *", rs, *vals, by)
-        return _clean(row)
-
-    async def bulk_review(self, rs: UUID, ids: list[int], status: str, by: str | None) -> int:
-        async with self.acquire() as c, c.transaction():
-            if await self.ruleset_status(c, rs) != "draft":
-                return 0
-            res = await c.execute(
-                "update sop_rules set review_status=$3, reviewed_by=$4, reviewed_at=now() "
-                "where ruleset_id=$1 and id = any($2::bigint[]) and review_status <> 'auto_rejected'",
-                rs, ids, status, by)
-        return int(res.split()[-1])
-
-    async def verify_ruleset(self, rs: UUID, by: str | None) -> tuple[bool, str]:
-        async with self.acquire() as c, c.transaction():
-            st = await c.fetchval("select status from sop_rulesets where id=$1 for update", rs)
-            if st != "draft":
-                return False, f"ruleset is {st}, not draft"
-            counts = await c.fetchrow(
-                "select count(*) filter (where review_status='draft') d, "
-                "count(*) filter (where review_status='approved') a from sop_rules where ruleset_id=$1", rs)
-            if counts["d"]:
-                return False, f"{counts['d']} rule(s) still need a decision"
-            if not counts["a"]:
-                return False, "approve at least one rule"
-            await c.execute("update sop_rulesets set status='verified', verified_by=$2, verified_at=now() "
-                            "where id=$1", rs, by)
-        return True, "verified"
-
-    async def revise_ruleset(self, rs: UUID, by: str | None) -> UUID | None:
-        """Clone a verified ruleset into a new draft version (the only way to
-        change rules after verification)."""
-        async with self.acquire() as c:
-            src = await c.fetchrow("select * from sop_rulesets where id=$1", rs)
-        if not src or src["status"] != "verified":
-            return None
-        new = await self.create_ruleset(src["document_id"], by, src["llm_model"], parent=rs, status="draft")
-        cols = ", ".join(RULE_FIELDS + ("origin", "review_status", "reviewed_by", "reviewed_at"))
-        async with self.acquire() as c:
-            await c.execute(f"insert into sop_rules (ruleset_id, {cols}) select $2, {cols} "
-                            "from sop_rules where ruleset_id=$1 and review_status <> 'auto_rejected'", rs, new)
-        return new
-
-    # ------------------------------------------------------------ aircraft binding
-    async def approved_rules(self, rs: UUID) -> list[dict]:
-        async with self.acquire() as c:
-            rows = await c.fetch("select * from sop_rules where ruleset_id=$1 and review_status='approved' "
-                                 "order by id", rs)
-        return [_clean(r) for r in rows]
-
-    async def bind(self, rs: UUID, profile: str, by: str | None) -> tuple[bool, str]:
-        async with self.acquire() as c, c.transaction():
-            st = await c.fetchval("select status from sop_rulesets where id=$1", rs)
-            if st != "verified":
-                return False, "only a verified ruleset can be bound"
-            await c.execute("update sop_aircraft_bindings set active=false, unbound_at=now() "
-                            "where aircraft_profile=$1 and active", profile)
-            await c.execute("insert into sop_aircraft_bindings (aircraft_profile, ruleset_id, bound_by) "
-                            "values ($1,$2,$3)", profile, rs, by)
-        return True, "bound"
-
-    async def unbind(self, profile: str) -> bool:
-        async with self.acquire() as c:
-            res = await c.execute("update sop_aircraft_bindings set active=false, unbound_at=now() "
-                                  "where aircraft_profile=$1 and active", profile)
-        return res.endswith("1")
-
-    async def bindings(self) -> list[dict]:
-        async with self.acquire() as c:
-            rows = await c.fetch("""
-                select b.*, rs.version, d.filename from sop_aircraft_bindings b
-                  join sop_rulesets rs on rs.id = b.ruleset_id
-                  join sop_documents d on d.id = rs.document_id
-                 where b.active order by b.aircraft_profile""")
-        return [_clean(r) for r in rows]
-
     async def active_rules(self, profile: str) -> dict | None:
-        """What the runtime loads: approved rules of the active, verified
-        ruleset bound to this aircraft profile (None if nothing is bound)."""
+        """What a lesson loads: the enabled rules of the aircraft's active set."""
         async with self.acquire() as c:
-            rs = await c.fetchrow("""
-                select rs.id, rs.version, d.filename from sop_aircraft_bindings b
-                  join sop_rulesets rs on rs.id = b.ruleset_id and rs.status = 'verified'
-                  join sop_documents d on d.id = rs.document_id
-                 where b.aircraft_profile = $1 and b.active""", profile)
-        if not rs:
-            return None
-        return {"ruleset_id": str(rs["id"]), "version": rs["version"], "filename": rs["filename"],
-                "rules": await self.approved_rules(rs["id"])}
+            s = await c.fetchrow("""
+                select s.id, s.name, s.updated_at, d.filename from flight_rule_sets s
+                  left join sop_documents d on d.id = s.document_id
+                 where s.aircraft_profile=$1 and s.active""", profile)
+            if not s:
+                return None
+            rules = await c.fetch("select * from flight_rules where rule_set_id=$1 and enabled "
+                                  "order by sort_order, id", s["id"])
+        return {"rule_set_id": str(s["id"]), "name": s["name"], "filename": s["filename"],
+                "updated_at": s["updated_at"].isoformat(), "rules": [_clean(r) for r in rules]}
+
+    # ------------------------------------------------------------ helpers
+    async def _insert_rule(self, c, rs, r: dict, order: int, by) -> dict:
+        cols = [k for k in RULE_FIELDS if k in r] + ["origin", "llm_draft", "sort_order", "created_by", "updated_by"]
+        vals = [_db_val(k, r.get(k)) for k in RULE_FIELDS if k in r] + \
+               [r.get("origin", "manual"), r.get("llm_draft"), order, by, by]
+        row = await c.fetchrow(
+            f"insert into flight_rules (rule_set_id, {', '.join(cols)}) values "
+            f"($1, {', '.join(f'${i + 2}' for i in range(len(cols)))}) returning *", rs, *vals)
+        return _clean(row)
+
+    async def _touch(self, c, rs, by):
+        await c.execute("update flight_rule_sets set updated_by=$2, updated_at=now() where id=$1", rs, by)
+
+    async def _log(self, c, rs, rule_id, action, by, before, after):
+        await c.execute("insert into flight_rule_history (rule_set_id, rule_id, action, changed_by, before, after) "
+                        "values ($1,$2,$3,$4,$5,$6)", rs if isinstance(rs, UUID) else UUID(str(rs)),
+                        rule_id, action, by, before, after)
 
 
 def _db_val(k: str, v):
-    if k in ("phases", "issues"):
+    if k == "phases":
         return list(v or [])
     if k == "conditions":
         return list(v or [])
+    if k == "enabled":
+        return True if v is None else bool(v)
     return v
 
 

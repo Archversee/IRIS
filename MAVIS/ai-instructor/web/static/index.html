@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>AI Flight Instructor</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/sop_wizard.css">
 <style>
   :root{
     /* colors are set from config.yaml (web.theme) via JS; these are fallbacks */
@@ -902,7 +901,6 @@
             <p>Silent practice for prepared flyers. Forced repeats when a leg isn’t to tolerance.</p>
           </div>
         </div>
-        <div id="sopPanel" hidden></div>
         <div id="readingPanel" hidden>
           <div class="rdHead">
             <p class="rdSub">Read-only for now. Walk through it at your own pace before you fly.</p>
@@ -976,7 +974,6 @@
     <div id="mapHeadChips">
       <div class="chip" id="phaseChip">Phase <b id="phaseName">BRIEFING</b> · Circuit <b id="circuitNo">1</b> of <b id="circuitTotal">1</b></div>
       <div class="chip examPillChip" id="examLessonPill" hidden title="Silent assessment. Coaching and chat are off">Exam</div>
-      <div class="chip" id="sopChip" hidden></div>
     </div>
     <div class="chip" id="nightChip">☀️ Day</div>
     <div id="demoBar">
@@ -1218,15 +1215,6 @@
         </div>
       </div>
     </div>
-  </div>
-</div>
-
-<div id="sopOverlay">
-  <div id="sopBox" class="popCard glass" style="width:auto;max-width:none;max-height:none">
-    <div id="sopHead"><h2>Aircraft SOP</h2><span class="doc" id="sopDocName"></span>
-      <div id="sopSteps"></div><button id="sopClose" title="Close" aria-label="Close">×</button></div>
-    <div id="sopBody"></div>
-    <div id="sopFoot"></div>
   </div>
 </div>
 
@@ -1523,11 +1511,10 @@ function currentLessonId(){
     const p=lessonPick(sel);
     // reading-kind entries (e.g. External Walk-Around) are never a flyable
     // selection, ignore a stale/stored value pointing at one.
-    if(!p||!nonFlying(p))return sel;
+    if(!p||p.kind!=="reading")return sel;
   }
   return (S&&S.lesson_id)||"lesson01_pattern";
 }
-function nonFlying(les){return !!les&&(les.kind==="reading"||les.kind==="sop");}
 function lessonPick(id){
   return ((S&&S.lesson_list)||[]).find(l=>l.id===id)||null;
 }
@@ -1562,7 +1549,7 @@ async function selectFlyingLesson(id){
   updateMenuForLesson();
   syncRefPickers();
   const les=lessonPick(id);
-  if(!les||nonFlying(les)||!les.available)return;
+  if(!les||les.kind==="reading"||!les.available)return;
   try{
     await fetch("/lesson/select",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({id})});
@@ -1593,8 +1580,7 @@ function updateSidebarSelection(){
   const selId=currentLessonId();
   nav.querySelectorAll(".lesLink").forEach(row=>{
     // whichever lesson owns the main panel is the highlighted one
-    const owner=sopPanelOpen?"sop_library":pfLesson;
-    row.classList.toggle("on",owner?row.dataset.id===owner:row.dataset.id===selId);
+    row.classList.toggle("on",pfLesson?row.dataset.id===pfLesson:row.dataset.id===selId);
   });
 }
 function buildLessonSidebar(){
@@ -1633,16 +1619,14 @@ function buildLessonSidebar(){
     const lessons=document.createElement("div");
     lessons.className="modLessons";
     (mod.lessons||[]).forEach(les=>{
+      if(les.kind==="sop")return;   // SOP pages live in the IRIS app (/sop/new, /sop/rules)
       const row=document.createElement("div");
-      const badge=les.kind==="reading"?"Read":(les.kind==="sop"?"SOP":(les.available?"Ready":"Soon"));
-      const owner=sopPanelOpen?"sop_library":pfLesson;
-      const isOn=owner?les.id===owner:les.id===selId;
+      const badge=les.kind==="reading"?"Read":(les.available?"Ready":"Soon");
+      const isOn=pfLesson?les.id===pfLesson:les.id===selId;
       row.className="lesLink"+(isOn?" on":"")+(!les.available?" locked":"");
       row.dataset.id=les.id;
       row.innerHTML=`<span class="lesDot"></span><span class="lesMeta"><b>${escHtml(les.title)}</b><span>${escHtml(les.subtitle||"")}${les.duration_min?` · ~${les.duration_min} min`:""}</span></span><span class="lesBadge">${badge}</span>`;
       row.onclick=()=>{
-        if(les.kind==="sop"){closeReadingLesson();openSopPanel();updateSidebarSelection();return;}
-        closeSopPanel();
         if(les.kind==="reading"){openReadingLesson(les.id);updateSidebarSelection();return;}
         closeReadingLesson();
         if(les.id===currentLessonId())return;
@@ -1664,27 +1648,8 @@ function lessonHiLine(les,playable){
   if(!playable) return core+`, not available in this demo yet. Pick an open lesson to fly.`;
   return settings.examMode?`${core} · Exam mode, choose Trainee or Pilot`:core;
 }
-/* Aircraft SOPs page (catalog kind "sop"): takes over the menu's main panel
-   like a reading lesson does; the page itself lives in sop_wizard.js. */
-let sopPanelOpen=false;
-function openSopPanel(){
-  sopPanelOpen=true;
-  ["nameWrap","modeCards","lessonLocked"].forEach(id=>{const el=$(id);if(el)el.style.display="none";});
-  $("menuHi").innerHTML=`Aircraft SOPs<small>Preflight &amp; Cockpit · the SOP each aircraft is flown to</small>`;
-  $("sopPanel").hidden=false;
-  if(window.sopWizard)window.sopWizard.renderPanel();
-  updateFoot();
-}
-function closeSopPanel(){
-  if(!sopPanelOpen)return;
-  sopPanelOpen=false;
-  $("sopPanel").hidden=true;
-  ["nameWrap","modeCards"].forEach(id=>{const el=$(id);if(el)el.style.display="";});
-  lastMenuLessonSig="";
-  updateMenuForLesson();
-}
 function updateMenuForLesson(){
-  if(pfLesson||sopPanelOpen)return;   // a reading lesson owns the main panel leave it alone
+  if(pfLesson)return;   // a reading lesson owns the main panel leave it alone
   const id=currentLessonId();
   const playable=lessonIsPlayable(id);
   const sig=id+"|"+fmtName()+"|"+(settings.examMode?"exam":"")+"|"+(playable?"p":"");
@@ -2329,7 +2294,6 @@ function render(){
   if(S.app_version)$("appVersion").textContent="v"+String(S.app_version).replace(/^v/,"");
   const tel=S.tel||{};
   $("phaseName").textContent=(S.phase||"").replaceAll("_"," ");
-  if(window.sopWizard)window.sopWizard.syncChip(S.sop);
   $("circuitNo").textContent=S.circuit;
   $("lessonTitle").textContent=`Lesson · Circuit ${S.circuit} of ${S.total_circuits||1}`;
   $("circuitTotal").textContent=S.total_circuits||1;
@@ -3656,21 +3620,13 @@ async function submitPin(){
   const j=await r.json();
   if(j.ok){
     if(j.instructor&&S)S.instructor=j.instructor;
-    const then=pinThen;pinThen=null;
-    closePin();
-    if(then)then();else openInstructor();
+    closePin();openInstructor();
   }
   else{$("pinErr").hidden=false;$("pinInput").select();}
 }
-let pinThen=null;
-/** Run fn once the instructor PIN session is unlocked (asks for the PIN if needed). */
-function requireInstructorPin(fn){
-  if(S&&S.instructor_unlocked){fn();return;}
-  pinThen=fn;openPin();
-}
 $("pinSubmit").onclick=submitPin;
 $("pinInput").onkeydown=e=>{if(e.key==="Enter")submitPin();};
-$("instructorBtn").onclick=()=>{if($("instructorBtn").disabled)return;pinThen=null;openPin();};
+$("instructorBtn").onclick=()=>{if($("instructorBtn").disabled)return;openPin();};
 function lessonTitle(id){
   const hit=(S.lesson_list||[]).find(l=>l.id===id);
   if(hit)return hit.title;
@@ -3794,7 +3750,7 @@ function fillInstRecLesson(){
   const prefer=currentLessonId();
   sel.innerHTML="";
   list.forEach(les=>{
-    if(nonFlying(les))return;     // reading pages / SOP library aren't flights
+    if(les.kind==="sop")return;     // not a flight
     const o=document.createElement("option");
     const ok=lessonIsPlayable(les.id);
     o.value=les.id;
@@ -3817,7 +3773,7 @@ function syncInstRecWho(){
 async function startInstRecording(){
   const lessonId=$("instRecLesson").value;
   const pick=lessonPick(lessonId);
-  if(!pick||!pick.available||nonFlying(pick)){
+  if(!pick||!pick.available||pick.kind==="reading"){
     confirmDialog("Lesson not available","Pick an available lesson to record.",[
       {label:"OK",cls:"primary",fn:hideConfirm}]);
     return;
@@ -4053,6 +4009,5 @@ bindInstRunsActions();
 bindInstPeopleActions();
 $("startOverlay").style.display="none";   // the main menu now starts the lesson
 </script>
-<script src="/static/sop_wizard.js"></script>
 </body>
 </html>

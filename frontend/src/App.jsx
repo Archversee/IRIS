@@ -9,6 +9,8 @@ import LiveSession from "./pages/LiveSession.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
+import SopNew from "./sop/SopNew.jsx";
+import SopRules from "./sop/SopRules.jsx";
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -30,6 +32,8 @@ export default function App() {
           <Route path="/" element={<div className="container"><Home /></div>} />
           <Route path="/live" element={<LiveCoach />} />
           <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
+          <Route path="/sop/new" element={<SopNew />} />
+          <Route path="/sop/rules" element={<SopRules />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />

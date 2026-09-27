@@ -23,11 +23,20 @@
           "duration_min": 20
         },
         {
-          "id": "sop_library",
-          "title": "Aircraft SOPs",
-          "subtitle": "Upload & verify SOP rules per aircraft",
+          "id": "sop_upload",
+          "title": "Upload SOP",
+          "subtitle": "Draft flight rules from an aircraft SOP",
           "available": true,
-          "kind": "sop"
+          "kind": "sop",
+          "route": "/sop/new"
+        },
+        {
+          "id": "sop_rules",
+          "title": "SOP Rules",
+          "subtitle": "View and edit saved flight rules",
+          "available": true,
+          "kind": "sop",
+          "route": "/sop/rules"
         }
       ]
     },

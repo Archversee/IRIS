@@ -21,6 +21,7 @@ export default function InFlightPanel({ state, onMainMenu }) {
         <div className="mavis-hud__top">
           <span className="pill">{state?.phase || "—"}</span>
           <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
+          <SopChip sop={state?.sop} />
         </div>
 
         <MapCanvas state={state} />
@@ -42,4 +43,17 @@ export default function InFlightPanel({ state, onMainMenu }) {
       {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} />}
     </div>
   );
+}
+
+// Which SOP rule set this flight uses -- chosen at lesson start from the
+// aircraft loaded in the sim (MAVIS sop/runtime.py).
+function SopChip({ sop }) {
+  if (!sop) return null;
+  const text = sop.status === "active" ? `SOP · ${sop.name}` :
+    sop.status === "none" ? `No SOP rules for ${sop.aircraft_name}` :
+    sop.status === "no_profile" ? "No SOP · unknown aircraft" : "SOP rules unavailable";
+  const title = sop.status === "active"
+    ? `${sop.n_rules} rules for ${sop.aircraft_name}` + (sop.detected ? ` (simulator: ${sop.detected})` : " (default aircraft)")
+    : (sop.detected ? `Simulator reported: ${sop.detected} — ${sop.why}` : sop.why || "");
+  return <span className={"pill" + (sop.status === "active" ? "" : " mavis-sop-chip--off")} title={title}>{text}</span>;
 }

@@ -17,7 +17,7 @@ const SECTIONS = [
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", nested: <LessonTree /> },
+      { to: "/live?reading=lesson00_preflight", path: "/live", also: ["/sop"], label: "Curriculum", nested: <LessonTree /> },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight" },
     ],
   },
@@ -42,7 +42,7 @@ export default function Sidebar() {
         ✈ Flight Review System
       </NavLink>
       {SECTIONS.map((section) => {
-        const isActive = section.links.some((l) => pathname.startsWith(l.path));
+        const isActive = section.links.some((l) => [l.path, ...(l.also || [])].some((p) => pathname.startsWith(p)));
         return (
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
             <div className="sidebar__section-head">

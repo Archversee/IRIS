@@ -321,3 +321,28 @@ def aircraft_checks(rules: list[dict], profile: dict) -> list[str]:
         if r.get("metric") == "alt_msl" and max_alt and any(n > max_alt for n in nums):
             warns.append(f"'{t}': altitude above this aircraft's ceiling ({max_alt:g} ft)")
     return warns
+
+
+def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[int]) -> tuple[list[str], str | None]:
+    """Full check of a stored-unit rule as the reviewer edited it (draft or saved).
+    Returns (warnings, blocking_reason). Mutates `rule` (drops unknown phases,
+    corrects source_page, sets quote_score). A rule with a blocking reason
+    can't be saved; warnings are shown but don't block."""
+    issues, fatal = check_rule(rule, phases)
+    if not fatal and rule.get("kind") == "band" and rule.get("tol_hi") is None and rule.get("tol_lo") is None:
+        fatal = "set a tolerance (or make it a limit)"
+    quote = (rule.get("source_quote") or "").strip()
+    if quote and pages:
+        p_issues, p_fatal = check_provenance(rule, pages, ocr_pages)
+        issues += p_issues
+        if p_fatal:
+            if rule.get("origin") == "llm":
+                fatal = fatal or p_fatal
+            else:
+                issues.append("Source text not found in the SOP")
+    elif rule.get("origin") == "llm" and not quote:
+        issues.append("No source quote")
+        rule["quote_score"] = None
+    else:
+        rule["quote_score"] = None if not quote else rule.get("quote_score")
+    return issues, fatal

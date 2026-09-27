@@ -403,3 +403,6 @@
 .mavis-guide-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mavis-guide-table th, .mavis-guide-table td { border: 1px solid #232f3d; padding: 4px 8px; text-align: center; }
 .mavis-guide-table th { color: #8b98a5; font-weight: 600; }
+
+/* SOP rule set in use this flight (InFlightPanel) */
+.mavis-sop-chip--off { background: #232f3d; color: #8b98a5; }
