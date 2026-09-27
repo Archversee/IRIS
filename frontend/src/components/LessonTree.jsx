@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import { mavisApi } from "../live/api/mavisApi.js";
 
@@ -17,12 +17,17 @@ export default function LessonTree() {
   const activeLessonId = state?.lesson_id;
   const [openModule, setOpenModule] = useState(null);
   const nav = useNavigate();
+  const { pathname } = useLocation();
 
   if (!catalog?.modules?.length) {
     return <div className="sidebar__lesson-tree sidebar__lesson-tree--empty">Waiting for MAVIS…</div>;
   }
 
   async function pick(lesson) {
+    if (lesson.kind === "sop") {          // Aircraft SOP pages, not a flight
+      nav(lesson.route || "/sop/rules");
+      return;
+    }
     if (lesson.kind === "reading") {
       nav(`/live?reading=${encodeURIComponent(lesson.id)}`);
       return;
@@ -38,7 +43,10 @@ export default function LessonTree() {
   return (
     <div className="sidebar__lesson-tree">
       {catalog.modules.map((mod, i) => {
-        const open = openModule === i || (openModule === null && mod.lessons.some((l) => l.id === activeLessonId));
+        // SOP pages highlight by route; flying lessons only while on /live
+        const isOn = (l) => (l.kind === "sop" ? pathname === l.route
+          : pathname.startsWith("/live") && l.kind !== "reading" && l.id === activeLessonId);
+        const open = openModule === i || (openModule === null && mod.lessons.some(isOn));
         return (
           <div key={mod.title ?? i} className="sidebar__module">
             <button
@@ -54,7 +62,7 @@ export default function LessonTree() {
                   <button
                     type="button"
                     key={les.id}
-                    className={"sidebar__lesson" + (les.id === activeLessonId ? " is-active" : "")}
+                    className={"sidebar__lesson" + (isOn(les) ? " is-active" : "")}
                     disabled={les.available === false}
                     onClick={() => pick(les)}
                   >

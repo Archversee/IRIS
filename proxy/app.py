@@ -137,7 +137,22 @@ routes = [
     WebSocketRoute("/mavis/{path:path}", mavis_ws_proxy),
 ]
 
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles(html=True) only serves index.html for "/" -- a refresh or a
+    direct link to a client-side route (/live, /sop/new?draft=...) 404'd.
+    Fall back to index.html for any path that isn't a real file."""
+
+    async def get_response(self, path, scope):
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            if e.status_code != 404 or "." in path.rsplit("/", 1)[-1]:
+                raise                      # missing asset files still 404
+            return await super().get_response("index.html", scope)
+
+
 if FRONTEND_DIST.exists():
-    routes.append(Mount("/", app=StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend"))
+    routes.append(Mount("/", app=SPAStaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend"))
 
 app = Starlette(routes=routes)

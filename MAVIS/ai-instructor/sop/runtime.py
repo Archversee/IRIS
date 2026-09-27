@@ -76,5 +76,5 @@ class SopRuntime:
         if not act:
             return {**info, "status": "none"}
         self.active = act
-        return {**info, "status": "active", "ruleset_id": act["ruleset_id"], "filename": act["filename"],
-                "version": act["version"], "n_rules": len(act["rules"])}
+        return {**info, "status": "active", "rule_set_id": act["rule_set_id"], "name": act["name"],
+                "filename": act["filename"], "updated_at": act["updated_at"], "n_rules": len(act["rules"])}

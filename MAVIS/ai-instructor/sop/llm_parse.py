@@ -59,8 +59,13 @@ Known aircraft profiles on this system: {", ".join(aircraft_names) or "unknown"}
 
 
 class OllamaParser:
-    def __init__(self, url: str, model: str, timeout_s: float = 300.0, num_ctx: int = 8192):
+    def __init__(self, url: str, model: str, timeout_s: float = 300.0, num_ctx: int = 8192,
+                 think: bool | None = False):
         self.url = url.rstrip("/")
+        # Reasoning models (Qwen3.x, Gemma 4, DeepSeek-R1...) must have thinking
+        # OFF for structured output, or the JSON can land in the thinking channel.
+        # None = don't send the flag at all (models/Ollama builds that reject it).
+        self.think = think
         self.model = model
         self.timeout = timeout_s
         self.num_ctx = num_ctx
@@ -78,14 +83,21 @@ class OllamaParser:
             return False
 
     async def _chat(self, system: str, user: str, fmt) -> str:
+        body = {
+            "model": self.model, "stream": False, "format": fmt,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+            "options": {"temperature": 0, "num_ctx": self.num_ctx, "num_predict": 4096},
+        }
+        if self.think is not None:
+            body["think"] = self.think
         async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as cli:
-            r = await cli.post(f"{self.url}/api/chat", json={
-                "model": self.model, "stream": False, "format": fmt,
-                "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": user}],
-                # don't pin in VRAM beyond the coaching model's own keep_alive
-                "options": {"temperature": 0, "num_ctx": self.num_ctx, "num_predict": 4096},
-            })
+            r = await cli.post(f"{self.url}/api/chat", json=body)
+            if r.status_code == 400 and "think" in body and "think" in r.text.lower():
+                # this model/Ollama doesn't know the flag -- stop sending it
+                self.think = None
+                body.pop("think")
+                r = await cli.post(f"{self.url}/api/chat", json=body)
             r.raise_for_status()
             return r.json()["message"]["content"]
 
