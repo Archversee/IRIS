@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>AI Flight Instructor</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/sop_wizard.css">
 <style>
   :root{
     /* colors are set from config.yaml (web.theme) via JS; these are fallbacks */
@@ -1186,11 +1187,12 @@
     <div id="instHead">
       <h2>Instructor area</h2>
     </div>
-    <p id="instIntro">Record reference flights, edit saved runs, or manage instructors.</p>
+    <p id="instIntro">Record reference flights, edit saved runs, manage instructors, or set up aircraft SOP rules.</p>
     <div id="instTabs">
       <button type="button" class="instTab on" data-tab="record">Record reference</button>
       <button type="button" class="instTab" data-tab="manage">Manage runs</button>
       <button type="button" class="instTab" data-tab="people">Instructors</button>
+      <button type="button" class="instTab" data-tab="sop">Aircraft SOPs</button>
     </div>
     <div id="instBody">
       <div id="instTabRecord" class="instTabPanel on">
@@ -1214,7 +1216,23 @@
           <button type="button" class="instPrimaryBtn" id="instAddBtn">Add instructor</button>
         </div>
       </div>
+      <div id="instTabSop" class="instTabPanel">
+        <div class="sopTabHead">
+          <p>Upload an aircraft's SOP and MAVIS drafts checkable rules from it with the local model. You verify every rule, then bind the SOP to an aircraft.</p>
+          <button type="button" class="instPrimaryBtn" id="sopUploadBtn">Upload SOP</button>
+        </div>
+        <div id="sopTabList"></div>
+      </div>
     </div>
+  </div>
+</div>
+
+<div id="sopOverlay">
+  <div id="sopBox" class="popCard glass" style="width:auto;max-width:none;max-height:none">
+    <div id="sopHead"><h2>Aircraft SOP</h2><span class="doc" id="sopDocName"></span>
+      <div id="sopSteps"></div><button id="sopClose" title="Close" aria-label="Close">×</button></div>
+    <div id="sopBody"></div>
+    <div id="sopFoot"></div>
   </div>
 </div>
 
@@ -3741,6 +3759,8 @@ function switchInstTab(tab){
   $("instTabRecord").classList.toggle("on",tab==="record");
   $("instTabManage").classList.toggle("on",tab==="manage");
   $("instTabPeople").classList.toggle("on",tab==="people");
+  $("instTabSop").classList.toggle("on",tab==="sop");
+  if(tab==="sop"&&window.sopWizard)window.sopWizard.renderTab();
 }
 function fillInstRecLesson(){
   const sel=$("instRecLesson");
@@ -4007,5 +4027,6 @@ bindInstRunsActions();
 bindInstPeopleActions();
 $("startOverlay").style.display="none";   // the main menu now starts the lesson
 </script>
+<script src="/static/sop_wizard.js"></script>
 </body>
 </html>

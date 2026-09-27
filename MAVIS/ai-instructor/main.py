@@ -1147,7 +1147,7 @@ async def amain(cfg):
         initial_prompt=voice_cfg.get("stt_initial_prompt"),
     )
     app = build_app(state, actions, str(media_path), tts_dir=str(tts_dir),
-                    voice_store=voice_store, stt=stt, voice_cfg=voice_cfg)
+                    voice_store=voice_store, stt=stt, voice_cfg=voice_cfg, app_cfg=cfg)
     server = EmbeddedServer(uvicorn.Config(
         app, host=cfg["web"]["host"], port=cfg["web"]["port"], log_level="warning"))
     log.info("UI: http://<sim-pc-ip>:%s  (tablet on same LAN)", cfg["web"]["port"])
