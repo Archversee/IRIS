@@ -79,5 +79,21 @@ web:
     - { name: "Left panel (PFD)", url: "" }
     - { name: "Right panel (MFD)", url: "" }
 
+# Shared Postgres (same database IRIS uses). MAVIS only writes the sop_* tables
+# (db/schema_sop_rules.sql). DATABASE_URL in the environment overrides this.
+database:
+  url: postgresql://postgres:postgres@localhost:5432/postgres
+
+# SOP upload -> rules (sop/, docs/sop-rules.md). All local: Ollama + Tesseract.
+sop:
+  model: ""                # empty = same model as coach.model
+  ollama_url: ""           # empty = coach.ollama_url
+  llm_timeout_s: 300       # per section; a 14B model on a 5090 takes ~20-60 s
+  num_ctx: 8192            # context window for parsing (Ollama default 2048 is too small)
+  chunk_chars: 6000        # SOP text per LLM call
+  pdf_dir: data/sop        # originals kept for the page-image view in the wizard
+  tesseract_cmd: ""        # Windows: C:/Program Files/Tesseract-OCR/tesseract.exe (empty = on PATH)
+  ocr_lang: eng
+
 instructor:
   pin: "123456"            # bootstrap PIN for first-run Iceman seed (see data/instructors.json)

@@ -15,3 +15,6 @@ logs/
 *.mov
 *.m4v
 *.log
+
+# instructor-uploaded SOP PDFs (may be proprietary) -- see MAVIS/ai-instructor/docs/sop-rules.md
+MAVIS/ai-instructor/data/sop/

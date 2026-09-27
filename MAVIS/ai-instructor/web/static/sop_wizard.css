@@ -1,0 +1,177 @@
+/* ================= SOP -> rules wizard (instructor area) =================
+   Uses the tablet UI's own tokens (--acc/--good/--warn/--panel/--line/--txt/--dim)
+   so it follows the server-pushed accent and the light/dark body class. */
+
+/* ---- list inside the instructor overlay's "Aircraft SOPs" tab ---- */
+.sopTabHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.sopTabHead p{color:var(--dim);font-size:13px;line-height:1.5;max-width:520px}
+.sopList{display:flex;flex-direction:column;gap:8px}
+.sopItem{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;padding:12px 14px;
+  border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03);cursor:pointer;
+  text-align:left;color:var(--txt);font:inherit;width:100%}
+.sopItem:hover{border-color:var(--acc)}
+.sopItem b{font-size:.95rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sopItem .meta{grid-column:1;color:var(--dim);font-size:12px}
+.sopItem .right{grid-row:1/3;grid-column:2;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.sopBound{font-size:11.5px;color:var(--good);font-weight:600}
+
+.sopChip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;padding:3px 8px;
+  border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);white-space:nowrap}
+.sopChip.processing{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
+.sopChip.draft{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.sopChip.verified{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+.sopChip.failed{color:#fca5a5;border-color:rgba(248,113,113,.45)}
+.sopChip.ok::before,.sopChip.bad::before{content:"";width:7px;height:7px;border-radius:50%}
+.sopChip.ok::before{background:var(--good)}
+.sopChip.bad::before{background:#f87171}
+.sopChip.ok{color:var(--txt)}.sopChip.bad{color:var(--txt)}
+
+/* ---- wizard shell ---- */
+#sopOverlay{position:fixed;inset:0;z-index:226;display:none;padding:18px;background:rgba(3,6,12,.78);
+  backdrop-filter:blur(4px)}
+#sopOverlay.on{display:flex}
+#sopBox{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;padding:0}
+#sopHead{display:flex;align-items:center;gap:16px;padding:14px 18px;border-bottom:1px solid var(--line);flex-shrink:0}
+#sopHead h2{font-size:1.1rem;font-weight:700;margin:0;white-space:nowrap}
+#sopHead .doc{color:var(--dim);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#sopSteps{display:flex;gap:4px;margin-left:auto;flex-shrink:0}
+.sopStep{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border-radius:999px;font-size:12.5px;
+  color:var(--dim);font-weight:600;border:1px solid transparent}
+.sopStep i{font-style:normal;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  font-size:11.5px;border:1px solid var(--line);background:var(--panel2)}
+.sopStep.on{color:var(--txt);border-color:var(--line);background:var(--panel2)}
+.sopStep.on i{background:var(--acc);color:#04101f;border-color:var(--acc)}
+.sopStep.done i{background:color-mix(in srgb,var(--good) 25%,transparent);color:var(--good);
+  border-color:color-mix(in srgb,var(--good) 50%,var(--line))}
+#sopClose{flex-shrink:0;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--txt);cursor:pointer;font-size:18px;line-height:1}
+#sopBody{flex:1;min-height:0;overflow:auto;padding:18px}
+#sopFoot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line);flex-shrink:0}
+#sopFoot .grow{flex:1;color:var(--dim);font-size:12.5px;min-width:0}
+.sopBtn{padding:9px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);
+  font-size:.88rem;cursor:pointer;font-weight:600;white-space:nowrap}
+.sopBtn.primary{background:var(--acc);border-color:var(--acc);color:#04101f;font-weight:700}
+.sopBtn.good{background:color-mix(in srgb,var(--good) 22%,transparent);border-color:color-mix(in srgb,var(--good) 55%,var(--line))}
+.sopBtn.bad{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.45)}
+.sopBtn:disabled{opacity:.45;cursor:not-allowed}
+.sopBtn.small{padding:5px 10px;font-size:.78rem}
+
+/* ---- stage 1 ---- */
+.sopS1{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.sopHealth{display:flex;flex-wrap:wrap;gap:8px}
+.sopDrop{border:1.5px dashed color-mix(in srgb,var(--acc) 55%,var(--line));border-radius:16px;padding:40px 24px;
+  text-align:center;background:color-mix(in srgb,var(--acc) 5%,transparent);cursor:pointer;transition:background .15s}
+.sopDrop.over,.sopDrop:hover{background:color-mix(in srgb,var(--acc) 12%,transparent)}
+.sopDrop h3{font-size:1.05rem;margin-bottom:6px}
+.sopDrop p{color:var(--dim);font-size:13px;line-height:1.5}
+.sopNote{color:var(--dim);font-size:12.5px;line-height:1.6}
+.sopNote b{color:var(--txt)}
+.sopProg{border:1px solid var(--line);border-radius:14px;padding:18px;background:rgba(255,255,255,.03)}
+.sopProg .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:10px}
+.sopProg .lbl span{color:var(--dim)}
+.sopBar{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden}
+.sopBar i{display:block;height:100%;background:var(--acc);border-radius:4px;transition:width .3s}
+.sopStages{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.sopStages span{font-size:11.5px;color:var(--dim);padding:3px 9px;border-radius:999px;border:1px solid var(--line)}
+.sopStages span.on{color:var(--txt);border-color:var(--acc)}
+.sopStages span.done{color:var(--good)}
+.sopWarn{border-left:3px solid var(--warn);padding:8px 12px;background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border-radius:0 8px 8px 0;font-size:12.5px;line-height:1.5}
+.sopErr{border-left:3px solid #f87171;padding:10px 12px;background:rgba(248,113,113,.1);border-radius:0 8px 8px 0;
+  font-size:13px;line-height:1.5}
+
+/* ---- stage 2 ---- */
+.sopS2{display:grid;grid-template-columns:minmax(300px,38%) 1fr;gap:16px;height:100%;min-height:0}
+.sopRules{display:flex;flex-direction:column;min-height:0}
+.sopFilters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.sopFilters button{font:inherit;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--dim)}
+.sopFilters button.on{background:var(--panel2);color:var(--txt);border-color:var(--acc)}
+.sopRuleList{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;min-height:0}
+.sopPageHdr{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);font-weight:700;
+  margin:8px 2px 0}
+.sopRule{text-align:left;font:inherit;color:var(--txt);display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;
+  align-items:start;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03);
+  cursor:pointer}
+.sopRule:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.sopRule.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset;background:var(--panel2)}
+.sopRule .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--dim)}
+.sopRule .dot.warning{background:#f87171}.sopRule .dot.caution{background:var(--warn)}.sopRule .dot.advisory{background:var(--acc)}
+.sopRule b{font-size:.9rem;font-weight:650}
+.sopRule .sum{grid-column:2/4;color:var(--dim);font-size:12.5px;line-height:1.45}
+.sopRule .st{font-size:11px;font-weight:700}
+.sopRule .st.approved{color:var(--good)}.sopRule .st.rejected,.sopRule .st.auto_rejected{color:#fca5a5}
+.sopRule .st.draft{color:var(--warn)}
+.sopRule .flags{grid-column:2/4;display:flex;gap:5px;flex-wrap:wrap}
+.sopRule .flags span{font-size:10.5px;padding:1px 7px;border-radius:6px;background:color-mix(in srgb,var(--warn) 14%,transparent);
+  color:var(--warn)}
+.sopRule.st-rejected,.sopRule.st-auto_rejected{opacity:.62}
+.sopEmpty{color:var(--dim);font-style:italic;padding:24px 8px;text-align:center;font-size:13px}
+
+.sopEdit{display:flex;flex-direction:column;gap:14px;min-height:0;overflow:auto;padding-right:4px}
+.sopCard{border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(255,255,255,.03)}
+.sopCard h3{font-size:.95rem;font-weight:700;margin-bottom:4px}
+.sopPlain{font-size:1rem;line-height:1.5;margin:6px 0 2px}
+.sopIssues{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.sopGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 12px;margin-top:12px}
+.sopField{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sopField.wide{grid-column:1/-1}
+.sopField label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:650}
+.sopField input,.sopField select,.sopField textarea{width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--txt);font:inherit;font-size:.9rem;outline:none;color-scheme:dark}
+body.light .sopField input,body.light .sopField select,body.light .sopField textarea{color-scheme:light}
+.sopField select option{background:#101828;color:#e8eefb}
+body.light .sopField select option{background:#fff;color:#12233d}
+.sopField input:focus,.sopField select:focus,.sopField textarea:focus{border-color:var(--acc)}
+.sopField input:disabled,.sopField select:disabled,.sopField textarea:disabled{opacity:.7}
+.sopField .unit{position:relative}
+.sopField .unit input{padding-right:48px}
+.sopField .unit em{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-style:normal;color:var(--dim);font-size:12px}
+.sopPhases{display:flex;flex-wrap:wrap;gap:5px}
+.sopPhases button{font:inherit;font-size:11.5px;padding:4px 9px;border-radius:8px;border:1px solid var(--line);
+  background:transparent;color:var(--dim);cursor:pointer}
+.sopPhases button.on{background:color-mix(in srgb,var(--acc) 20%,transparent);color:var(--txt);border-color:var(--acc)}
+.sopCond{display:grid;grid-template-columns:1.6fr .7fr 1fr auto;gap:6px;margin-bottom:6px}
+.sopQuote{border-left:3px solid var(--acc);padding:8px 12px;margin:8px 0 0;font-size:.9rem;line-height:1.55;
+  background:color-mix(in srgb,var(--acc) 6%,transparent);border-radius:0 8px 8px 0;white-space:pre-wrap}
+.sopActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.sopSrcHead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sopSrcHead h3{margin:0;flex:1}
+.sopSeg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.sopSeg button{font:inherit;font-size:12px;padding:5px 10px;border:none;background:transparent;color:var(--dim);cursor:pointer}
+.sopSeg button.on{background:var(--panel2);color:var(--txt)}
+.sopPage{max-height:520px;overflow:auto;border-radius:10px;border:1px solid var(--line);background:#fff}
+.sopPage img{display:block;width:100%;height:auto}
+.sopPageText{max-height:520px;overflow:auto;white-space:pre-wrap;font-size:12.5px;line-height:1.55;padding:12px 14px;
+  border-radius:10px;border:1px solid var(--line);background:var(--panel2)}
+.sopPageText mark{background:color-mix(in srgb,var(--warn) 45%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.sopKeys{color:var(--dim);font-size:11.5px}
+.sopKeys kbd{font:inherit;font-size:10.5px;padding:1px 5px;border-radius:4px;border:1px solid var(--line);background:var(--panel2)}
+
+/* ---- stage 3 ---- */
+.sopS3{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.sopAircraft{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.sopAc{text-align:left;font:inherit;color:var(--txt);padding:14px 16px;border-radius:14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.03);cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.sopAc:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.sopAc.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset;background:var(--panel2)}
+.sopAc b{font-size:.95rem}
+.sopAc small{color:var(--dim);font-size:12px;line-height:1.45}
+.sopSummary{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.sopStat{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:rgba(255,255,255,.03)}
+.sopStat b{display:block;font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
+.sopStat span{color:var(--dim);font-size:12px}
+.sopDone{text-align:center;padding:30px 10px}
+.sopDone h3{font-size:1.2rem;margin:10px 0 6px}
+.sopDone p{color:var(--dim);font-size:13.5px;line-height:1.5}
+.sopDone .tick{width:54px;height:54px;border-radius:50%;margin:0 auto;display:grid;place-items:center;font-size:26px;
+  background:color-mix(in srgb,var(--good) 20%,transparent);color:var(--good);border:1px solid color-mix(in srgb,var(--good) 55%,transparent)}
+
+@media (max-width:900px){
+  #sopOverlay{padding:8px}
+  #sopHead{flex-wrap:wrap}
+  #sopSteps{margin-left:0;order:3;width:100%}
+  .sopStep span{display:none}
+  .sopS2{grid-template-columns:1fr;height:auto}
+  .sopRuleList{max-height:40vh}
+}
