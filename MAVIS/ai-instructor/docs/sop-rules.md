@@ -164,7 +164,8 @@ sop:
 
 - **Postgres down:** MAVIS still flies. Uploading and reviewing still work, because drafts are local files; Save and the SOP Rules page answer 503 until Postgres is back.
 - **Ollama down:** the PDF is still read. You can add rules by hand, or press **Run LLM again** once Ollama is up.
-- **MAVIS restarted mid-processing:** the draft is marked failed, and **Run the LLM again** re-drafts it from the pages already read.
+- **MAVIS restarted mid-processing, or processing failed:** the draft is marked failed. **Run again** re-drafts from the pages already read, or, if reading the PDF never finished, re-reads the PDF kept in `data/sop/` first.
+- **Windows "Access is denied" (WinError 5) on `data/sop/drafts/...`:** another program (usually Defender, or OneDrive syncing `Downloads`) briefly held the draft file open. MAVIS now serialises its own draft-file access and retries these writes. If it still happens, press **Run again**. If it keeps happening, move the IRIS folder out of `Downloads`/OneDrive, or add `MAVIS\ai-instructor\data\sop` to Defender's exclusions.
 - **Missing Python dependencies:** the `/sop` API isn't mounted, and MAVIS runs as before.
 
 ## Tests
