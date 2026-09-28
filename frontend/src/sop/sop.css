@@ -177,3 +177,4 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
   .sop-list { position: static; max-height: 45vh; }
   .sop-steps { grid-template-columns: repeat(2, 1fr); }
 }
+.sop-health__why { flex-basis: 100%; margin: 2px 0 0; }

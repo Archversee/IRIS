@@ -47,7 +47,7 @@ function Health({ status }) {
   if (!status) return <div className="sop-health"><span className="sop-chip">Checking local services…</span></div>;
   const items = [
     [status.llm, `Local LLM · ${status.model}`, status.llm ? "" : "Not running in Ollama — rules can still be added by hand"],
-    [status.ocr, "OCR (Tesseract)", status.ocr ? "" : "Not installed — scanned pages will be skipped"],
+    [status.ocr, "OCR (Tesseract)", status.ocr_detail || (status.ocr ? "" : "Not installed — scanned pages will be skipped")],
     [status.db, "Rules database", status.db ? "" : "Postgres not reachable — you can review, but Save will fail"],
     [!status.flying, "No lesson in progress", status.flying ? "Uploading is paused until the lesson ends" : ""],
   ];
@@ -57,6 +57,7 @@ function Health({ status }) {
         <span key={t} className={"sop-chip " + (ok ? "sop-chip--ok" : "sop-chip--bad")} title={why}>{t}</span>
       ))}
       {status.busy && <span className="sop-chip sop-chip--warn">Another SOP is being processed</span>}
+      {!status.ocr && status.ocr_detail && <div className="sop-warn sop-health__why">OCR unavailable: {status.ocr_detail}</div>}
     </div>
   );
 }

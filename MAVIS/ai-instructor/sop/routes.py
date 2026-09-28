@@ -131,8 +131,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
     @r.get("/status")
     async def status():
         db_ok, llm_ok = await asyncio.gather(store.ping(), parser.available())
+        ocr_ok, ocr_detail = await asyncio.get_running_loop().run_in_executor(
+            None, extract.ocr_check, tess, sop_cfg.get("ocr_lang", "eng"))
         return {"db": db_ok, "llm": llm_ok, "model": parser.model,
-                "ocr": await asyncio.get_running_loop().run_in_executor(None, extract.ocr_available, tess),
+                "ocr": ocr_ok, "ocr_detail": ocr_detail,
                 "busy": jobs.busy, "flying": is_flying()}
 
     @r.get("/meta")
