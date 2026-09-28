@@ -74,15 +74,52 @@ def _ocr_page(page, tesseract_cmd: str | None, lang: str) -> tuple[str, float | 
     return text, (sum(confs) / len(confs) if confs else None)
 
 
-def ocr_available(tesseract_cmd: str | None = None) -> bool:
+def ocr_check(tesseract_cmd: str | None = None, lang: str = "eng") -> tuple[bool, str]:
+    """(usable, human-readable reason). Shown on /sop/status so a red OCR chip
+    says exactly what's wrong instead of just 'false'."""
+    import os
+    import shutil
     try:
         import pytesseract
-        if tesseract_cmd:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-        pytesseract.get_tesseract_version()
-        return True
+    except ImportError:
+        return False, ("Python package 'pytesseract' is not installed in MAVIS's venv - run "
+                       ".venv\\Scripts\\pip install pytesseract pillow")
+    cmd = (tesseract_cmd or "").strip().strip('"').strip("'")
+    if cmd:
+        if not os.path.isfile(cmd):
+            hint = ""
+            if "\t" in cmd or "\n" in cmd:
+                hint = (" (the path contains a TAB/newline character: in config.yaml use forward slashes, "
+                        "e.g. \"C:/Program Files/Tesseract-OCR/tesseract.exe\")")
+            return False, f"sop.tesseract_cmd points to a file that doesn't exist: {cmd!r}{hint}"
+        pytesseract.pytesseract.tesseract_cmd = cmd
+    else:
+        found = shutil.which("tesseract")
+        default = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if not found and os.path.isfile(default):
+            pytesseract.pytesseract.tesseract_cmd = default      # installed, just not on PATH
+            cmd = default
+        elif not found:
+            return False, ("tesseract.exe not found: it isn't on PATH for the process running MAVIS "
+                           "(restart MAVIS from a NEW terminal after installing) and sop.tesseract_cmd "
+                           "in config.yaml is empty - set it to the full path of tesseract.exe")
+    try:
+        ver = pytesseract.get_tesseract_version()
+    except Exception as e:
+        return False, f"tesseract could not be run ({type(e).__name__}: {e})"
+    try:
+        langs = pytesseract.get_languages(config="")
     except Exception:
-        return False
+        langs = []
+    missing = [x for x in lang.split("+") if langs and x not in langs]
+    if missing:
+        return False, (f"Tesseract {ver} works, but language data for {missing} is missing "
+                       f"(installed: {', '.join(langs) or 'none'}) - check the tessdata folder / TESSDATA_PREFIX")
+    return True, f"Tesseract {ver} ({cmd or 'on PATH'})"
+
+
+def ocr_available(tesseract_cmd: str | None = None, lang: str = "eng") -> bool:
+    return ocr_check(tesseract_cmd, lang)[0]
 
 
 def extract_pages(pdf_bytes: bytes, tesseract_cmd: str | None = None, ocr_lang: str = "eng",
