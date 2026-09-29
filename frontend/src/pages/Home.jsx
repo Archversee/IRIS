@@ -30,13 +30,15 @@ export default function Home() {
       <button type="button" className="landing__half landing__half--mavis" onClick={openMavis} disabled={busy}>
         <span className="landing__label">
           <span className="landing__title">MAVIS</span>
-          <span className="landing__sub">Fly · Basic Flight: Your First Circuit</span>
+          <span className="landing__full">(Multimodal Aviation Voice Instructor System)</span>
+          <span className="landing__sub">Learn · Fly · Practice</span>
         </span>
       </button>
       <button type="button" className="landing__half landing__half--iris" onClick={() => nav("/sessions")}>
         <span className="landing__label">
           <span className="landing__title">IRIS</span>
-          <span className="landing__sub">Review · Sessions &amp; Debrief</span>
+          <span className="landing__full">(Integrated Review Insight System)</span>
+          <span className="landing__sub">Review · Analyse · Debrief</span>
         </span>
       </button>
     </div>
