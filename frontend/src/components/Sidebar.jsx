@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
-import { PlaneIcon, BookIcon, CompassIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -20,7 +20,7 @@ const SECTIONS = [
     sub: "Live",
     links: [
       { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree /> },
-      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <CompassIcon /> },
+      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
     ],
   },
   {
@@ -37,10 +37,10 @@ const SECTIONS = [
 
 // Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
 // icon-only; otherwise it stays at the dragged width and shows full names.
-const COLLAPSED_W = 60;
-const COLLAPSE_BELOW = 150;
-const DEFAULT_W = 220;
-const MAX_W = 380;
+const COLLAPSED_W = 56;
+const COLLAPSE_BELOW = 130;
+const DEFAULT_W = 190;
+const MAX_W = 240;
 const STORAGE_KEY = "sidebarWidth";
 
 function loadWidth() {
@@ -95,7 +95,7 @@ export default function Sidebar() {
       style={{ width }}
     >
       <NavLink to="/" className="sidebar__brand" title="Flight Review System">
-        <PlaneIcon />
+        <HomeIcon />
         <span className="sidebar__text">Flight Review System</span>
       </NavLink>
       {SECTIONS.map((section) => {

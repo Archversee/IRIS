@@ -11,19 +11,17 @@ import { mavisApi } from "../live/api/mavisApi.js";
 // (lesson01_pattern); IRIS goes to the Sessions list.
 const FIRST_CIRCUIT = "lesson01_pattern";
 
-// "(Multimodal Aviation ...)" with each word's first letter bolded, so the
-// acronym reads out of the full name.
+// "Multimodal Aviation ..." with each word's first letter bolded and
+// underlined, so the acronym reads out of the full name.
 function FullName({ text }) {
   return (
     <span className="landing__full">
-      (<span className="landing__full-text">
-        {text.split(" ").map((word, i) => (
-          <span key={i}>
-            {i > 0 && " "}
-            <b>{word[0]}</b>{word.slice(1)}
-          </span>
-        ))}
-      </span>)
+      {text.split(" ").map((word, i) => (
+        <span key={i}>
+          {i > 0 && " "}
+          <b>{word[0]}</b>{word.slice(1)}
+        </span>
+      ))}
     </span>
   );
 }

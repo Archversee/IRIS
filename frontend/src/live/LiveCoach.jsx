@@ -97,7 +97,7 @@ export default function LiveCoach({ freeFlight = false }) {
   }
 
   return (
-    <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell"}>
+    <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell mavis-shell--menu"}>
       <div className="mavis-topbar">
         <span className={`live-coach__status live-coach__status--${status}`}>MAVIS: {status}</span>
         {inLesson && !state?.scorecard && (
