@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar.jsx";
 import Home from "./pages/Home.jsx";
@@ -11,22 +10,12 @@ import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  // The landing page is full-screen -- no sidebar or toggle there.
+  // The landing page is full-screen -- no sidebar there.
   const isLanding = useLocation().pathname === "/";
 
   return (
     <div className="shell">
-      {sidebarOpen && !isLanding && <Sidebar />}
-      {!isLanding && <button
-        type="button"
-        className="shell__sidebar-toggle"
-        style={{ left: sidebarOpen ? 220 : 0 }}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        onClick={() => setSidebarOpen((v) => !v)}
-      >
-        {sidebarOpen ? "‹" : "›"}
-      </button>}
+      {!isLanding && <Sidebar />}
       <main className="shell__main">
         <Routes>
           <Route path="/" element={<Home />} />

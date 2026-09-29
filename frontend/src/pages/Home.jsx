@@ -11,6 +11,23 @@ import { mavisApi } from "../live/api/mavisApi.js";
 // (lesson01_pattern); IRIS goes to the Sessions list.
 const FIRST_CIRCUIT = "lesson01_pattern";
 
+// "(Multimodal Aviation ...)" with each word's first letter bolded, so the
+// acronym reads out of the full name.
+function FullName({ text }) {
+  return (
+    <span className="landing__full">
+      (<span className="landing__full-text">
+        {text.split(" ").map((word, i) => (
+          <span key={i}>
+            {i > 0 && " "}
+            <b>{word[0]}</b>{word.slice(1)}
+          </span>
+        ))}
+      </span>)
+    </span>
+  );
+}
+
 export default function Home() {
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -30,14 +47,14 @@ export default function Home() {
       <button type="button" className="landing__half landing__half--mavis" onClick={openMavis} disabled={busy}>
         <span className="landing__label">
           <span className="landing__title">MAVIS</span>
-          <span className="landing__full">(Multimodal Aviation Voice Instructor System)</span>
+          <FullName text="Multimodal Aviation Voice Instructor System" />
           <span className="landing__sub">Learn · Fly · Practice</span>
         </span>
       </button>
       <button type="button" className="landing__half landing__half--iris" onClick={() => nav("/sessions")}>
         <span className="landing__label">
           <span className="landing__title">IRIS</span>
-          <span className="landing__full">(Integrated Review Insight System)</span>
+          <FullName text="Integrated Review Insight System" />
           <span className="landing__sub">Review · Analyse · Debrief</span>
         </span>
       </button>

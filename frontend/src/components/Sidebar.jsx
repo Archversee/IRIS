@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
+import { PlaneIcon, BookIcon, CompassIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -17,29 +19,84 @@ const SECTIONS = [
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", nested: <LessonTree /> },
-      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight" },
+      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree /> },
+      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <CompassIcon /> },
     ],
   },
   {
     label: "IRIS",
     sub: "Debrief & Analysis",
     links: [
-      { to: "/monitor", path: "/monitor", label: "Live Monitor" },
-      { to: "/sessions", path: "/sessions", label: "Sessions" },
-      { to: "/upload", path: "/upload", label: "Upload" },
-      { to: "/aoi-zones", path: "/aoi-zones", label: "AOI Zones" },
+      { to: "/monitor", path: "/monitor", label: "Live Monitor", icon: <PulseIcon /> },
+      { to: "/sessions", path: "/sessions", label: "Sessions", icon: <ListIcon /> },
+      { to: "/upload", path: "/upload", label: "Upload", icon: <UploadIcon /> },
+      { to: "/aoi-zones", path: "/aoi-zones", label: "AOI Zones", icon: <TargetIcon /> },
     ],
   },
 ];
 
+// Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
+// icon-only; otherwise it stays at the dragged width and shows full names.
+const COLLAPSED_W = 60;
+const COLLAPSE_BELOW = 150;
+const DEFAULT_W = 220;
+const MAX_W = 380;
+const STORAGE_KEY = "sidebarWidth";
+
+function loadWidth() {
+  try {
+    const w = Number(localStorage.getItem(STORAGE_KEY));
+    return w >= COLLAPSED_W && w <= MAX_W ? w : DEFAULT_W;
+  } catch {
+    return DEFAULT_W;
+  }
+}
+
 export default function Sidebar() {
   const { pathname } = useLocation();
+  const [width, setWidth] = useState(loadWidth);
+  const [dragging, setDragging] = useState(false);
+  const lastExpanded = useRef(width > COLLAPSED_W ? width : DEFAULT_W);
+  const collapsed = width < COLLAPSE_BELOW;
+
+  useEffect(() => {
+    if (dragging) return;
+    try { localStorage.setItem(STORAGE_KEY, String(width)); } catch { /* storage unavailable -- fine */ }
+  }, [width, dragging]);
+
+  function startDrag(e) {
+    e.preventDefault();
+    setDragging(true);
+    const onMove = (ev) => setWidth(Math.min(MAX_W, Math.max(COLLAPSED_W, ev.clientX)));
+    const onUp = (ev) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const w = Math.min(MAX_W, Math.max(COLLAPSED_W, ev.clientX));
+      if (w < COLLAPSE_BELOW) {
+        setWidth(COLLAPSED_W);
+      } else {
+        setWidth(w);
+        lastExpanded.current = w;
+      }
+      setDragging(false);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  // Double-clicking the edge flips between icon-only and the last full width.
+  function toggle() {
+    setWidth(collapsed ? lastExpanded.current : COLLAPSED_W);
+  }
 
   return (
-    <aside className="sidebar">
-      <NavLink to="/" className="sidebar__brand">
-        ✈ Flight Review System
+    <aside
+      className={"sidebar" + (collapsed ? " is-collapsed" : "") + (dragging ? " is-dragging" : "")}
+      style={{ width }}
+    >
+      <NavLink to="/" className="sidebar__brand" title="Flight Review System">
+        <PlaneIcon />
+        <span className="sidebar__text">Flight Review System</span>
       </NavLink>
       {SECTIONS.map((section) => {
         const isActive = section.links.some((l) => pathname.startsWith(l.path));
@@ -47,19 +104,28 @@ export default function Sidebar() {
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
             <div className="sidebar__section-head">
               <span className="sidebar__section-label">{section.label}</span>
-              <span className="sidebar__section-sub">{section.sub}</span>
+              <span className="sidebar__section-sub sidebar__text">{section.sub}</span>
             </div>
             {section.links.map((link) => (
               <div key={link.to}>
-                <NavLink to={link.to} className="sidebar__link">
-                  {link.label}
+                <NavLink to={link.to} className="sidebar__link" title={collapsed ? link.label : undefined}>
+                  {link.icon}
+                  <span className="sidebar__text">{link.label}</span>
                 </NavLink>
-                {link.nested}
+                {!collapsed && link.nested}
               </div>
             ))}
           </div>
         );
       })}
+      <div
+        className="sidebar__resizer"
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize · double-click to collapse/expand"
+        onPointerDown={startDrag}
+        onDoubleClick={toggle}
+      />
     </aside>
   );
 }
