@@ -1,8 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { rmSync } from "node:fs";
+import { resolve } from "node:path";
+
+// public/media is also MAVIS's web.media_dir, so it can hold local-only
+// sim clips (media/videos, ~900 MB each) -- keep those out of the build.
+const dropMediaVideos = {
+  name: "drop-media-videos",
+  closeBundle() {
+    rmSync(resolve(__dirname, "dist/media/videos"), { recursive: true, force: true });
+  },
+};
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dropMediaVideos],
   server: {
     port: 5173,
     // Proxy /api -> FastAPI so the frontend can call same-origin in dev.

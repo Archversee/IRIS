@@ -13,8 +13,6 @@ ai-instructor/data/models/ecapa/*.ckpt
 ai-instructor/web/static/models/*
 !ai-instructor/web/static/models/.gitkeep
 
-# Mock-mode out-the-window clips (~900 MB each; distributed by folder copy, not git)
-ai-instructor/media/videos/mock_video_*.mp4
 
 # Runtime-generated state
 ai-instructor/data/recordings/last_run.json
@@ -28,8 +26,6 @@ MAVIS_AI_Instructor.pptx
 ai-instructor/data/recordings/supabase/
 # Replay placeholders: the logged flight + its screen recording (raw trainee data, large)
 ai-instructor/data/recordings/replay/
-ai-instructor/media/videos/replay.mp4
-ai-instructor/media/videos/replay.web.mp4
 # Runtime state with credentials / biometrics (seeded or enrolled on first run)
 ai-instructor/data/instructors.json
 ai-instructor/data/voices/*

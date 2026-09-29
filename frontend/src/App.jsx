@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar.jsx";
 import Home from "./pages/Home.jsx";
 import Sessions from "./pages/Sessions.jsx";
@@ -12,11 +12,13 @@ import LiveCoach from "./live/LiveCoach.jsx";
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The landing page is full-screen -- no sidebar or toggle there.
+  const isLanding = useLocation().pathname === "/";
 
   return (
     <div className="shell">
-      {sidebarOpen && <Sidebar />}
-      <button
+      {sidebarOpen && !isLanding && <Sidebar />}
+      {!isLanding && <button
         type="button"
         className="shell__sidebar-toggle"
         style={{ left: sidebarOpen ? 220 : 0 }}
@@ -24,10 +26,10 @@ export default function App() {
         onClick={() => setSidebarOpen((v) => !v)}
       >
         {sidebarOpen ? "‹" : "›"}
-      </button>
+      </button>}
       <main className="shell__main">
         <Routes>
-          <Route path="/" element={<div className="container"><Home /></div>} />
+          <Route path="/" element={<Home />} />
           <Route path="/live" element={<LiveCoach />} />
           <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
           <Route path="/monitor" element={<LiveSession />} />

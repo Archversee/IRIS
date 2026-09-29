@@ -1,25 +1,44 @@
-import { NavLink } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { mavisApi } from "../live/api/mavisApi.js";
+
+// Full-screen landing: splash-bg.jpeg split down the middle, left half is
+// MAVIS, right half is IRIS. The sidebar is hidden on this route (see
+// App.jsx). The image lives in frontend/public/media, served by the
+// frontend itself, so it shows even when MAVIS isn't running.
+//
+// MAVIS goes straight into Basic Flight -> Your First Circuit
+// (lesson01_pattern); IRIS goes to the Sessions list.
+const FIRST_CIRCUIT = "lesson01_pattern";
 
 export default function Home() {
+  const nav = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  async function openMavis() {
+    setBusy(true);
+    try {
+      await mavisApi.selectLesson(FIRST_CIRCUIT);
+    } catch {
+      // best-effort -- /live's own menu shows MAVIS's real status if it's down
+    }
+    nav("/live");
+  }
+
   return (
-    <div>
-      <h1>Flight Review System</h1>
-      <p className="muted">
-        Fly with MAVIS's live AI coaching, then review the flight -- telemetry, coaching
-        callouts, eye-tracking and video -- in IRIS once it's over.
-      </p>
-      <div className="row" style={{ marginTop: 24 }}>
-        <div className="col card">
-          <h3>MAVIS -- fly now</h3>
-          <p className="muted">Live AI coaching and real-time flight monitoring.</p>
-          <NavLink to="/live?reading=lesson00_preflight"><button>Live Coach</button></NavLink>
-        </div>
-        <div className="col card">
-          <h3>IRIS -- review</h3>
-          <p className="muted">Past sessions, manual uploads, and AOI zone setup.</p>
-          <NavLink to="/sessions"><button className="secondary">Sessions</button></NavLink>
-        </div>
-      </div>
+    <div className="landing">
+      <button type="button" className="landing__half landing__half--mavis" onClick={openMavis} disabled={busy}>
+        <span className="landing__label">
+          <span className="landing__title">MAVIS</span>
+          <span className="landing__sub">Fly · Basic Flight: Your First Circuit</span>
+        </span>
+      </button>
+      <button type="button" className="landing__half landing__half--iris" onClick={() => nav("/sessions")}>
+        <span className="landing__label">
+          <span className="landing__title">IRIS</span>
+          <span className="landing__sub">Review · Sessions &amp; Debrief</span>
+        </span>
+      </button>
     </div>
   );
 }

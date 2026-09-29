@@ -66,7 +66,7 @@ voice:
 web:
   host: 0.0.0.0            # tablet connects over LAN
   port: 6945
-  media_dir: media         # avatar: intro_beginner.mp4, intro_training.mp4, idle.mp4
+  media_dir: ../../frontend/public/media  # shared with the IRIS frontend (served at /media). avatar: intro_beginner.mp4, intro_training.mp4, idle.mp4
                            # videos: mock_video_beginner.mp4, mock_video_training.mp4
   theme:
     accent: blue           # blue | red | green | purple | amber | teal | pink,
