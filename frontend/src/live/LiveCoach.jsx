@@ -99,12 +99,16 @@ export default function LiveCoach({ freeFlight = false }) {
   return (
     <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell mavis-shell--menu"}>
       <div className="mavis-topbar">
-        <span className={`live-coach__status live-coach__status--${status}`}>MAVIS: {status}</span>
         {inLesson && !state?.scorecard && (
           <button type="button" className="secondary" onClick={() => setConfirmingEnd(true)}>
             ‹ End Session
           </button>
         )}
+        <span
+          className={"mavis-status-dot" + (status === "open" ? " is-up" : "")}
+          title={status === "open" ? "MAVIS backend running" : `MAVIS backend down (${status})`}
+          aria-label={status === "open" ? "MAVIS backend running" : "MAVIS backend down"}
+        />
       </div>
       {inLesson ? (
         <InFlightPanel state={state} onMainMenu={backToDashboardHome} />

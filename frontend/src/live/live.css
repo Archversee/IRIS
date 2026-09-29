@@ -11,26 +11,26 @@
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
 }
 
-.live-coach__status {
-  margin-bottom: 12px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  display: inline-block;
-  font-weight: 600;
-  background: #2a1414;
-  color: #ff8a8a;
-}
-
-.live-coach__status--open {
-  background: #12261a;
-  color: #7ee6a6;
-}
-
 .mavis-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+/* MAVIS's own topbar: [End Session] then the status dot, top-right. */
+.mavis-shell > .mavis-topbar { justify-content: flex-end; gap: 12px; }
+
+/* MAVIS backend status: green glow when connected, red when down. */
+.mavis-status-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: #ff4d4d; box-shadow: 0 0 6px 2px rgba(255, 77, 77, 0.7);
+}
+.mavis-status-dot.is-up {
+  background: #3fe07a; box-shadow: 0 0 8px 3px rgba(63, 224, 122, 0.75);
+  animation: mavis-status-pulse 2s ease-in-out infinite;
+}
+@keyframes mavis-status-pulse {
+  50% { box-shadow: 0 0 14px 5px rgba(63, 224, 122, 0.45); }
 }
 
 /* ---- Main menu shell ---- */
@@ -169,6 +169,9 @@
   flex: 1; max-width: none; margin: 0; border-radius: 0;
   padding: 56px 32px 32px; background-color: #0b0e13;
 }
+/* Mode cards stretch down to the bottom of the screen. */
+.mavis-shell--menu .mavis-menu__main { display: flex; flex-direction: column; }
+.mavis-shell--menu .mavis-modes { flex: 1; }
 
 .mavis-shell--hud {
   padding: 12px;
@@ -179,8 +182,7 @@
 .mavis-shell--hud > .mavis-topbar { flex-shrink: 0; }
 .mavis-shell--hud > .mavis-hud { flex: 1; min-height: 0; }
 
-/* ---- In-flight HUD: two columns, matching the original app's
-   #left (avatar+chat) / #right (map, then lesson/gauges/controls) ---- */
+/* ---- In-flight HUD: avatar+chat on the left, ground track on the right ---- */
 .mavis-hud {
   display: flex;
   gap: 14px;
@@ -201,17 +203,6 @@
   flex-direction: column;
   gap: 10px;
 }
-.mavis-hud__top { display: flex; align-items: center; gap: 10px; }
-.mavis-hud__bottom { display: flex; gap: 10px; }
-.mavis-hud__card {
-  flex: 1;
-  min-width: 0;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-.mavis-hud__card h4 { margin: 0 0 4px; font-size: 14px; }
 .mavis-hud__scorecard {
   width: 100%;
   max-width: 1400px;
