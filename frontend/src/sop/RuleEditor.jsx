@@ -121,6 +121,23 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         <Num meta={meta} rule={rule} k="max_value" label="Maximum" set={set} disabled={dis} />
       </>}
 
+      {meta.tags && (
+        <Field label="Tags" hint="(what the rule is about — up to 4)" wide>
+          <div className="sop-phases">
+            {meta.tags.map((t) => {
+              const on = (rule.tags || []).includes(t.id);
+              return (
+                <button type="button" key={t.id} disabled={dis || (!on && (rule.tags || []).length >= 4)} title={t.help}
+                  className={"sop-phase" + (on ? " is-on" : "")}
+                  onClick={() => set({ tags: on ? rule.tags.filter((x) => x !== t.id) : [...(rule.tags || []), t.id] })}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+
       <Field label="Applies during" hint="(none selected = every phase)" wide>
         <div className="sop-phases">
           {meta.phases.map((p) => (

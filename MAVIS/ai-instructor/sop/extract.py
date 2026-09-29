@@ -200,3 +200,150 @@ def make_chunks(pages: list[PageText], max_chars: int = 6000) -> list[Chunk]:
                 cur_pages.append(p.page_no)
     flush()
     return chunks
+
+
+# ---------------------------------------------------------------- two-step flow
+# Step 1 (upload): text layer of every page + section detection, no OCR.
+# Step 2 (after the reviewer picks pages): OCR only the chosen scanned pages.
+
+# Standard GAMA POH layout -- used to name a section when only its number is found.
+GAMA_SECTIONS = {1: "General", 2: "Limitations", 3: "Emergency Procedures", 4: "Normal Procedures",
+                 5: "Performance", 6: "Weight & Balance / Equipment List", 7: "Airplane & Systems Description",
+                 8: "Handling, Service & Maintenance", 9: "Supplements", 10: "Safety Information"}
+_SECTION_TITLES = [(re.compile(rx, re.I), n) for rx, n in (
+    (r"\bLIMITATIONS\b", 2), (r"\bEMERGENCY\s+PROCEDURES\b", 3), (r"\bNORMAL\s+PROCEDURES\b", 4),
+    (r"\bPERFORMANCE\b", 5), (r"\bWEIGHT\s*(?:&|AND)\s*BALANCE\b", 6), (r"\bSYSTEMS?\s+DESCRIPTIONS?\b", 7),
+    (r"\bHANDLING,?\s+SERVICE\b", 8), (r"\bSUPPLEMENTS?\b", 9), (r"\bSAFETY\s+INFORMATION\b", 10))]
+_SECTION_RX = re.compile(r"\bSECTION\s+(\d{1,2})\b", re.I)
+_PAGE_LABEL_RX = re.compile(r"(?<![\w-])(\d{1,2})-(\d{1,3})(?![\w-])")
+SUGGEST_SECTIONS = {2, 4}          # Limitations + Normal Procedures
+
+
+def detect_section(text: str) -> int | None:
+    """POH section number of a page, from its running header/footer:
+    'SECTION 2 / LIMITATIONS', or a page label like '2-4' in the footer."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    edge = lines[:8] + lines[-4:]
+    joined = "\n".join(edge)
+    m = _SECTION_RX.search(joined)
+    if m and 1 <= int(m.group(1)) <= 10:
+        return int(m.group(1))
+    for ln in lines[-4:]:
+        m = _PAGE_LABEL_RX.search(ln)
+        if m and 1 <= int(m.group(1)) <= 10:
+            return int(m.group(1))
+    for rx, n in _SECTION_TITLES:
+        if any(rx.search(ln) and len(ln) < 60 for ln in lines[:6]):
+            return n
+    return None
+
+
+def read_pages(pdf_bytes: bytes, progress=None) -> list[dict]:
+    """Step 1: text layer only (fast), plus whether each page will need OCR and
+    which POH section it is in (carried forward across pages with no header)."""
+    import pymupdf
+    out: list[dict] = []
+    current = None
+    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+        if doc.needs_pass:
+            raise ValueError("PDF is password-protected")
+        n = doc.page_count
+        for i, page in enumerate(doc):
+            text = _clean(page.get_text("text", sort=True))
+            needs_ocr = len(text) < MIN_TEXT_CHARS or (
+                len(text) < THIN_TEXT_CHARS and _image_cover(page) >= IMAGE_COVER_FRAC)
+            sec = detect_section(text) if text else None
+            if sec is not None:
+                current = sec
+            out.append({"page_no": i + 1, "text": text, "source": "text" if text else "empty",
+                        "ocr_confidence": None, "needs_ocr": bool(needs_ocr), "section": current})
+            if progress:
+                progress(i + 1, n)
+    return out
+
+
+def ocr_selected(pdf_bytes: bytes, pages: list[dict], selected: set[int], tesseract_cmd: str | None = None,
+                 ocr_lang: str = "eng", progress=None) -> list[str]:
+    """Step 2: OCR the chosen pages that need it (in place). Returns warnings."""
+    import pymupdf
+    todo = [p for p in pages if p["page_no"] in selected and p.get("needs_ocr") and p["source"] != "ocr"]
+    if not todo:
+        return []
+    warnings: list[str] = []
+    if not ocr_available(tesseract_cmd, ocr_lang):
+        skipped = [p["page_no"] for p in todo if len(p["text"]) < MIN_TEXT_CHARS]
+        if skipped:
+            warnings.append(f"{len(skipped)} chosen page(s) look scanned but OCR (Tesseract) isn't available - "
+                            f"they were skipped: {compress_pages(skipped)}")
+        return warnings
+    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+        for k, p in enumerate(todo):
+            try:
+                txt, conf = _ocr_page(doc[p["page_no"] - 1], tesseract_cmd, ocr_lang)
+                txt = _clean(txt)
+                if len(txt) > len(p["text"]):
+                    p.update(text=txt, source="ocr", ocr_confidence=conf)
+                    if conf is not None and conf < 60:
+                        warnings.append(f"Page {p['page_no']}: low OCR confidence ({conf:.0f}%) - check its rules carefully")
+            except Exception as e:
+                log.warning("OCR failed on page %d: %s", p["page_no"], e)
+                warnings.append(f"Page {p['page_no']}: OCR failed ({e})")
+            if progress:
+                progress(k + 1, len(todo))
+    return warnings
+
+
+def outline(pages: list[dict]) -> list[dict]:
+    """Consecutive pages of the same section -> [{section, title, first, last, count, suggested}]."""
+    out: list[dict] = []
+    for p in pages:
+        sec = p.get("section")
+        if out and out[-1]["section"] == sec and out[-1]["last"] == p["page_no"] - 1:
+            out[-1]["last"] = p["page_no"]
+            out[-1]["count"] += 1
+            out[-1]["scanned"] += int(bool(p.get("needs_ocr")))
+            continue
+        out.append({"section": sec, "title": GAMA_SECTIONS.get(sec, "Front matter / unlabelled") if sec
+                    else "Front matter / unlabelled", "first": p["page_no"], "last": p["page_no"],
+                    "count": 1, "scanned": int(bool(p.get("needs_ocr")))})
+    for o in out:
+        o["suggested"] = o["section"] in SUGGEST_SECTIONS
+    return out
+
+
+def suggest_pages(pages: list[dict]) -> list[int]:
+    picks = [p["page_no"] for p in pages if p.get("section") in SUGGEST_SECTIONS]
+    return picks or [p["page_no"] for p in pages]
+
+
+def parse_pages(spec, n: int) -> list[int]:
+    """'1-5, 9, 12-14' or [1,2,3] -> sorted unique page numbers within 1..n."""
+    if isinstance(spec, (list, tuple, set)):
+        nums = {int(x) for x in spec}
+    else:
+        nums = set()
+        for part in str(spec or "").replace(";", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            m = re.fullmatch(r"(\d+)\s*[-–]\s*(\d+)", part)
+            if m:
+                a, b = sorted((int(m.group(1)), int(m.group(2))))
+                nums.update(range(a, b + 1))
+            elif part.isdigit():
+                nums.add(int(part))
+            else:
+                raise ValueError(f"Can't read page range '{part}' - use e.g. 1-5, 9, 12-14")
+    return sorted(x for x in nums if 1 <= x <= n)
+
+
+def compress_pages(nums) -> str:
+    nums = sorted(set(nums))
+    out, i = [], 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        out.append(str(nums[i]) if i == j else f"{nums[i]}-{nums[j]}")
+        i = j + 1
+    return ", ".join(out)

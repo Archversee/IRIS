@@ -4,7 +4,7 @@ import { sopApi } from "./sopApi.js";
 import { editable, sameRule, describe } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
-import { RuleRow, EditorName, useKeyNav } from "./parts.jsx";
+import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch } from "./parts.jsx";
 import { exportRuleSet } from "./exportRules.js";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
@@ -173,10 +173,12 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
   const [tab, setTab] = useState("edit");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [tagSel, setTagSel] = useState([]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [pendingSel, setPendingSel] = useState(null);
+  const [warn, setWarn] = useState([]);           // warnings from the last save (not stored)
 
   const load = useCallback(async (keepSel) => {
     try {
@@ -195,14 +197,14 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
   const q = search.trim().toLowerCase();
   const visible = rules.filter((r) =>
     (filter === "all" || (filter === "on" ? r.enabled : !r.enabled)) &&
-    (!q || `${r.title} ${describe(meta, r)} ${r.source_quote || ""}`.toLowerCase().includes(q)));
+    (!q || `${r.title} ${describe(meta, r)} ${r.source_quote || ""}`.toLowerCase().includes(q)) && tagMatch(r, tagSel));
   const counts = useMemo(() => ({ all: rules.length, on: rules.filter((r) => r.enabled).length, off: rules.filter((r) => !r.enabled).length }), [rules]);
 
   function select(id) {
     if (id === sel) return;
     if (dirty) { setPendingSel(id); return; }
     const r = rules.find((x) => x.id === id);
-    setSel(id); setEdit(r ? { ...r } : null); setErr(null);
+    setSel(id); setEdit(r ? { ...r } : null); setErr(null); setWarn([]);
   }
   const onKey = useKeyNav(visible, sel, (r) => r.id, select);
   useEffect(() => {
@@ -217,6 +219,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
       const out = await sopApi.updateRule(sel, body);
       setData((d) => ({ ...d, rules: d.rules.map((r) => (r.id === out.id ? out : r)) }));
       setEdit({ ...out });
+      setWarn(out.issues || []);
       onChanged();
     } catch (e) {
       setErr(e.detail?.message || e.message);
@@ -228,7 +231,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
     try {
       const out = await sopApi.addRule(setInfo.id, { title: "New rule", kind: "limit", metric: "ias", max_value: 100, severity: "caution" });
       setData((d) => ({ ...d, rules: [...d.rules, out] }));
-      setFilter("all"); setSearch(""); setSel(out.id); setEdit({ ...out }); setTab("edit");
+      setFilter("all"); setSearch(""); setTagSel([]); setSel(out.id); setEdit({ ...out }); setTab("edit"); setWarn(out.issues || []);
       onChanged();
     } catch (e) { setErr(e.detail?.message || e.message); }
   }
@@ -256,6 +259,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
               <button type="button" key={k} className={filter === k ? "is-on" : ""} onClick={() => setFilter(k)}>{t} <span>{counts[k]}</span></button>
             ))}
           </div>
+          <TagFilter meta={meta} rules={rules} value={tagSel} onChange={setTagSel} />
           <div className="sop-list__rows">
             {visible.length === 0 && <div className="muted sop-empty">No rules match.</div>}
             {visible.map((r) => (
@@ -289,6 +293,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
                   </label>
                 </div>
                 <p className="sop-plain">{describe(meta, edit)}</p>
+                {warn.map((w, i) => <div key={i} className="sop-warn">Saved, but check: {w}</div>)}
                 <RuleEditor meta={meta} rule={edit} onChange={setEdit} quoteEditable />
                 <div className="sop-btnrow">
                   <button type="button" disabled={!dirty || busy} onClick={() => save()}>{busy ? "Saving…" : "Save changes"}</button>
@@ -327,7 +332,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
 }
 
 const ACTION_TXT = { create: "Created", update: "Edited", delete: "Deleted", activate: "Made active", deactivate: "Deactivated", rename: "Renamed" };
-const FIELD_TXT = { title: "title", kind: "type", metric: "measured value", target: "target", tol_hi: "+ tolerance", tol_lo: "− tolerance",
+const FIELD_TXT = { tags: "tags", title: "title", kind: "type", metric: "measured value", target: "target", tol_hi: "+ tolerance", tol_lo: "− tolerance",
   min_value: "minimum", max_value: "maximum", op: "comparison", value: "value", gate_phase: "deadline phase", capture_at: "moment",
   phases: "phases", conditions: "conditions", severity: "severity", source_quote: "source", source_page: "page", note: "note", enabled: "on/off", name: "name" };
 

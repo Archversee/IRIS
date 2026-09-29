@@ -17,7 +17,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-from .schema import (CAPTURE_AT, KINDS, METRICS, OPS, SEVERITIES, to_stored, unit_ok)
+from .schema import (CAPTURE_AT, FOREIGN_UNITS, KINDS, METRIC_TAG, METRICS, OPS, SEVERITIES, TAGS,
+                     to_stored, unit_ok)
 
 QUOTE_MIN = 0.85          # below this the quote isn't in the SOP -> auto-reject
 QUOTE_EXACT = 0.999
@@ -163,12 +164,54 @@ def normalise_candidate(raw: dict) -> tuple[dict, list[str], str | None]:
         "source_quote": (str(raw.get("source_quote") or "").strip())[:600] or None,
         "source_page": int(raw["page"]) if str(raw.get("page") or "").isdigit() else None,
         "as_written": as_written,
+        "tags": normalise_tags(raw.get("tags"), kind, metric),
     }
     # tolerances are magnitudes
     for k in ("tol_hi", "tol_lo"):
         if rule[k] is not None:
             rule[k] = abs(rule[k])
     return rule, issues, reject
+
+
+def normalise_tags(tags, kind: str | None, metric: str | None) -> list[str]:
+    """Known tags only, no duplicates, and always the tag the metric implies
+    (so 'Pilot controls' / 'Flight telemetry' filters are reliable)."""
+    out = [t for t in dict.fromkeys(tags or []) if t in TAGS]
+    implied = METRIC_TAG.get(metric or "")
+    if implied and implied not in out:
+        out.append(implied)
+    if not out:
+        out = ["procedure"] if kind == "unobservable" else ["flight_telemetry"]
+    return out[:4]
+
+
+_FOREIGN = [(re.compile(r"\s*(?:" + rx + r")", re.I), dim) for rx, dim in FOREIGN_UNITS.items()]
+_NUM_WITH_POS = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)")
+
+
+def foreign_quantity(rule: dict) -> str | None:
+    """If the rule's numbers appear in its quote only as a quantity the sim can't
+    measure ('20 PSI', '53 gallons', '2550 lbs'), return that quantity -- the LLM
+    has put it on the wrong metric (e.g. oil pressure -> engine RPM)."""
+    if rule.get("kind") in (None, "unobservable") or not rule.get("source_quote"):
+        return None
+    written = rule.get("as_written") or {}
+    nums = {_f(v) for k, v in written.items() if k not in ("unit", "when") and _f(v) is not None}
+    if not nums:
+        return None
+    quote = rule["source_quote"]
+    for n in nums:
+        uses = [m for m in _NUM_WITH_POS.finditer(quote) if float(m.group(1).replace(",", "")) == abs(n)]
+        if not uses:
+            continue
+        dims = []
+        for m in uses:
+            tail = quote[m.end():m.end() + 16]
+            dims.append(next((d for rx, d in _FOREIGN if rx.match(tail)), None))
+        if all(dims):
+            unit = quote[uses[0].end():uses[0].end() + 16].strip().split()[0].rstrip(".,;:)")
+            return f"{n:g} {unit} ({dims[0]})"
+    return None
 
 
 def check_rule(rule: dict, phases: list[str]) -> tuple[list[str], str | None]:
@@ -235,6 +278,10 @@ def check_provenance(rule: dict, pages: dict[int, str], ocr_pages: set[int]) -> 
     quote = rule.get("source_quote") or ""
     if not quote:
         return issues, "no source quote - can't be traced to the SOP"
+    fq = foreign_quantity(rule)
+    if fq:
+        return issues, (f"the quote gives {fq}, which the simulator can't measure - it can't become a rule on "
+                        f"{METRICS[rule['metric']][3].lower()}")
     page, score = locate_quote(quote, pages, rule.get("source_page"))
     rule["quote_score"] = round(score, 3)
     if score < QUOTE_MIN:
@@ -323,7 +370,8 @@ def aircraft_checks(rules: list[dict], profile: dict) -> list[str]:
     return warns
 
 
-def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[int]) -> tuple[list[str], str | None]:
+def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[int],
+           nominal: dict | None = None) -> tuple[list[str], str | None]:
     """Full check of a stored-unit rule as the reviewer edited it (draft or saved).
     Returns (warnings, blocking_reason). Mutates `rule` (drops unknown phases,
     corrects source_page, sets quote_score). A rule with a blocking reason
@@ -336,7 +384,7 @@ def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[
         p_issues, p_fatal = check_provenance(rule, pages, ocr_pages)
         issues += p_issues
         if p_fatal:
-            if rule.get("origin") == "llm":
+            if rule.get("origin") == "llm" or p_fatal.startswith("the quote gives"):
                 fatal = fatal or p_fatal
             else:
                 issues.append("Source text not found in the SOP")
@@ -345,4 +393,9 @@ def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[
         rule["quote_score"] = None
     else:
         rule["quote_score"] = None if not quote else rule.get("quote_score")
+    if nominal is not None and not fatal:
+        from .profile import conflict_message, conflicts
+        msg = conflict_message(conflicts(rule, nominal))
+        if msg:
+            issues.append(msg)
     return issues, fatal

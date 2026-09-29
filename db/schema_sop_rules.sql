@@ -145,3 +145,17 @@ create table if not exists flight_rule_history (
 );
 create index if not exists flight_rule_history_set_idx on flight_rule_history (rule_set_id, changed_at desc);
 create index if not exists flight_rule_history_rule_idx on flight_rule_history (rule_id, changed_at desc);
+
+-- ---------------------------------------------------------------------
+-- v2 (prompt v2, rule tags, page selection). Additive; safe to re-run.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists tags text[] not null default '{}';
+    -- what the rule is about, 1-4 of: flight_telemetry, pilot_controls, engine,
+    -- aircraft_limit, procedure, configuration, communication, situational, emergency
+    -- (vocabulary: MAVIS/ai-instructor/sop/schema.py TAGS)
+create index if not exists flight_rules_tags_idx on flight_rules using gin (tags);
+
+alter table flight_rule_sets
+    add column if not exists prompt_version text,     -- LLM prompt version that drafted it ('2')
+    add column if not exists page_selection text;     -- SOP pages the LLM read, e.g. '13-20, 34-63'

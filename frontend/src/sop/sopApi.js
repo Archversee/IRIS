@@ -54,6 +54,8 @@ export const sopApi = {
   getDraft: (id) => req(`/drafts/${id}`),
   putDraft: (id, body) => req(`/drafts/${id}`, { method: "PUT", body }),
   reparse: (id) => req(`/drafts/${id}/reparse`, { method: "POST" }),
+  // run OCR + LLM over the chosen pages ('13-20, 34-63'); also used to re-run with different pages
+  run: (id, body) => req(`/drafts/${id}/run`, { method: "POST", body: body || {} }),
   saveDraft: (id, body) => req(`/drafts/${id}/save`, { method: "POST", body }),
   discardDraft: (id) => req(`/drafts/${id}`, { method: "DELETE" }),
   draftPage: (id, n) => req(`/drafts/${id}/pages/${n}`),

@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 RULE_FIELDS = ("kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
                "min_value", "max_value", "op", "value", "gate_phase", "capture_at",
                "conditions", "severity", "source_quote", "source_page", "quote_score",
-               "note", "enabled")
+               "note", "enabled", "tags")
 _JSONB = {"conditions", "llm_draft", "before", "after"}
 
 
@@ -89,9 +89,13 @@ class RuleStore:
                 await c.executemany(
                     "insert into sop_pages (document_id, page_no, text, source, ocr_confidence) values ($1,$2,$3,$4,$5)",
                     [(doc_id, p["page_no"], p["text"], p["source"], p.get("ocr_confidence")) for p in pages])
+            from .extract import compress_pages
+            sel = draft.get("selected_pages")
             rs = await c.fetchval(
-                "insert into flight_rule_sets (aircraft_profile, name, document_id, llm_model, created_by, updated_by) "
-                "values ($1,$2,$3,$4,$5,$5) returning id", aircraft, name, doc_id, draft.get("llm_model"), by)
+                "insert into flight_rule_sets (aircraft_profile, name, document_id, llm_model, prompt_version, "
+                "page_selection, created_by, updated_by) values ($1,$2,$3,$4,$5,$6,$7,$7) returning id",
+                aircraft, name, doc_id, draft.get("llm_model"), draft.get("prompt_version"),
+                compress_pages(sel) if sel else None, by)
             for i, r in enumerate(rules):
                 row = await self._insert_rule(c, rs, r, i, by)
                 await self._log(c, rs, row["id"], "create", by, None, row)
@@ -265,7 +269,7 @@ class RuleStore:
 
 
 def _db_val(k: str, v):
-    if k == "phases":
+    if k in ("phases", "tags"):
         return list(v or [])
     if k == "conditions":
         return list(v or [])

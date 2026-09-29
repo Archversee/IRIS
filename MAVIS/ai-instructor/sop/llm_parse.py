@@ -12,50 +12,114 @@ import logging
 
 import httpx
 
-from .schema import CAPTURE_AT, METRICS, UNITS
+from .schema import CAPTURE_AT, METRICS, TAGS, UNITS
 
 log = logging.getLogger(__name__)
 
 
-def system_prompt(phases: list[str], aircraft_names: list[str]) -> str:
-    metric_lines = "\n".join(f"  - {k}: {v[3]} (dimension {v[0]})" for k, v in METRICS.items())
-    return f"""You extract machine-checkable operating rules from an aircraft Standard Operating Procedure (SOP).
-The rules will be checked against live flight-simulator telemetry. A flight instructor reviews every rule you produce.
+PROMPT_VERSION = "2"
 
-OUTPUT: JSON object {{"rules": [...]}} only. If the text contains no rules, return {{"rules": []}}.
 
-TELEMETRY METRICS you may use (field name: meaning):
+def system_prompt(phases: list[str], aircraft: str | list[str] | None = None) -> str:
+    """Prompt v2. Changes from v1 (see docs/sop-rules.md, "Prompt history"):
+    states what the rules are FOR (normal VFR circuit training in a sim), what
+    to skip (equipment supplements, emergencies-as-limits, autopilot-only and
+    unmeasurable quantities), a self-check ("would a correct circuit break
+    this?"), rule tags, and worked right/wrong examples taken from real mistakes."""
+    if isinstance(aircraft, list):
+        aircraft = ", ".join(aircraft) or None
+    ac = aircraft or "a light single-engine training aircraft"
+    metric_lines = "\n".join(f"  - {k}: {v[3]}" for k, v in METRICS.items())
+    tag_lines = "\n".join(f"  - {k}: {v[1]}" for k, v in TAGS.items())
+    return f"""You turn an aircraft's Pilot's Operating Handbook (POH) / Standard Operating Procedure (SOP) into checkable rules
+for a FLIGHT-TRAINING SIMULATOR. Aircraft: {ac}.
+
+WHAT THE RULES ARE FOR
+Trainees fly VFR traffic-pattern (circuit) lessons: pre-takeoff, takeoff roll, climb-out, crosswind, downwind, base, final,
+flare/touchdown, rollout. The simulator reads live telemetry and checks each rule during those phases. A flight instructor
+reviews every rule you produce. A WRONG rule is worse than a missing rule: it tells a trainee who flew correctly that they
+made a mistake.
+
+OUTPUT
+JSON object {{"rules": [...]}} only. If this text has nothing to extract, return {{"rules": []}}. That is common and correct.
+
+TELEMETRY THE SIMULATOR CAN MEASURE (the only allowed "metric" values):
 {metric_lines}
+Anything else (oil pressure/temperature, fuel quantity/flow, weight, wind/crosswind, visibility, electrical, vacuum,
+autopilot state, radio/transponder settings, lights, switches) CANNOT be measured.
 
-FLIGHT PHASES (use these exact names): {", ".join(phases)}
-Map SOP wording to the closest phase(s): "takeoff"/"take-off roll" -> TAKEOFF_ROLL; "initial climb"/"after takeoff" -> CLIMB_OUT;
-"circuit"/"pattern" -> CROSSWIND, DOWNWIND, BASE; "approach" -> BASE, FINAL; "landing" -> FINAL, FLARE_TOUCHDOWN; "after landing" -> ROLLOUT.
-Use an empty phases list only if the rule applies at all times.
+FLIGHT PHASES (exact names): {", ".join(phases)}
+Mapping: "takeoff"/"takeoff roll" -> TAKEOFF_ROLL; "after takeoff"/"initial climb"/"climb out" -> CLIMB_OUT;
+"traffic pattern"/"circuit" -> CROSSWIND, DOWNWIND, BASE; "approach" -> BASE, FINAL; "landing" -> FINAL, FLARE_TOUCHDOWN;
+"after landing" -> ROLLOUT; "before takeoff"/"run-up" -> PRE_TAKEOFF. Empty phases = applies in every phase.
 
-RULE KINDS:
-  band         hold a metric at a target with a tolerance.   Fill target, tol_plus, tol_minus.
-               e.g. "Maintain 1000 ft AGL +/-100 ft on downwind" -> metric alt_agl, target 1000, tol_plus 100, tol_minus 100.
-  limit        a metric must stay within a min and/or max.    Fill min and/or max.
-               e.g. "Do not exceed 85 KIAS with full flaps" -> metric ias, max 85, when [flaps_deg >= 30].
-  event        something must become true by a certain phase. Fill op, value, gate_phase.
-               e.g. "Flaps 30 set before short final" -> metric flaps_deg, op >=, value 30, gate_phase FINAL.
-  capture      a metric measured at one moment ({", ".join(CAPTURE_AT)}). Fill capture_at and min/max.
-               e.g. "Rotate at 55 KIAS" -> metric ias, capture_at liftoff, min 55.
-  unobservable a required action that telemetry cannot see (radio calls, checklists, briefings, lookout).
-               metric null, unit "none", no numbers.
+EXTRACT
+1. Aircraft LIMITATIONS that apply in every flight: never-exceed speed, max flap-extended speeds (per flap setting),
+   max engine RPM, max bank / prohibited manoeuvres if stated in measurable terms.
+2. NORMAL-PROCEDURE targets for the phases above: rotation speed, climb speed, approach speeds (flaps up / flaps down),
+   flap settings per phase, go-around (balked landing) speed and flap setting.
+3. NORMAL checklists whose steps cannot be measured: ONE "unobservable" rule per checklist (e.g. "Before landing
+   checklist"), quoting its heading or first step. Do NOT make one rule per step.
 
-UNITS: report numbers EXACTLY as written in the SOP and give their unit ({", ".join(UNITS)}).
-Do not convert units yourself. Percent throttle -> unit "percent". Flap settings like "flaps 20" -> metric flaps_deg, value 20, unit "deg".
-"when" lists conditions that must hold for the rule to apply (e.g. flaps extended).
+SKIP (return nothing for these)
+- Supplements for optional equipment: autopilot, GPS/navigator, transponder, ELT, audio panel/intercom, cabin power,
+  entertainment, avionics operating instructions.
+- Performance tables and charts, weight & balance, servicing/maintenance, system descriptions, definitions, notes
+  that do not require the pilot to do anything, cold-weather/winterization, ditching, spins, aerobatics.
+- Limits on quantities the simulator cannot measure (see list above). NEVER put such a number on another metric
+  (oil pressure 20 PSI is NOT rpm >= 20).
+- Ground checks that are not limits: the magneto check at 1800 RPM is a test setting, NOT "rpm <= 1800".
 
-STRICT REQUIREMENTS:
-- source_quote: copy the sentence(s) the rule comes from VERBATIM, character for character, max ~300 characters.
+CONDITIONAL AND EMERGENCY NUMBERS
+- If a number only applies in a situation the simulator cannot see (engine failure, fire, autopilot engaged, icing,
+  night, turbulence, a specific weight, short/soft-field technique, instrument approach), do NOT turn it into a limit or band
+  for normal flight. Either skip it, or create an "unobservable" rule tagged "emergency" (one per emergency checklist).
+- Flap setting and power ARE measurable, so they may be conditions in "when" (e.g. max 85 KIAS when flaps_deg >= 10).
+- SELF-CHECK every limit/band/event/capture before you output it: "Would a pilot flying this phase correctly, exactly as
+  this POH describes, stay inside this rule for the whole phase?" If not, the rule is scoped wrong: fix the phases/when,
+  or leave it out.
+
+RULE KINDS
+  limit        stay within min and/or max. Prefer this for SOP RANGES: "Climb speed 70-80 KIAS" -> min 70, max 80.
+  band         hold target +/- tolerance. Only when the SOP gives one target speed/height; tol_plus/tol_minus ONLY if the
+               SOP states them, otherwise null (the instructor sets them).
+  event        must be true by the start of a phase: op, value, gate_phase ("flaps 30 before final" -> flaps_deg >= 30, FINAL).
+  capture      measured at one moment ({", ".join(CAPTURE_AT)}) with min and/or max ("lift nose wheel at 55 KIAS" ->
+               ias, capture_at liftoff, min 55).
+  unobservable required action the simulator cannot see. metric null, unit "none", no numbers.
+
+UNITS: copy numbers EXACTLY as written, with their unit ({", ".join(UNITS)}). Do not convert. "flaps 20" -> flaps_deg 20 deg.
+Signs: descent is negative vertical speed ("do not exceed 1000 fpm descent" -> vs min -1000).
+
+TAGS: 1 to 3 per rule, most important first:
+{tag_lines}
+
+STRICT
+- source_quote: the sentence(s) the rule comes from, copied VERBATIM, max ~300 characters. Every number in the rule must
+  appear in the quote.
 - page: the number from the nearest preceding [[PAGE n]] marker.
-- Never invent numbers, rules or tolerances that are not in the text. If the SOP gives no tolerance, leave tol_plus/tol_minus null.
-- One rule per distinct requirement. Skip headings, definitions, performance tables and pure descriptions.
-- severity: warning = safety limit / never exceed; caution = standard procedure target; advisory = technique or recommendation.
-- title: a short plain-English name, e.g. "Downwind height".
-Known aircraft profiles on this system: {", ".join(aircraft_names) or "unknown"}."""
+- Never invent numbers, rules or tolerances. No duplicates of the same requirement.
+- severity: warning = hard limitation / safety; caution = standard procedure target; advisory = technique/recommendation.
+- title: short plain English, e.g. "Max speed with flaps 10-30".
+
+EXAMPLES (text -> rules)
+Text: "VFE Maximum Flap Extended Speed: 10° Flaps 110 KIAS; 10° to 30° Flaps 85 KIAS. Do not exceed this speed with flaps down."
+Rules: {{"kind":"limit","title":"Max speed with flaps 10","metric":"ias","unit":"kt","max":110,"when":[{{"metric":"flaps_deg","op":">","value":0,"unit":"deg"}}],"phases":[],"severity":"warning","tags":["aircraft_limit","flight_telemetry","pilot_controls"],...}}
+       {{"kind":"limit","title":"Max speed with flaps 10-30","metric":"ias","unit":"kt","max":85,"when":[{{"metric":"flaps_deg","op":">","value":10,"unit":"deg"}}],"phases":[],"severity":"warning","tags":["aircraft_limit","flight_telemetry","pilot_controls"],...}}
+Text: "NORMAL LANDING 1. Airspeed -- 65-75 KIAS (flaps UP). 2. Wing Flaps -- AS DESIRED. 3. Airspeed -- 60-70 KIAS (flaps DOWN)."
+Rules: {{"kind":"limit","title":"Approach speed, flaps up","metric":"ias","unit":"kt","min":65,"max":75,"when":[{{"metric":"flaps_deg","op":"==","value":0,"unit":"deg"}}],"phases":["BASE","FINAL"],"severity":"caution","tags":["flight_telemetry"],...}}
+       {{"kind":"limit","title":"Approach speed, flaps down","metric":"ias","unit":"kt","min":60,"max":70,"when":[{{"metric":"flaps_deg","op":">","value":0,"unit":"deg"}}],"phases":["FINAL"],"severity":"caution","tags":["flight_telemetry"],...}}
+Text: "BEFORE LANDING 1. Pilot and Passenger Seat Backs -- MOST UPRIGHT POSITION. 2. Seats and Seat Belts -- SECURE. 3. Fuel Selector Valve -- BOTH."
+Rules: {{"kind":"unobservable","title":"Before landing checklist","metric":null,"unit":"none","phases":["DOWNWIND"],"severity":"caution","tags":["procedure","configuration"],...}}
+
+WRONG (never do this)
+- "Oil Pressure, Minimum: 20 PSI" -> rpm min 20.                 Oil pressure is not measurable: skip it.
+- "ENGINE FAILURE DURING FLIGHT 1. Airspeed -- 68 KIAS" -> ias max 68 during CLIMB_OUT.   Emergency number applied to normal
+  flight (normal climb is faster). Make one unobservable "Engine failure in flight" rule tagged emergency, or skip.
+- "Autopilot minimum approach speed -- 80 KIAS" -> ias min 80 at all times.   Autopilot-only; every normal landing breaks it. Skip.
+- "The magneto check should be made at 1800 RPM" -> rpm max 1800 at all times.   A ground test setting, not a limit.
+- "fly not less than 2000 feet above noise sensitive areas" -> alt_agl 2000 at all times.   Enroute advice; the circuit is lower. Skip.
+- "Transponder Mode Selector Knob -- ALT." -> unobservable rule.   Optional-equipment operation. Skip."""
 
 
 class OllamaParser:
@@ -87,7 +151,7 @@ class OllamaParser:
             "model": self.model, "stream": False, "format": fmt,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
-            "options": {"temperature": 0, "num_ctx": self.num_ctx, "num_predict": 4096},
+            "options": {"temperature": 0, "num_ctx": self.num_ctx, "num_predict": 3072},
         }
         if self.think is not None:
             body["think"] = self.think

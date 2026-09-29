@@ -1,10 +1,15 @@
-"""Upload -> extract (OCR where needed) -> local LLM -> validated DRAFT.
+"""Upload -> read pages -> (choose pages) -> OCR + local LLM -> validated DRAFT.
 
-Runs as a background asyncio task per upload; progress is written into the
-draft file, which the /sop/new page polls. One job at a time (it shares the
-GPU with live coaching), and LLM work pauses between sections while a lesson
-is being flown. The result is only a draft -- Postgres is untouched until
-the instructor saves it.
+  1. upload       text layer of every page + POH section detection (fast, no OCR)
+  2. choose pages short documents skip this; longer ones stop at status
+                  "choose_pages" with Limitations + Normal Procedures suggested
+  3. run          OCR only the chosen scanned pages, LLM over the chosen pages,
+                  deterministic checks, set aside rules a correct circuit breaks
+
+Runs as a background asyncio task; progress is written into the draft file,
+which the /sop/new page polls. One job at a time (it shares the GPU with live
+coaching); LLM work pauses between sections while a lesson is being flown.
+Nothing is written to Postgres until the instructor saves the draft.
 """
 from __future__ import annotations
 
@@ -15,13 +20,15 @@ from pathlib import Path
 
 from . import extract, validate
 from .drafts import DraftStore
-from .llm_parse import OllamaParser, system_prompt
+from .llm_parse import PROMPT_VERSION, OllamaParser, system_prompt
+from .profile import conflict_message, conflicts, load_nominal
 from .runtime import match_profile
 from .schema import aircraft_profiles, known_phases, llm_json_schema
 
 log = logging.getLogger(__name__)
 
 MAX_PDF_BYTES = 50 * 1024 * 1024
+AUTO_ALL_PAGES = 40        # documents up to this many pages skip the choose-pages step
 
 
 def draft_rule(ch: validate.Checked, raw: dict) -> dict:
@@ -32,12 +39,14 @@ def draft_rule(ch: validate.Checked, raw: dict) -> dict:
               "issues": ch.issues, "enabled": True, "note": None})
     r.setdefault("conditions", [])
     r.setdefault("phases", [])
+    r.setdefault("tags", [])
     return r
 
 
 class JobManager:
     def __init__(self, drafts: DraftStore, parser: OllamaParser, pdf_dir: Path, is_flying,
-                 tesseract_cmd: str | None = None, ocr_lang: str = "eng", chunk_chars: int = 6000):
+                 tesseract_cmd: str | None = None, ocr_lang: str = "eng", chunk_chars: int = 6000,
+                 lesson_path: str | None = None):
         self.drafts = drafts
         self.parser = parser
         self.pdf_dir = Path(pdf_dir)
@@ -45,12 +54,24 @@ class JobManager:
         self.tesseract_cmd = tesseract_cmd or None
         self.ocr_lang = ocr_lang
         self.chunk_chars = chunk_chars
+        self.lesson_path = lesson_path
         self._task: asyncio.Task | None = None
+
+    def _chunk_budget(self, system: str) -> int:
+        """Largest section that still fits the model's context window next to the
+        prompt and the answer (~3.5 characters per token, 10% margin)."""
+        num_ctx = int(getattr(self.parser, "num_ctx", 8192) or 8192)
+        room_tokens = num_ctx - len(system) / 3.5 - 3072 - 200
+        return max(1500, min(self.chunk_chars, int(room_tokens * 3.5 * 0.9)))
 
     @property
     def busy(self) -> bool:
         return self._task is not None and not self._task.done()
 
+    def nominal_for(self, aircraft_id: str | None) -> dict | None:
+        return load_nominal(aircraft_id, self.lesson_path)
+
+    # ------------------------------------------------------------ entry points
     def start_upload(self, filename: str, data: bytes, by: str | None) -> dict:
         if self.busy:
             raise RuntimeError("Another SOP is still being processed - wait for it to finish")
@@ -64,33 +85,44 @@ class JobManager:
         if not path.exists():
             path.write_bytes(data)
         d = self.drafts.create(filename, sha, str(path), by)
-        self._task = asyncio.create_task(self._run(d["id"], data))
+        self._task = asyncio.create_task(self._read(d["id"], data))
         return d
 
-    def start_reparse(self, did: str) -> dict:
-        """Run again: re-draft from the already-extracted pages, or -- if reading
-        the PDF never finished (e.g. it was interrupted) -- re-read the PDF kept
-        on this machine first."""
+    def start_run(self, did: str, pages=None, aircraft: str | None = None) -> dict:
+        """Run (or re-run) OCR + LLM over the chosen pages. pages: '1-5, 9' or
+        a list; None = keep the previous choice (or the suggestion)."""
         if self.busy:
             raise RuntimeError("Another SOP is still being processed - wait for it to finish")
         d = self.drafts.get(did)
         if not d:
             raise KeyError(did)
-        data = None
-        if not self.drafts.pages(did):
+        rows = self.drafts.pages(did)
+        if aircraft is not None:
+            d["aircraft_profile"] = aircraft or None
+        if not rows or "needs_ocr" not in rows[0]:
+            # reading never finished (or a draft from before page selection): start over from the PDF
             pdf = Path(d.get("pdf_path") or "")
             if not pdf.is_file():
                 raise ValueError("The PDF for this draft is no longer on this machine - upload it again")
-            data = pdf.read_bytes()
-        d.update(status="processing", stage="queued", detail="", error=None, done=0, total=0)
+            d.update(status="processing", stage="queued", detail="", error=None, done=0, total=0,
+                     selected_pages=extract.parse_pages(pages, 10 ** 6) if pages else d.get("selected_pages"),
+                     run_after_read=True)
+            self.drafts.put(d)
+            self._task = asyncio.create_task(self._read(did, pdf.read_bytes()))
+            return d
+        n = len(rows)
+        chosen = extract.parse_pages(pages, n) if pages is not None else \
+            (d.get("selected_pages") or d.get("suggested_pages") or [r["page_no"] for r in rows])
+        if not chosen:
+            raise ValueError("Choose at least one page")
+        d.update(status="processing", stage="queued", detail="", error=None, done=0, total=0,
+                 selected_pages=chosen)
         self.drafts.put(d)
-        self._task = asyncio.create_task(self._run(did, data))
+        self._task = asyncio.create_task(self._run(did))
         return d
 
-    async def _run(self, did: str, data: bytes | None):
-        loop = asyncio.get_running_loop()
-        d = self.drafts.get(did)
-
+    # ------------------------------------------------------------ helpers
+    def _saver(self, d: dict):
         def save(**kw):
             d.update(kw)
             self.drafts.put(d)
@@ -103,46 +135,103 @@ class JobManager:
                 self.drafts.put(d)
             except OSError as e:
                 log.info("progress update skipped: %s", e)
+        return save, progress_only
 
+    def _fail(self, d: dict, e: Exception):
+        log.exception("SOP draft %s failed", d.get("id"))
+        msg = str(e)
+        if isinstance(e, PermissionError):
+            msg += (" - Windows blocked access to a MAVIS data file (often antivirus or OneDrive "
+                    "scanning it). Press 'Run again'; if it keeps happening, move the IRIS folder "
+                    "out of Downloads/OneDrive or exclude data/sop from scanning.")
+        d.update(status="failed", stage="failed", error=msg)
         try:
-            if data is not None:
-                progress_only(stage="extracting", detail="Reading pages")
+            self.drafts.put(d)
+        except OSError:
+            log.error("could not record failure for draft %s", d.get("id"))
 
-                def prog(i, n):
-                    progress_only(done=i, total=n, detail=f"Reading page {i} of {n}")
-                pages, warns = await loop.run_in_executor(
-                    None, lambda: extract.extract_pages(data, self.tesseract_cmd, self.ocr_lang, prog))
-                if not any(p.text.strip() for p in pages):
-                    raise ValueError("No text could be read from this PDF"
-                                     + ("" if extract.ocr_available(self.tesseract_cmd)
-                                        else " (it looks scanned and Tesseract OCR is not installed)"))
-                self.drafts.set_pages(did, [p.__dict__ for p in pages])
-                progress_only(warnings=d["warnings"] + warns, page_count=len(pages),
-                     ocr_pages=[p.page_no for p in pages if p.source == "ocr"])
-            page_rows = self.drafts.pages(did)
-            page_map = {p["page_no"]: p["text"] for p in page_rows}
-            ocr_pages = {p["page_no"] for p in page_rows if p["source"] == "ocr"}
+    # ------------------------------------------------------------ step 1: read
+    async def _read(self, did: str, data: bytes):
+        loop = asyncio.get_running_loop()
+        d = self.drafts.get(did)
+        save, progress_only = self._saver(d)
+        try:
+            progress_only(stage="extracting", detail="Reading pages")
 
-            # best guess of the aircraft from the SOP's own wording (reviewer confirms it)
-            if not d.get("aircraft_profile"):
-                head = " ".join(p["text"] for p in page_rows[:3])[:20000]
+            def prog(i, n):
+                progress_only(done=i, total=n, detail=f"Reading page {i} of {n}")
+            rows = await loop.run_in_executor(None, lambda: extract.read_pages(data, prog))
+            if not rows:
+                raise ValueError("The PDF has no pages")
+            self.drafts.set_pages(did, rows)
+            suggested = extract.suggest_pages(rows)
+            n_scanned = sum(1 for r in rows if r["needs_ocr"])
+            if not d.get("aircraft_profile"):     # best guess from the SOP's own wording (reviewer confirms)
+                head = " ".join(r["text"] for r in rows[:5])[:20000]
                 guess, _ = match_profile({"text": head}, aircraft_profiles())
-                if guess:
-                    progress_only(aircraft_profile=guess)
+                d["aircraft_profile"] = guess
+            warns = [w for w in (d.get("warnings") or []) if "look scanned" not in w]
+            if n_scanned and not extract.ocr_available(self.tesseract_cmd, self.ocr_lang):
+                warns.append(f"{n_scanned} page(s) look scanned but OCR (Tesseract) isn't available - "
+                             "those pages can't be read until it is installed.")
+            fields = dict(page_count=len(rows), outline=extract.outline(rows), suggested_pages=suggested,
+                          scanned_pages=[r["page_no"] for r in rows if r["needs_ocr"]], warnings=warns)
+            run_now = d.pop("run_after_read", False) or len(rows) <= AUTO_ALL_PAGES
+            if run_now:
+                chosen = [p for p in (d.get("selected_pages") or []) if p <= len(rows)] or \
+                    ([r["page_no"] for r in rows] if len(rows) <= AUTO_ALL_PAGES else suggested)
+                save(**fields, selected_pages=chosen, stage="queued", detail="")
+                await self._run(did)
+            else:
+                save(**fields, status="choose_pages", stage="choose_pages",
+                     detail=f"{len(rows)} pages read - choose which to draft rules from")
+        except Exception as e:
+            self._fail(d, e)
+
+    # ------------------------------------------------------------ step 2: OCR + LLM
+    async def _run(self, did: str):
+        loop = asyncio.get_running_loop()
+        d = self.drafts.get(did)
+        save, progress_only = self._saver(d)
+        try:
+            rows = self.drafts.pages(did)
+            chosen = set(d.get("selected_pages") or [r["page_no"] for r in rows])
+            warnings = [w for w in (d.get("warnings") or [])
+                        if not w.startswith(("Local LLM", "No aircraft chosen", "Pages "))]
+
+            need = [r for r in rows if r["page_no"] in chosen and r.get("needs_ocr") and r["source"] != "ocr"]
+            if need:
+                pdf = Path(d.get("pdf_path") or "")
+                if not pdf.is_file():
+                    warnings.append("The original PDF is missing, so scanned pages couldn't be OCR'd")
+                else:
+                    data = pdf.read_bytes()
+                    progress_only(stage="ocr", done=0, total=len(need), detail=f"Reading {len(need)} scanned page(s)")
+
+                    def prog(i, n):
+                        progress_only(done=i, total=n, detail=f"OCR page {i} of {n}")
+                    warnings += await loop.run_in_executor(None, lambda: extract.ocr_selected(
+                        data, rows, chosen, self.tesseract_cmd, self.ocr_lang, prog))
+                    self.drafts.set_pages(did, rows)
+
+            page_map = {r["page_no"]: r["text"] for r in rows}
+            ocr_pages = {r["page_no"] for r in rows if r["source"] == "ocr"}
+            manual = [r for r in d.get("rules", []) if r.get("origin") == "manual"]   # kept on re-run
 
             if not await self.parser.available():
-                save(status="ready", stage="done", detail="LLM unavailable - add rules by hand",
-                     warnings=d["warnings"] + [
-                         f"Local LLM '{self.parser.model}' is not available in Ollama - no rules were drafted. "
-                         "Add rules by hand, or start Ollama and press 'Run LLM again'."])
+                save(status="ready", stage="done", detail="LLM unavailable - add rules by hand", warnings=warnings + [
+                     f"Local LLM '{self.parser.model}' is not available in Ollama - no rules were drafted. "
+                     "Add rules by hand, or start Ollama and press 'Run again'."], rules=manual)
                 return
 
-            pages = [extract.PageText(p["page_no"], p["text"], p["source"]) for p in page_rows]
-            chunks = extract.make_chunks(pages, self.chunk_chars)
+            ac_names = {a["id"]: a["name"] for a in aircraft_profiles()}
             phases = known_phases()
             schema = llm_json_schema(phases)
-            system = system_prompt(phases, [a["name"] for a in aircraft_profiles()])
-            progress_only(stage="parsing", done=0, total=len(chunks), llm_model=self.parser.model)
+            system = system_prompt(phases, ac_names.get(d.get("aircraft_profile") or ""))
+            pages = [extract.PageText(r["page_no"], r["text"], r["source"]) for r in rows if r["page_no"] in chosen]
+            chunks = extract.make_chunks(pages, self._chunk_budget(system))
+            progress_only(stage="parsing", done=0, total=len(chunks), llm_model=self.parser.model,
+                          prompt_version=PROMPT_VERSION)
             candidates: list[dict] = []
             for ch in chunks:
                 while self.is_flying():
@@ -162,33 +251,36 @@ class JobManager:
                     except Exception as e:
                         log.warning("chunk %d attempt %d failed: %s", ch.index, attempt, e)
                         if attempt == 2:
-                            d["warnings"].append(f"Pages {ch.pages[0]}-{ch.pages[-1]}: the LLM failed ({e}); "
-                                                 "check this section by hand")
+                            warnings.append(f"Pages {ch.pages[0]}-{ch.pages[-1]}: the LLM failed ({e}); "
+                                            "check this section by hand")
                 progress_only(done=ch.index + 1)
 
             progress_only(stage="validating", detail=f"Checking {len(candidates)} candidate rules")
+            nominal = self.nominal_for(d.get("aircraft_profile"))
             checked = [(validate.validate_candidate(c, phases, page_map, ocr_pages), c) for c in candidates]
             kept = validate.dedupe([c for c, _ in checked])
             kept_ids = {id(c) for c in kept}
             rules = [draft_rule(c, raw) for c, raw in checked if id(c) in kept_ids]
+            n_conflict = 0
             for r in rules:        # same full check the page and Save use (e.g. band needs a tolerance)
-                if r["include"]:
-                    issues, fatal = validate.assess(r, phases, page_map, ocr_pages)
-                    r["issues"] = list(dict.fromkeys(r["issues"] + issues))
-                    r["blocked"] = fatal
+                if not r["include"]:
+                    continue
+                issues, fatal = validate.assess(r, phases, page_map, ocr_pages)
+                r["issues"] = list(dict.fromkeys(r["issues"] + issues))
+                r["blocked"] = fatal
+                msg = None if fatal else conflict_message(conflicts(r, nominal))
+                if msg:            # a correct circuit breaks it: set aside for the reviewer, not deleted
+                    r["include"] = False
+                    r["issues"].insert(0, "Set aside: " + msg)
+                    n_conflict += 1
             rules.sort(key=lambda r: (r.get("source_page") or 10 ** 6))
-            manual = [r for r in d.get("rules", []) if r.get("origin") == "manual"]   # keep hand-added ones on re-run
             n_ok = sum(1 for r in rules if r["include"])
-            save(rules=rules + manual, status="ready", stage="done",
-                 detail=f"{n_ok} rules drafted" + (f", {len(rules) - n_ok} set aside" if len(rules) > n_ok else ""))
+            if nominal is None:
+                warnings.append("No aircraft chosen, so rules weren't checked against a correctly flown circuit - "
+                                "choose the aircraft and press 'Run again' to check them.")
+            aside = len(rules) - n_ok
+            save(rules=rules + manual, status="ready", stage="done", warnings=warnings,
+                 detail=f"{n_ok} rules drafted" + (f", {aside} set aside" if aside else "")
+                 + (f" ({n_conflict} would be broken by a correct circuit)" if n_conflict else ""))
         except Exception as e:
-            log.exception("SOP draft %s failed", did)
-            msg = str(e)
-            if isinstance(e, PermissionError):
-                msg += (" - Windows blocked access to a MAVIS data file (often antivirus or OneDrive "
-                        "scanning it). Press 'Run again'; if it keeps happening, move the IRIS folder "
-                        "out of Downloads/OneDrive or exclude data/sop from scanning.")
-            try:
-                save(status="failed", stage="failed", error=msg)
-            except OSError:
-                log.error("could not record failure for draft %s", did)
+            self._fail(d, e)

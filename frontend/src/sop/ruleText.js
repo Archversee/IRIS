@@ -3,7 +3,7 @@
 
 export const EDITABLE = ["kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
   "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions",
-  "severity", "source_quote", "source_page", "note", "enabled"];
+  "severity", "source_quote", "source_page", "note", "enabled", "tags"];
 
 export const KIND_LABEL = {
   band: "Hold target ± tolerance",

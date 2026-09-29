@@ -2,7 +2,7 @@
 // data the SOP Rules page shows -- no extra backend endpoint).
 import { describe, phaseTxt, metricInfo } from "./ruleText.js";
 
-const RULE_COLS = ["id", "enabled", "kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
+const RULE_COLS = ["id", "enabled", "kind", "title", "tags", "phases", "metric", "target", "tol_hi", "tol_lo",
   "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "severity",
   "source_page", "source_quote", "note", "origin", "created_by", "created_at", "updated_by", "updated_at"];
 
@@ -31,6 +31,8 @@ function header(set, meta) {
     active: set.active,
     source_pdf: set.filename || null,
     llm_model: set.llm_model || null,
+    prompt_version: set.prompt_version || null,
+    pages_read: set.page_selection || null,
     created_by: set.created_by, created_at: set.created_at,
     updated_by: set.updated_by, updated_at: set.updated_at,
   };
@@ -62,7 +64,7 @@ function csvCell(v) {
 
 /** Spreadsheet-friendly CSV (opens in Excel; UTF-8 BOM so ± and ° survive). */
 export function toCsv(set, meta) {
-  const cols = ["summary", "title", "enabled", "severity", "kind", "metric", "unit", "phases", "target", "tol_hi", "tol_lo",
+  const cols = ["summary", "title", "tags", "enabled", "severity", "kind", "metric", "unit", "phases", "target", "tol_hi", "tol_lo",
     "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "source_page", "source_quote",
     "note", "origin", "updated_by", "updated_at", "id"];
   const rows = set.rules.map((r) => ({
@@ -70,6 +72,7 @@ export function toCsv(set, meta) {
     summary: describe(meta, r),
     unit: r.metric ? metricInfo(meta, r.metric).unit : "",
     phases: (r.phases || []).map(phaseTxt),
+    tags: (r.tags || []).map((t) => meta.tags?.find((x) => x.id === t)?.label || t),
     gate_phase: r.gate_phase ? phaseTxt(r.gate_phase) : "",
   }));
   const h = header(set, meta);
