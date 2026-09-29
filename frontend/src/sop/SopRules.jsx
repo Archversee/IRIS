@@ -5,6 +5,7 @@ import { editable, sameRule, describe } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import { RuleRow, EditorName, useKeyNav } from "./parts.jsx";
+import { exportRuleSet } from "./exportRules.js";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
 import "./sop.css";
@@ -80,7 +81,42 @@ export default function SopRules() {
   );
 }
 
-function SetBar({ s, others, onPick, onChanged, setErr }) {
+function ExportMenu({ s, meta, setErr }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (!e.target.closest?.(".sop-export")) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  async function go(format) {
+    setOpen(false); setBusy(true);
+    try {
+      const full = await sopApi.getSet(s.id);       // latest saved rules, not unsaved edits
+      exportRuleSet(full, meta, format);
+    } catch (e) { setErr(`Export failed: ${e.message}`); }
+    setBusy(false);
+  }
+  return (
+    <div className="sop-export">
+      <button type="button" className="secondary" disabled={busy} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}>{busy ? "Exporting…" : "Export ▾"}</button>
+      {open && (
+        <div className="sop-export__menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => go("csv")}>
+            <b>CSV</b><span>Opens in Excel · one row per rule</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => go("json")}>
+            <b>JSON</b><span>Every field, for backup or other tools</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
   const [renaming, setRenaming] = useState(null);
   const [confirm, setConfirm] = useState(null);
   async function act(fn) {
@@ -112,6 +148,7 @@ function SetBar({ s, others, onPick, onChanged, setErr }) {
         {s.active
           ? <button type="button" className="secondary" onClick={() => setConfirm("deactivate")}>Deactivate</button>
           : <button type="button" onClick={() => act(() => sopApi.activateSet(s.id))}>Make active</button>}
+        <ExportMenu s={s} meta={meta} setErr={setErr} />
         {!s.active && <button type="button" className="secondary sop-danger" onClick={() => setConfirm("delete")}>Delete</button>}
       </div>
       {confirm === "deactivate" && (
@@ -209,7 +246,7 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
 
   return (
     <>
-      <SetBar s={setInfo} others={others} onPick={onPick} onChanged={() => { onChanged(); load(sel); }} setErr={setErr} />
+      <SetBar s={setInfo} meta={meta} others={others} onPick={onPick} onChanged={() => { onChanged(); load(sel); }} setErr={setErr} />
       {err && <div className="sop-error">{err}</div>}
       <div className="sop-split">
         <div className="sop-list">
