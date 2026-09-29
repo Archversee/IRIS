@@ -50,6 +50,40 @@ UNITS: dict[str, tuple[str, float]] = {
 # dimensions that share the "deg" unit
 _DEG_DIMS = {"angle", "heading"}
 
+# ---------------------------------------------------------------- rule tags
+# What a rule is ABOUT. 1-3 per rule. The LLM proposes them; validate.py
+# always adds the tag implied by the rule's metric, so filtering is reliable.
+TAGS: dict[str, tuple[str, str]] = {
+    # id                (label shown in the UI,  meaning given to the LLM)
+    "flight_telemetry": ("Flight telemetry", "how the aircraft is flying: airspeed, altitude, climb/descent rate, attitude, heading"),
+    "pilot_controls":   ("Pilot controls",   "what the pilot sets or moves: throttle, flaps, yoke/stick, rudder, brakes, trim"),
+    "engine":           ("Engine",           "engine and power: RPM, power setting, mixture, engine start/run-up"),
+    "aircraft_limit":   ("Aircraft limit",   "a hard limitation of the aircraft (never-exceed, max flap speed, max RPM)"),
+    "procedure":        ("Procedure",        "a checklist item or step in a normal procedure"),
+    "configuration":    ("Configuration",    "how the aircraft must be configured for a phase (flaps set, lights on, mixture rich)"),
+    "communication":    ("Communication",    "radio calls, ATC, transponder codes"),
+    "situational":      ("Lookout & awareness", "lookout, traffic, terrain, orientation, weather decisions"),
+    "emergency":        ("Emergency",        "emergency or abnormal situation (engine failure, fire, forced landing)"),
+}
+# tag implied by each measurable metric (added automatically)
+METRIC_TAG = {
+    "ias": "flight_telemetry", "alt_msl": "flight_telemetry", "alt_agl": "flight_telemetry",
+    "vs": "flight_telemetry", "hdg": "flight_telemetry", "bank": "flight_telemetry",
+    "pitch": "flight_telemetry", "on_ground": "flight_telemetry",
+    "flaps_deg": "pilot_controls", "throttle": "pilot_controls",
+    "rpm": "engine",
+}
+
+# Quantities an SOP often states that MAVIS telemetry CANNOT measure. A number
+# followed by one of these units must never become a rule on another metric
+# (e.g. "Oil pressure 20 PSI" must not turn into "RPM >= 20").
+FOREIGN_UNITS: dict[str, str] = {
+    r"psi": "pressure", r"in\.?\s?hg": "manifold/vacuum pressure", r"°\s?[fc]\b|deg(?:rees)?\s?[fc]\b": "temperature",
+    r"gph|gal(?:lon)?s?\b|liters?\b|litres?\b": "fuel quantity/flow", r"lbs?\b|pounds?\b|kg\b": "weight",
+    r"amps?\b|volts?\b": "electrical", r"mhz|khz": "radio frequency", r"hours?\b|hrs\b|minutes?\b": "time",
+    r"nm\b|nautical miles?|statute miles?|\bsm\b": "distance", r"%\s?mac|inches aft": "weight & balance",
+}
+
 
 def unit_ok(unit: str, metric: str) -> bool:
     dim = METRICS[metric][0]
@@ -132,10 +166,12 @@ def llm_json_schema(phases: list[str]) -> dict:
                             },
                         },
                         "severity": {"type": "string", "enum": list(SEVERITIES)},
+                        "tags": {"type": "array", "items": {"type": "string", "enum": list(TAGS)},
+                                 "minItems": 1, "maxItems": 3},
                         "source_quote": {"type": "string"},
                         "page": {"type": "integer"},
                     },
-                    "required": ["kind", "title", "phases", "metric", "unit", "severity",
+                    "required": ["kind", "title", "phases", "metric", "unit", "severity", "tags",
                                  "source_quote", "page"],
                 },
             }

@@ -132,6 +132,48 @@ def main() -> int:
     check("unknown aircraft -> no profile", match_profile({"title": "Piper Cub"}, profs)[0] is None)
     check("no ident -> no profile", match_profile(None, profs)[0] is None)
 
+    # ---- v2: unit mix-ups, circuit-profile conflicts, tags, page selection
+    from .validate import foreign_quantity, normalise_tags
+    from .profile import load_nominal, conflicts
+    from .extract import parse_pages, compress_pages, detect_section, outline
+    oil = {"kind": "limit", "metric": "rpm", "source_quote": "Oil Pressure, Minimum: 20 PSI.",
+           "as_written": {"min": 20, "unit": "rpm"}}
+    check("oil pressure (PSI) can't become an RPM rule", bool(foreign_quantity(oil)))
+    check("real RPM limit is not a unit mix-up", not foreign_quantity(
+        {"kind": "limit", "metric": "rpm", "source_quote": "Maximum Engine Speed: 2700 RPM.",
+         "as_written": {"max": 2700, "unit": "rpm"}}))
+    N = load_nominal("c172sp_g1000")
+    check("circuit profile loads from lesson + aircraft", N is not None and N["CLIMB_OUT"]["ias"] == (74.0, 74.0))
+    bad = {  # real mistakes from a POH run with prompt v1
+        "glide speed as climb limit": {"kind": "limit", "metric": "ias", "max_value": 68, "phases": ["CLIMB_OUT"]},
+        "magneto check as RPM limit": {"kind": "limit", "metric": "rpm", "max_value": 1800, "phases": []},
+        "autopilot min approach speed": {"kind": "limit", "metric": "ias", "min_value": 80, "phases": []},
+        "autopilot off below 200 ft": {"kind": "limit", "metric": "alt_agl", "min_value": 200, "phases": ["BASE", "FINAL"]},
+        "2000 ft over noise areas": {"kind": "band", "metric": "alt_agl", "target": 2000, "tol_hi": 0, "tol_lo": 1, "phases": []},
+        "coupled approach 90 kt": {"kind": "band", "metric": "ias", "target": 90, "tol_hi": 0, "tol_lo": 1, "phases": ["BASE", "FINAL"]},
+    }
+    for name, r in bad.items():
+        check(f"correct circuit breaks '{name}'", bool(conflicts(r, N)))
+    good = {
+        "Vne 163": {"kind": "limit", "metric": "ias", "max_value": 163, "phases": []},
+        "max RPM 2700": {"kind": "limit", "metric": "rpm", "max_value": 2700, "phases": []},
+        "Vfe 85 with flaps > 10": {"kind": "limit", "metric": "ias", "max_value": 85, "phases": [],
+                                   "conditions": [{"metric": "flaps_deg", "op": ">", "value": 10}]},
+        "approach 60-70 flaps down": {"kind": "limit", "metric": "ias", "min_value": 60, "max_value": 70, "phases": ["FINAL"],
+                                      "conditions": [{"metric": "flaps_deg", "op": ">", "value": 0}]},
+        "rotate at 55": {"kind": "capture", "metric": "ias", "capture_at": "liftoff", "min_value": 55},
+        "flaps 30 by final": {"kind": "event", "metric": "flaps_deg", "op": ">=", "value": 30, "gate_phase": "FINAL"},
+    }
+    for name, r in good.items():
+        check(f"correct circuit keeps '{name}'", not conflicts(r, N), conflicts(r, N))
+    check("metric tag always added", normalise_tags(["aircraft_limit"], "limit", "flaps_deg") == ["aircraft_limit", "pilot_controls"])
+    check("unknown tags dropped", normalise_tags(["nonsense"], "unobservable", None) == ["procedure"])
+    check("page ranges parse", parse_pages("1-3, 7, 9-8", 20) == [1, 2, 3, 7, 8, 9] and compress_pages([1, 2, 3, 7, 8, 9]) == "1-3, 7-9")
+    check("POH section from header", detect_section("SECTION 4\nNORMAL PROCEDURES\nblah\n4-5") == 4)
+    check("POH section from footer label", detect_section("text\nmore text\nMay 30/00 2-7") == 2)
+    ol = outline([{"page_no": i, "section": s, "needs_ocr": False} for i, s in [(1, 1), (2, 2), (3, 2), (4, 4)]])
+    check("outline suggests Limitations + Normal Procedures", [o["suggested"] for o in ol] == [False, True, True])
+
     check("tolerant LLM JSON parse", len(parse_llm_output('```json\n{"rules":[{"kind":"limit"}]}\n```')) == 1)
 
     pages = [extract.PageText(i, "para " * 400, "text") for i in (1, 2, 3)]

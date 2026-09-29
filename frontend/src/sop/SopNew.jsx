@@ -4,7 +4,8 @@ import { sopApi, ApiError } from "./sopApi.js";
 import { editable } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
-import { RuleRow, EditorName, useKeyNav } from "./parts.jsx";
+import PagePicker, { compressPages } from "./PagePicker.jsx";
+import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch } from "./parts.jsx";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
 import "./sop.css";
@@ -125,7 +126,8 @@ function UploadStart({ onCreated }) {
                 {drafts.map((d) => (
                   <tr key={d.id}>
                     <td><b>{d.name}</b><div className="muted sop-small">{d.filename}</div></td>
-                    <td>{d.status === "processing" ? `Processing… ${d.detail || ""}` : d.status === "failed" ? <span className="err">Failed</span> : "Ready to review"}</td>
+                    <td>{d.status === "processing" ? `Processing… ${d.detail || ""}` : d.status === "failed" ? <span className="err">Failed</span>
+                      : d.status === "choose_pages" ? "Choose pages" : "Ready to review"}</td>
                     <td>{d.n_rules}{d.n_blocked ? <span className="err"> · {d.n_blocked} need fixing</span> : ""}</td>
                     <td className="muted sop-small">{new Date(d.updated_at).toLocaleString()}{d.created_by ? ` · ${d.created_by}` : ""}</td>
                     <td className="sop-actions-cell">
@@ -152,7 +154,7 @@ function UploadStart({ onCreated }) {
 }
 
 /* ------------------------------------------------------------------ review */
-const STAGES = [["extracting", "Read pages"], ["parsing", "Draft rules"], ["validating", "Check rules"], ["done", "Ready"]];
+const STAGES = [["extracting", "Read pages"], ["ocr", "OCR scanned pages"], ["parsing", "Draft rules"], ["validating", "Check rules"], ["done", "Ready"]];
 const FILTERS = [["all", "All"], ["blocked", "Needs fixing"], ["warn", "Warnings"], ["aside", "Set aside"]];
 const newCid = () => Math.random().toString(16).slice(2, 14);
 
@@ -188,6 +190,9 @@ function DraftReview({ id, meta, onGone }) {
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [acWarn, setAcWarn] = useState([]);
+  const [picking, setPicking] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [tagSel, setTagSel] = useState([]);
   const loaded = useRef(false);
   const version = useRef(0);
 
@@ -250,8 +255,8 @@ function DraftReview({ id, meta, onGone }) {
     included: rules.filter((r) => r.include).length,
   }), [rules]);
   const visible = rules.filter((r) =>
-    filter === "all" ? true : filter === "blocked" ? r.include && r.blocked :
-      filter === "warn" ? r.include && !r.blocked && (r.issues || []).length : !r.include);
+    (filter === "all" ? true : filter === "blocked" ? r.include && r.blocked :
+      filter === "warn" ? r.include && !r.blocked && (r.issues || []).length : !r.include) && tagMatch(r, tagSel));
   const cur = rules.find((r) => r.cid === sel) || null;
 
   const update = (cid, patch) => setRules((rs) => rs.map((r) => (r.cid === cid ? { ...r, ...patch } : r)));
@@ -267,6 +272,25 @@ function DraftReview({ id, meta, onGone }) {
   if (err && !d) return <div className="sop-error">{err}</div>;
   if (!d) return <div className="muted">Loading draft…</div>;
   if (d.status === "processing") return <Progress d={d} />;
+
+  async function runPages(body) {
+    setStarting(true); setErr(null);
+    try {
+      await sopApi.run(id, body);
+      loaded.current = false; setPicking(false);
+      setD({ ...d, status: "processing", stage: "queued", done: 0, total: 0, detail: "", _restart: Date.now() });
+    } catch (e) { setErr(e.message); }
+    setStarting(false);
+  }
+  if (d.status === "choose_pages" || picking) {
+    return (
+      <>
+        <PagePicker d={d} meta={meta} busy={starting} rerun={picking} onRun={runPages}
+          onCancel={picking ? () => setPicking(false) : null} />
+        {err && <div className="sop-error">{err}</div>}
+      </>
+    );
+  }
   if (d.status === "failed") {
     return (
       <div className="card">
@@ -333,6 +357,12 @@ function DraftReview({ id, meta, onGone }) {
             {saveState === "saved" ? "Draft saved on this machine" : saveState === "error" ? "Couldn't save draft" : "Saving draft…"}
           </span>
           <span className="muted sop-small">{counts.included} of {counts.all} rules will be saved{counts.blocked ? ` · ${counts.blocked} need fixing` : ""}</span>
+          {d.selected_pages?.length > 0 && (
+            <span className="muted sop-small">
+              Read pages {compressPages(d.selected_pages)} of {d.page_count}{d.prompt_version ? ` · prompt v${d.prompt_version}` : ""}
+              {d.page_count > 0 && <> · <button type="button" className="sop-linkish" onClick={() => setPicking(true)}>Change pages</button></>}
+            </span>
+          )}
         </div>
         <div className="sop-btnrow">
           <button type="button" className="secondary" onClick={() => setConfirm("reparse")}>Run LLM again</button>
@@ -357,6 +387,7 @@ function DraftReview({ id, meta, onGone }) {
               </button>
             ))}
           </div>
+          <TagFilter meta={meta} rules={rules} value={tagSel} onChange={setTagSel} />
           <div className="sop-list__rows">
             {visible.length === 0 && <div className="muted sop-empty">{filter === "blocked" ? "Nothing needs fixing." : "No rules here."}</div>}
             {groupByPage(visible).map(([page, rs]) => (
@@ -418,7 +449,7 @@ function DraftReview({ id, meta, onGone }) {
       )}
       {confirm === "reparse" && (
         <ConfirmDialog title="Run the LLM again?" confirmLabel="Run again"
-          message="The LLM re-drafts every rule from the SOP. Your edits to LLM-drafted rules are replaced; rules you added by hand are kept."
+          message={`The LLM re-drafts every rule from the same pages (${compressPages(d.selected_pages || [])}). Your edits to LLM-drafted rules are replaced; rules you added by hand are kept. To read different pages, use "Change pages" instead.`}
           onCancel={() => setConfirm(null)}
           onConfirm={async () => {
             setConfirm(null);
