@@ -178,3 +178,17 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
   .sop-steps { grid-template-columns: repeat(2, 1fr); }
 }
 .sop-health__why { flex-basis: 100%; margin: 2px 0 0; }
+
+/* Export menu on the SOP Rules rule-set bar */
+.sop-export { position: relative; }
+.sop-export__menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 250px;
+  display: flex; flex-direction: column; padding: 6px; gap: 2px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.sop-export__menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  background: transparent; color: var(--text); border: none; padding: 8px 10px; font-weight: 400; border-radius: 6px;
+}
+.sop-export__menu button:hover { background: var(--panel-2); }
+.sop-export__menu span { font-size: 12px; color: var(--muted); }
