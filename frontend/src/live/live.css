@@ -17,8 +17,10 @@
   justify-content: space-between;
   margin-bottom: 12px;
 }
-/* MAVIS's own topbar: [End Session] then the status dot, top-right. */
-.mavis-shell > .mavis-topbar { justify-content: flex-end; gap: 12px; }
+/* MAVIS's own toolbar: status dot, then End Session beside it, on the left. */
+.mavis-shell > .mavis-topbar,
+.mavis-hud__left > .mavis-topbar { justify-content: flex-start; gap: 12px; }
+.mavis-hud__left > .mavis-topbar { margin: 0; min-height: 34px; }
 
 /* MAVIS backend status: green glow when connected, red when down. */
 .mavis-status-dot {
@@ -215,13 +217,15 @@
 /* ---- Avatar ---- */
 .mavis-avatar {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   background: #000;
   border: 1px solid #232f3d;
   border-radius: 10px;
   overflow: hidden;
 }
-.mavis-avatar video { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Portrait clip filling the square box (no letterbox bars); crop from the
+   bottom so the face stays in frame. */
+.mavis-avatar video { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; display: block; }
 .mavis-avatar__placeholder {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
@@ -264,7 +268,8 @@
   border-radius: 10px;
   overflow: hidden;
 }
-.mavis-map canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.mavis-map canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.mavis-map canvas.is-dragging { cursor: grabbing; }
 .mavis-map__zoom {
   position: absolute; left: 10px; bottom: 10px;
   display: flex; flex-direction: column; gap: 4px;

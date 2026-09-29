@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 // same runway-relative along/cross projection, same pattern rectangle,
 // same track-segment/aircraft-triangle drawing, same zoom-follows-aircraft
 // behaviour, same hover-to-lat/lon tooltip. Not ported: the reference-pilot
-// overlay and manual pan.
+// overlay. Unlike the original, the view is centred on the planned circuit
+// and can be panned by holding the left mouse button and dragging.
 
 function drawRoundedPattern(ctx, pts, px, radiusM, sc) {
   const corners = pts.map(([a, c]) => px(a, c));
@@ -30,6 +31,9 @@ export default function MapCanvas({ state }) {
   const boxRef = useRef(null);
   const projRef = useRef(null); // last frame's projection, for hover inversion
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ a: 0, c: 0 }); // metres, along/cross runway
+  const dragRef = useRef(null); // {x, y, pan} at drag start
+  const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState(null); // {x, y, lat, lon, along, cross}
 
   useEffect(() => {
@@ -57,22 +61,27 @@ export default function MapCanvas({ state }) {
 
     const tel = state?.tel || {};
     const upA = rw.length_m + 420;
-    let a0 = -2200, a1 = upA + 600, c0 = -400, c1 = off + 500;
+    const fin = L.scoring?.final_length_m || pat.base_turn_past_abeam_m || 500;
+    // View centred on the planned circuit; unzoomed it widens (symmetrically)
+    // to keep the aircraft in view, zoomed in it follows the aircraft.
+    let cA = (upA - fin) / 2, cC = off / 2;
+    let halfA = (upA + fin) / 2 + 600, halfC = off / 2 + 500;
     let acA = null, acC = null;
     if (tel.lat) [acA, acC] = en(tel.lat, tel.lon);
     if (zoom > 1 && acA != null) {
-      const spanA = (a1 - a0) / zoom, spanC = (c1 - c0) / zoom;
-      a0 = acA - spanA / 2; a1 = acA + spanA / 2;
-      c0 = acC - spanC / 2; c1 = acC + spanC / 2;
+      cA = acA; cC = acC;
     } else if (acA != null) {
-      a0 = Math.min(a0, acA - 400); a1 = Math.max(a1, acA + 400);
-      c0 = Math.min(c0, acC - 400); c1 = Math.max(c1, acC + 400);
+      halfA = Math.max(halfA, Math.abs(acA - cA) + 400);
+      halfC = Math.max(halfC, Math.abs(acC - cC) + 400);
     }
+    halfA /= zoom; halfC /= zoom;
+    cA += pan.a; cC += pan.c;
 
     const pad = 34, w = cv.width - 2 * pad, h = cv.height - 2 * pad;
-    const sc = Math.min(w / (a1 - a0), h / (c1 - c0));
-    const px = (a, c) => [pad + (a - a0) * sc, cv.height - pad - (c - c0) * sc];
-    projRef.current = { th, side, clOff, lat0, lon0, a0, c0, sc, pad, h: cv.height };
+    const sc = Math.min(w / (2 * halfA), h / (2 * halfC));
+    const W2 = cv.width / 2, H2 = cv.height / 2;
+    const px = (a, c) => [W2 + (a - cA) * sc, H2 - (c - cC) * sc];
+    projRef.current = { th, side, clOff, lat0, lon0, cA, cC, sc, W2, H2 };
 
     ctx.clearRect(0, 0, cv.width, cv.height);
 
@@ -80,7 +89,6 @@ export default function MapCanvas({ state }) {
     ctx.strokeStyle = ACC + "55";
     ctx.lineWidth = 2;
     ctx.setLineDash([7, 7]);
-    const fin = L.scoring?.final_length_m || pat.base_turn_past_abeam_m || 500;
     drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px, 220, sc);
     ctx.stroke();
     ctx.setLineDash([]);
@@ -141,7 +149,7 @@ export default function MapCanvas({ state }) {
       ctx.fill();
       ctx.restore();
     }
-  }, [state?.tel, state?.track, state?.lesson, state?.night, zoom]);
+  }, [state?.tel, state?.track, state?.lesson, state?.night, zoom, pan]);
 
   function patternToLatLon(along, cross) {
     const proj = projRef.current;
@@ -154,15 +162,36 @@ export default function MapCanvas({ state }) {
     return { lat, lon };
   }
 
-  function onMouseMove(ev) {
+  // Hold left click and drag to pan; screen pixels -> metres at the
+  // current scale (screen y is flipped relative to cross-track).
+  function onPointerDown(ev) {
+    if (ev.button !== 0) return;
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    dragRef.current = { x: ev.clientX, y: ev.clientY, pan };
+    setDragging(true);
+    setHover(null);
+  }
+  function onPointerUp(ev) {
+    if (!dragRef.current) return;
+    ev.currentTarget.releasePointerCapture?.(ev.pointerId);
+    dragRef.current = null;
+    setDragging(false);
+  }
+
+  function onPointerMove(ev) {
     const proj = projRef.current;
     const cv = canvasRef.current;
     if (!proj || !cv) return;
+    const d = dragRef.current;
+    if (d) {
+      setPan({ a: d.pan.a - (ev.clientX - d.x) / proj.sc, c: d.pan.c + (ev.clientY - d.y) / proj.sc });
+      return;
+    }
     const rect = cv.getBoundingClientRect();
     const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
-    const { a0, c0, sc, pad, h } = proj;
-    const along = a0 + (x - pad) / sc;
-    const cross = c0 + (h - pad - y) / sc;
+    const { cA, cC, sc, W2, H2 } = proj;
+    const along = cA + (x - W2) / sc;
+    const cross = cC - (y - H2) / sc;
     const ll = patternToLatLon(along, cross);
     if (!ll) return setHover(null);
     setHover({ x, y, lat: ll.lat, lon: ll.lon });
@@ -170,10 +199,19 @@ export default function MapCanvas({ state }) {
 
   return (
     <div className="mavis-map" ref={boxRef}>
-      <canvas ref={canvasRef} onMouseMove={onMouseMove} onMouseLeave={() => setHover(null)} />
+      <canvas
+        ref={canvasRef}
+        className={dragging ? "is-dragging" : undefined}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={() => setHover(null)}
+      />
       <div className="mavis-map__zoom">
-        <button type="button" onClick={() => setZoom((z) => Math.min(8, z * 1.5))}>+</button>
-        <button type="button" onClick={() => setZoom((z) => Math.max(1, z / 1.5))}>−</button>
+        <button type="button" title="Zoom in" onClick={() => setZoom((z) => Math.min(8, z * 1.5))}>+</button>
+        <button type="button" title="Zoom out" onClick={() => setZoom((z) => Math.max(1, z / 1.5))}>−</button>
+        <button type="button" title="Re-centre" onClick={() => { setPan({ a: 0, c: 0 }); setZoom(1); }}>⌖</button>
       </div>
       {hover && (
         <div className="mavis-map__hover" style={{ left: hover.x + 12, top: hover.y + 12 }}>

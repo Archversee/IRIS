@@ -96,22 +96,26 @@ export default function LiveCoach({ freeFlight = false }) {
     );
   }
 
+  const toolbar = (
+    <div className="mavis-topbar">
+      <span
+        className={"mavis-status-dot" + (status === "open" ? " is-up" : "")}
+        title={status === "open" ? "MAVIS backend running" : `MAVIS backend down (${status})`}
+        aria-label={status === "open" ? "MAVIS backend running" : "MAVIS backend down"}
+      />
+      {inLesson && !state?.scorecard && (
+        <button type="button" className="secondary" onClick={() => setConfirmingEnd(true)}>
+          ‹ End Session
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell mavis-shell--menu"}>
-      <div className="mavis-topbar">
-        {inLesson && !state?.scorecard && (
-          <button type="button" className="secondary" onClick={() => setConfirmingEnd(true)}>
-            ‹ End Session
-          </button>
-        )}
-        <span
-          className={"mavis-status-dot" + (status === "open" ? " is-up" : "")}
-          title={status === "open" ? "MAVIS backend running" : `MAVIS backend down (${status})`}
-          aria-label={status === "open" ? "MAVIS backend running" : "MAVIS backend down"}
-        />
-      </div>
+      {!inLesson && toolbar}
       {inLesson ? (
-        <InFlightPanel state={state} onMainMenu={backToDashboardHome} />
+        <InFlightPanel state={state} toolbar={toolbar} onMainMenu={backToDashboardHome} />
       ) : freeFlight ? (
         <FreeFlightMenu state={state} onStarting={() => setStartedHere(true)} />
       ) : (
