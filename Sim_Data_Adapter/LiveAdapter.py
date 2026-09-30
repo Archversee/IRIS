@@ -247,22 +247,44 @@ def stop_obs_recordings(clients) -> list[str]:
     return paths
 
 
-def delete_recordings(sid: str, paths: list[str]) -> None:
-    """Finish & discard: remove the files OBS wrote for this session. OBS
-    can hold the file open for a moment after StopRecord, so retry briefly."""
-    for p in paths:
-        for attempt in range(10):
+# Same-named siblings to remove too: with OBS's "Automatically remux to mp4"
+# on, it records .mkv and writes the .mp4 only AFTER StopRecord returns.
+_RECORDING_EXTS = (".mkv", ".mp4", ".mov", ".flv", ".ts", ".m4v", ".webm")
+_DISCARD_WATCH_S = 90  # how long to keep catching a late remux / released file lock
+
+
+def _discard_worker(sid: str, paths: list[str]) -> None:
+    targets = sorted({os.path.splitext(p)[0] + ext for p in paths for ext in _RECORDING_EXTS})
+    deleted: set[str] = set()
+    last_error: dict[str, OSError] = {}
+    deadline = time.time() + _DISCARD_WATCH_S
+    while time.time() < deadline:
+        for t in targets:
+            if t in deleted or not os.path.exists(t):
+                continue
             try:
-                os.remove(p)
-                print(f"Discarded session {sid}: deleted {p}")
-                break
-            except FileNotFoundError:
-                break
-            except OSError as e:
-                if attempt == 9:
-                    print(f"Couldn't delete discarded recording {p}: {e}")
-                else:
-                    time.sleep(1)
+                os.remove(t)
+                deleted.add(t)
+                last_error.pop(t, None)
+                print(f"Discarded session {sid}: deleted {t}")
+            except OSError as e:  # still open in OBS (writing/remuxing) -- try again shortly
+                last_error[t] = e
+        time.sleep(1)
+    for t, e in last_error.items():
+        if os.path.exists(t):
+            print(f"Couldn't delete discarded recording {t}: {e}")
+    if not deleted:
+        print(f"Discarded session {sid}: no recording files found at {paths}")
+
+
+def delete_recordings(sid: str, paths: list[str]) -> None:
+    """Finish & discard: remove the files OBS wrote for this session (plus
+    any remuxed copy), on a background thread so the main loop isn't held
+    up while OBS finishes writing."""
+    if not paths:
+        print(f"Discarded session {sid}: no recordings were saved for it (OBS off, or this adapter didn't record it).")
+        return
+    threading.Thread(target=_discard_worker, args=(sid, paths), daemon=True).start()
 
 
 # ========================================================================
