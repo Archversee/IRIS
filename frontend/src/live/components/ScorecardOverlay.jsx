@@ -8,7 +8,7 @@ const GRADE_LABEL = { S: "S", A: "A", B: "B", C: "C", D: "D", F: "F" };
 // gradients, metric bars, debrief text, scoring guide) -- not the
 // leaderboard-post fields / leaderboard button yet, since that screen
 // doesn't exist in this rebuild.
-export default function ScorecardOverlay({ scorecard, onMainMenu }) {
+export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard }) {
   const scores = scorecard.scores || {};
   const [showGuide, setShowGuide] = useState(false);
 
@@ -67,6 +67,9 @@ export default function ScorecardOverlay({ scorecard, onMainMenu }) {
           <button type="button" onClick={flyAgain}>↻ Fly again</button>
           <button type="button" className="secondary" onClick={() => setShowGuide(true)}>Scoring guide</button>
           <button type="button" className="secondary" onClick={onMainMenu}>Finish &amp; save ›</button>
+          {onDiscard && (
+            <button type="button" className="secondary" onClick={onDiscard}>Finish &amp; discard ›</button>
+          )}
         </div>
       </div>
       {showGuide && <ScoringGuide onClose={() => setShowGuide(false)} />}

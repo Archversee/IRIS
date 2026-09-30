@@ -5,7 +5,7 @@ import ScorecardOverlay from "./ScorecardOverlay.jsx";
 
 // Two columns: avatar + chat on the left, and the ground track (planned
 // vs. flown path) filling the whole right side top to bottom.
-export default function InFlightPanel({ state, toolbar, onMainMenu }) {
+export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard }) {
   return (
     <div className="mavis-hud">
       <div className="mavis-hud__left">
@@ -18,7 +18,7 @@ export default function InFlightPanel({ state, toolbar, onMainMenu }) {
         <MapCanvas state={state} />
       </div>
 
-      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} />}
+      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} />}
     </div>
   );
 }

@@ -84,6 +84,28 @@ export default function LiveCoach({ freeFlight = false }) {
     nav(sid ? `/upload?session=${sid}` : "/upload");
   }
 
+  // From the scorecard's "Finish & discard" button -- same quit as above,
+  // but deletes the IRIS session record instead of going to Upload, then
+  // returns straight to the dashboard.
+  async function finishAndDiscard() {
+    const sid = state?.session_id;
+    try {
+      await mavisApi.quit();
+    } catch {
+      // best-effort
+    }
+    if (sid) {
+      try {
+        await api.deleteSession(sid);
+      } catch {
+        // best-effort -- fall back to at least marking it ended
+        await markEnded();
+      }
+    }
+    setStartedHere(false);
+    nav("/");
+  }
+
   if (readingId && !inLesson) {
     return (
       <div className="mavis-shell">
@@ -115,9 +137,9 @@ export default function LiveCoach({ freeFlight = false }) {
     <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell mavis-shell--menu"}>
       {!inLesson && toolbar}
       {inLesson ? (
-        <InFlightPanel state={state} toolbar={toolbar} onMainMenu={backToDashboardHome} />
+        <InFlightPanel state={state} toolbar={toolbar} onMainMenu={backToDashboardHome} onDiscard={finishAndDiscard} />
       ) : freeFlight ? (
-        <FreeFlightMenu state={state} onStarting={() => setStartedHere(true)} />
+        <FreeFlightMenu onStarting={() => setStartedHere(true)} />
       ) : (
         <MainMenu state={state} onStarting={() => setStartedHere(true)} />
       )}
