@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import { mavisApi } from "../live/api/mavisApi.js";
 
@@ -14,9 +14,20 @@ import { mavisApi } from "../live/api/mavisApi.js";
 export default function LessonTree() {
   const state = useMavisState();
   const catalog = state?.lesson_catalog;
-  const activeLessonId = state?.lesson_id;
+  const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
+  // Highlight what's actually on screen: a reading lesson is only in the
+  // URL (?reading=<id>), never MAVIS's lesson_id, so check that first; a
+  // flying lesson is MAVIS's selected lesson, shown on plain /live.
+  // Elsewhere in the app nothing in the tree is "open", so nothing is lit.
+  const readingId = pathname === "/live" ? searchParams.get("reading") : null;
+  const activeLessonId = readingId || (pathname === "/live" ? state?.lesson_id : null);
   const [openModule, setOpenModule] = useState(null);
   const nav = useNavigate();
+
+  // Jumping to a lesson (sidebar, landing page, Curriculum link) re-opens
+  // whichever module holds it, so its highlight is always visible.
+  useEffect(() => { setOpenModule(null); }, [activeLessonId]);
 
   if (!catalog?.modules?.length) {
     return <div className="sidebar__lesson-tree sidebar__lesson-tree--empty">Waiting for MAVIS…</div>;
