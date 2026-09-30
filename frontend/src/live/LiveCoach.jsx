@@ -86,7 +86,7 @@ export default function LiveCoach({ freeFlight = false }) {
 
   // From the scorecard's "Finish & discard" button -- same quit as above,
   // but deletes the IRIS session record instead of going to Upload, then
-  // returns straight to the dashboard.
+  // drops back to this page's own start menu (Free Flight / Basic Flight).
   async function finishAndDiscard() {
     const sid = state?.session_id;
     try {
@@ -103,7 +103,6 @@ export default function LiveCoach({ freeFlight = false }) {
       }
     }
     setStartedHere(false);
-    nav("/");
   }
 
   if (readingId && !inLesson) {

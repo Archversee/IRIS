@@ -40,6 +40,7 @@ export default function FreeFlightMenu({ onStarting }) {
   }
 
   const menuBg = media?.["menu-bg"] ? mediaUrl(media["menu-bg"]) : null;
+  const splashBg = media?.["splash-bg"] ? mediaUrl(media["splash-bg"]) : null;
 
   return (
     <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
@@ -50,7 +51,7 @@ export default function FreeFlightMenu({ onStarting }) {
             className="mavis-mode-card"
             disabled={busy}
             onClick={startSession}
-            style={menuBg ? { backgroundImage: `linear-gradient(180deg, rgba(19,25,34,0.55), rgba(19,25,34,0.92)), url(${menuBg})` } : undefined}
+            style={splashBg ? { backgroundImage: `linear-gradient(180deg, rgba(19,25,34,0.55), rgba(19,25,34,0.92)), url(${splashBg})` } : undefined}
           >
             <div className="mavis-mode-card__label">{busy ? "Starting…" : "▶ Start Session"}</div>
             <div className="mavis-mode-card__desc">Fly freely -- logged and recorded the same as any other flight.</div>
