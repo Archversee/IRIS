@@ -7,7 +7,7 @@ export const READING_3D = {
     model: "/static/models/cockpit.glb",
     camera: "orbit",
     blurb: "Preflight & Cockpit · walk the aircraft before you fly",
-    frame: [2.8, 1.9, 3.4],
+    frame: [2.3, 1.55, 2.8], // initial camera offset from the model centre (~20% closer than the fitted view)
     dist: [0.8, 12],
     grid: true,
     gridSize: 8,

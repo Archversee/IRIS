@@ -138,7 +138,6 @@ th { color: var(--muted); font-weight: 600; }
 .landing__half:hover, .landing__half:focus-visible { flex: 1.15; outline: none; }
 .landing__half:hover::before, .landing__half:focus-visible::before { filter: brightness(1); transform: scale(1.04); }
 .landing:hover .landing__half:not(:hover)::before { filter: brightness(0.45); }
-.landing__half:disabled { cursor: progress; opacity: 1; }
 
 .landing__label {
   position: relative; z-index: 1;
