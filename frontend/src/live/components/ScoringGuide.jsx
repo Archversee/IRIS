@@ -1,6 +1,5 @@
-// Static content ported from the original app's #guideMenuView. Used both
-// as the scorecard's pop-up (default export) and as the sidebar's
-// Scoring Guide page (ScoringGuideContent).
+// Static content ported from the original app's #guideMenuView, shown on
+// the sidebar's Scoring Guide page (pages/MavisGuides.jsx).
 export function ScoringGuideContent() {
   return (
     <>
@@ -28,19 +27,5 @@ export function ScoringGuideContent() {
       <p className="mavis-guide-note">In Visitor and Exam modes retries are shown but don't cap your score.</p>
       <p className="mavis-guide-easter">There's a rare top mark above A — you'll know it if you earn it.</p>
     </>
-  );
-}
-
-export default function ScoringGuide({ onClose }) {
-  return (
-    <div className="mavis-confirm-overlay" onClick={onClose}>
-      <div className="mavis-confirm-card mavis-guide-card" onClick={(e) => e.stopPropagation()}>
-        <h3>How you're scored</h3>
-        <ScoringGuideContent />
-        <div className="mavis-confirm-btns">
-          <button type="button" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
   );
 }
