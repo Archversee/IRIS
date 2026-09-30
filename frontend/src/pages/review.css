@@ -459,8 +459,9 @@
 .ft-hbar__fill { position: absolute; top: 0; bottom: 0; background: var(--rev-cyan); transition: width .2s linear; }
 .ft-hbar__mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #3a4d60; }
 
+/* Fixed-size square, centred vertically in the space the bars stretch into. */
 .ft-stick {
-  position: relative; flex: 1; min-height: 90px; aspect-ratio: 1; max-height: 150px;
+  position: relative; flex: none; width: 120px; height: 120px; margin: auto 0;
   background: #0e151e; border: 1px solid var(--rev-line); border-radius: 12px;
 }
 .ft-stick::before, .ft-stick::after { content: ""; position: absolute; background: #3a4d60; }

@@ -122,7 +122,8 @@ class MSFSAdapter:
             raise ConnectionError(
                 "SimConnect connected but no telemetry arrived within 10s -- "
                 "make sure MSFS has an active flight loaded, not just the main menu.")
-        log.info("SimConnect connected (pysimconnect)")
+        log.info("SimConnect connected (pysimconnect) -- flaps handle %s%%, elevator trim %s%%",
+                 self._get("FLAPS HANDLE PERCENT", None), self._get("ELEVATOR TRIM PCT", None))
 
     def _get(self, name: str, default=0.0):
         v = (self._datadef.simdata or {}).get(name)
