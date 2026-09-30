@@ -173,6 +173,9 @@ async def amain(cfg):
     # old attempts render dim and there's no false line across the jump
     state: dict = {"phase": engine.phase, "circuit": 1, "total_circuits": int(lesson.get("total_circuits", 1)),
                    "session_id": None,
+                   # True from Start until quit/restart -- lets the web UI
+                   # reattach to a running session after navigating away.
+                   "lesson_running": False,
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "theme": cfg["web"].get("theme", {}),
@@ -356,6 +359,7 @@ async def amain(cfg):
         started.set()
         session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
+        state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
             await _apply_lesson_clock()
             engine.mark_night_done()
@@ -518,6 +522,7 @@ async def amain(cfg):
         _discard_card()
         state["speaking"] = False
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         checkpoints.clear()
         state["track"] = [[]]
@@ -692,6 +697,7 @@ async def amain(cfg):
         state["track"] = [[]]
         transcript.clear()
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         coach.resume()
         _apply_reference(reference or "planned")
@@ -1008,6 +1014,7 @@ async def amain(cfg):
         stop_speech()
         coach.pause()
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         transcript.clear()
         # Scoring + the LLM debrief can take a while (or fail); run them in

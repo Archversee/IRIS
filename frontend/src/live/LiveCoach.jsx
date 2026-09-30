@@ -40,6 +40,13 @@ export default function LiveCoach({ freeFlight = false }) {
   const [ending, setEnding] = useState(false); // End Session confirmed, waiting for MAVIS's scorecard
   const inLesson = startedHere;
   const readingId = searchParams.get("reading");
+  // startedHere is lost when this page unmounts (switching tabs) -- if MAVIS
+  // says a lesson is still running, reattach to it instead of showing the
+  // start menu (which would start a second session). Not on the reading
+  // (walk-around/cockpit) pages, which should still open normally.
+  useEffect(() => {
+    if (state?.lesson_running && !readingId) setStartedHere(true);
+  }, [state?.lesson_running, readingId]);
   // Instructor voice plays in this browser while flying (not over the
   // scorecard -- same rule as the original MAVIS page).
   useInstructorVoice(state?.audio, inLesson && !state?.scorecard);

@@ -5,6 +5,7 @@ import { useSessionData } from "../components/session/useSessionData.js";
 import ScreensPanel from "../components/session/ScreensPanel.jsx";
 import SessionTimeline from "../components/session/SessionTimeline.jsx";
 import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
+import LiveSessionPicker from "../components/session/LiveSessionPicker.jsx";
 import "./review.css";
 
 // Pure viewer now -- MAVIS is the only thing that ever starts, stops, or
@@ -27,6 +28,7 @@ export default function LiveSession() {
   const [running, setRunning] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [listErr, setListErr] = useState(null);
+  const [listLoaded, setListLoaded] = useState(false); // first poll done (skeleton until then)
   const [otwStream, setOtwStream] = useState(null);
   const [instrumentStream, setInstrumentStream] = useState(null);
   const pollRef = useRef(null);
@@ -42,11 +44,12 @@ export default function LiveSession() {
         if (cancelled) return;
         setRunning(rows);
         setListErr(null);
+        setListLoaded(true);
         // The session being watched ended (or was never in the list) --
         // drop back to the picker rather than keep polling a dead session.
         if (sessionId && !rows.some((r) => r.id === sessionId)) setSessionId(null);
       } catch (e) {
-        if (!cancelled) setListErr(e.message);
+        if (!cancelled) { setListErr(e.message); setListLoaded(true); }
       }
     }
     poll();
@@ -84,41 +87,7 @@ export default function LiveSession() {
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
 
   if (!sessionId) {
-    return (
-      <div className="rev rev--embedded">
-        <div className="rev-main">
-          <div className="rev-titlebar">
-            <h1>Live Monitor</h1>
-            <span className="sub">Pick a session MAVIS is currently running to watch it live.</span>
-          </div>
-          {listErr && <p className="sub">Couldn't load running sessions: {listErr}</p>}
-          {running.length === 0 ? (
-            <p className="sub">
-              No MAVIS session is running right now. Start Basic Flight or Free Flight in MAVIS, then come back here.
-            </p>
-          ) : (
-            <div className="rev-bottom" style={{ flexWrap: "wrap" }}>
-              {running.map((s) => (
-                <button
-                  key={s.id}
-                  className="card"
-                  style={{ textAlign: "left", cursor: "pointer", minWidth: 220 }}
-                  onClick={() => setSessionId(s.id)}
-                >
-                  <strong>{s.name || "MAVIS session"}</strong>
-                  <div className="muted">
-                    {s.aircraft || "aircraft n/a"} · {s.sim_source || "sim n/a"}
-                  </div>
-                  <div className="muted">
-                    started {s.started_at ? new Date(s.started_at).toLocaleTimeString() : "—"}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <LiveSessionPicker running={running} loaded={listLoaded} error={listErr} onPick={setSessionId} />;
   }
 
   const waitingForData = summary && flightLoaded && flight.length === 0;
