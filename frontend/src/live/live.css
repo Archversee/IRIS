@@ -162,6 +162,17 @@
 .mavis-mode-card:disabled { opacity: 0.5; cursor: not-allowed; }
 .mavis-mode-card__label { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
 .mavis-mode-card__desc { font-size: 13px; color: #8b98a5; line-height: 1.4; }
+/* Full-height menu cards sit over photos -- larger, brighter text so the
+   label and description read at a glance. */
+.mavis-shell--menu .mavis-mode-card { padding: 28px; }
+.mavis-shell--menu .mavis-mode-card__label {
+  font-size: 30px; margin-bottom: 10px; color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.mavis-shell--menu .mavis-mode-card__desc {
+  font-size: 18px; color: #d7e0ea; line-height: 1.5;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
 
 /* Menu screens (Basic Flight / Free Flight): menu-bg fills the whole
    content area edge to edge, with the status bar floating over it. */
