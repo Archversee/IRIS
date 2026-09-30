@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
+import SettingsPanel from "./SettingsPanel.jsx";
 import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
@@ -56,6 +57,7 @@ export default function Sidebar() {
   const { pathname } = useLocation();
   const [width, setWidth] = useState(loadWidth);
   const [dragging, setDragging] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const lastExpanded = useRef(width > COLLAPSED_W ? width : DEFAULT_W);
   const collapsed = width < COLLAPSE_BELOW;
 
@@ -126,13 +128,14 @@ export default function Sidebar() {
           </div>
         );
       })}
-      {/* Placeholder -- settings aren't built yet. */}
       <div className="sidebar__footer">
-        <span className="sidebar__link is-disabled" aria-disabled="true" title="Settings (coming soon)">
+        <button type="button" className={"sidebar__link sidebar__settings" + (settingsOpen ? " active" : "")}
+          title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>
           <GearIcon />
           <span className="sidebar__text">Settings</span>
-        </span>
+        </button>
       </div>
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       <div
         className="sidebar__resizer"
         role="separator"
