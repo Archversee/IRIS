@@ -391,9 +391,9 @@
   padding: 20px;
 }
 .mavis-score-card {
-  width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-  padding: 24px;
+  width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px 30px;
   color: var(--text);
 }
 .mavis-score-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -422,8 +422,13 @@
 .mavis-score-metric__bar { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
 .mavis-score-metric__fill { height: 100%; background: var(--accent); transition: width 0.5s ease; }
 .mavis-score-metric__val { font-size: 12px; text-align: right; font-weight: 600; }
-.mavis-score-btns { display: flex; gap: 10px; margin-top: 18px; }
-.mavis-score-btns button { flex: 1; }
+/* Buttons sized so each label stays on one line; they wrap as whole
+   buttons (not mid-label) only if the screen is very narrow. */
+.mavis-score-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.mavis-score-btns button {
+  flex: 1 1 auto; min-width: max-content; white-space: nowrap;
+  padding: 13px 20px; font-size: 15px; border-radius: 10px;
+}
 
 /* ---- Confirm dialog (replaces window.confirm) ---- */
 .mavis-confirm-overlay {
