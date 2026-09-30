@@ -4,10 +4,7 @@ import { api } from "../api/client.js";
 import { useSessionData } from "../components/session/useSessionData.js";
 import ScreensPanel from "../components/session/ScreensPanel.jsx";
 import SessionTimeline from "../components/session/SessionTimeline.jsx";
-import ScanPathCard from "../components/session/ScanPathCard.jsx";
-import LiveStateCard from "../components/session/LiveStateCard.jsx";
-import RegionPieCard from "../components/session/RegionPieCard.jsx";
-import PhaseModal from "../components/session/PhaseModal.jsx";
+import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import "./review.css";
 
 // Pure viewer now -- MAVIS is the only thing that ever starts, stops, or
@@ -19,6 +16,10 @@ import "./review.css";
 // of from a finished DB record. Screen capture uses the browser's own
 // getDisplayMedia() picker per screen (see ScreensPanel), not a server-run
 // recording -- that's OBS's job now, owned entirely by MAVIS/LiveAdapter.py.
+//
+// Layout: OTW | Instruments | Ground track, then a read-only session
+// timeline (trend only -- it always follows the live edge), then flight
+// telemetry as MAVIS-style gauges with a toggle to raw numbers.
 const POLL_INTERVAL_MS = 3000;
 
 export default function LiveSession() {
@@ -30,7 +31,7 @@ export default function LiveSession() {
   const [instrumentStream, setInstrumentStream] = useState(null);
   const pollRef = useRef(null);
 
-  const { err, summary, flight, flightLoaded, screens, timeline, scanPath, liveState, regionPie, phases, followingLive } =
+  const { err, summary, flight, flightLoaded, screens, timeline, liveState, followingLive } =
     useSessionData({ id: sessionId, live: true });
 
   useEffect(() => {
@@ -121,6 +122,7 @@ export default function LiveSession() {
   }
 
   const waitingForData = summary && flightLoaded && flight.length === 0;
+  const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
     <div className="rev rev--embedded">
@@ -137,14 +139,14 @@ export default function LiveSession() {
           </span>
           <span className="spacer" />
           <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
-          <button className="tl-btn" onClick={() => setSessionId(null)} style={{ marginLeft: 8 }}>
-            ‹ Back to sessions
-          </button>
         </div>
 
         {waitingForData && <p className="sub" style={{ margin: "-4px 0 4px" }}>Waiting for live flight data…</p>}
 
+        {/* Ground-track scrubbing is off here: with no Go Live button, a
+            click would leave the view stuck paused off the live edge. */}
         <ScreensPanel {...screens} live
+          onGroundMouseDown={undefined} onGroundMouseMove={undefined} onGroundMouseUp={undefined}
           otwStream={otwStream}
           onCaptureOtw={() => captureScreen(otwStream, setOtwStream)}
           onStopOtw={() => { stopStream(otwStream); setOtwStream(null); }}
@@ -152,23 +154,10 @@ export default function LiveSession() {
           onCaptureInstrument={() => captureScreen(instrumentStream, setInstrumentStream)}
           onStopInstrument={() => { stopStream(instrumentStream); setInstrumentStream(null); }}
         />
-        <SessionTimeline {...timeline} />
+        <SessionTimeline {...timeline} readOnly />
 
-        <div className="rev-bottom">
-          <ScanPathCard {...scanPath} />
-          <LiveStateCard {...liveState} />
-          <RegionPieCard {...regionPie} />
-        </div>
+        <FlightTelemetryCard {...liveState} altMax={altMax} />
       </div>
-
-      {phases.openPhases.map((w) => (
-        <PhaseModal key={w.winId} w={w}
-          onClose={() => phases.onClose(w.winId)}
-          onMouseDown={() => phases.onBringToFront(w.winId)}
-          onDragStart={(e) => phases.onDragStart(w.winId, e)}
-          seekTo={phases.seekTo}
-        />
-      ))}
     </div>
   );
 }
