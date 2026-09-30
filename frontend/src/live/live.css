@@ -113,31 +113,10 @@
 }
 .mavis-lesson__dur { margin-left: auto; font-size: 11px; color: #8b98a5; }
 
-/* ---- Menu main (name input + mode cards) ---- */
+/* ---- Menu main (mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
 .mavis-menu--solo { max-width: none; width: 100%; }
-.mavis-menu__names { display: flex; gap: 10px; margin-bottom: 20px; }
-.mavis-menu__names input {
-  flex: 1;
-  padding: 10px 12px;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 8px;
-  color: #d7e0ea;
-  font-size: 14px;
-}
-.mavis-menu__name {
-  width: 100%;
-  max-width: 320px;
-  padding: 10px 12px;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 8px;
-  color: #d7e0ea;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
 .mavis-menu__error { margin-top: 12px; color: #ff8a8a; font-size: 13px; }
 
 .mavis-modes { display: flex; gap: 16px; flex-wrap: wrap; }
