@@ -28,6 +28,10 @@ class Telemetry:
     brake_left: float = 0.0     # 0..1 toe-brake position (0 = off)
     brake_right: float = 0.0
     local_time_h: float = 12.0  # sim local time, hours
+    # cockpit lever/wheel settings, for IRIS's live telemetry view; None when
+    # an adapter doesn't read them (IRIS then derives flaps from flaps_deg)
+    flaps_handle_pct: float | None = None   # 0..100
+    elevator_trim_pct: float | None = None  # -100..100, + nose up
 
     def as_dict(self) -> dict:
         return asdict(self)

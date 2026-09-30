@@ -6,8 +6,9 @@ import { fmt } from "./utils.js";
 // plus an attitude indicator, with a toggle to the raw numbers.
 //
 // Units (flight_data, see db/schema.sql + backend/app/mavis_bridge.py):
-// elevator/rudder are SimConnect "Position" (-1..1), throttle/flaps/trim are
-// percent. Anything MAVIS doesn't log (e.g. flaps, trim) comes through null.
+// aileron/elevator/rudder are SimConnect "Position" (-1..1; + elevator =
+// stick back / nose up, - aileron = left), throttle/flaps are 0..100 %,
+// elevator trim is -100..100 %. Anything a source doesn't log comes through null.
 
 const SPEED_MAX = 163; // C172 Vne, same scale MAVIS uses
 const CLIMB_MAX = 1200;
@@ -100,6 +101,27 @@ function CenterBar({ label, value, horizontal, text, title }) {
   );
 }
 
+// 2D stick position, like MAVIS's stick pad: left/right = aileron (roll),
+// up/down = elevator (stick forward at the top, pulled back at the bottom).
+function StickPad({ aileron, elevator }) {
+  const a = num(aileron), e = num(elevator);
+  const x = 50 + Math.max(-1, Math.min(1, a ?? 0)) * 45;
+  const y = 50 + Math.max(-1, Math.min(1, e ?? 0)) * 45;
+  const words = [];
+  if (e != null && Math.abs(e) >= 0.08) words.push(e > 0 ? "back" : "fwd");
+  if (a != null && Math.abs(a) >= 0.08) words.push(a < 0 ? "left" : "right");
+  return (
+    <div className="ft-ctl ft-ctl--stick"
+      title="The dot is the control stick: left/right = roll, up/down = pushed forward (nose down) or pulled back (nose up).">
+      <div className="ft-stick">
+        <div className="ft-stick__dot" style={{ left: `${x}%`, top: `${y}%` }} />
+      </div>
+      <div className="ft-ctl__cap">STICK</div>
+      <div className="ft-ctl__val">{a == null && e == null ? "--" : words.join(" · ") || "center"}</div>
+    </div>
+  );
+}
+
 function RO({ k, v }) {
   return <div className="ro-row"><span className="k">{k}</span><span className="v">{v}</span></div>;
 }
@@ -120,11 +142,11 @@ function Numbers({ cur }) {
       <div className="ro-group">
         <h4>Control input</h4>
         <RO k="Throttle" v={`${fmt(cur.throttle_pct, 0)}%`} />
+        <RO k="Aileron" v={fmt(cur.aileron_position, 2)} />
         <RO k="Elevator" v={fmt(cur.elevator_position, 2)} />
         <RO k="Rudder" v={fmt(cur.rudder_position, 2)} />
         <RO k="Elev trim" v={`${fmt(cur.elevator_trim_pct)}%`} />
         <RO k="Flaps" v={`${fmt(cur.flaps_handle_pct, 0)}%`} />
-        <RO k="Gear" v={cur.gear_handle_position == null ? "—" : cur.gear_handle_position ? "DOWN" : "UP"} />
       </div>
       <div className="ro-group">
         <h4>Environment</h4>
@@ -173,21 +195,16 @@ export default function FlightTelemetryCard({ cur, altMax }) {
             <VBar label="ENGINE POWER" value={num(cur.throttle_pct) == null ? null : cur.throttle_pct / 100}
               color="var(--ft-good)" text={`${fmt(cur.throttle_pct, 0)}%`}
               title="Engine power (throttle lever)." />
-            <CenterBar label="ELEVATOR" value={cur.elevator_position}
-              text={(x) => (Math.abs(x) < 0.08 ? "center" : x > 0 ? "nose up" : "nose down")}
-              title="Stick forward/back: nose down or up. Middle = centred." />
+            <StickPad aileron={cur.aileron_position} elevator={cur.elevator_position} />
             <CenterBar label="RUDDER" horizontal value={cur.rudder_position}
               text={(x) => (Math.abs(x) < 0.08 ? "center" : x < 0 ? "left" : "right")}
               title="Rudder pedals. Middle = centred." />
             <VBar label="FLAPS" value={num(cur.flaps_handle_pct) == null ? null : cur.flaps_handle_pct / 100}
               color="var(--ft-warn)" text={`${fmt(cur.flaps_handle_pct, 0)}%`}
               title="Wing flaps, for flying slowly on approach and landing." />
-            <div className="ft-ctl" title="Landing gear handle.">
-              <div className={"ft-gear" + (cur.gear_handle_position ? " is-down" : "")}>
-                {cur.gear_handle_position == null ? "--" : cur.gear_handle_position ? "DOWN" : "UP"}
-              </div>
-              <div className="ft-ctl__cap">GEAR</div>
-            </div>
+            <CenterBar label="TRIM" value={num(cur.elevator_trim_pct) == null ? null : cur.elevator_trim_pct / 100}
+              text={(x) => (Math.abs(x) < 0.05 ? "neutral" : `${x > 0 ? "nose up" : "nose dn"} ${Math.round(Math.abs(x) * 100)}%`)}
+              title="Elevator trim wheel. Middle = neutral; up = nose-up trim." />
           </div>
         </div>
       )}

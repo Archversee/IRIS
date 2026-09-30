@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState, useMavisStatus } from "./hooks/useMavisSocket.js";
+import { useInstructorVoice } from "./hooks/useInstructorVoice.js";
 import { mavisApi } from "./api/mavisApi.js";
 import { api } from "../api/client.js";
 import MainMenu from "./components/MainMenu.jsx";
@@ -34,6 +35,9 @@ export default function LiveCoach({ freeFlight = false }) {
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const inLesson = startedHere;
   const readingId = searchParams.get("reading");
+  // Instructor voice plays in this browser while flying (not over the
+  // scorecard -- same rule as the original MAVIS page).
+  useInstructorVoice(state?.audio, inLesson && !state?.scorecard);
 
   // Marks this session as no longer in progress -- Live Monitor's picker
   // (GET /sessions/running, under IRIS now) filters on ended_at is null.

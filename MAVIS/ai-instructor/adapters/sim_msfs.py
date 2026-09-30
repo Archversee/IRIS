@@ -51,6 +51,8 @@ _SIMVARS = [
     ("BRAKE LEFT POSITION", "Position"),
     ("BRAKE RIGHT POSITION", "Position"),
     ("LOCAL TIME", "seconds"),
+    ("FLAPS HANDLE PERCENT", "Percent"),
+    ("ELEVATOR TRIM PCT", "Percent"),
 ]
 
 
@@ -177,6 +179,8 @@ class MSFSAdapter:
             brake_left=self._brake(g("BRAKE LEFT POSITION", 0.0)),
             brake_right=self._brake(g("BRAKE RIGHT POSITION", 0.0)),
             local_time_h=g("LOCAL TIME", 43200) / 3600.0,
+            flaps_handle_pct=g("FLAPS HANDLE PERCENT", None),
+            elevator_trim_pct=g("ELEVATOR TRIM PCT", None),
         )
 
     def set_local_time(self, hour: int, minute: int) -> bool:
