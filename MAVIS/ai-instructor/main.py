@@ -998,6 +998,8 @@ async def amain(cfg):
         coach.pause()
         engine.briefing_done = False
 
+    quit_task: dict = {"t": None}   # keeps a reference so the task isn't GC'd
+
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
         if scored["done"]:
@@ -1008,7 +1010,16 @@ async def amain(cfg):
         started.clear()
         intro_shown.clear()
         transcript.clear()
-        await finish_lesson(practice=True, spoken_close=False)
+        # Scoring + the LLM debrief can take a while (or fail); run them in
+        # the background so POST /demo/quit returns at once -- the scorecard
+        # arrives over the WS state like any other update. A failure here is
+        # logged instead of turning the quit itself into an HTTP 500.
+        async def _finish():
+            try:
+                await finish_lesson(practice=True, spoken_close=False)
+            except Exception:
+                log.exception("finishing the lesson after quit failed")
+        quit_task["t"] = asyncio.create_task(_finish())
 
     def _post_card(name: str = "", given: str = "", family: str = "") -> None:
         """Post the held scorecard once; an empty name posts as Anonymous."""

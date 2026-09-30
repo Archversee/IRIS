@@ -100,8 +100,8 @@ MAVIS_WS_URL = "ws://localhost:6945/ws"  # MAVIS -- source of the session_id thi
 # to; main() also reads it right after pulling a fresh id off _session_queue.
 SESSION_ID: str | None = None
 
-# One ("start", session_id) or ("end", session_id) event per session
-# lifecycle change, from session_watcher/session_end_watcher respectively,
+# One ("start", session_id), ("end", session_id) or ("deleted", session_id)
+# event per session lifecycle change, from session_watcher/session_end_watcher,
 # in order -- main() consumes these to know when to start a new OBS
 # recording, stop the current one, or both. The session_id travels with
 # every event (rather than a bare sentinel) so an "end" that was queued
@@ -159,23 +159,47 @@ def session_watcher() -> None:
 # trainee actually quits (see backend/app/schemas.py's SessionUpdate) --
 # polling that here is what makes End Session actually stop the recording.
 # ========================================================================
-def _session_has_ended(session_id: str) -> bool:
+def _session_status(session_id: str) -> str | None:
+    """'running' | 'ended' | 'deleted' (404 -- the trainee chose Finish &
+    discard), or None when IRIS can't be reached (don't act on a guess)."""
     url = f"{API_BASE_URL}/sessions/{session_id}"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return "deleted" if e.code == 404 else None
     except (urllib.error.URLError, TimeoutError, ValueError):
-        return False  # IRIS backend down/unreachable -- assume still running, don't stop on a guess
-    return bool(data.get("ended_at"))
+        return None  # IRIS backend down/unreachable -- assume still running, don't stop on a guess
+    return "ended" if data.get("ended_at") else "running"
+
+
+# Sessions whose recordings have stopped but might still be discarded
+# (session deleted) from the scorecard afterwards -- main() adds to this
+# when it stops a recording; the watcher keeps checking them for deletion.
+_recent_sids: "list[str]" = []
+_recent_lock = threading.Lock()
+_RECENT_MAX = 5
 
 
 def session_end_watcher() -> None:
-    signaled_for = None
+    signaled_end = None
+    signaled_deleted: set[str] = set()
     while True:
         sid = SESSION_ID
-        if sid and sid != signaled_for and _session_has_ended(sid):
-            signaled_for = sid
-            _session_queue.put(("end", sid))
+        with _recent_lock:
+            watch = list(_recent_sids)
+        if sid and sid not in watch:
+            watch.append(sid)
+        for s in watch:
+            if s in signaled_deleted:
+                continue
+            status = _session_status(s)
+            if status == "deleted":
+                signaled_deleted.add(s)
+                _session_queue.put(("deleted", s))
+            elif status == "ended" and s == sid and s != signaled_end:
+                signaled_end = s
+                _session_queue.put(("end", s))
         time.sleep(2)
 
 
@@ -209,13 +233,36 @@ def start_obs_recordings(clients):
         print(f"OBS ({name}) recording started")
 
 
-def stop_obs_recordings(clients):
+def stop_obs_recordings(clients) -> list[str]:
+    """Stops every OBS instance; returns the saved file paths OBS reported."""
+    paths = []
     for name, client in clients:
         try:
             resp = client.stop_record()
             print(f"OBS ({name}) saved recording to {resp.output_path}")
+            if resp.output_path:
+                paths.append(resp.output_path)
         except Exception as e:
             print(f"Failed to stop OBS ({name}) recording cleanly: {e}")
+    return paths
+
+
+def delete_recordings(sid: str, paths: list[str]) -> None:
+    """Finish & discard: remove the files OBS wrote for this session. OBS
+    can hold the file open for a moment after StopRecord, so retry briefly."""
+    for p in paths:
+        for attempt in range(10):
+            try:
+                os.remove(p)
+                print(f"Discarded session {sid}: deleted {p}")
+                break
+            except FileNotFoundError:
+                break
+            except OSError as e:
+                if attempt == 9:
+                    print(f"Couldn't delete discarded recording {p}: {e}")
+                else:
+                    time.sleep(1)
 
 
 # ========================================================================
@@ -552,11 +599,36 @@ def main():
     obs_clients: list = []
     eye_bridge_started = False
     recording = False  # whether OBS is currently recording for SESSION_ID
+    saved: dict[str, list[str]] = {}  # session_id -> files OBS wrote for it (kept for discard)
+
+    def stop_and_remember(sid: str) -> None:
+        paths = stop_obs_recordings(obs_clients)
+        if paths:
+            saved[sid] = paths
+            with _recent_lock:
+                if sid not in _recent_sids:
+                    _recent_sids.append(sid)
+                while len(_recent_sids) > _RECENT_MAX:
+                    saved.pop(_recent_sids.pop(0), None)
+
     try:
         threading.Thread(target=session_watcher, daemon=True).start()
         threading.Thread(target=session_end_watcher, daemon=True).start()
         while True:
             kind, sid = _session_queue.get()
+
+            if kind == "deleted":
+                # Finish & discard: stop if it's still the one recording,
+                # then delete whatever OBS wrote for it.
+                if sid == SESSION_ID and recording and obs_clients:
+                    print(f"Session {sid} discarded -- stopping recording.")
+                    stop_and_remember(sid)
+                    recording = False
+                delete_recordings(sid, saved.pop(sid, []))
+                with _recent_lock:
+                    if sid in _recent_sids:
+                        _recent_sids.remove(sid)
+                continue
 
             if kind == "end":
                 # Only act if this "end" still applies to whichever session
@@ -569,7 +641,7 @@ def main():
                     continue
                 print(f"Session {sid} ended -- stopping recording.")
                 if recording and obs_clients:
-                    stop_obs_recordings(obs_clients)
+                    stop_and_remember(sid)
                 recording = False
                 continue
 
@@ -578,7 +650,7 @@ def main():
             # session's own "end" event), stop it before starting the new one.
             if recording and obs_clients:
                 print(f"New session started before {SESSION_ID} was seen as ended -- stopping its recording.")
-                stop_obs_recordings(obs_clients)
+                stop_and_remember(SESSION_ID)
                 recording = False
 
             SESSION_ID = sid

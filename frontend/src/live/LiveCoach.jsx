@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState, useMavisStatus } from "./hooks/useMavisSocket.js";
 import { useInstructorVoice } from "./hooks/useInstructorVoice.js";
@@ -10,6 +10,10 @@ import InFlightPanel from "./components/InFlightPanel.jsx";
 import ReadingLesson from "./components/reading/ReadingLesson.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import "./live.css";
+
+// After End Session, how long to wait for MAVIS's scorecard before going
+// straight to the save screen anyway.
+const SCORECARD_WAIT_MS = 15000;
 
 // Slice B/C/I: main menu -> reading lesson (preflight/cockpit walk-around,
 // no telemetry, shown via ?reading=<id> -- these are never selected
@@ -33,6 +37,7 @@ export default function LiveCoach({ freeFlight = false }) {
   // (a client-side body.inlesson flag), not from server state.
   const [startedHere, setStartedHere] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [ending, setEnding] = useState(false); // End Session confirmed, waiting for MAVIS's scorecard
   const inLesson = startedHere;
   const readingId = searchParams.get("reading");
   // Instructor voice plays in this browser while flying (not over the
@@ -58,17 +63,40 @@ export default function LiveCoach({ freeFlight = false }) {
   // summary if the flight wasn't finished), so this stays on the HUD long
   // enough for that scorecard-then-upload flow below to run, same as a
   // natural circuit completion.
+  //
+  // ended_at is set FIRST: it's what LiveAdapter.py polls to stop OBS, so
+  // the recording stops the moment the trainee confirms, whatever MAVIS
+  // does next. If MAVIS's quit fails, or no scorecard shows up in time
+  // (see the effect below), go straight to the save screen instead of
+  // silently dropping back to the start menu.
   async function confirmEndSession() {
     setConfirmingEnd(false);
+    await markEnded();
+    setEnding(true);
     try {
       await mavisApi.quit();
     } catch {
-      // quit() itself failed -- nothing to show a scorecard for, bail to the menu
-      setStartedHere(false);
+      goToSave();
+    }
+  }
+
+  function goToSave() {
+    const sid = state?.session_id;
+    setEnding(false);
+    setStartedHere(false);
+    nav(sid ? `/upload?session=${sid}` : "/upload");
+  }
+
+  useEffect(() => {
+    if (!ending) return;
+    if (state?.scorecard) {
+      setEnding(false);
       return;
     }
-    await markEnded();
-  }
+    const t = setTimeout(goToSave, SCORECARD_WAIT_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ending, state?.scorecard]);
 
   // From the scorecard's "Main menu" button -- score first (already on
   // screen), then IRIS's own Upload form (name/pilot/aircraft/notes, CSV
@@ -129,8 +157,8 @@ export default function LiveCoach({ freeFlight = false }) {
         aria-label={status === "open" ? "MAVIS backend running" : "MAVIS backend down"}
       />
       {inLesson && !state?.scorecard && (
-        <button type="button" className="secondary" onClick={() => setConfirmingEnd(true)}>
-          ‹ End Session
+        <button type="button" className="secondary" disabled={ending} onClick={() => setConfirmingEnd(true)}>
+          {ending ? "Ending…" : "‹ End Session"}
         </button>
       )}
     </div>

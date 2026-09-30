@@ -159,7 +159,17 @@ function Numbers({ cur }) {
   );
 }
 
-export default function FlightTelemetryCard({ cur, altMax }) {
+// MAVIS-sourced rows always carry flaps_deg (flap surface angle), even
+// from builds that don't send the flap-handle %; fall back to it so the
+// flaps gauge works either way (C172 full flap = 30°).
+const FLAPS_FULL_DEG = 30;
+function withDerived(row) {
+  if (!row || num(row.flaps_handle_pct) != null || num(row.flaps_deg) == null) return row;
+  return { ...row, flaps_handle_pct: clamp01(row.flaps_deg / FLAPS_FULL_DEG) * 100 };
+}
+
+export default function FlightTelemetryCard({ cur: rawCur, altMax }) {
+  const cur = withDerived(rawCur);
   const [view, setView] = useState("gauges");
   const altTop = Math.max(2000, Math.ceil(((altMax ?? 0) * 1.1) / 500) * 500);
 
