@@ -50,6 +50,10 @@ a { color: var(--accent); text-decoration: none; }
 }
 .sidebar__link:hover { color: var(--text); background: var(--panel-2); }
 .sidebar__link.active { color: var(--text); background: var(--panel-2); border-right: 3px solid var(--accent); }
+/* Placeholder entries (Control Guide, Settings): greyed out, not clickable. */
+.sidebar__link.is-disabled { opacity: 0.4; cursor: not-allowed; user-select: none; }
+.sidebar__link.is-disabled:hover { color: var(--muted); background: none; }
+.sidebar__footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
 
 /* Icon-only mode: centre everything, hide the names. */
 .sidebar.is-collapsed .sidebar__text { display: none; }

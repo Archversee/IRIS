@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, JoystickIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -20,6 +20,8 @@ const SECTIONS = [
     sub: "Live",
     links: [
       { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree /> },
+      // Placeholder -- not built yet, shown greyed out and not clickable.
+      { to: "#control-guide", path: null, label: "Control Guide", icon: <JoystickIcon />, disabled: true },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
     ],
   },
@@ -99,7 +101,7 @@ export default function Sidebar() {
         <span className="sidebar__text">Flight Review System</span>
       </NavLink>
       {SECTIONS.map((section) => {
-        const isActive = section.links.some((l) => pathname.startsWith(l.path));
+        const isActive = section.links.some((l) => l.path && pathname.startsWith(l.path));
         return (
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
             <div className="sidebar__section-head">
@@ -108,16 +110,31 @@ export default function Sidebar() {
             </div>
             {section.links.map((link) => (
               <div key={link.to}>
-                <NavLink to={link.to} className="sidebar__link" title={collapsed ? link.label : undefined}>
-                  {link.icon}
-                  <span className="sidebar__text">{link.label}</span>
-                </NavLink>
+                {link.disabled ? (
+                  <span className="sidebar__link is-disabled" aria-disabled="true"
+                    title={`${link.label} (coming soon)`}>
+                    {link.icon}
+                    <span className="sidebar__text">{link.label}</span>
+                  </span>
+                ) : (
+                  <NavLink to={link.to} className="sidebar__link" title={collapsed ? link.label : undefined}>
+                    {link.icon}
+                    <span className="sidebar__text">{link.label}</span>
+                  </NavLink>
+                )}
                 {!collapsed && link.nested}
               </div>
             ))}
           </div>
         );
       })}
+      {/* Placeholder -- settings aren't built yet. */}
+      <div className="sidebar__footer">
+        <span className="sidebar__link is-disabled" aria-disabled="true" title="Settings (coming soon)">
+          <GearIcon />
+          <span className="sidebar__text">Settings</span>
+        </span>
+      </div>
       <div
         className="sidebar__resizer"
         role="separator"
