@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import { mavisApi } from "../live/api/mavisApi.js";
@@ -51,7 +51,8 @@ export default function LessonTree() {
       {catalog.modules.map((mod, i) => {
         const open = openModule === i || (openModule === null && mod.lessons.some((l) => l.id === activeLessonId));
         return (
-          <div key={mod.title ?? i} className="sidebar__module">
+          <Fragment key={mod.title ?? i}>
+          <div className="sidebar__module">
             <button
               type="button"
               className="sidebar__module-head"
@@ -75,6 +76,16 @@ export default function LessonTree() {
               </div>
             )}
           </div>
+          {/* Placeholder module, not built yet: between Preflight & Cockpit
+              and Basic Flight, greyed out and not clickable. */}
+          {mod.id === "preflight" && (
+            <div className="sidebar__module">
+              <span className="sidebar__module-head is-disabled" aria-disabled="true" title="Control Guide (coming soon)">
+                Control Guide
+              </span>
+            </div>
+          )}
+          </Fragment>
         );
       })}
     </div>

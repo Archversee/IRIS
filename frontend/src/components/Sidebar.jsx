@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, JoystickIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -20,8 +20,6 @@ const SECTIONS = [
     sub: "Live",
     links: [
       { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree /> },
-      // Placeholder -- not built yet, shown greyed out and not clickable.
-      { to: "#control-guide", path: null, label: "Control Guide", icon: <JoystickIcon />, disabled: true },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
     ],
   },

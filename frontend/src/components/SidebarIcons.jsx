@@ -33,12 +33,6 @@ export const UploadIcon = () => (
 export const TargetIcon = () => (
   <Icon><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></Icon>
 );
-export const JoystickIcon = () => (
-  <Icon>
-    <rect x="4" y="16" width="16" height="5" rx="1.5" /><line x1="12" y1="16" x2="12" y2="9" />
-    <circle cx="12" cy="6" r="3" /><line x1="7.5" y1="18.5" x2="8.5" y2="18.5" />
-  </Icon>
-);
 export const GearIcon = () => (
   <Icon>
     <circle cx="12" cy="12" r="3" />
