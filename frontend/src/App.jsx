@@ -8,6 +8,7 @@ import LiveSession from "./pages/LiveSession.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
+import { LeaderboardPage, ScoringGuidePage, ControlsGuidePage } from "./pages/MavisGuides.jsx";
 
 export default function App() {
   // The landing page is full-screen -- no sidebar there.
@@ -21,6 +22,9 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/live" element={<LiveCoach />} />
           <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/scoring" element={<ScoringGuidePage />} />
+          <Route path="/controls" element={<ControlsGuidePage />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />

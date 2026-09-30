@@ -445,6 +445,56 @@
 /* ---- Scoring guide ---- */
 .mavis-guide-card { max-width: 440px; max-height: 85vh; overflow-y: auto; }
 .mavis-guide-list { margin: 8px 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.mavis-guide-list b { color: var(--accent); }
+.mavis-guide-intro { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.mavis-guide-intro:first-child { margin-top: 0; }
+.mavis-guide-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.mavis-guide-easter { margin: 8px 0 0; font-size: 11.5px; font-style: italic; color: var(--faint); }
 .mavis-guide-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
 .mavis-guide-table th, .mavis-guide-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: center; }
 .mavis-guide-table th { color: var(--muted); font-weight: 600; }
+
+/* ---- MAVIS reference pages: Leaderboard / Scoring Guide / Controls guide ---- */
+.mg-page { min-height: 100%; padding: 32px; display: flex; justify-content: center; align-items: flex-start; background: var(--bg); }
+.mg-card {
+  width: 100%; max-width: 680px; padding: 24px 28px 28px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.mg-card--wide { max-width: 1100px; }
+.mg-head { margin-bottom: 16px; }
+.mg-head h1 { margin: 0; font-size: 24px; font-weight: 800; }
+.mg-head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+
+.mg-tabs { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.mg-seg { display: inline-flex; gap: 6px; }
+.mg-seg button {
+  padding: 7px 14px; border-radius: 9px; font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+}
+.mg-seg button:hover { color: var(--text); }
+.mg-seg button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+.mg-table-wrap { overflow-x: auto; }
+.mg-lb { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.mg-lb th, .mg-lb td { padding: 10px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.mg-lb th:nth-child(-n+2), .mg-lb td:nth-child(-n+2) { text-align: left; }
+.mg-lb th { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.mg-lb tbody tr:hover td { background: var(--inset); }
+.mg-rank { width: 36px; color: var(--muted); font-weight: 700; }
+.mg-lb tr.is-top-1 .mg-rank { color: #e6a800; }
+.mg-lb tr.is-top-2 .mg-rank { color: #9aafc4; }
+.mg-lb tr.is-top-3 .mg-rank { color: #cd7f32; }
+.mg-tot { font-weight: 800; color: var(--accent); }
+.mg-empty { padding: 28px; text-align: center; font-style: italic; color: var(--muted); }
+
+.mg-scoring .mavis-guide-list { font-size: 14px; line-height: 1.8; padding-left: 0; list-style: none; }
+.mg-scoring .mavis-guide-table { font-size: 13px; }
+.mg-scoring .mavis-guide-table th, .mg-scoring .mavis-guide-table td { padding: 7px 10px; }
+.mg-scoring .mavis-guide-table th { color: var(--text); }
+
+/* The diagram is drawn for a dark background, so its frame stays dark. */
+.mg-diagram { border-radius: 12px; overflow: hidden; background: #0f141d; border: 1px solid var(--border); }
+.mg-diagram img { display: block; width: 100%; height: auto; }
+.mg-diagram .mg-empty { color: #8b98a5; }
+@media (max-width: 700px) { .mg-page { padding: 16px; } .mg-card { padding: 18px; } }

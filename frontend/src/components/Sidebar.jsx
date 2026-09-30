@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, TrophyIcon, ChecklistIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -20,8 +20,10 @@ const SECTIONS = [
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree /> },
+      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls"] },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
+      { to: "/leaderboard", path: "/leaderboard", label: "Leaderboard", icon: <TrophyIcon /> },
+      { to: "/scoring", path: "/scoring", label: "Scoring Guide", icon: <ChecklistIcon /> },
     ],
   },
   {
@@ -101,7 +103,8 @@ export default function Sidebar() {
         <span className="sidebar__text">Flight Review System</span>
       </NavLink>
       {SECTIONS.map((section) => {
-        const isActive = section.links.some((l) => l.path && pathname.startsWith(l.path));
+        const isActive = section.links.some((l) =>
+          (l.path && pathname.startsWith(l.path)) || (l.also || []).some((p) => pathname.startsWith(p)));
         return (
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
             <div className="sidebar__section-head">

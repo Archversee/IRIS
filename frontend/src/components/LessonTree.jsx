@@ -76,13 +76,15 @@ export default function LessonTree() {
               </div>
             )}
           </div>
-          {/* Placeholder module, not built yet: between Preflight & Cockpit
-              and Basic Flight, greyed out and not clickable. */}
+          {/* Controls guide page (not a MAVIS lesson), between Preflight &
+              Cockpit and Basic Flight. */}
           {mod.id === "preflight" && (
             <div className="sidebar__module">
-              <span className="sidebar__module-head is-disabled" aria-disabled="true" title="Control Guide (coming soon)">
+              <button type="button"
+                className={"sidebar__module-head" + (pathname === "/controls" ? " is-active" : "")}
+                onClick={() => nav("/controls")}>
                 Control Guide
-              </span>
+              </button>
             </div>
           )}
           </Fragment>
