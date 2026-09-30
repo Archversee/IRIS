@@ -54,6 +54,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 log = logging.getLogger("main")
 HERE = Path(__file__).parent
 
+# Live ground track size cap (points per attempt, ~1/s). Past TRACK_MAX the
+# older part is thinned 2:1 while the newest TRACK_KEEP_FULL stay full-rate.
+TRACK_MAX = 3000
+TRACK_KEEP_FULL = 1000
+
 
 class EmbeddedServer(uvicorn.Server):
     """Run uvicorn inside asyncio.run(); honour should_exit for clean Ctrl+C."""
@@ -565,8 +570,7 @@ async def amain(cfg):
         if ok:
             scorer.note_retry()
             engine.load_phase(want, ckpt["circuit"])
-            state["track"].append([])          # new attempt = new track segment
-            del state["track"][:-4]            # keep at most 4 attempts on screen
+            state["track"].append([])          # new attempt = new track segment (all attempts kept)
         else:
             await coach.say(phrases.render("TELEPORT_FAIL", {}))
 
@@ -1122,13 +1126,25 @@ async def amain(cfg):
                 transcript=transcript[-60:], llm_ok=coach.llm_ok,
                 geom={"along": engine.geom.along, "cross": engine.geom.cross}
                      if engine.geom else None)
-            if not scored["done"] and t0 - last_track > 1.0 and not tel.on_ground and not spike \
+            # Ground track keeps the whole flight (taxi, take-off roll and
+            # rollout included), like IRIS's post-flight ground track. Long
+            # flights are thinned rather than trimmed: past TRACK_MAX points
+            # the older part is halved, so the full path stays on the map
+            # (just coarser at the start) and the payload stays bounded.
+            if not scored["done"] and t0 - last_track > 1.0 and not spike \
                     and abs(tel.lat) > 0.01:
                 seg = state["track"][-1]
-                d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 0.0
-                if d < 0.02:      # reject impossible jumps (> ~2 km/sample)
+                d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 1.0
+                if d >= 0.02:     # real reposition (> ~2 km/sample): new segment, no false line across the jump
+                    if seg:
+                        state["track"].append([])
+                        seg = state["track"][-1]
                     seg.append([tel.lat, tel.lon])
-                    del seg[:-600]
+                    last_track = t0
+                elif d > 2e-5:    # skip samples while parked (< ~2 m moved)
+                    seg.append([tel.lat, tel.lon])
+                    if len(seg) > TRACK_MAX:
+                        seg[:] = seg[:-TRACK_KEEP_FULL:2] + seg[-TRACK_KEEP_FULL:]
                     last_track = t0
             await asyncio.sleep(max(0.01, 1.0 / hz - (time.time() - t0)))
 

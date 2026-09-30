@@ -62,17 +62,26 @@ export default function MapCanvas({ state }) {
     const tel = state?.tel || {};
     const upA = rw.length_m + 420;
     const fin = L.scoring?.final_length_m || pat.base_turn_past_abeam_m || 500;
+    // Flown track -- one segment per attempt (MAVIS keeps the whole flight)
+    let segs = state?.track || [];
+    if (segs.length && typeof segs[0][0] === "number") segs = [segs];
+
     // View centred on the planned circuit; unzoomed it widens (symmetrically)
-    // to keep the aircraft in view, zoomed in it follows the aircraft.
+    // to keep the aircraft and the entire flown track in view, like IRIS's
+    // ground track; zoomed in it follows the aircraft.
     let cA = (upA - fin) / 2, cC = off / 2;
     let halfA = (upA + fin) / 2 + 600, halfC = off / 2 + 500;
     let acA = null, acC = null;
     if (tel.lat) [acA, acC] = en(tel.lat, tel.lon);
     if (zoom > 1 && acA != null) {
       cA = acA; cC = acC;
-    } else if (acA != null) {
-      halfA = Math.max(halfA, Math.abs(acA - cA) + 400);
-      halfC = Math.max(halfC, Math.abs(acC - cC) + 400);
+    } else {
+      const fit = (a, c) => {
+        halfA = Math.max(halfA, Math.abs(a - cA) + 300);
+        halfC = Math.max(halfC, Math.abs(c - cC) + 300);
+      };
+      if (acA != null) fit(acA, acC);
+      segs.forEach((trk) => trk.forEach((p) => fit(...en(p[0], p[1]))));
     }
     halfA /= zoom; halfC /= zoom;
     cA += pan.a; cC += pan.c;
@@ -107,9 +116,7 @@ export default function MapCanvas({ state }) {
     ctx.font = "14px system-ui";
     ctx.fillText("RWY " + rw.ident, r1x - 16, r1y + 22);
 
-    // Flown track -- one segment per attempt, old attempts dim/dashed
-    let segs = state?.track || [];
-    if (segs.length && typeof segs[0][0] === "number") segs = [segs];
+    // Flown track -- old attempts dim/dashed
     segs.forEach((trk, si) => {
       if (trk.length < 2) return;
       const cur = si === segs.length - 1;
