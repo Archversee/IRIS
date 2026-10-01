@@ -2,7 +2,7 @@
 IRIS React app reaches them through the /mavis proxy).
 
   Drafts (local JSON, nothing in Postgres yet)       -> /sop/new page
-    POST   /sop/drafts                 upload PDF, start extract + LLM
+    POST   /sop/drafts                 upload PDF (+ doc_type poh|handbook, handbook afh|ifh|phak|school|other)
     GET    /sop/drafts                 unsaved drafts (resume)
     GET    /sop/drafts/{id}            draft + rules (poll for progress)
     PUT    /sop/drafts/{id}            autosave edits; returns re-checked rules
@@ -11,13 +11,13 @@ IRIS React app reaches them through the /mavis proxy).
     DELETE /sop/drafts/{id}            discard
     GET    /sop/drafts/{id}/pages/{n}[/image]
   Saved rules (Postgres, edited in place + history)  -> /sop/rules page
-    GET    /sop/rulesets[?aircraft=]   GET/PATCH/DELETE /sop/rulesets/{id}
+    GET    /sop/rulesets[?aircraft=]   GET/PATCH/DELETE /sop/rulesets/{id}   (aircraft=_general: handbook sets)
     POST   /sop/rulesets/{id}/activate | /deactivate
     POST   /sop/rulesets/{id}/rules    PATCH/DELETE /sop/rules/{id}
     GET    /sop/rulesets/{id}/history[?rule_id=]
     GET    /sop/documents/{id}/pages/{n}[/image]
   Runtime
-    GET    /sop/active/{aircraft}      enabled rules of the aircraft's active set
+    GET    /sop/active/{aircraft}      enabled rules of the aircraft's active set + active handbook sets
 
 Who made a change comes from the X-SOP-Editor header (the name typed into
 the page); there is no PIN on these pages.
@@ -32,7 +32,7 @@ from uuid import UUID
 
 import asyncpg  # noqa: F401  -- hard deps: fail at import so web/server.py can
 import pymupdf  # noqa: F401  -- skip mounting /sop instead of failing per request
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -40,8 +40,8 @@ from . import extract, validate
 from .drafts import DraftStore
 from .llm_parse import OllamaParser
 from .pipeline import JobManager
-from .schema import (CAPTURE_AT, KINDS, METRICS, OPS, SEVERITIES, TAGS, aircraft_profiles,
-                     known_phases)
+from .schema import (AOI_ROLES, BOOKS, CAPTURE_AT, DOC_TYPES, GAZE_MEASURES, KINDS, METRICS, OPS, SEVERITIES,
+                     TAGS, aircraft_profiles, known_phases)
 from .store import RULE_FIELDS, DBUnavailable, RuleStore
 
 log = logging.getLogger(__name__)
@@ -73,21 +73,27 @@ class RuleIn(BaseModel):
     source_page: int | None = None
     note: str | None = None
     tags: list[str] | None = None
+    aoi: str | None = None                        # gaze rules: AOI role (schema.AOI_ROLES)
+    gaze_measure: str | None = None               # gaze rules: schema.GAZE_MEASURES
 
 
 class DraftIn(BaseModel):
     name: str | None = None
     aircraft_profile: str | None = None
+    handbook: str | None = None
     rules: list[RuleIn] | None = None
 
 
 class RunIn(BaseModel):
     pages: str | list[int] | None = None          # '13-20, 34-63' or [13, 14, ...]; None = keep
     aircraft_profile: str | None = None
+    doc_type: str | None = None                   # poh | handbook; None = keep
+    handbook: str | None = None                   # afh | ifh | phak | school | other; None = keep
 
 
 class SaveIn(BaseModel):
-    aircraft_profile: str
+    aircraft_profile: str | None = None           # required for an aircraft POH
+    handbook: str | None = None                   # training handbook: which book (default: the draft's)
     name: str
 
 
@@ -151,6 +157,11 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             "severities": list(SEVERITIES), "capture_at": list(CAPTURE_AT),
             "metrics": [{"id": k, "label": v[3], "unit": v[1], "range": v[2]} for k, v in METRICS.items()],
             "tags": [{"id": k, "label": v[0], "help": v[1]} for k, v in TAGS.items()],
+            "aoi_roles": [{"id": k, "label": v[0], "help": v[1]} for k, v in AOI_ROLES.items()],
+            "gaze_measures": [{"id": k, "label": v[0], "unit": "s" if v[1] == "time" else "share", "help": v[2]}
+                              for k, v in GAZE_MEASURES.items()],
+            "doc_types": [{"id": k, "label": v} for k, v in DOC_TYPES.items()],
+            "books": [{"id": k, "label": v[0], "short": v[1]} for k, v in BOOKS.items()],
             "aircraft": [{"id": a["id"], "name": a["name"],
                           "v_speeds": (a["profile"].get("v_speeds") or {}),
                           "flaps": (a["profile"].get("flaps") or {}).get("detents_deg"),
@@ -165,7 +176,7 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             raise HTTPException(404, "No such draft (it may have been saved or discarded)")
         return d
 
-    def recheck(d: dict, rule: dict, nominal: dict | None = None) -> dict:
+    def recheck(d: dict, rule: dict, nominal=None) -> dict:
         page_rows = drafts.pages(d["id"])
         pages = {p["page_no"]: p["text"] for p in page_rows}
         ocr = {p["page_no"] for p in page_rows if p["source"] == "ocr"}
@@ -176,12 +187,14 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         return rule
 
     @r.post("/drafts")
-    async def upload(file: UploadFile = File(...), x_sop_editor: str | None = Header(None)):
+    async def upload(file: UploadFile = File(...), doc_type: str = Form("poh"), handbook: str | None = Form(None),
+                     x_sop_editor: str | None = Header(None)):
         if is_flying():
             raise HTTPException(409, "Finish or quit the current lesson before processing an SOP")
         data = await file.read()
         try:
-            return jobs.start_upload(Path(file.filename or "sop.pdf").name, data, x_sop_editor)
+            return jobs.start_upload(Path(file.filename or "sop.pdf").name, data, x_sop_editor,
+                                     doc_type=doc_type, handbook=handbook or None)
         except RuntimeError as e:
             raise HTTPException(409, str(e))
         except ValueError as e:
@@ -196,7 +209,7 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         (speeds above Vne / below Vs0, flaps beyond the last detent...)."""
         warns = []
         for a in aircraft_profiles():
-            if a["id"] == d.get("aircraft_profile"):
+            if d.get("doc_type") != "handbook" and a["id"] == d.get("aircraft_profile"):
                 warns = validate.aircraft_checks([x for x in d.get("rules", []) if x.get("include")], a["profile"])
         return {**d, "aircraft_warnings": warns}
 
@@ -215,9 +228,13 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             d["name"] = body.name.strip()[:120] or d["name"]
         if body.aircraft_profile is not None:
             d["aircraft_profile"] = body.aircraft_profile or None
+        if body.handbook is not None and d.get("doc_type") == "handbook":
+            if body.handbook not in BOOKS:
+                raise HTTPException(400, f"Unknown handbook '{body.handbook}'")
+            d["handbook"] = body.handbook
         if body.rules is not None:
             old = {x["cid"]: x for x in d["rules"]}
-            nominal = jobs.nominal_for(d.get("aircraft_profile"))
+            nominal = jobs.nominal_for_draft(d)
             new_rules = []
             for rin in body.rules:
                 inc = rin.model_dump(exclude_unset=True)
@@ -251,7 +268,7 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         if body.aircraft_profile:
             profile(body.aircraft_profile)
         try:
-            return jobs.start_run(did, body.pages, body.aircraft_profile)
+            return jobs.start_run(did, body.pages, body.aircraft_profile, body.doc_type, body.handbook)
         except KeyError:
             raise HTTPException(404, "No such draft")
         except RuntimeError as e:
@@ -264,7 +281,13 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         d = get_draft(did)
         if d["status"] != "ready":
             raise HTTPException(409, "This draft isn't ready to save yet")
-        profile(body.aircraft_profile)
+        handbook = None
+        if d.get("doc_type") == "handbook":
+            handbook = body.handbook or d.get("handbook") or "other"
+            if handbook not in BOOKS:
+                raise HTTPException(400, f"Unknown handbook '{handbook}'")
+        else:
+            profile(body.aircraft_profile)
         for rule in d["rules"]:
             recheck(d, rule)
         chosen = [x for x in d["rules"] if x.get("include")]
@@ -276,8 +299,8 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             raise HTTPException(422, {"message": "Include at least one rule", "blocked": []})
         rows = [{k: x.get(k) for k in RULE_FIELDS} | {"origin": x.get("origin", "manual"),
                                                        "llm_draft": x.get("llm_draft")} for x in chosen]
-        rs = await db(store.save_draft(d, drafts.pages(did), rows, body.aircraft_profile,
-                                       body.name.strip()[:120] or d["name"], x_sop_editor))
+        rs = await db(store.save_draft(d, drafts.pages(did), rows, None if handbook else body.aircraft_profile,
+                                       body.name.strip()[:120] or d["name"], x_sop_editor, handbook=handbook))
         drafts.delete(did)
         return {"rule_set_id": rs}
 
@@ -325,12 +348,14 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         return await png(get_draft(did)["pdf_path"], page_no, q)
 
     # ------------------------------------------------------------ saved rule sets
-    async def check_saved(rule: dict, doc_id, aircraft: str | None = None) -> dict:
-        pages, ocr = await db(store.page_texts(doc_id))
+    async def check_saved(rule: dict, head: dict) -> dict:
+        pages, ocr = await db(store.page_texts(head["document_id"]))
         if rule.get("tags") is not None:
             rule["tags"] = [t for t in rule["tags"] if t in TAGS] or \
                 validate.normalise_tags(None, rule.get("kind"), rule.get("metric"))
-        issues, fatal = validate.assess(rule, known_phases(), pages, ocr, jobs.nominal_for(aircraft))
+        nominal = jobs.nominal_for_draft({"doc_type": "handbook"} if head.get("scope") == "general"
+                                         else {"aircraft_profile": head.get("aircraft_profile")})
+        issues, fatal = validate.assess(rule, known_phases(), pages, ocr, nominal)
         if fatal:
             raise HTTPException(422, {"message": f"Can't save: {fatal}", "issues": issues})
         return {"issues": issues}
@@ -380,8 +405,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         rule = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in RULE_FIELDS}
         rule = {"title": "New rule", "kind": "limit", "phases": [], "conditions": [], "severity": "caution",
                 **rule, "origin": "manual"}
+        if rule["kind"] == "gaze":
+            rule.pop("metric", None)
         rule.setdefault("tags", validate.normalise_tags(None, rule["kind"], rule.get("metric")))
-        chk = await check_saved(rule, head["document_id"], head["aircraft_profile"])
+        chk = await check_saved(rule, head)
         rule.pop("origin")
         return {**await db(store.add_rule(rs, rule, x_sop_editor)), "issues": chk["issues"]}
 
@@ -393,8 +420,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
         head = await db(store.get_set(UUID(cur["rule_set_id"])))
         changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in RULE_FIELDS}
         merged = {**cur, **changes}
-        chk = await check_saved(merged, head["document_id"], head["aircraft_profile"])
-        for k in ("phases", "source_page", "quote_score", "tags"):      # normalised by the check
+        chk = await check_saved(merged, head)
+        for k in ("phases", "source_page", "quote_score", "tags",       # normalised by the check
+                  "metric", "target", "tol_hi", "tol_lo", "min_value", "max_value", "op", "value",
+                  "gate_phase", "capture_at", "conditions", "aoi", "gaze_measure"):   # cleared on a kind change
             if merged.get(k) != cur.get(k):
                 changes[k] = merged[k]
         return {**await db(store.update_rule(rule_id, changes, x_sop_editor)), "issues": chk["issues"]}
@@ -428,7 +457,7 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
     async def active(aircraft: str):
         out = await db(store.active_rules(aircraft))
         if out is None:
-            raise HTTPException(404, "No active rule set for this aircraft")
+            raise HTTPException(404, "No active rules for this aircraft (and no active training handbook)")
         return out
 
     return r, jobs, store

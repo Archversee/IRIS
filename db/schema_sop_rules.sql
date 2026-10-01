@@ -159,3 +159,49 @@ create index if not exists flight_rules_tags_idx on flight_rules using gin (tags
 alter table flight_rule_sets
     add column if not exists prompt_version text,     -- LLM prompt version that drafted it ('2')
     add column if not exists page_selection text;     -- SOP pages the LLM read, e.g. '13-20, 34-63'
+
+-- ---------------------------------------------------------------------
+-- v3: training handbooks + scan-path (gaze) rules. Additive; safe to re-run.
+--
+--  * A rule set comes either from an aircraft's POH (scope 'aircraft',
+--    bound to aircraft_profile -- one active per aircraft, as before) or
+--    from a training handbook (scope 'general', aircraft_profile null,
+--    handbook = 'afh' | 'ifh' | 'phak' | 'school' | 'other' -- one active
+--    per book). A lesson uses its aircraft's active set PLUS every active
+--    handbook set (sop/store.py active_rules).
+--  * kind 'gaze': where the pilot looks, from the eye tracker. aoi is an
+--    AOI ROLE (outside, airspeed, attitude...; MAVIS sop/schema.py
+--    AOI_ROLES), gaze_measure says what is checked, value is seconds
+--    (max_gap / max_dwell) or a 0..1 share (min_share / max_share).
+-- ---------------------------------------------------------------------
+alter table flight_rule_sets alter column aircraft_profile drop not null;
+alter table flight_rule_sets
+    add column if not exists scope    text not null default 'aircraft',
+    add column if not exists handbook text;
+alter table flight_rule_sets drop constraint if exists flight_rule_sets_scope_check;
+alter table flight_rule_sets add constraint flight_rule_sets_scope_check check (
+    (scope = 'aircraft' and aircraft_profile is not null) or
+    (scope = 'general'  and handbook is not null));
+create unique index if not exists flight_rule_sets_one_active_book
+    on flight_rule_sets (handbook) where active and scope = 'general';
+
+alter table flight_rules
+    add column if not exists aoi          text,
+    add column if not exists gaze_measure text;
+alter table flight_rules drop constraint if exists flight_rules_gaze_measure_check;
+alter table flight_rules add constraint flight_rules_gaze_measure_check
+    check (gaze_measure in ('max_gap', 'max_dwell', 'min_share', 'max_share'));
+alter table flight_rules drop constraint if exists flight_rules_kind_check;
+alter table flight_rules add constraint flight_rules_kind_check
+    check (kind in ('band', 'limit', 'event', 'capture', 'gaze', 'unobservable'));
+alter table flight_rules drop constraint if exists flight_rules_kind_fields;
+alter table flight_rules add constraint flight_rules_kind_fields check (
+    (kind = 'band'    and metric is not null and target is not null
+                      and (tol_hi is not null or tol_lo is not null)) or
+    (kind = 'limit'   and metric is not null and (min_value is not null or max_value is not null)) or
+    (kind = 'event'   and metric is not null and op is not null and value is not null) or
+    (kind = 'capture' and metric is not null and capture_at is not null
+                      and (min_value is not null or max_value is not null)) or
+    (kind = 'gaze'    and aoi is not null and gaze_measure is not null and value is not null) or
+    (kind = 'unobservable')
+);

@@ -219,3 +219,23 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
 .sop-picker__foot .sop-btnrow { margin-top: 0; }
 .sop-linkish { background: none; border: none; padding: 0; color: var(--accent); font-weight: 600; font-size: 12px; cursor: pointer; }
 .sop-linkish:hover { text-decoration: underline; }
+
+/* ---- document type (POH vs training handbook) ---- */
+.sop-doctype { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
+.sop-doctype__opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sop-doctype__opt {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); text-transform: none; letter-spacing: 0;
+}
+.sop-doctype__opt.is-on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.sop-doctype__opt input { width: auto; margin-top: 3px; accent-color: var(--accent); }
+.sop-doctype__opt > span { display: flex; flex-direction: column; gap: 3px; font-weight: 400; color: var(--text); font-size: 13.5px; }
+.sop-doctype__opt .sop-small { line-height: 1.45; }
+.sop-doctype__book { max-width: 560px; gap: 4px; }
+.sop-picker__type { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin: 6px 0 12px; }
+.sop-picker__type .sop-field { min-width: 220px; flex: 0 1 320px; }
+.sop-picker__typehint { flex: 1 1 260px; padding-bottom: 8px; }
+@media (max-width: 760px) { .sop-doctype__opts { grid-template-columns: 1fr; } }
+.sop-actabs__gen { border-style: dashed !important; }
+.sop-actabs__gen.is-on { border-style: solid !important; }
+.sop-gen-note { margin: -4px 0 10px; }

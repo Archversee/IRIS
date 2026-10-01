@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { sopApi } from "./sopApi.js";
-import { editable, sameRule, describe } from "./ruleText.js";
+import { editable, sameRule, describe, bookShort } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch } from "./parts.jsx";
@@ -10,8 +10,10 @@ import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
 import "./sop.css";
 
-// /sop/rules -- saved flight rules per aircraft. Rules are edited in place;
-// every change is recorded in flight_rule_history (shown in the History tab).
+// /sop/rules -- saved flight rules per aircraft, plus the training-handbook
+// rules (tab "_general") that apply to every aircraft. Rules are edited in
+// place; every change is recorded in flight_rule_history (History tab).
+const GENERAL = "_general";
 export default function SopRules() {
   const [params, setParams] = useSearchParams();
   const [meta, setMeta] = useState(null);
@@ -33,9 +35,11 @@ export default function SopRules() {
     setParams(next);
   };
 
-  const forAc = (sets || []).filter((s) => s.aircraft_profile === aircraft);
+  const isGen = aircraft === GENERAL;
+  const forAc = (sets || []).filter((s) => (isGen ? s.scope === "general" : s.aircraft_profile === aircraft && s.scope !== "general"));
   const current = forAc.find((s) => s.id === setId) || forAc.find((s) => s.active) || forAc[0] || null;
-  const acName = (a) => meta?.aircraft.find((x) => x.id === a)?.name || a;
+  const acName = (a) => (a === GENERAL ? "every aircraft" : meta?.aircraft.find((x) => x.id === a)?.name || a);
+  const genActive = (sets || []).filter((s) => s.scope === "general" && s.active);
 
   return (
     <div className="sop">
@@ -61,15 +65,26 @@ export default function SopRules() {
                 </button>
               );
             })}
+            <button type="button" className={"sop-actabs__gen" + (isGen ? " is-on" : "")} onClick={() => setParams({ aircraft: GENERAL })}>
+              <b>Training handbooks</b>
+              <span>{genActive.length ? `${genActive.length} active · ${genActive.reduce((n, s) => n + s.n_enabled, 0)} rules · every aircraft` : "None active · would apply to every aircraft"}</span>
+            </button>
           </nav>
           {justSaved && current && (
-            <div className="sop-ok">Saved. <b>{current.name}</b> is now the active rule set for {acName(aircraft)} — lessons in this aircraft use it from the next start.</div>
+            <div className="sop-ok">Saved. <b>{current.name}</b> is now {isGen
+              ? <>the active {bookShort(meta, current.handbook)} rule set — every lesson uses it from the next start, on top of the aircraft's own rules.</>
+              : <>the active rule set for {acName(aircraft)} — lessons in this aircraft use it from the next start.</>}</div>
+          )}
+          {isGen && current && (
+            <p className="muted sop-small sop-gen-note">Rules from training handbooks apply to every aircraft, together with that aircraft's own POH rules. One rule set per handbook is active at a time.</p>
           )}
           {!current ? (
             <div className="card sop-emptystate">
-              <h3>No rules for {acName(aircraft)} yet</h3>
-              <p className="muted">Upload this aircraft's SOP and the local LLM drafts the rules for you to check.</p>
-              <Link to="/sop/new" className="sop-link-btn sop-link-btn--primary">Upload SOP</Link>
+              <h3>{isGen ? "No training-handbook rules yet" : `No rules for ${acName(aircraft)} yet`}</h3>
+              <p className="muted">{isGen
+                ? "Upload a training handbook (the FAA Airplane Flying Handbook, Instrument Flying Handbook, PHAK, or your school's own) and the local LLM drafts circuit and scan-path rules that apply to every aircraft."
+                : "Upload this aircraft's SOP and the local LLM drafts the rules for you to check."}</p>
+              <Link to="/sop/new" className="sop-link-btn sop-link-btn--primary">{isGen ? "Upload a handbook" : "Upload SOP"}</Link>
             </div>
           ) : (
             <RuleSet key={current.id} meta={meta} setInfo={current} others={forAc}
@@ -127,11 +142,11 @@ function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
       <div className="sop-field">
         <label htmlFor="sop-set">Rule set</label>
         <select id="sop-set" value={s.id} onChange={(e) => onPick(e.target.value)}>
-          {others.map((o) => <option key={o.id} value={o.id}>{o.name}{o.active ? " — active" : ""}</option>)}
+          {others.map((o) => <option key={o.id} value={o.id}>{o.scope === "general" ? `${bookShort(meta, o.handbook)}: ` : ""}{o.name}{o.active ? " — active" : ""}</option>)}
         </select>
       </div>
       <div className="sop-setbar__meta">
-        {s.active ? <span className="sop-chip sop-chip--ok">Active — used in lessons</span> : <span className="sop-chip">Inactive</span>}
+        {s.active ? <span className="sop-chip sop-chip--ok">{s.scope === "general" ? "Active — used in every lesson" : "Active — used in lessons"}</span> : <span className="sop-chip">Inactive</span>}
         <span className="muted sop-small">
           {s.filename ? `From ${s.filename}` : "Typed in by hand"} · {s.n_enabled}/{s.n_rules} rules on ·
           last change {new Date(s.updated_at).toLocaleString()}{s.updated_by ? ` by ${s.updated_by}` : ""}
@@ -153,7 +168,9 @@ function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
       </div>
       {confirm === "deactivate" && (
         <ConfirmDialog title="Deactivate these rules?" confirmLabel="Deactivate"
-          message="Lessons in this aircraft will run without SOP rules until you make a rule set active again."
+          message={s.scope === "general"
+            ? `Lessons will run without ${bookShort(meta, s.handbook)} rules until you make one of its rule sets active again.`
+            : "Lessons in this aircraft will run without SOP rules until you make a rule set active again."}
           onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); act(() => sopApi.deactivateSet(s.id)); }} />
       )}
       {confirm === "delete" && (
@@ -334,7 +351,8 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
 const ACTION_TXT = { create: "Created", update: "Edited", delete: "Deleted", activate: "Made active", deactivate: "Deactivated", rename: "Renamed" };
 const FIELD_TXT = { tags: "tags", title: "title", kind: "type", metric: "measured value", target: "target", tol_hi: "+ tolerance", tol_lo: "− tolerance",
   min_value: "minimum", max_value: "maximum", op: "comparison", value: "value", gate_phase: "deadline phase", capture_at: "moment",
-  phases: "phases", conditions: "conditions", severity: "severity", source_quote: "source", source_page: "page", note: "note", enabled: "on/off", name: "name" };
+  phases: "phases", conditions: "conditions", severity: "severity", source_quote: "source", source_page: "page", note: "note", enabled: "on/off", name: "name",
+  aoi: "look at", gaze_measure: "gaze check" };
 
 function changedFields(b, a) {
   if (!b || !a) return [];

@@ -1,9 +1,9 @@
 // Download a saved rule set as a file (built in the browser from the same
 // data the SOP Rules page shows -- no extra backend endpoint).
-import { describe, phaseTxt, metricInfo } from "./ruleText.js";
+import { describe, phaseTxt, metricInfo, aoiLabel, bookShort, gazeIsShare } from "./ruleText.js";
 
 const RULE_COLS = ["id", "enabled", "kind", "title", "tags", "phases", "metric", "target", "tol_hi", "tol_lo",
-  "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "severity",
+  "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "aoi", "gaze_measure", "severity",
   "source_page", "source_quote", "note", "origin", "created_by", "created_at", "updated_by", "updated_at"];
 
 function safeName(s) {
@@ -24,10 +24,13 @@ function download(text, filename, type) {
 
 function header(set, meta) {
   const ac = meta.aircraft.find((a) => a.id === set.aircraft_profile);
+  const general = set.scope === "general";
   return {
     name: set.name,
+    scope: set.scope || "aircraft",
+    handbook: set.handbook || null,
     aircraft_profile: set.aircraft_profile,
-    aircraft_name: ac?.name || set.aircraft_profile,
+    aircraft_name: general ? `All aircraft (${bookShort(meta, set.handbook)})` : ac?.name || set.aircraft_profile,
     active: set.active,
     source_pdf: set.filename || null,
     llm_model: set.llm_model || null,
@@ -48,7 +51,7 @@ export function toJson(set, meta) {
     units,
     rules: set.rules.map((r) => ({
       ...Object.fromEntries(RULE_COLS.map((k) => [k, r[k] ?? null])),
-      unit: r.metric ? units[r.metric] : null,
+      unit: r.metric ? units[r.metric] : r.kind === "gaze" ? (gazeIsShare(r.gaze_measure) ? "fraction" : "s") : null,
       summary: describe(meta, r),
     })),
   }, null, 2);
@@ -65,12 +68,14 @@ function csvCell(v) {
 /** Spreadsheet-friendly CSV (opens in Excel; UTF-8 BOM so ± and ° survive). */
 export function toCsv(set, meta) {
   const cols = ["summary", "title", "tags", "enabled", "severity", "kind", "metric", "unit", "phases", "target", "tol_hi", "tol_lo",
-    "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "source_page", "source_quote",
+    "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions", "look_at", "gaze_check", "source_page", "source_quote",
     "note", "origin", "updated_by", "updated_at", "id"];
   const rows = set.rules.map((r) => ({
     ...r,
     summary: describe(meta, r),
-    unit: r.metric ? metricInfo(meta, r.metric).unit : "",
+    unit: r.metric ? metricInfo(meta, r.metric).unit : r.kind === "gaze" ? (gazeIsShare(r.gaze_measure) ? "share 0-1" : "s") : "",
+    look_at: r.kind === "gaze" ? aoiLabel(meta, r.aoi) : "",
+    gaze_check: r.kind === "gaze" ? (meta.gaze_measures?.find((g) => g.id === r.gaze_measure)?.label || r.gaze_measure) : "",
     phases: (r.phases || []).map(phaseTxt),
     tags: (r.tags || []).map((t) => meta.tags?.find((x) => x.id === t)?.label || t),
     gate_phase: r.gate_phase ? phaseTxt(r.gate_phase) : "",
@@ -85,7 +90,7 @@ export function toCsv(set, meta) {
 }
 
 export function exportRuleSet(set, meta, format) {
-  const base = `${safeName(set.name)}_${set.aircraft_profile}_${stamp()}`;
+  const base = `${safeName(set.name)}_${set.scope === "general" ? `all-aircraft-${set.handbook}` : set.aircraft_profile}_${stamp()}`;
   if (format === "csv") download(toCsv(set, meta), `${base}.csv`, "text/csv;charset=utf-8");
   else download(toJson(set, meta), `${base}.json`, "application/json");
 }

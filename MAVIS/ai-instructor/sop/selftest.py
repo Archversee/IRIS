@@ -176,6 +176,90 @@ def main() -> int:
 
     check("tolerant LLM JSON parse", len(parse_llm_output('```json\n{"rules":[{"kind":"limit"}]}\n```')) == 1)
 
+    # ---- training handbooks: gaze rules, chapters, book detection, prompt
+    HB = {5: "Fixation, or staring at a single instrument, is a common error.\n"
+             "On final approach, check the airspeed at least every 5 seconds.\n"
+             "Spend at least 70 percent of the time looking outside."}
+    g = lambda raw: validate.validate_candidate(raw, PH, HB, set())  # noqa: E731
+    open_gaze = g({"kind": "gaze", "title": "Don't fixate", "aoi": "instruments", "gaze_measure": "max_dwell",
+                   "value": None, "unit": "none", "metric": None, "phases": [], "severity": "advisory", "tags": [],
+                   "source_quote": "Fixation, or staring at a single instrument, is a common error.", "page": 5})
+    check("gaze rule without a number drafted", open_gaze.status == "draft" and open_gaze.rule["value"] is None,
+          (open_gaze.reject_reason, open_gaze.issues))
+    check("gaze rule gets the scan tag", open_gaze.rule["tags"] == ["scan"])
+    issues, fatal = validate.assess(dict(open_gaze.rule), PH, HB, set())
+    check("gaze rule can't be saved without a threshold", bool(fatal) and "threshold" in fatal, fatal)
+    gap = g({"kind": "gaze", "title": "Airspeed every 5 s", "aoi": "airspeed", "gaze_measure": "max_gap",
+             "value": 5, "unit": "s", "phases": ["FINAL"], "severity": "advisory",
+             "source_quote": "On final approach, check the airspeed at least every 5 seconds.", "page": 5})
+    issues, fatal = validate.assess(dict(gap.rule), PH, HB, set())
+    check("gaze rule with seconds accepted", gap.status == "draft" and gap.rule["value"] == 5 and not fatal,
+          (gap.reject_reason, fatal))
+    share = g({"kind": "gaze", "title": "Outside 70%", "aoi": "outside", "gaze_measure": "min_share",
+               "value": 70, "unit": "percent", "phases": [], "severity": "advisory",
+               "source_quote": "Spend at least 70 percent of the time looking outside.", "page": 5})
+    check("gaze share percent -> fraction", share.status == "draft" and abs(share.rule["value"] - 0.7) < 1e-9,
+          share.reject_reason)
+    wrong_u = g({"kind": "gaze", "title": "x", "aoi": "airspeed", "gaze_measure": "max_gap", "value": 70,
+                 "unit": "percent", "phases": [], "severity": "advisory",
+                 "source_quote": "Spend at least 70 percent of the time looking outside.", "page": 5})
+    check("gaze unit mismatch auto-rejected", wrong_u.status == "auto_rejected")
+    bad_aoi = g({"kind": "gaze", "title": "x", "aoi": "yoke", "gaze_measure": "max_gap", "value": 5, "unit": "s",
+                 "phases": [], "severity": "advisory",
+                 "source_quote": "On final approach, check the airspeed at least every 5 seconds.", "page": 5})
+    check("unknown AOI role auto-rejected", bad_aoi.status == "auto_rejected")
+    silly_g = dict(gap.rule, value=5000)
+    check("implausible gaze time blocked", bool(validate.check_rule(silly_g, PH)[1]))
+    lim = dict(band.rule, aoi="airspeed", gaze_measure="max_gap")
+    validate.check_rule(lim, PH)
+    check("non-gaze rule drops gaze fields", lim["aoi"] is None and lim["gaze_measure"] is None)
+    check("gaze rules never conflict with the circuit", not conflicts(gap.rule, N))
+
+    from .extract import chapter_outline, detect_book, detect_chapter, suggest_chapter_pages
+    check("chapter heading + title", detect_chapter("Chapter 8\nAirport Traffic Patterns\nIntroduction\n...") ==
+          ("8", "Airport Traffic Patterns"))
+    check("chapter title on the same line", detect_chapter("Chapter 9: Approaches and Landings\nblah") ==
+          ("9", "Approaches and Landings"))
+    check("chapter from footer label", detect_chapter("text\nmore\nAirplane Flying Handbook\n8-3") == ("8", None))
+    check("table of contents is not a chapter page",
+          detect_chapter("Contents\nChapter 1 Introduction ...1-1\nChapter 2 Ground Operations ...2-1") == (None, None))
+    check("glossary pages", detect_chapter("Glossary\nterm\nG-4")[0] == "G")
+    rows = [{"page_no": 1, "chapter": None, "chapter_title": None},
+            {"page_no": 2, "chapter": "7", "chapter_title": "Ground Reference Maneuvers"},
+            {"page_no": 3, "chapter": "7", "chapter_title": None},
+            {"page_no": 4, "chapter": "8", "chapter_title": "Airport Traffic Patterns"},
+            {"page_no": 5, "chapter": "8", "chapter_title": None},
+            {"page_no": 6, "chapter": "G", "chapter_title": None}]
+    co = chapter_outline(rows)
+    check("chapter outline groups pages", [(o["chapter"], o["first"], o["last"]) for o in co] ==
+          [(None, 1, 1), ("7", 2, 3), ("8", 4, 5), ("G", 6, 6)], co)
+    check("traffic-pattern chapter suggested", suggest_chapter_pages(rows) == [4, 5])
+    check("glossary named", co[-1]["title"] == "Glossary")
+    mk = lambda t: [{"text": t}]  # noqa: E731
+    check("AFH recognised", detect_book(mk("Airplane Flying Handbook (FAA-H-8083-3C)")) == ("afh", None))
+    check("IFH recognised", detect_book(mk("Instrument Flying Handbook FAA-H-8083-15B")) == ("ifh", None))
+    check("PHAK recognised", detect_book(mk("Pilot's Handbook of Aeronautical Knowledge FAA-H-8083-25C")) == ("phak", None))
+    check("IPH flagged as no-rules book",
+          detect_book(mk("Instrument Procedures Handbook FAA-H-8083-16B. See the Instrument Flying Handbook")) ==
+          (None, "iph"))
+    check("AMT handbook 8083-30 is not the AFH", detect_book(mk("FAA-H-8083-30 General handbook")) == (None, None))
+    check("a POH is no handbook", detect_book(mk("CESSNA MODEL 172S Pilot's Operating Handbook")) == (None, None))
+
+    from .llm_parse import handbook_prompt
+    from .schema import llm_json_schema
+    hp = handbook_prompt(PH, "ifh")
+    check("handbook prompt carries the book focus", "FIXATION" in hp and "Instrument Flying Handbook" in hp)
+    check("handbook prompt skips aircraft speeds", "V-speeds" in hp)
+    check("POH schema has no gaze kind", "gaze" not in llm_json_schema(PH)["properties"]["rules"]["items"]
+          ["properties"]["kind"]["enum"])
+    check("handbook schema has gaze fields", "aoi" in llm_json_schema(PH, gaze=True)["properties"]["rules"]["items"]
+          ["properties"])
+
+    from .profile import circuit_conflict
+    pattern = {"kind": "limit", "metric": "ias", "max_value": 68, "phases": ["CLIMB_OUT"]}
+    msg = circuit_conflict(pattern, [("Test plane", N)])
+    check("handbook rules checked against every aircraft", bool(msg) and "Test plane" in msg, msg)
+
     pages = [extract.PageText(i, "para " * 400, "text") for i in (1, 2, 3)]
     ch = extract.make_chunks(pages, 3000)
     check("chunks carry page markers", all(c.text.startswith("[[PAGE") for c in ch) and len(ch) >= 3)

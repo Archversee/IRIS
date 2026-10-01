@@ -70,9 +70,11 @@ class DraftStore:
         with _IO_LOCK:
             return json.loads(_retry(path.read_text, "utf-8"))
 
-    def create(self, filename: str, sha: str, pdf_path: str, by: str | None) -> dict:
+    def create(self, filename: str, sha: str, pdf_path: str, by: str | None,
+               doc_type: str = "poh", handbook: str | None = None) -> dict:
         d = {"id": uuid.uuid4().hex, "filename": filename, "name": Path(filename).stem,
              "sha256": sha, "pdf_path": pdf_path, "created_by": by,
+             "doc_type": doc_type, "handbook": handbook,
              "created_at": now_iso(), "updated_at": now_iso(),
              "status": "processing", "stage": "queued", "detail": "", "done": 0, "total": 0,
              "error": None, "warnings": [], "llm_model": None, "aircraft_profile": None,
@@ -123,7 +125,8 @@ class DraftStore:
             rules = d.get("rules") or []
             out.append({k: d.get(k) for k in ("id", "name", "filename", "status", "stage", "detail", "done",
                                                "total", "error", "aircraft_profile", "created_at",
-                                               "updated_at", "created_by")}
+                                               "updated_at", "created_by", "handbook")}
+                       | {"doc_type": d.get("doc_type") or "poh"}
                        | {"n_rules": sum(1 for r in rules if r.get("include")),
                           "n_blocked": sum(1 for r in rules if r.get("include") and r.get("blocked"))})
         return sorted(out, key=lambda x: x.get("updated_at") or "", reverse=True)

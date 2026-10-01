@@ -49,11 +49,13 @@ export default function InFlightPanel({ state, onMainMenu }) {
 // aircraft loaded in the sim (MAVIS sop/runtime.py).
 function SopChip({ sop }) {
   if (!sop) return null;
-  const text = sop.status === "active" ? `SOP · ${sop.name}` :
-    sop.status === "none" ? `No SOP rules for ${sop.aircraft_name}` :
-    sop.status === "no_profile" ? "No SOP · unknown aircraft" : "SOP rules unavailable";
+  const hb = sop.n_handbook_rules ? ` + ${sop.n_handbook_rules} handbook rules` : "";
+  const text = sop.status === "active" ? `SOP · ${sop.name}${hb}` :
+    sop.status === "none" ? `No SOP rules for ${sop.aircraft_name}${hb ? ` · ${sop.n_handbook_rules} handbook rules` : ""}` :
+    sop.status === "no_profile" ? `No SOP · unknown aircraft${hb ? ` · ${sop.n_handbook_rules} handbook rules` : ""}` : "SOP rules unavailable";
+  const books = sop.handbooks?.length ? `\nTraining handbooks (every aircraft): ${sop.handbooks.join(", ")}` : "";
   const title = sop.status === "active"
-    ? `${sop.n_rules} rules for ${sop.aircraft_name}` + (sop.detected ? ` (simulator: ${sop.detected})` : " (default aircraft)")
+    ? `${sop.n_rules - (sop.n_handbook_rules || 0)} rules for ${sop.aircraft_name}` + (sop.detected ? ` (simulator: ${sop.detected})` : " (default aircraft)") + books
     : (sop.detected ? `Simulator reported: ${sop.detected} — ${sop.why}` : sop.why || "");
   return <span className={"pill" + (sop.status === "active" ? "" : " mavis-sop-chip--off")} title={title}>{text}</span>;
 }

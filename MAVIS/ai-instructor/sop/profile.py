@@ -189,9 +189,36 @@ def conflicts(rule: dict, nominal: dict | None) -> list[str]:
     return out
 
 
-def conflict_message(reasons: list[str]) -> str | None:
+def conflict_message(reasons: list[str], aircraft: str | None = None) -> str | None:
     if not reasons:
         return None
     more = f" (and {len(reasons) - 2} more phase{'s' if len(reasons) > 3 else ''})" if len(reasons) > 2 else ""
-    return "A correctly flown circuit would break this rule: " + "; ".join(reasons[:2]) + more + \
+    who = f"A correctly flown circuit in the {aircraft}" if aircraft else "A correctly flown circuit"
+    return f"{who} would break this rule: " + "; ".join(reasons[:2]) + more + \
         ". It is probably meant for a different situation (emergency, autopilot, ground check...) or needs narrower phases/conditions."
+
+
+def nominals_all() -> list[tuple[str, dict]]:
+    """(aircraft name, correct circuit) for every aircraft profile -- handbook
+    rules apply to all of them, so they are checked against each one."""
+    from .schema import aircraft_profiles
+    out = []
+    for a in aircraft_profiles():
+        n = load_nominal(a["id"])
+        if n is not None:
+            out.append((a["name"], n))
+    return out
+
+
+def circuit_conflict(rule: dict, nominal) -> str | None:
+    """nominal: one circuit dict (aircraft rules) or a list of (name, circuit)
+    (handbook rules: the first aircraft whose correct circuit breaks the rule)."""
+    if nominal is None:
+        return None
+    if isinstance(nominal, dict):
+        return conflict_message(conflicts(rule, nominal))
+    for name, n in nominal:
+        msg = conflict_message(conflicts(rule, n), name)
+        if msg:
+            return msg
+    return None
