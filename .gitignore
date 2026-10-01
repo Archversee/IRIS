@@ -15,3 +15,7 @@ logs/
 *.mov
 *.m4v
 *.log
+# MAVIS media now lives in frontend/public/media (served at /media by the
+# frontend, and still MAVIS's web.media_dir). Mock-mode out-the-window clips
+# (~900 MB each) and replay recordings are local-only.
+frontend/public/media/videos/

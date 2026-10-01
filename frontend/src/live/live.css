@@ -6,24 +6,9 @@
 .live-coach {
   min-height: 100%;
   padding: 16px;
-  background: #0b0e13;
-  color: #d7e0ea;
+  background: var(--bg);
+  color: var(--text);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
-}
-
-.live-coach__status {
-  margin-bottom: 12px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  display: inline-block;
-  font-weight: 600;
-  background: #2a1414;
-  color: #ff8a8a;
-}
-
-.live-coach__status--open {
-  background: #12261a;
-  color: #7ee6a6;
 }
 
 .mavis-topbar {
@@ -32,12 +17,29 @@
   justify-content: space-between;
   margin-bottom: 12px;
 }
+/* MAVIS's own toolbar: status dot, then End Session beside it, on the left. */
+.mavis-shell > .mavis-topbar,
+.mavis-hud__left > .mavis-topbar { justify-content: flex-start; gap: 12px; }
+.mavis-hud__left > .mavis-topbar { margin: 0; min-height: 34px; }
+
+/* MAVIS backend status: green glow when connected, red when down. */
+.mavis-status-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: #ff4d4d; box-shadow: 0 0 6px 2px rgba(255, 77, 77, 0.7);
+}
+.mavis-status-dot.is-up {
+  background: #3fe07a; box-shadow: 0 0 8px 3px rgba(63, 224, 122, 0.75);
+  animation: mavis-status-pulse 2s ease-in-out infinite;
+}
+@keyframes mavis-status-pulse {
+  50% { box-shadow: 0 0 14px 5px rgba(63, 224, 122, 0.45); }
+}
 
 /* ---- Main menu shell ---- */
 .mavis-shell {
   min-height: 100%;
-  background: #0b0e13;
-  color: #d7e0ea;
+  background: var(--bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding: 16px;
 }
@@ -57,17 +59,17 @@
 .mavis-sidebar {
   width: 260px;
   flex-shrink: 0;
-  background: #131922;
-  border: 1px solid #232f3d;
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 0;
 }
-.mavis-sidebar--empty { padding: 16px; color: #8b98a5; font-size: 13px; }
+.mavis-sidebar--empty { padding: 16px; color: var(--muted); font-size: 13px; }
 .mavis-sidebar__title {
   padding: 0 14px 10px;
   font-weight: 700;
   font-size: 14px;
-  border-bottom: 1px solid #232f3d;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
 }
 .mavis-mod__head {
@@ -75,7 +77,7 @@
   text-align: left;
   background: none;
   border: none;
-  color: #d7e0ea;
+  color: var(--text);
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
@@ -83,15 +85,15 @@
   display: flex;
   flex-direction: column;
 }
-.mavis-mod.is-open .mavis-mod__head { color: #4aa8ff; }
-.mavis-mod__sub { font-size: 11px; font-weight: 400; color: #8b98a5; }
+.mavis-mod.is-open .mavis-mod__head { color: var(--accent); }
+.mavis-mod__sub { font-size: 11px; font-weight: 400; color: var(--muted); }
 .mavis-mod__lessons { list-style: none; margin: 0; padding: 0 0 8px; }
 .mavis-lesson {
   width: 100%;
   text-align: left;
   background: none;
   border: none;
-  color: #b7c2cc;
+  color: var(--text);
   padding: 6px 14px 6px 26px;
   font-size: 13px;
   cursor: pointer;
@@ -99,43 +101,22 @@
   align-items: center;
   gap: 6px;
 }
-.mavis-lesson:hover:not(:disabled) { color: #d7e0ea; background: #1a222c; }
-.mavis-lesson.is-active { color: #4aa8ff; font-weight: 600; }
+.mavis-lesson:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+.mavis-lesson.is-active { color: var(--accent); font-weight: 600; }
 .mavis-lesson.is-locked { opacity: 0.4; cursor: not-allowed; }
 .mavis-lesson__tag {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #2b5c85;
-  color: #d7e0ea;
+  background: var(--accent-dim);
+  color: var(--text);
 }
-.mavis-lesson__dur { margin-left: auto; font-size: 11px; color: #8b98a5; }
+.mavis-lesson__dur { margin-left: auto; font-size: 11px; color: var(--muted); }
 
-/* ---- Menu main (name input + mode cards) ---- */
+/* ---- Menu main (mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
 .mavis-menu--solo { max-width: none; width: 100%; }
-.mavis-menu__names { display: flex; gap: 10px; margin-bottom: 20px; }
-.mavis-menu__names input {
-  flex: 1;
-  padding: 10px 12px;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 8px;
-  color: #d7e0ea;
-  font-size: 14px;
-}
-.mavis-menu__name {
-  width: 100%;
-  max-width: 320px;
-  padding: 10px 12px;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 8px;
-  color: #d7e0ea;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
 .mavis-menu__error { margin-top: 12px; color: #ff8a8a; font-size: 13px; }
 
 .mavis-modes { display: flex; gap: 16px; flex-wrap: wrap; }
@@ -147,19 +128,42 @@
   flex-direction: column;
   justify-content: flex-end;
   text-align: left;
-  background-color: #131922;
+  background-color: #131922; /* photo card: stays dark in both themes (white text over the image) */
   background-size: cover;
   background-position: top center;
-  border: 1px solid #232f3d;
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px;
-  color: #d7e0ea;
+  color: #e6edf3;
   cursor: pointer;
 }
-.mavis-mode-card:hover:not(:disabled) { border-color: #4aa8ff; }
+.mavis-mode-card:hover:not(:disabled) { border-color: var(--accent); }
 .mavis-mode-card:disabled { opacity: 0.5; cursor: not-allowed; }
 .mavis-mode-card__label { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
-.mavis-mode-card__desc { font-size: 13px; color: #8b98a5; line-height: 1.4; }
+.mavis-mode-card__desc { font-size: 13px; color: #b7c2cc; line-height: 1.4; }
+/* Full-height menu cards sit over photos -- larger, brighter text so the
+   label and description read at a glance. */
+.mavis-shell--menu .mavis-mode-card { padding: 28px; }
+.mavis-shell--menu .mavis-mode-card__label {
+  font-size: 30px; margin-bottom: 10px; color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.mavis-shell--menu .mavis-mode-card__desc {
+  font-size: 18px; color: var(--text); line-height: 1.5;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* Menu screens (Basic Flight / Free Flight): menu-bg fills the whole
+   content area edge to edge, with the status bar floating over it. */
+.mavis-shell--menu { position: relative; padding: 0; display: flex; flex-direction: column; }
+.mavis-shell--menu > .mavis-topbar { position: absolute; top: 12px; left: 16px; right: 16px; z-index: 2; margin: 0; }
+.mavis-shell--menu > .mavis-menu {
+  flex: 1; max-width: none; margin: 0; border-radius: 0;
+  padding: 56px 32px 32px; background-color: var(--bg);
+}
+/* Mode cards stretch down to the bottom of the screen. */
+.mavis-shell--menu .mavis-menu__main { display: flex; flex-direction: column; }
+.mavis-shell--menu .mavis-modes { flex: 1; }
 
 .mavis-shell--hud {
   padding: 12px;
@@ -170,8 +174,7 @@
 .mavis-shell--hud > .mavis-topbar { flex-shrink: 0; }
 .mavis-shell--hud > .mavis-hud { flex: 1; min-height: 0; }
 
-/* ---- In-flight HUD: two columns, matching the original app's
-   #left (avatar+chat) / #right (map, then lesson/gauges/controls) ---- */
+/* ---- In-flight HUD: avatar+chat on the left, ground track on the right ---- */
 .mavis-hud {
   display: flex;
   gap: 14px;
@@ -192,42 +195,33 @@
   flex-direction: column;
   gap: 10px;
 }
-.mavis-hud__top { display: flex; align-items: center; gap: 10px; }
-.mavis-hud__bottom { display: flex; gap: 10px; }
-.mavis-hud__card {
-  flex: 1;
-  min-width: 0;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-.mavis-hud__card h4 { margin: 0 0 4px; font-size: 14px; }
 .mavis-hud__scorecard {
   width: 100%;
   max-width: 1400px;
   margin: 16px auto 0;
 }
-.mavis-hud .card { background: #131922; border-color: #232f3d; }
-.mavis-hud .metric { background: #1a222c; }
-.mavis-hud .pill { background: #2b5c85; }
+.mavis-hud .card { background: var(--panel); border-color: var(--border); }
+.mavis-hud .metric { background: var(--panel-2); }
+.mavis-hud .pill { background: var(--accent-dim); }
 
 /* ---- Avatar ---- */
 .mavis-avatar {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   background: #000;
-  border: 1px solid #232f3d;
+  border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
-.mavis-avatar video { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Portrait clip filling the square box (no letterbox bars); crop from the
+   bottom so the face stays in frame. */
+.mavis-avatar video { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; display: block; }
 .mavis-avatar__placeholder {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; font-weight: 800; letter-spacing: 0.08em; color: #4aa8ff;
+  font-size: 22px; font-weight: 800; letter-spacing: 0.08em; color: var(--accent);
 }
-.mavis-avatar.is-speaking { box-shadow: 0 0 0 2px #4aa8ff, 0 0 24px 4px rgba(74,168,255,0.5); }
+.mavis-avatar.is-speaking { box-shadow: 0 0 0 2px var(--accent), 0 0 24px 4px rgba(74,168,255,0.5); }
 
 /* ---- Chat ---- */
 .mavis-chat {
@@ -235,24 +229,74 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #131922;
-  border: 1px solid #232f3d;
-  border-radius: 10px;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--inset) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   overflow: hidden;
 }
-.mavis-chat__list { flex: 1; overflow-y: auto; padding: 10px 12px; }
-.mavis-chat__line { margin: 0 0 8px; font-size: 13px; line-height: 1.4; }
-.mavis-chat__line--coach strong { color: #4aa8ff; }
-.mavis-chat__line--you strong { color: #8b98a5; }
+.mavis-chat__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.mavis-chat__title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.mavis-chat__count { font-size: 11px; color: var(--faint); }
+
+.mavis-chat__list {
+  flex: 1; overflow-y: auto; padding: 12px 12px 6px;
+  display: flex; flex-direction: column; gap: 4px;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+}
+.mavis-chat__empty { margin: auto; max-width: 220px; text-align: center; font-size: 12px; color: var(--faint); line-height: 1.5; }
+
+.mavis-msg { display: flex; flex-direction: column; max-width: 88%; }
+.mavis-msg.is-first { margin-top: 8px; }
+.mavis-msg:first-child { margin-top: 0; }
+.mavis-msg--mavis { align-self: flex-start; align-items: flex-start; }
+.mavis-msg--you { align-self: flex-end; align-items: flex-end; }
+
+.mavis-msg__meta { display: flex; align-items: center; gap: 6px; margin: 0 4px 4px; font-size: 11px; }
+.mavis-msg__avatar {
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; font-size: 10px; font-weight: 800;
+}
+.mavis-msg__who { font-weight: 700; color: var(--text); }
+.mavis-msg--mavis .mavis-msg__who { color: var(--accent); }
+.mavis-msg__time { color: var(--faint); }
+
+.mavis-msg__bubble {
+  padding: 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text);
+  border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.mavis-msg--mavis .mavis-msg__bubble {
+  background: var(--panel-2); border: 1px solid var(--border); border-top-left-radius: 4px;
+}
+.mavis-msg--you .mavis-msg__bubble {
+  background: linear-gradient(135deg, #3a8fe0, #2b6fb3); color: #fff; border-top-right-radius: 4px;
+}
+.mavis-msg--mavis:not(.is-first) .mavis-msg__bubble { border-top-left-radius: 14px; }
+.mavis-msg--you:not(.is-first) .mavis-msg__bubble { border-top-right-radius: 14px; }
+
 .mavis-chat__input {
-  display: flex; gap: 6px; padding: 8px;
-  border-top: 1px solid #232f3d;
+  display: flex; align-items: center; gap: 8px; padding: 10px;
+  border-top: 1px solid var(--border); background: var(--panel);
 }
 .mavis-chat__input input {
-  flex: 1; background: #1a222c; border: 1px solid #232f3d;
-  border-radius: 6px; color: #d7e0ea; padding: 8px 10px; font-size: 13px;
+  flex: 1; background: var(--inset); border: 1px solid var(--border-strong);
+  border-radius: 999px; color: var(--text); padding: 9px 14px; font-size: 13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.mavis-chat__input button { padding: 8px 14px; }
+.mavis-chat__input input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(74, 168, 255, 0.18); }
+.mavis-chat__send {
+  width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #06121f;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+.mavis-chat__send:hover:not(:disabled) { background: #6cbaff; }
+.mavis-chat__send:active:not(:disabled) { transform: scale(0.94); }
+.mavis-chat__send:disabled { background: var(--border); color: var(--faint); opacity: 1; }
 
 /* ---- Map ---- */
 .mavis-map {
@@ -260,24 +304,25 @@
   flex: 1;
   min-height: 320px;
   background: #06090f;
-  border: 1px solid #232f3d;
+  border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
-.mavis-map canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.mavis-map canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.mavis-map canvas.is-dragging { cursor: grabbing; }
 .mavis-map__zoom {
   position: absolute; left: 10px; bottom: 10px;
   display: flex; flex-direction: column; gap: 4px;
 }
 .mavis-map__zoom button {
   width: 28px; height: 28px; padding: 0;
-  background: rgba(6,9,16,0.78); border: 1px solid #232f3d; color: #d7e0ea;
+  background: rgba(6,9,16,0.78); border: 1px solid var(--border); color: var(--text);
   font-size: 16px; font-weight: 700; border-radius: 6px;
 }
 .mavis-map__hover {
   position: absolute;
-  background: rgba(6,9,16,0.85); border: 1px solid #232f3d; border-radius: 6px;
-  padding: 4px 8px; font-size: 12px; color: #d7e0ea;
+  background: rgba(6,9,16,0.85); border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 8px; font-size: 12px; color: var(--text);
   pointer-events: none; white-space: nowrap;
 }
 
@@ -287,25 +332,25 @@
 .mavis-tape__bar {
   position: relative;
   width: 14px; height: 70px;
-  background: #1a222c; border: 1px solid #232f3d; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
 }
 .mavis-tape__ptr {
   position: absolute; left: -3px; right: -3px; height: 3px;
-  background: #4aa8ff; border-radius: 2px;
+  background: var(--accent); border-radius: 2px;
 }
 .mavis-tape__val { font-size: 13px; font-weight: 700; }
-.mavis-tape__label { font-size: 10px; color: #8b98a5; }
+.mavis-tape__label { font-size: 10px; color: var(--muted); }
 
 /* ---- Control bars ---- */
 .mavis-controls { display: flex; gap: 14px; justify-content: space-around; }
 .mavis-vbar { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .mavis-vbar__track {
   width: 14px; height: 70px;
-  background: #1a222c; border: 1px solid #232f3d; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
   display: flex; flex-direction: column-reverse; overflow: hidden;
 }
 .mavis-vbar__fill { background: #3ddc84; }
-.mavis-vbar__label { font-size: 10px; color: #8b98a5; }
+.mavis-vbar__label { font-size: 10px; color: var(--muted); }
 
 /* ---- Reading lessons (preflight/cockpit) ---- */
 .mavis-pf3d {
@@ -313,27 +358,27 @@
   width: 100%;
   height: 480px;
   background: #0b1220;
-  border: 1px solid #232f3d;
+  border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
 .mavis-pf3d-loading {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #8b98a5; font-size: 13px;
+  color: var(--muted); font-size: 13px;
 }
 .mavis-pf-list { display: flex; flex-direction: column; gap: 10px; }
 .mavis-pf-item {
-  background: #131922; border: 1px solid #232f3d; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
   padding: 12px 14px; cursor: pointer;
 }
-.mavis-pf-item.is-selected { border-color: #4aa8ff; }
+.mavis-pf-item.is-selected { border-color: var(--accent); }
 .mavis-pf-item__head { display: flex; align-items: center; gap: 10px; }
 .mavis-pf-item__head h4 { margin: 0; flex: 1; }
 .mavis-pf-item__num {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 50%;
-  background: #4aa8ff; color: #06121f; font-size: 12px; font-weight: 700;
+  background: var(--accent); color: #06121f; font-size: 12px; font-weight: 700;
 }
 
 /* ---- Scorecard overlay -- grade-pill gradients ported from the
@@ -346,17 +391,17 @@
   padding: 20px;
 }
 .mavis-score-card {
-  width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
-  background: #131922; border: 1px solid #232f3d; border-radius: 14px;
-  padding: 24px;
-  color: #d7e0ea;
+  width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px 30px;
+  color: var(--text);
 }
 .mavis-score-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mavis-score-head h2 { margin: 0; font-size: 1.4rem; }
 .mavis-grade-pill {
   font-size: 1.4rem; font-weight: 800; border-radius: 12px;
   padding: 4px 16px; min-width: 54px; text-align: center;
-  background: #4aa8ff; color: #06121f;
+  background: var(--accent); color: #06121f;
 }
 .mavis-grade-pill--A { background: linear-gradient(135deg, #ffe566, #ffd700 40%, #e6a800); color: #3d2e00; box-shadow: 0 0 14px rgba(255,215,0,.35); }
 .mavis-grade-pill--B { background: linear-gradient(135deg, #f4f7fb, #c5d0de 45%, #9aafc4); color: #2a3544; box-shadow: 0 0 12px rgba(180,195,215,.3); }
@@ -369,16 +414,21 @@
   box-shadow: 0 0 22px rgba(180,200,255,.55), inset 0 1px 0 rgba(255,255,255,.8);
 }
 @keyframes mavis-diamond-shine { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-.mavis-score-total { font-size: 0.9rem; color: #8b98a5; margin: 4px 0 16px; }
-.mavis-score-total b { color: #d7e0ea; font-size: 1.05rem; }
+.mavis-score-total { font-size: 0.9rem; color: var(--muted); margin: 4px 0 16px; }
+.mavis-score-total b { color: var(--text); font-size: 1.05rem; }
 .mavis-score-metrics { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .mavis-score-metric { display: grid; grid-template-columns: 90px 1fr 32px; align-items: center; gap: 8px; }
-.mavis-score-metric__label { font-size: 12px; color: #8b98a5; text-transform: capitalize; }
-.mavis-score-metric__bar { height: 8px; background: #1a222c; border-radius: 4px; overflow: hidden; }
-.mavis-score-metric__fill { height: 100%; background: #4aa8ff; transition: width 0.5s ease; }
+.mavis-score-metric__label { font-size: 12px; color: var(--muted); text-transform: capitalize; }
+.mavis-score-metric__bar { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.mavis-score-metric__fill { height: 100%; background: var(--accent); transition: width 0.5s ease; }
 .mavis-score-metric__val { font-size: 12px; text-align: right; font-weight: 600; }
-.mavis-score-btns { display: flex; gap: 10px; margin-top: 18px; }
-.mavis-score-btns button { flex: 1; }
+/* Buttons sized so each label stays on one line; they wrap as whole
+   buttons (not mid-label) only if the screen is very narrow. */
+.mavis-score-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.mavis-score-btns button {
+  flex: 1 1 auto; min-width: max-content; white-space: nowrap;
+  padding: 13px 20px; font-size: 15px; border-radius: 10px;
+}
 
 /* ---- Confirm dialog (replaces window.confirm) ---- */
 .mavis-confirm-overlay {
@@ -390,8 +440,8 @@
 }
 .mavis-confirm-card {
   width: 100%; max-width: 360px;
-  background: #131922; border: 1px solid #232f3d; border-radius: 12px;
-  padding: 20px; color: #d7e0ea;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; color: var(--text);
 }
 .mavis-confirm-card h3 { margin: 0 0 8px; }
 .mavis-confirm-btns { display: flex; gap: 10px; margin-top: 16px; }
@@ -400,6 +450,56 @@
 /* ---- Scoring guide ---- */
 .mavis-guide-card { max-width: 440px; max-height: 85vh; overflow-y: auto; }
 .mavis-guide-list { margin: 8px 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.mavis-guide-list b { color: var(--accent); }
+.mavis-guide-intro { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.mavis-guide-intro:first-child { margin-top: 0; }
+.mavis-guide-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.mavis-guide-easter { margin: 8px 0 0; font-size: 11.5px; font-style: italic; color: var(--faint); }
 .mavis-guide-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
-.mavis-guide-table th, .mavis-guide-table td { border: 1px solid #232f3d; padding: 4px 8px; text-align: center; }
-.mavis-guide-table th { color: #8b98a5; font-weight: 600; }
+.mavis-guide-table th, .mavis-guide-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: center; }
+.mavis-guide-table th { color: var(--muted); font-weight: 600; }
+
+/* ---- MAVIS reference pages: Leaderboard / Scoring Guide / Controls guide ---- */
+.mg-page { min-height: 100%; padding: 32px; display: flex; justify-content: center; align-items: flex-start; background: var(--bg); }
+.mg-card {
+  width: 100%; max-width: 680px; padding: 24px 28px 28px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.mg-card--wide { max-width: 1100px; }
+.mg-head { margin-bottom: 16px; }
+.mg-head h1 { margin: 0; font-size: 24px; font-weight: 800; }
+.mg-head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+
+.mg-tabs { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.mg-seg { display: inline-flex; gap: 6px; }
+.mg-seg button {
+  padding: 7px 14px; border-radius: 9px; font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+}
+.mg-seg button:hover { color: var(--text); }
+.mg-seg button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+.mg-table-wrap { overflow-x: auto; }
+.mg-lb { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.mg-lb th, .mg-lb td { padding: 10px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.mg-lb th:nth-child(-n+2), .mg-lb td:nth-child(-n+2) { text-align: left; }
+.mg-lb th { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.mg-lb tbody tr:hover td { background: var(--inset); }
+.mg-rank { width: 36px; color: var(--muted); font-weight: 700; }
+.mg-lb tr.is-top-1 .mg-rank { color: #e6a800; }
+.mg-lb tr.is-top-2 .mg-rank { color: #9aafc4; }
+.mg-lb tr.is-top-3 .mg-rank { color: #cd7f32; }
+.mg-tot { font-weight: 800; color: var(--accent); }
+.mg-empty { padding: 28px; text-align: center; font-style: italic; color: var(--muted); }
+
+.mg-scoring .mavis-guide-list { font-size: 14px; line-height: 1.8; padding-left: 0; list-style: none; }
+.mg-scoring .mavis-guide-table { font-size: 13px; }
+.mg-scoring .mavis-guide-table th, .mg-scoring .mavis-guide-table td { padding: 7px 10px; }
+.mg-scoring .mavis-guide-table th { color: var(--text); }
+
+/* The diagram is drawn for a dark background, so its frame stays dark. */
+.mg-diagram { border-radius: 12px; overflow: hidden; background: #0f141d; border: 1px solid var(--border); }
+.mg-diagram img { display: block; width: 100%; height: auto; }
+.mg-diagram .mg-empty { color: #8b98a5; }
+@media (max-width: 700px) { .mg-page { padding: 16px; } .mg-card { padding: 18px; } }

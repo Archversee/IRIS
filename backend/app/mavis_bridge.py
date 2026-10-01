@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 _RECONNECT_DELAY_S = 2.0
 _MAX_RECONNECT_DELAY_S = 30.0
 _FLUSH_INTERVAL_S = 1.0  # batch flight_data inserts instead of one per 5Hz WS tick
+_FLAPS_FULL_DEG = 30.0   # C172 full flap -- only for deriving handle % from flap angle
 
 # Extra columns this bridge populates beyond the original SimConnect-sourced
 # set in db.FLIGHT_COLUMNS -- see db/schema_mavis_integration.sql. Kept as a
@@ -62,13 +63,18 @@ def map_telemetry_fields(state: dict) -> dict | None:
     names (ts as a datetime), or None if there's no usable telemetry yet
     (e.g. before Start). See MAVIS's adapters/sim_base.py::Telemetry for the
     source field names/units and docs/INTEGRATION_PLAN.md for the mapping
-    rationale (units MAVIS doesn't read -- yaw rate, fuel, ambient, gear,
-    elevator trim, flap handle % -- are left null, not guessed)."""
+    rationale (units MAVIS doesn't read -- yaw rate, fuel, ambient, gear --
+    are left null, not guessed). Flap handle % / elevator trim come from
+    MAVIS's own sim reads; if an adapter doesn't provide the handle %
+    (mock sim), it's derived from the flap surface angle."""
     tel = state.get("tel")
     if not tel or tel.get("t") is None:
         return None
     geom = state.get("geom") or {}
     throttle = tel.get("throttle")
+    flaps_pct = tel.get("flaps_handle_pct")
+    if flaps_pct is None and tel.get("flaps_deg") is not None:
+        flaps_pct = max(0.0, min(100.0, tel["flaps_deg"] / _FLAPS_FULL_DEG * 100.0))
     return {
         "ts": _to_utc(tel["t"]),
         "altitude_ft": tel.get("alt_msl"),
@@ -80,10 +86,10 @@ def map_telemetry_fields(state: dict) -> dict | None:
         "yaw_rate_radps": None,
         "fuel_total_qty_gal": None,
         "throttle_pct": (throttle * 100) if throttle is not None else None,
-        "elevator_trim_pct": None,
+        "elevator_trim_pct": tel.get("elevator_trim_pct"),
         "elevator_position": tel.get("elevator"),
         "rudder_position": tel.get("rudder"),
-        "flaps_handle_pct": None,  # MAVIS reads flap surface angle, not handle % -- see flaps_deg
+        "flaps_handle_pct": flaps_pct,
         "gear_handle_position": None,
         "latitude": tel.get("lat"),
         "longitude": tel.get("lon"),
