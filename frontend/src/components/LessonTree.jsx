@@ -15,6 +15,7 @@ export default function LessonTree() {
   const state = useMavisState();
   const catalog = state?.lesson_catalog;
   const [searchParams] = useSearchParams();
+  const { pathname } = useLocation(); // must come before readingId/activeLessonId below
   // Highlight what's actually on screen: a reading lesson is only in the
   // URL (?reading=<id>), never MAVIS's lesson_id, so check that first; a
   // flying lesson is MAVIS's selected lesson, shown on plain /live.
@@ -23,7 +24,6 @@ export default function LessonTree() {
   const activeLessonId = readingId || (pathname === "/live" ? state?.lesson_id : null);
   const [openModule, setOpenModule] = useState(null);
   const nav = useNavigate();
-  const { pathname } = useLocation();
 
   // Jumping to a lesson (sidebar, landing page, Curriculum link) re-opens
   // whichever module holds it, so its highlight is always visible.
