@@ -21,7 +21,7 @@ M_PER_NM = 1852.0
 DEFAULTS = {
     "weights":    {"track": 25, "speed": 15, "altitude": 20, "landing": 30, "smoothness": 10},
     # `scale` = the error that scores ~37/100 (100*e^-1); bigger = more forgiving
-    "scales":     {"track": 55.0, "speed": 9.0, "altitude": 120.0, "smoothness": 0.22,
+    "scales":     {"track": 75.0, "speed": 9.0, "altitude": 120.0, "smoothness": 0.22,
                    "land_sink": 300.0, "land_center": 40.0, "land_speed": 10.0},
     "grade_bands": [[88, "A"], [76, "B"], [64, "C"], [50, "D"]],   # else "F"
     "retry_caps": {"1": 85, "2": 78, "3": 70},                     # 0 = uncapped; 4+ = floor

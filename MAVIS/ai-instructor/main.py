@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import concurrent.futures
 import logging
+import math
 import os
 import signal
 import re
@@ -351,11 +352,48 @@ async def amain(cfg):
             "running with a flight loaded, then press Start again."
         ) from last_err
 
+    def _orient_lesson_to_aircraft(tel) -> None:
+        """Live MSFS: the lesson YAML describes one runway end (e.g. RWY 02),
+        but MSFS may spawn the aircraft on the other end (RWY 20, e.g. for
+        wind). Without this the planned circuit, map and every turn callout
+        are mirrored 180 deg. Same idea as replay's lesson_for_sim(), decided
+        from the aircraft's heading -- but only when it's actually lined up on
+        the runway (on the apron the heading says nothing about the runway)."""
+        nonlocal lesson, engine, scorer, refs
+        rw = lesson["runway"]
+        th = math.radians(rw["heading_true"])
+        lat0, lon0 = rw["threshold"]["lat"], rw["threshold"]["lon"]
+        n = (tel.lat - lat0) * 111320.0
+        e = (tel.lon - lon0) * 111320.0 * math.cos(math.radians(lat0))
+        along = e * math.sin(th) + n * math.cos(th)
+        cross = -e * math.cos(th) + n * math.sin(th)
+        if abs(cross) > 150 or not (-300 <= along <= rw["length_m"] + 300):
+            log.warning("aircraft not on runway %s at start (along %.0f m, cross %.0f m) -- "
+                        "keeping lesson geometry as configured", rw.get("ident"), along, cross)
+            return
+        diff = abs((tel.hdg - rw["heading_true"] + 180.0) % 360.0 - 180.0)
+        if diff <= 90.0:
+            return
+        from adapters.sim_replay import reciprocal_runway
+        lesson = reciprocal_runway(lesson)
+        total = engine.detector.total_circuits          # keep configure_session's choice
+        engine = LessonEngine(lesson, aircraft, sim_adapter=cfg["sim"]["adapter"])
+        engine.detector.total_circuits = total
+        scorer = Scorer(lesson, aircraft)
+        refs = ReferenceRegistry(lesson, lesson_id)
+        state["lesson"] = {"runway": lesson["runway"], "pattern": lesson["pattern"],
+                           "airport": lesson["airport"], "scoring": lesson.get("scoring", {})}
+        state.update(**refs.payload_for_state())
+        _apply_reference(session.get("reference", "planned"))
+        log.info("aircraft is lined up on runway %s (heading %.0f): lesson geometry reversed",
+                 lesson["runway"]["ident"], tel.hdg)
+
     async def start():
         if started.is_set():
             return
         if cfg["sim"]["adapter"] == "msfs":
             await _connect_msfs_with_retries()
+            _orient_lesson_to_aircraft(await loop.run_in_executor(None, sim.get_telemetry))
         started.set()
         session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
