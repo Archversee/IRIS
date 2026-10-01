@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { sopApi, ApiError } from "./sopApi.js";
-import { editable } from "./ruleText.js";
+import { editable, bookShort } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import PagePicker, { compressPages } from "./PagePicker.jsx";
@@ -10,9 +10,11 @@ import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
 import "./sop.css";
 
-// /sop/new -- upload an SOP, let the local LLM draft rules, review and edit
-// them, then Save. Until Save, the draft only exists as a local file on the
-// MAVIS machine (resumable via ?draft=<id>); nothing is in the database.
+// /sop/new -- upload an aircraft POH/SOP or a training handbook (FAA or the
+// school's own), let the local LLM draft rules, review and edit them, then
+// Save. A POH's rules are bound to one aircraft; a handbook's apply to every
+// aircraft. Until Save, the draft only exists as a local file on the MAVIS
+// machine (resumable via ?draft=<id>); nothing is in the database.
 export default function SopNew() {
   const [params, setParams] = useSearchParams();
   const draftId = params.get("draft");
@@ -29,7 +31,7 @@ export default function SopNew() {
       <header className="sop-head">
         <div>
           <div className="sop-crumb">MAVIS · Preflight &amp; Cockpit</div>
-          <h1>Upload SOP</h1>
+          <h1>Upload SOP or handbook</h1>
         </div>
         <div className="spacer" />
         <EditorName />
@@ -38,7 +40,7 @@ export default function SopNew() {
       {err && <div className="sop-error">SOP service unavailable: {err}</div>}
       {meta && (draftId
         ? <DraftReview key={draftId} id={draftId} meta={meta} onGone={leaveDraft} />
-        : <UploadStart onCreated={(id) => setParams({ draft: id })} />)}
+        : <UploadStart meta={meta} onCreated={(id) => setParams({ draft: id })} />)}
     </div>
   );
 }
@@ -63,7 +65,40 @@ function Health({ status }) {
   );
 }
 
-function UploadStart({ onCreated }) {
+const DOC_HELP = {
+  poh: "The aircraft's Pilot's Operating Handbook, flight manual or type SOP. Its rules (limits, speeds, flap settings) apply to that aircraft only.",
+  handbook: "A training handbook — the FAA handbooks or your school's own. Its rules (circuit procedure, scan path) apply to every aircraft. Saved rules from it are used together with each aircraft's POH rules.",
+};
+
+function DocTypePicker({ meta, docType, setDocType, book, setBook, disabled }) {
+  return (
+    <div className="card sop-doctype">
+      <div className="sop-doctype__opts" role="radiogroup" aria-label="What are you uploading?">
+        {(meta.doc_types || []).map((t) => (
+          <label key={t.id} className={"sop-doctype__opt" + (docType === t.id ? " is-on" : "")}>
+            <input type="radio" name="sop-doctype" value={t.id} checked={docType === t.id} disabled={disabled}
+              onChange={() => setDocType(t.id)} />
+            <span><b>{t.label}</b><span className="muted sop-small">{DOC_HELP[t.id]}</span></span>
+          </label>
+        ))}
+      </div>
+      {docType === "handbook" && (
+        <div className="sop-field sop-doctype__book">
+          <label htmlFor="sop-book">Which handbook</label>
+          <select id="sop-book" value={book} disabled={disabled} onChange={(e) => setBook(e.target.value)}>
+            <option value="">Detect from the PDF</option>
+            {(meta.books || []).map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+          </select>
+          <span className="muted sop-small">Tells the LLM what to look for (e.g. scan errors in the Instrument Flying Handbook). Upload one handbook at a time; you choose its chapters next.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadStart({ meta, onCreated }) {
+  const [docType, setDocType] = useState("poh");
+  const [book, setBook] = useState("");
   const [status, setStatus] = useState(null);
   const [drafts, setDrafts] = useState(null);
   const [over, setOver] = useState(false);
@@ -80,10 +115,10 @@ function UploadStart({ onCreated }) {
 
   async function upload(file) {
     if (!file) return;
-    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { setErr("Choose the SOP as a PDF file."); return; }
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { setErr("Choose the document as a PDF file."); return; }
     setBusy(true); setErr(null);
     try {
-      const d = await sopApi.upload(file);
+      const d = await sopApi.upload(file, docType, docType === "handbook" ? book : "");
       onCreated(d.id);
     } catch (e) {
       setErr(e.message); setBusy(false);
@@ -93,6 +128,7 @@ function UploadStart({ onCreated }) {
   return (
     <div className="sop-start">
       <Health status={status} />
+      <DocTypePicker meta={meta} docType={docType} setDocType={setDocType} book={book} setBook={setBook} disabled={busy} />
       <div
         className={"sop-drop" + (over ? " is-over" : "") + (busy ? " is-busy" : "")}
         role="button" tabIndex={0}
@@ -104,7 +140,7 @@ function UploadStart({ onCreated }) {
       >
         <input ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => upload(e.target.files[0])} />
         <div className="sop-drop__icon" aria-hidden>⇪</div>
-        <h2>{busy ? "Uploading…" : "Drop the aircraft SOP here"}</h2>
+        <h2>{busy ? "Uploading…" : docType === "handbook" ? "Drop the training handbook here" : "Drop the aircraft SOP here"}</h2>
         <p className="muted">PDF up to 50 MB · typed or scanned pages · processed on this machine only</p>
         <button type="button" disabled={busy}>Choose PDF</button>
       </div>
@@ -113,7 +149,7 @@ function UploadStart({ onCreated }) {
         <li><b>Read</b> every page (OCR for scanned ones)</li>
         <li><b>Draft</b> rules with the local LLM</li>
         <li><b>Review &amp; edit</b> — nothing is stored yet</li>
-        <li><b>Save</b> to the database for an aircraft</li>
+        <li><b>Save</b> to the database{docType === "handbook" ? " for every aircraft" : " for an aircraft"}</li>
       </ol>
 
       <section className="card">
@@ -121,11 +157,12 @@ function UploadStart({ onCreated }) {
         {drafts === null ? <div className="muted sop-small">Loading…</div> :
           drafts.length === 0 ? <div className="muted sop-small">None — every uploaded SOP has been saved or discarded.</div> : (
             <table className="sop-table">
-              <thead><tr><th>SOP</th><th>Status</th><th>Rules</th><th>Last change</th><th /></tr></thead>
+              <thead><tr><th>Document</th><th>Status</th><th>Rules</th><th>Last change</th><th /></tr></thead>
               <tbody>
                 {drafts.map((d) => (
                   <tr key={d.id}>
-                    <td><b>{d.name}</b><div className="muted sop-small">{d.filename}</div></td>
+                    <td><b>{d.name}</b><div className="muted sop-small">
+                      {d.doc_type === "handbook" ? `Handbook${d.handbook ? ` · ${bookShort(meta, d.handbook)}` : ""}` : "Aircraft POH"} · {d.filename}</div></td>
                     <td>{d.status === "processing" ? `Processing… ${d.detail || ""}` : d.status === "failed" ? <span className="err">Failed</span>
                       : d.status === "choose_pages" ? "Choose pages" : "Ready to review"}</td>
                     <td>{d.n_rules}{d.n_blocked ? <span className="err"> · {d.n_blocked} need fixing</span> : ""}</td>
@@ -183,6 +220,7 @@ function DraftReview({ id, meta, onGone }) {
   const [rules, setRules] = useState([]);      // local, edited rules
   const [name, setName] = useState("");
   const [aircraft, setAircraft] = useState("");
+  const [book, setBook] = useState("");
   const [sel, setSel] = useState(null);
   const [filter, setFilter] = useState("all");
   const [saveState, setSaveState] = useState("saved"); // saved | pending | saving | error
@@ -210,6 +248,7 @@ function DraftReview({ id, meta, onGone }) {
           setRules(x.rules || []);
           setName(x.name || "");
           setAircraft(x.aircraft_profile || "");
+          setBook(x.handbook || "");
           setAcWarn(x.aircraft_warnings || []);
           setSel((x.rules || []).find((r) => r.include)?.cid ?? x.rules?.[0]?.cid ?? null);
         }
@@ -224,8 +263,11 @@ function DraftReview({ id, meta, onGone }) {
   // ---- autosave edits to the local draft file (debounced). Keyed on the
   // editable content only, so applying the server's re-check results
   // (issues/blocked) doesn't trigger another save.
-  const editKey = useMemo(() => JSON.stringify([name, aircraft, rules.map((r) => [r.cid, r.include, editable(r)])]),
-    [name, aircraft, rules]);
+  const isHB = d?.doc_type === "handbook";
+  const draftBody = () => ({ name, aircraft_profile: aircraft, ...(isHB && book ? { handbook: book } : {}),
+    rules: rules.map((r) => ({ cid: r.cid, include: r.include, ...editable(r) })) });
+  const editKey = useMemo(() => JSON.stringify([name, aircraft, book, rules.map((r) => [r.cid, r.include, editable(r)])]),
+    [name, aircraft, book, rules]);
   useEffect(() => {
     if (!loaded.current || d?.status !== "ready") return;
     const v = ++version.current;
@@ -233,7 +275,7 @@ function DraftReview({ id, meta, onGone }) {
     const t = setTimeout(async () => {
       setSaveState("saving");
       try {
-        const x = await sopApi.putDraft(id, { name, aircraft_profile: aircraft, rules: rules.map((r) => ({ cid: r.cid, include: r.include, ...editable(r) })) });
+        const x = await sopApi.putDraft(id, draftBody());
         if (v !== version.current) return;            // newer edits are on their way
         const byCid = Object.fromEntries(x.rules.map((r) => [r.cid, r]));
         // take only what the server computes; never overwrite what's being typed
@@ -312,15 +354,17 @@ function DraftReview({ id, meta, onGone }) {
   }
 
   const acName = (a) => meta.aircraft.find((x) => x.id === a)?.name || a;
-  const canSave = aircraft && counts.included > 0 && counts.blocked === 0 && !saving;
+  const canSave = (isHB ? !!book : !!aircraft) && counts.included > 0 && counts.blocked === 0 && !saving;
+  const target = isHB ? `every aircraft (${bookShort(meta, book)})` : acName(aircraft);
 
   async function doSave() {
     setSaving(true); setErr(null);
     try {
       // flush the latest edits first, then save exactly what's on screen
-      await sopApi.putDraft(id, { name, aircraft_profile: aircraft, rules: rules.map((r) => ({ cid: r.cid, include: r.include, ...editable(r) })) });
-      const res = await sopApi.saveDraft(id, { aircraft_profile: aircraft, name: name || d.name });
-      nav(`/sop/rules?aircraft=${encodeURIComponent(aircraft)}&set=${res.rule_set_id}&saved=1`);
+      await sopApi.putDraft(id, draftBody());
+      const res = await sopApi.saveDraft(id, isHB ? { handbook: book, name: name || d.name }
+        : { aircraft_profile: aircraft, name: name || d.name });
+      nav(`/sop/rules?aircraft=${encodeURIComponent(isHB ? "_general" : aircraft)}&set=${res.rule_set_id}&saved=1`);
     } catch (e) {
       setSaving(false);
       if (e instanceof ApiError && e.status === 422 && e.detail?.blocked?.length) {
@@ -345,13 +389,23 @@ function DraftReview({ id, meta, onGone }) {
           <label htmlFor="sop-name">Rule set name</label>
           <input id="sop-name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="sop-field">
-          <label htmlFor="sop-ac">Aircraft</label>
-          <select id="sop-ac" value={aircraft} onChange={(e) => setAircraft(e.target.value)}>
-            <option value="">Choose the aircraft…</option>
-            {meta.aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </div>
+        {isHB ? (
+          <div className="sop-field">
+            <label htmlFor="sop-book2">Handbook · applies to every aircraft</label>
+            <select id="sop-book2" value={book} onChange={(e) => setBook(e.target.value)}>
+              {!book && <option value="">Choose the handbook…</option>}
+              {(meta.books || []).map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div className="sop-field">
+            <label htmlFor="sop-ac">Aircraft</label>
+            <select id="sop-ac" value={aircraft} onChange={(e) => setAircraft(e.target.value)}>
+              <option value="">Choose the aircraft…</option>
+              {meta.aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="sop-savebar__status">
           <span className={"sop-autosave sop-autosave--" + saveState}>
             {saveState === "saved" ? "Draft saved on this machine" : saveState === "error" ? "Couldn't save draft" : "Saving draft…"}
@@ -368,14 +422,14 @@ function DraftReview({ id, meta, onGone }) {
           <button type="button" className="secondary" onClick={() => setConfirm("reparse")}>Run LLM again</button>
           <button type="button" className="secondary" onClick={() => setConfirm("discard")}>Discard</button>
           <button type="button" disabled={!canSave} onClick={() => setConfirm("save")}
-            title={!aircraft ? "Choose the aircraft first" : counts.blocked ? "Fix or set aside the rules that need fixing" : ""}>
+            title={!isHB && !aircraft ? "Choose the aircraft first" : counts.blocked ? "Fix or set aside the rules that need fixing" : ""}>
             {saving ? "Saving…" : `Save ${counts.included} rules`}
           </button>
         </div>
       </div>
 
       {(d.warnings || []).map((w, i) => <div key={i} className="sop-warn">{w}</div>)}
-      {aircraft && acWarn.map((w, i) => <div key={"ac" + i} className="sop-warn">Check against {acName(aircraft)}: {w}</div>)}
+      {!isHB && aircraft && acWarn.map((w, i) => <div key={"ac" + i} className="sop-warn">Check against {acName(aircraft)}: {w}</div>)}
       {err && <div className="sop-error">{err}</div>}
 
       <div className="sop-split">
@@ -416,6 +470,7 @@ function DraftReview({ id, meta, onGone }) {
                 <div className="sop-detail__head">
                   <h2>{cur.title || "Untitled rule"}</h2>
                   <span className="sop-chip">{cur.origin === "manual" ? "Added by you" : "Drafted by LLM"}</span>
+                  {cur.kind === "gaze" && <span className="sop-chip" title="Checked with the eye tracker against the AOI zone given this role">Scan path</span>}
                 </div>
                 {cur.blocked && <div className="sop-error">Needs fixing: {cur.blocked}</div>}
                 {(cur.issues || []).map((i, n) => <div key={n} className="sop-warn">{i}</div>)}
@@ -438,8 +493,10 @@ function DraftReview({ id, meta, onGone }) {
       </div>
 
       {confirm === "save" && (
-        <ConfirmDialog title={`Save to ${acName(aircraft)}?`} confirmLabel={`Save ${counts.included} rules`}
-          message={`${counts.included} rules are written to the database as "${name || d.name}" and become the active SOP rules for ${acName(aircraft)}. ${counts.aside} set-aside rules are dropped. The rules this aircraft used before are kept, but inactive.`}
+        <ConfirmDialog title={`Save for ${target}?`} confirmLabel={`Save ${counts.included} rules`}
+          message={isHB
+            ? `${counts.included} rules are written to the database as "${name || d.name}" and become the active ${bookShort(meta, book)} rules, used in every lesson on top of each aircraft's own POH rules. ${counts.aside} set-aside rules are dropped. A ${bookShort(meta, book)} rule set saved before is kept, but inactive.`
+            : `${counts.included} rules are written to the database as "${name || d.name}" and become the active SOP rules for ${acName(aircraft)}. ${counts.aside} set-aside rules are dropped. The rules this aircraft used before are kept, but inactive.`}
           onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); doSave(); }} />
       )}
       {confirm === "discard" && (

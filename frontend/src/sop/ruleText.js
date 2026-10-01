@@ -3,13 +3,14 @@
 
 export const EDITABLE = ["kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
   "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions",
-  "severity", "source_quote", "source_page", "note", "enabled", "tags"];
+  "severity", "source_quote", "source_page", "note", "enabled", "tags", "aoi", "gaze_measure"];
 
 export const KIND_LABEL = {
   band: "Hold target ± tolerance",
   limit: "Stay within limits",
   event: "Must happen by a phase",
   capture: "Check at a moment",
+  gaze: "Where the pilot looks",
   unobservable: "Not observable in sim",
 };
 export const OP_TXT = { ">=": "at least", "<=": "at most", "==": "exactly", ">": "above", "<": "below" };
@@ -17,6 +18,30 @@ const UNIT_TXT = { kt: "kt", ft: "ft", "ft/min": "ft/min", deg: "°", rpm: "RPM"
 
 export const phaseTxt = (p) => p.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 export const fmt = (n) => (n == null || Number.isNaN(n) ? "" : String(Math.round(n * 100) / 100));
+
+export const aoiLabel = (meta, id) => meta?.aoi_roles?.find((a) => a.id === id)?.label || id || "?";
+export const bookShort = (meta, id) => meta?.books?.find((b) => b.id === id)?.short || id || "";
+/** gaze value as shown and typed: seconds, or a share 0..1 shown as percent */
+export const gazeIsShare = (measure) => measure === "min_share" || measure === "max_share";
+export const gazeShow = (measure, v) => (v == null ? null : gazeIsShare(measure) ? Math.round(v * 1000) / 10 : v);
+
+function gazeTxt(meta, r) {
+  // "look outside" / "look at the instruments" / "look at the airspeed indicator"
+  const at = r.aoi === "outside" ? "outside" : r.aoi === "instruments" ? "at the instruments"
+    : `at the ${aoiLabel(meta, r.aoi).toLowerCase()}`;
+  const v = gazeShow(r.gaze_measure, r.value);
+  const n = v == null ? "(threshold not set)" : gazeIsShare(r.gaze_measure) ? `${fmt(v)}%` : `${fmt(v)} s`;
+  const p = phasesTxt(r).replace(" at all times", " throughout the flight");
+  switch (r.gaze_measure) {
+    case "max_gap": return `Look ${at} at least every ${n}${p}.`;
+    case "max_dwell": return r.aoi === "instruments"
+      ? `Don't stare at any single instrument for longer than ${n}${p}.`
+      : `Don't look ${at} for longer than ${n} at a time${p}.`;
+    case "min_share": return `Spend at least ${n} of the time looking ${at}${p}.`;
+    case "max_share": return `Spend no more than ${n} of the time looking ${at}${p}.`;
+    default: return `Gaze rule: look ${at}${p}.`;
+  }
+}
 
 export function metricInfo(meta, id) {
   return meta?.metrics?.find((m) => m.id === id) || { id, label: id || "", unit: "" };
@@ -76,6 +101,8 @@ export function describe(meta, r) {
         b != null ? `at most ${val(meta, r.metric, b)}` : `at least ${val(meta, r.metric, a)}`;
       return `At ${String(r.capture_at || "?").replace(/_/g, " ")}, ${m} should be ${rng}.`;
     }
+    case "gaze":
+      return gazeTxt(meta, r);
     default:
       return "A procedure the simulator can't observe — the instructor checks it by eye or asks about it.";
   }

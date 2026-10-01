@@ -1,8 +1,11 @@
 """Upload -> read pages -> (choose pages) -> OCR + local LLM -> validated DRAFT.
 
-  1. upload       text layer of every page + POH section detection (fast, no OCR)
+  1. upload       text layer of every page + POH section / handbook chapter
+                  detection (fast, no OCR). The reviewer says up front whether
+                  it's an aircraft POH or a training handbook (doc_type).
   2. choose pages short documents skip this; longer ones stop at status
-                  "choose_pages" with Limitations + Normal Procedures suggested
+                  "choose_pages" with Limitations + Normal Procedures (POH) or
+                  the circuit / scan chapters (handbook) suggested
   3. run          OCR only the chosen scanned pages, LLM over the chosen pages,
                   deterministic checks, set aside rules a correct circuit breaks
 
@@ -20,10 +23,10 @@ from pathlib import Path
 
 from . import extract, validate
 from .drafts import DraftStore
-from .llm_parse import PROMPT_VERSION, OllamaParser, system_prompt
-from .profile import conflict_message, conflicts, load_nominal
+from .llm_parse import HANDBOOK_PROMPT_VERSION, PROMPT_VERSION, OllamaParser, handbook_prompt, system_prompt
+from .profile import circuit_conflict, load_nominal, nominals_all
 from .runtime import match_profile
-from .schema import aircraft_profiles, known_phases, llm_json_schema
+from .schema import BOOKS, DOC_TYPES, NOT_RULE_BOOKS, aircraft_profiles, known_phases, llm_json_schema
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +74,20 @@ class JobManager:
     def nominal_for(self, aircraft_id: str | None) -> dict | None:
         return load_nominal(aircraft_id, self.lesson_path)
 
+    def nominal_for_draft(self, d: dict):
+        """What a draft's rules are checked against: the chosen aircraft's
+        correct circuit (POH), or every aircraft's (handbook rules apply to all)."""
+        if d.get("doc_type") == "handbook":
+            return nominals_all() or None
+        return self.nominal_for(d.get("aircraft_profile"))
+
     # ------------------------------------------------------------ entry points
-    def start_upload(self, filename: str, data: bytes, by: str | None) -> dict:
+    def start_upload(self, filename: str, data: bytes, by: str | None,
+                     doc_type: str = "poh", handbook: str | None = None) -> dict:
+        if doc_type not in DOC_TYPES:
+            raise ValueError(f"Unknown document type '{doc_type}'")
+        if handbook is not None and handbook not in BOOKS:
+            raise ValueError(f"Unknown handbook '{handbook}'")
         if self.busy:
             raise RuntimeError("Another SOP is still being processed - wait for it to finish")
         if len(data) > MAX_PDF_BYTES:
@@ -84,11 +99,13 @@ class JobManager:
         path = self.pdf_dir / f"{sha}.pdf"
         if not path.exists():
             path.write_bytes(data)
-        d = self.drafts.create(filename, sha, str(path), by)
+        d = self.drafts.create(filename, sha, str(path), by, doc_type,
+                               handbook if doc_type == "handbook" else None)
         self._task = asyncio.create_task(self._read(d["id"], data))
         return d
 
-    def start_run(self, did: str, pages=None, aircraft: str | None = None) -> dict:
+    def start_run(self, did: str, pages=None, aircraft: str | None = None,
+                  doc_type: str | None = None, handbook: str | None = None) -> dict:
         """Run (or re-run) OCR + LLM over the chosen pages. pages: '1-5, 9' or
         a list; None = keep the previous choice (or the suggestion)."""
         if self.busy:
@@ -97,6 +114,20 @@ class JobManager:
         if not d:
             raise KeyError(did)
         rows = self.drafts.pages(did)
+        if doc_type is not None:
+            if doc_type not in DOC_TYPES:
+                raise ValueError(f"Unknown document type '{doc_type}'")
+            if doc_type != d.get("doc_type", "poh") and rows and doc_type == "handbook":
+                rows = []                       # handbook pages are read column by column: read again
+            d["doc_type"] = doc_type
+        if handbook is not None:
+            if handbook not in BOOKS:
+                raise ValueError(f"Unknown handbook '{handbook}'")
+            d["handbook"] = handbook
+        if d.get("doc_type") == "handbook":
+            d["handbook"] = d.get("handbook") or d.get("handbook_detected") or "other"
+        else:
+            d["handbook"] = None
         if aircraft is not None:
             d["aircraft_profile"] = aircraft or None
         if not rows or "needs_ocr" not in rows[0]:
@@ -160,23 +191,44 @@ class JobManager:
 
             def prog(i, n):
                 progress_only(done=i, total=n, detail=f"Reading page {i} of {n}")
-            rows = await loop.run_in_executor(None, lambda: extract.read_pages(data, prog))
+            handbook = d.get("doc_type") == "handbook"
+            rows = await loop.run_in_executor(None, lambda: extract.read_pages(data, prog, columns=handbook))
             if not rows:
                 raise ValueError("The PDF has no pages")
             self.drafts.set_pages(did, rows)
-            suggested = extract.suggest_pages(rows)
             n_scanned = sum(1 for r in rows if r["needs_ocr"])
-            if not d.get("aircraft_profile"):     # best guess from the SOP's own wording (reviewer confirms)
-                head = " ".join(r["text"] for r in rows[:5])[:20000]
-                guess, _ = match_profile({"text": head}, aircraft_profiles())
-                d["aircraft_profile"] = guess
-            warns = [w for w in (d.get("warnings") or []) if "look scanned" not in w]
+            book, not_rules = extract.detect_book(rows)
+            d["handbook_detected"] = book
+            warns = [w for w in (d.get("warnings") or []) if "look scanned" not in w and "looks like" not in w]
+            if handbook:
+                suggested = extract.suggest_chapter_pages(rows)
+                d["handbook"] = d.get("handbook") or book or "other"
+                if d["handbook"] in ("afh", "ifh", "phak") and d.get("name") == Path(d["filename"]).stem:
+                    d["name"] = BOOKS[d["handbook"]][1]       # a clearer default rule-set name than the file name
+                if book and book != d["handbook"]:
+                    warns.append(f"This looks like the {BOOKS[book][0]}, not the {BOOKS[d['handbook']][0]} - "
+                                 "check the handbook chosen below.")
+            else:
+                suggested = extract.suggest_pages(rows)
+                if not d.get("aircraft_profile"):     # best guess from the SOP's own wording (reviewer confirms)
+                    head = " ".join(r["text"] for r in rows[:5])[:20000]
+                    guess, _ = match_profile({"text": head}, aircraft_profiles())
+                    d["aircraft_profile"] = guess
+                if book:
+                    warns.append(f"This looks like the {BOOKS[book][0]}, a training handbook rather than an aircraft "
+                                 "POH - choose 'Training handbook' below so the right prompt is used.")
+            if not_rules:
+                warns.append("This looks like " + NOT_RULE_BOOKS[not_rules][1])
             if n_scanned and not extract.ocr_available(self.tesseract_cmd, self.ocr_lang):
                 warns.append(f"{n_scanned} page(s) look scanned but OCR (Tesseract) isn't available - "
                              "those pages can't be read until it is installed.")
-            fields = dict(page_count=len(rows), outline=extract.outline(rows), suggested_pages=suggested,
+            fields = dict(page_count=len(rows), outline=extract.outline(rows), chapters=extract.chapter_outline(rows),
+                          suggested_pages=suggested,
                           scanned_pages=[r["page_no"] for r in rows if r["needs_ocr"]], warnings=warns)
-            run_now = d.pop("run_after_read", False) or len(rows) <= AUTO_ALL_PAGES
+            # a POH upload that is really a handbook (or vice versa) stops at the
+            # page picker, where the type can be changed before any LLM time is spent
+            mismatch = bool(not_rules) or (not handbook and book is not None)
+            run_now = d.pop("run_after_read", False) or (len(rows) <= AUTO_ALL_PAGES and not mismatch)
             if run_now:
                 chosen = [p for p in (d.get("selected_pages") or []) if p <= len(rows)] or \
                     ([r["page_no"] for r in rows] if len(rows) <= AUTO_ALL_PAGES else suggested)
@@ -196,8 +248,9 @@ class JobManager:
         try:
             rows = self.drafts.pages(did)
             chosen = set(d.get("selected_pages") or [r["page_no"] for r in rows])
+            # drop the previous run's LLM warnings; keep what reading the PDF found
             warnings = [w for w in (d.get("warnings") or [])
-                        if not w.startswith(("Local LLM", "No aircraft chosen", "Pages "))]
+                        if not w.startswith(("Local LLM", "No aircraft chosen", "Pages ")) and "scan-path rule" not in w]
 
             need = [r for r in rows if r["page_no"] in chosen and r.get("needs_ocr") and r["source"] != "ocr"]
             if need:
@@ -226,12 +279,19 @@ class JobManager:
 
             ac_names = {a["id"]: a["name"] for a in aircraft_profiles()}
             phases = known_phases()
-            schema = llm_json_schema(phases)
-            system = system_prompt(phases, ac_names.get(d.get("aircraft_profile") or ""))
+            is_handbook = d.get("doc_type") == "handbook"
+            if is_handbook:
+                schema = llm_json_schema(phases, gaze=True)
+                system = handbook_prompt(phases, d.get("handbook"))
+                prompt_version = HANDBOOK_PROMPT_VERSION
+            else:
+                schema = llm_json_schema(phases)
+                system = system_prompt(phases, ac_names.get(d.get("aircraft_profile") or ""))
+                prompt_version = PROMPT_VERSION
             pages = [extract.PageText(r["page_no"], r["text"], r["source"]) for r in rows if r["page_no"] in chosen]
             chunks = extract.make_chunks(pages, self._chunk_budget(system))
             progress_only(stage="parsing", done=0, total=len(chunks), llm_model=self.parser.model,
-                          prompt_version=PROMPT_VERSION)
+                          prompt_version=prompt_version)
             candidates: list[dict] = []
             for ch in chunks:
                 while self.is_flying():
@@ -256,7 +316,7 @@ class JobManager:
                 progress_only(done=ch.index + 1)
 
             progress_only(stage="validating", detail=f"Checking {len(candidates)} candidate rules")
-            nominal = self.nominal_for(d.get("aircraft_profile"))
+            nominal = self.nominal_for_draft(d)
             checked = [(validate.validate_candidate(c, phases, page_map, ocr_pages), c) for c in candidates]
             kept = validate.dedupe([c for c, _ in checked])
             kept_ids = {id(c) for c in kept}
@@ -268,17 +328,21 @@ class JobManager:
                 issues, fatal = validate.assess(r, phases, page_map, ocr_pages)
                 r["issues"] = list(dict.fromkeys(r["issues"] + issues))
                 r["blocked"] = fatal
-                msg = None if fatal else conflict_message(conflicts(r, nominal))
+                msg = None if fatal else circuit_conflict(r, nominal)
                 if msg:            # a correct circuit breaks it: set aside for the reviewer, not deleted
                     r["include"] = False
                     r["issues"].insert(0, "Set aside: " + msg)
                     n_conflict += 1
             rules.sort(key=lambda r: (r.get("source_page") or 10 ** 6))
             n_ok = sum(1 for r in rules if r["include"])
-            if nominal is None:
+            if nominal is None and not is_handbook:
                 warnings.append("No aircraft chosen, so rules weren't checked against a correctly flown circuit - "
                                 "choose the aircraft and press 'Run again' to check them.")
             aside = len(rules) - n_ok
+            n_gaze_open = sum(1 for r in rules if r["include"] and r.get("kind") == "gaze" and r.get("value") is None)
+            if n_gaze_open:
+                warnings.append(f"{n_gaze_open} scan-path rule(s) have no number in the book - set each threshold "
+                                "(e.g. 'look at the airspeed at least every 5 s') before saving.")
             save(rules=rules + manual, status="ready", stage="done", warnings=warnings,
                  detail=f"{n_ok} rules drafted" + (f", {aside} set aside" if aside else "")
                  + (f" ({n_conflict} would be broken by a correct circuit)" if n_conflict else ""))

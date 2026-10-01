@@ -50,7 +50,12 @@ export const sopApi = {
   meta: () => req("/meta"),
   // drafts: local to MAVIS, nothing in the database until save()
   listDrafts: () => req("/drafts"),
-  upload: (file) => { const f = new FormData(); f.append("file", file); return req("/drafts", { method: "POST", form: f }); },
+  // docType: "poh" (aircraft POH/SOP) | "handbook" (training handbook); handbook: afh | ifh | phak | school | other | "" (detect)
+  upload: (file, docType = "poh", handbook = "") => {
+    const f = new FormData(); f.append("file", file); f.append("doc_type", docType);
+    if (handbook) f.append("handbook", handbook);
+    return req("/drafts", { method: "POST", form: f });
+  },
   getDraft: (id) => req(`/drafts/${id}`),
   putDraft: (id, body) => req(`/drafts/${id}`, { method: "PUT", body }),
   reparse: (id) => req(`/drafts/${id}/reparse`, { method: "POST" }),
@@ -60,7 +65,7 @@ export const sopApi = {
   discardDraft: (id) => req(`/drafts/${id}`, { method: "DELETE" }),
   draftPage: (id, n) => req(`/drafts/${id}/pages/${n}`),
   draftPageImage: (id, n, q = "") => `${BASE}/drafts/${id}/pages/${n}/image?q=${encodeURIComponent(q.slice(0, 200))}`,
-  // saved rules
+  // saved rules (aircraft "_general" = training-handbook sets, which apply to every aircraft)
   listSets: (aircraft) => req(`/rulesets${aircraft ? `?aircraft=${encodeURIComponent(aircraft)}` : ""}`),
   getSet: (id) => req(`/rulesets/${id}`),
   renameSet: (id, name) => req(`/rulesets/${id}`, { method: "PATCH", body: { name } }),

@@ -238,28 +238,162 @@ def detect_section(text: str) -> int | None:
     return None
 
 
-def read_pages(pdf_bytes: bytes, progress=None) -> list[dict]:
-    """Step 1: text layer only (fast), plus whether each page will need OCR and
-    which POH section it is in (carried forward across pages with no header)."""
+def read_pages(pdf_bytes: bytes, progress=None, columns: bool = False) -> list[dict]:
+    """Step 1: text layer only (fast), plus whether each page will need OCR,
+    which POH section and which handbook chapter it is in (both carried forward
+    across pages with no header). columns=True (training handbooks) reads
+    two-column pages column by column instead of line by line across the page."""
     import pymupdf
     out: list[dict] = []
     current = None
+    chapter, chapter_title = None, None
     with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
         if doc.needs_pass:
             raise ValueError("PDF is password-protected")
         n = doc.page_count
         for i, page in enumerate(doc):
-            text = _clean(page.get_text("text", sort=True))
+            sorted_text = _clean(page.get_text("text", sort=True))
+            text = _clean(column_text(page)) if columns else sorted_text
             needs_ocr = len(text) < MIN_TEXT_CHARS or (
                 len(text) < THIN_TEXT_CHARS and _image_cover(page) >= IMAGE_COVER_FRAC)
-            sec = detect_section(text) if text else None
+            sec = detect_section(sorted_text) if sorted_text else None
             if sec is not None:
                 current = sec
+            ch, title = detect_chapter(sorted_text) if sorted_text else (None, None)
+            if ch is not None:
+                if ch != chapter:
+                    chapter_title = None
+                chapter = ch
+                chapter_title = title or chapter_title
             out.append({"page_no": i + 1, "text": text, "source": "text" if text else "empty",
-                        "ocr_confidence": None, "needs_ocr": bool(needs_ocr), "section": current})
+                        "ocr_confidence": None, "needs_ocr": bool(needs_ocr), "section": current,
+                        "chapter": chapter, "chapter_title": chapter_title if ch is not None else None})
             if progress:
                 progress(i + 1, n)
     return out
+
+
+# ---------------------------------------------------------------- training handbooks
+# FAA handbooks: two text columns, page labels "8-3" (chapter 8, page 3), a
+# chapter's first page headed "Chapter 8 Airport Traffic Patterns".
+_CHAPTER_LABEL_RX = re.compile(r"(?<![\w-])(\d{1,2}|[A-Z])-(\d{1,3})(?![\w-])")
+_CHAPTER_HEAD_RX = re.compile(r"^chapter\s+(\d{1,2})\b\s*[:.\-–—]?\s*(.*)$", re.I)
+_LETTER_PARTS = {"G": "Glossary", "I": "Index", "A": "Appendix A", "B": "Appendix B", "C": "Appendix C"}
+# chapters worth reading for circuit + scan rules (matched against the chapter title)
+SUGGEST_CHAPTERS = (r"basic flight maneuvers", r"takeoffs? and departure", r"traffic patterns?",
+                    r"approaches and landings", r"attitude instrument flying", r"airport operations",
+                    r"aeromedical")
+
+
+def column_text(page) -> str:
+    """Reading order for one- or two-column pages: between full-width blocks
+    (headings, wide figures, footers) read the left column top to bottom, then
+    the right column. Single-column pages come out as with sort=True."""
+    try:
+        blocks = [b for b in page.get_text("blocks", sort=True) if b[6] == 0 and str(b[4]).strip()]
+    except Exception:
+        return page.get_text("text", sort=True)
+    if not blocks:
+        return ""
+    mid = page.rect.x0 + page.rect.width / 2
+    margin = page.rect.width * 0.03
+    left = [b for b in blocks if b[2] <= mid + margin]
+    right = [b for b in blocks if b[0] >= mid - margin]
+    if len(left) < 2 or len(right) < 2:
+        return "\n".join(str(b[4]).strip() for b in blocks)
+    out: list[str] = []
+    band_l: list = []
+    band_r: list = []
+
+    def flush():
+        out.extend(str(b[4]).strip() for b in sorted(band_l, key=lambda b: b[1]))
+        out.extend(str(b[4]).strip() for b in sorted(band_r, key=lambda b: b[1]))
+        band_l.clear()
+        band_r.clear()
+
+    for b in sorted(blocks, key=lambda b: (b[1], b[0])):
+        if b[2] <= mid + margin:
+            band_l.append(b)
+        elif b[0] >= mid - margin:
+            band_r.append(b)
+        else:                                      # spans both columns
+            flush()
+            out.append(str(b[4]).strip())
+    flush()
+    return "\n".join(out)
+
+
+def detect_chapter(text: str) -> tuple[str | None, str | None]:
+    """(chapter key, title) of a handbook page: a 'Chapter 8 ...' heading near the
+    top (title from the same or the next line), else the page label '8-3' /
+    'G-2' in the footer or header. Table-of-contents pages (several chapter
+    headings) give neither."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    heads = [i for i, ln in enumerate(lines) if _CHAPTER_HEAD_RX.match(ln)]
+    if len(heads) == 1 and heads[0] < 8:
+        i = heads[0]
+        m = _CHAPTER_HEAD_RX.match(lines[i])
+        title = re.sub(r"[.\s]*\d+-\d+\s*$", "", m.group(2)).strip(" .:-–—")
+        if len(title) < 4 and i + 1 < len(lines):
+            title = lines[i + 1].strip(" .:-–—")
+        return m.group(1), (title[:80] or None)
+    if len(heads) > 1:
+        return None, None
+    for ln in lines[-4:][::-1] + lines[:3]:
+        m = _CHAPTER_LABEL_RX.search(ln)
+        if m and (m.group(1).isdigit() or m.group(1) in _LETTER_PARTS):
+            return m.group(1), None
+    return None, None
+
+
+def chapter_outline(pages: list[dict]) -> list[dict]:
+    """Consecutive pages of the same chapter -> [{chapter, title, first, last,
+    count, scanned, suggested}] for the handbook page picker."""
+    out: list[dict] = []
+    for p in pages:
+        ch = p.get("chapter")
+        if out and out[-1]["chapter"] == ch and out[-1]["last"] == p["page_no"] - 1:
+            o = out[-1]
+            o["last"] = p["page_no"]
+            o["count"] += 1
+            o["scanned"] += int(bool(p.get("needs_ocr")))
+            o["title"] = o["title"] or p.get("chapter_title")
+            continue
+        out.append({"chapter": ch, "title": p.get("chapter_title"), "first": p["page_no"], "last": p["page_no"],
+                    "count": 1, "scanned": int(bool(p.get("needs_ocr")))})
+    for o in out:
+        ch = o["chapter"]
+        if not o["title"]:
+            o["title"] = (_LETTER_PARTS.get(ch) if ch and not ch.isdigit() else
+                          f"Chapter {ch}" if ch else "Front matter / unlabelled")
+        o["suggested"] = bool(ch and any(re.search(rx, o["title"], re.I) for rx in SUGGEST_CHAPTERS))
+    return out
+
+
+def suggest_chapter_pages(pages: list[dict]) -> list[int]:
+    picks: list[int] = []
+    for o in chapter_outline(pages):
+        if o["suggested"]:
+            picks += list(range(o["first"], o["last"] + 1))
+    return picks or [p["page_no"] for p in pages]
+
+
+def detect_book(pages: list[dict]) -> tuple[str | None, str | None]:
+    """Which FAA handbook this is, from its document number (FAA-H-8083-3C...)
+    or title. -> (book id from schema.BOOKS, or None; id from
+    schema.NOT_RULE_BOOKS if it's a book with no circuit rules, or None)."""
+    from .schema import BOOKS, NOT_RULE_BOOKS
+    sample = "\n".join(p["text"] for p in pages[:12])
+    sample += "\n" + "\n".join("\n".join(p["text"].splitlines()[-3:]) for p in pages[12:400])
+    sample = sample.lower()
+    cands = [(bid, rx) for bid, (_, _, rx) in BOOKS.items() if rx] + \
+            [(bid, rx) for bid, (rx, _) in NOT_RULE_BOOKS.items()]
+    for which in (0, 1):                       # document numbers first, then titles
+        counts = {bid: len(re.findall(rx[which], sample)) for bid, rx in cands}
+        best = max(counts, key=counts.get)
+        if counts[best]:
+            return (best, None) if best in BOOKS else (None, best)
+    return None, None
 
 
 def ocr_selected(pdf_bytes: bytes, pages: list[dict], selected: set[int], tesseract_cmd: str | None = None,

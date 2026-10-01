@@ -4,7 +4,8 @@ Everything the LLM is allowed to say is enumerated here, so the JSON schema
 Ollama is constrained with, the validator, the API and the wizard all agree.
 Rule kinds follow docs/acs-guided-instruction.md §3.2 (band / event /
 capture / unobservable) plus `limit`, because SOPs are mostly one-sided
-limits ("do not exceed 85 kt with full flaps") rather than target±tol.
+limits ("do not exceed 85 kt with full flaps") rather than target±tol, and
+`gaze` (where the pilot looks, from the eye tracker) for training handbooks.
 
 All stored numbers are in MAVIS Telemetry units (adapters/sim_base.py).
 """
@@ -16,7 +17,7 @@ import yaml
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 
-KINDS = ("band", "limit", "event", "capture", "unobservable")
+KINDS = ("band", "limit", "event", "capture", "gaze", "unobservable")
 OPS = (">=", "<=", "==", ">", "<")
 CAPTURE_AT = ("liftoff", "touchdown", "phase_entry", "phase_exit")
 SEVERITIES = ("advisory", "caution", "warning")
@@ -45,7 +46,63 @@ UNITS: dict[str, tuple[str, float]] = {
     "deg": ("angle", 1.0),
     "rpm": ("rpm", 1.0),
     "percent": ("fraction", 0.01), "fraction": ("fraction", 1.0),
+    "s": ("time", 1.0),
     "none": ("", 1.0),
+}
+
+# ---------------------------------------------------------------- gaze rules
+# kind "gaze": where the pilot looks, measured by the eye tracker. A rule
+# points at an AOI *role*, not at a zone's free-text name: each AOI zone drawn
+# in IRIS gets one of these roles, so a rule works whatever the zone is called.
+AOI_ROLES: dict[str, tuple[str, str]] = {
+    # id            (label shown in the UI,        meaning given to the LLM)
+    "outside":     ("Outside view",               "looking out of the windscreen/windows: lookout, horizon, runway, traffic"),
+    "instruments": ("Any instrument (panel)",     "the instrument panel as a whole: any time spent looking inside"),
+    "attitude":    ("Attitude indicator",         "attitude indicator / artificial horizon"),
+    "airspeed":    ("Airspeed indicator",         "airspeed indicator"),
+    "altimeter":   ("Altimeter",                  "altimeter"),
+    "vsi":         ("Vertical speed indicator",   "vertical speed indicator"),
+    "heading":     ("Heading indicator",          "heading indicator / directional gyro / compass"),
+    "turn":        ("Turn coordinator",           "turn coordinator / turn-and-slip indicator"),
+    "engine":      ("Engine instruments",         "tachometer and other engine gauges"),
+}
+# measure -> (label, value dimension, meaning given to the LLM)
+GAZE_MEASURES: dict[str, tuple[str, str, str]] = {
+    "max_gap":   ("Look at it at least every",   "time",     "omission: longest time WITHOUT looking at the area, seconds"),
+    "max_dwell": ("No single look longer than",  "time",     "fixation: longest single uninterrupted look at the area, seconds"),
+    "min_share": ("At least this share of time", "fraction", "share of the phase spent looking at the area, at least N percent"),
+    "max_share": ("At most this share of time",  "fraction", "emphasis: share of the phase spent looking at the area, at most N percent"),
+}
+GAZE_RANGE = {"time": (0.1, 600.0), "fraction": (0.0, 1.0)}
+
+
+def gaze_unit_ok(unit: str, measure: str) -> bool:
+    return UNITS.get(unit, ("?", 0))[0] == GAZE_MEASURES[measure][1]
+
+
+# ---------------------------------------------------------------- source documents
+# poh:      an aircraft's POH / AFM / type SOP -> rules for THAT aircraft
+# handbook: a training handbook (FAA or the school's own) -> rules for EVERY aircraft
+DOC_TYPES = {"poh": "Aircraft POH / SOP", "handbook": "Training handbook"}
+# handbook id -> (label, short name, (document-number regex, title regex) found in the PDF text)
+BOOKS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "afh":    ("Airplane Flying Handbook (FAA-H-8083-3C)", "FAA Airplane Flying Handbook",
+               (r"8083-3[a-c]?\b", r"airplane flying handbook")),
+    "ifh":    ("Instrument Flying Handbook (FAA-H-8083-15B)", "FAA Instrument Flying Handbook",
+               (r"8083-15[a-b]?\b", r"instrument flying handbook")),
+    "phak":   ("Pilot's Handbook of Aeronautical Knowledge (FAA-H-8083-25C)", "FAA Pilot's Handbook (PHAK)",
+               (r"8083-25[a-c]?\b", r"pilot.s handbook of aeronautical knowledge")),
+    "school": ("Flight school handbook / SOP", "School handbook", ()),
+    "other":  ("Other training handbook", "Training handbook", ()),
+}
+# FAA books that hold (almost) no circuit rules -- recognised so the upload can say so
+# id -> ((document-number regex, title regex), what to tell the reviewer)
+NOT_RULE_BOOKS: dict[str, tuple[tuple[str, str], str]] = {
+    "iph":     ((r"8083-16[a-b]?\b", r"instrument procedures handbook"),
+                "the Instrument Procedures Handbook (IFR departures, charts and approaches) - it has almost no rules for a "
+                "visual circuit. The scan-path book is the Instrument FLYING Handbook (FAA-H-8083-15B)."),
+    "weather": ((r"8083-28[a-b]?\b", r"aviation weather handbook"),
+                "the Aviation Weather Handbook - it explains weather but contains no flying rules."),
 }
 # dimensions that share the "deg" unit
 _DEG_DIMS = {"angle", "heading"}
@@ -63,6 +120,7 @@ TAGS: dict[str, tuple[str, str]] = {
     "configuration":    ("Configuration",    "how the aircraft must be configured for a phase (flaps set, lights on, mixture rich)"),
     "communication":    ("Communication",    "radio calls, ATC, transponder codes"),
     "situational":      ("Lookout & awareness", "lookout, traffic, terrain, orientation, weather decisions"),
+    "scan":             ("Scan path",        "where the pilot looks: instrument cross-check, fixation/omission/emphasis, time outside vs inside"),
     "emergency":        ("Emergency",        "emergency or abnormal situation (engine failure, fire, forced landing)"),
 }
 # tag implied by each measurable metric (added automatically)
@@ -128,11 +186,17 @@ def aircraft_profiles() -> list[dict]:
     return out
 
 
-def llm_json_schema(phases: list[str]) -> dict:
+def llm_json_schema(phases: list[str], gaze: bool = False) -> dict:
     """JSON schema handed to Ollama's `format` -- decoding is constrained to it,
-    so the model cannot emit an unknown metric, phase or kind."""
+    so the model cannot emit an unknown metric, phase or kind. gaze=True (the
+    handbook prompt) adds the "gaze" kind and its aoi / gaze_measure fields."""
     num = {"type": ["number", "null"]}
     phase_or_null = {"type": ["string", "null"], "enum": phases + [None]}
+    kinds = list(KINDS) if gaze else [k for k in KINDS if k != "gaze"]
+    gaze_props = {
+        "aoi": {"type": ["string", "null"], "enum": list(AOI_ROLES) + [None]},
+        "gaze_measure": {"type": ["string", "null"], "enum": list(GAZE_MEASURES) + [None]},
+    } if gaze else {}
     return {
         "type": "object",
         "properties": {
@@ -141,7 +205,8 @@ def llm_json_schema(phases: list[str]) -> dict:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "kind": {"type": "string", "enum": list(KINDS)},
+                        "kind": {"type": "string", "enum": kinds},
+                        **gaze_props,
                         "title": {"type": "string"},
                         "phases": {"type": "array", "items": {"type": "string", "enum": phases}},
                         "metric": {"type": ["string", "null"], "enum": list(METRICS) + [None]},

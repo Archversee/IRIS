@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 RULE_FIELDS = ("kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
                "min_value", "max_value", "op", "value", "gate_phase", "capture_at",
                "conditions", "severity", "source_quote", "source_page", "quote_score",
-               "note", "enabled", "tags")
+               "note", "enabled", "tags", "aoi", "gaze_measure")
 _JSONB = {"conditions", "llm_draft", "before", "after"}
 
 
@@ -75,11 +75,16 @@ class RuleStore:
 
     # ------------------------------------------------------------ save a reviewed draft
     async def save_draft(self, draft: dict, pages: list[dict], rules: list[dict],
-                         aircraft: str, name: str, by: str | None) -> str:
+                         aircraft: str | None, name: str, by: str | None, handbook: str | None = None) -> str:
         """One transaction: document + pages (reused if this PDF was saved
-        before), a new rule set with its rules, made the aircraft's active set."""
+        before), a new rule set with its rules, made active. An aircraft POH's
+        set is bound to that aircraft (aircraft=...); a training handbook's set
+        (handbook='afh', ...) applies to every aircraft, one active per book."""
+        scope = "general" if handbook else "aircraft"
         async with self.acquire() as c, c.transaction():
             doc_id = await c.fetchval("select id from sop_documents where sha256=$1", draft["sha256"])
+            if doc_id is not None:      # same PDF saved before: point at the copy that exists now
+                await c.execute("update sop_documents set stored_path=$2 where id=$1", doc_id, draft["pdf_path"])
             if doc_id is None:
                 doc_id = await c.fetchval(
                     "insert into sop_documents (filename, sha256, page_count, ocr_pages, stored_path, uploaded_by) "
@@ -92,18 +97,21 @@ class RuleStore:
             from .extract import compress_pages
             sel = draft.get("selected_pages")
             rs = await c.fetchval(
-                "insert into flight_rule_sets (aircraft_profile, name, document_id, llm_model, prompt_version, "
-                "page_selection, created_by, updated_by) values ($1,$2,$3,$4,$5,$6,$7,$7) returning id",
-                aircraft, name, doc_id, draft.get("llm_model"), draft.get("prompt_version"),
-                compress_pages(sel) if sel else None, by)
+                "insert into flight_rule_sets (aircraft_profile, scope, handbook, name, document_id, llm_model, "
+                "prompt_version, page_selection, created_by, updated_by) "
+                "values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) returning id",
+                None if handbook else aircraft, scope, handbook, name, doc_id, draft.get("llm_model"),
+                draft.get("prompt_version"), compress_pages(sel) if sel else None, by)
             for i, r in enumerate(rules):
                 row = await self._insert_rule(c, rs, r, i, by)
                 await self._log(c, rs, row["id"], "create", by, None, row)
-            await self._activate(c, rs, aircraft, by)
+            await self._activate(c, rs, by)
         return str(rs)
 
     # ------------------------------------------------------------ rule sets
     async def list_sets(self, aircraft: str | None = None) -> list[dict]:
+        """Every rule set (aircraft=... -> only that aircraft's; '_general' -> only
+        the training-handbook sets that apply to every aircraft)."""
         async with self.acquire() as c:
             rows = await c.fetch("""
                 select s.*, d.filename, d.page_count,
@@ -112,7 +120,8 @@ class RuleStore:
                   from flight_rule_sets s
                   left join sop_documents d on d.id = s.document_id
                   left join flight_rules r on r.rule_set_id = s.id
-                 where ($1::text is null or s.aircraft_profile = $1)
+                 where ($1::text is null or s.aircraft_profile = $1
+                        or ($1 = '_general' and s.scope = 'general'))
                  group by s.id, d.id
                  order by s.active desc, s.updated_at desc""", aircraft)
         return [_clean(r) for r in rows]
@@ -142,11 +151,11 @@ class RuleStore:
 
     async def set_active(self, rs: UUID, active: bool, by: str | None) -> bool:
         async with self.acquire() as c, c.transaction():
-            row = await c.fetchrow("select aircraft_profile, active from flight_rule_sets where id=$1 for update", rs)
+            row = await c.fetchrow("select active from flight_rule_sets where id=$1 for update", rs)
             if not row:
                 return False
             if active:
-                await self._activate(c, rs, row["aircraft_profile"], by)
+                await self._activate(c, rs, by)
             elif row["active"]:
                 await c.execute("update flight_rule_sets set active=false, updated_by=$2, updated_at=now() "
                                 "where id=$1", rs, by)
@@ -158,9 +167,18 @@ class RuleStore:
             res = await c.execute("delete from flight_rule_sets where id=$1 and not active", rs)
         return res.endswith("1")
 
-    async def _activate(self, c, rs, aircraft: str, by):
-        prev = await c.fetch("select id from flight_rule_sets where aircraft_profile=$1 and active and id<>$2",
-                             aircraft, rs)
+    async def _activate(self, c, rs, by):
+        """Make rs active and deactivate the set it replaces: the same aircraft's
+        active set, or (handbook sets) the active set of the same book."""
+        me = await c.fetchrow("select scope, aircraft_profile, handbook from flight_rule_sets where id=$1", rs)
+        if me["scope"] == "general":
+            prev = await c.fetch("select id from flight_rule_sets where scope='general' and handbook=$1 "
+                                 "and active and id<>$2", me["handbook"], rs)
+            what = {"handbook": me["handbook"]}
+        else:
+            prev = await c.fetch("select id from flight_rule_sets where scope='aircraft' and aircraft_profile=$1 "
+                                 "and active and id<>$2", me["aircraft_profile"], rs)
+            what = {"aircraft_profile": me["aircraft_profile"]}
         for p in prev:
             await c.execute("update flight_rule_sets set active=false, updated_by=$2, updated_at=now() where id=$1",
                             p["id"], by)
@@ -169,7 +187,7 @@ class RuleStore:
         if not already:
             await c.execute("update flight_rule_sets set active=true, updated_by=$2, updated_at=now() where id=$1",
                             rs, by)
-            await self._log(c, rs, None, "activate", by, None, {"aircraft_profile": aircraft})
+            await self._log(c, rs, None, "activate", by, None, what)
 
     # ------------------------------------------------------------ rules
     async def get_rule(self, rule_id: int) -> dict | None:
@@ -235,19 +253,35 @@ class RuleStore:
             row = await c.fetchrow("select * from sop_documents where id=$1", doc_id)
         return dict(row) if row else None
 
-    async def active_rules(self, profile: str) -> dict | None:
-        """What a lesson loads: the enabled rules of the aircraft's active set."""
+    async def active_rules(self, profile: str | None) -> dict | None:
+        """What a lesson loads: the enabled rules of the aircraft's active set
+        (profile None = aircraft unknown: none) PLUS every active training-
+        handbook set, which applies to all aircraft. Each rule says which
+        layer it came from ("aircraft" / "general") and, for handbook rules,
+        which book. Top-level rule_set_id/name/filename describe the aircraft
+        set (None when only handbook rules are active)."""
         async with self.acquire() as c:
-            s = await c.fetchrow("""
-                select s.id, s.name, s.updated_at, d.filename from flight_rule_sets s
+            sets = await c.fetch("""
+                select s.id, s.name, s.updated_at, s.scope, s.handbook, d.filename from flight_rule_sets s
                   left join sop_documents d on d.id = s.document_id
-                 where s.aircraft_profile=$1 and s.active""", profile)
-            if not s:
+                 where s.active and ((s.scope = 'aircraft' and s.aircraft_profile = $1) or s.scope = 'general')
+                 order by (s.scope = 'aircraft') desc, s.handbook""", profile)
+            if not sets:
                 return None
-            rules = await c.fetch("select * from flight_rules where rule_set_id=$1 and enabled "
-                                  "order by sort_order, id", s["id"])
-        return {"rule_set_id": str(s["id"]), "name": s["name"], "filename": s["filename"],
-                "updated_at": s["updated_at"].isoformat(), "rules": [_clean(r) for r in rules]}
+            rules = await c.fetch("""
+                select r.*, s.scope as layer, s.handbook from flight_rules r
+                  join flight_rule_sets s on s.id = r.rule_set_id
+                 where r.rule_set_id = any($1::uuid[]) and r.enabled
+                 order by (s.scope = 'aircraft') desc, s.handbook, r.sort_order, r.id""", [s["id"] for s in sets])
+        ac = next((s for s in sets if s["scope"] == "aircraft"), None)
+        rules = [_clean(r) for r in rules]
+        layers = [{"rule_set_id": str(s["id"]), "name": s["name"], "scope": s["scope"], "handbook": s["handbook"],
+                   "filename": s["filename"], "n_rules": sum(1 for r in rules if r["rule_set_id"] == str(s["id"]))}
+                  for s in sets]
+        return {"rule_set_id": str(ac["id"]) if ac else None, "name": ac["name"] if ac else None,
+                "filename": ac["filename"] if ac else None,
+                "updated_at": max(s["updated_at"] for s in sets).isoformat(),
+                "layers": layers, "rules": rules}
 
     # ------------------------------------------------------------ helpers
     async def _insert_rule(self, c, rs, r: dict, order: int, by) -> dict:

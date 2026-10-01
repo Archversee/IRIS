@@ -12,6 +12,10 @@ Fallbacks, in order:
   3. sim reported nothing (mock / replay / older adapter) -> config's aircraft_profile
 If the sim reports an aircraft that matches NO profile, no SOP is applied:
 using a C172 SOP on some other type would be worse than none.
+
+Training-handbook rules (FAA handbooks or the school's own, scope 'general')
+apply to every aircraft, so they are loaded on top of the aircraft's rules --
+and on their own when the aircraft has no rules or isn't recognised.
 """
 from __future__ import annotations
 
@@ -64,17 +68,26 @@ class SopRuntime:
                 "detected": detected, "why": why}
 
     async def load(self, ident: dict | None) -> dict:
+        """status: active (the aircraft has rules) | none (it has none) |
+        no_profile (aircraft not recognised) | unavailable (DB down). Handbook
+        rules ride along in every case but 'unavailable': n_rules counts all
+        loaded rules, n_handbook_rules / handbooks the handbook part."""
         info = self.resolve(ident)
         self.active = None
-        if not info["aircraft_id"]:
-            return {**info, "status": "no_profile"}
         try:
             act = await asyncio.wait_for(self.store.active_rules(info["aircraft_id"]), timeout=4)
         except Exception as e:
             log.warning("SOP load failed: %s", e)
             return {**info, "status": "unavailable", "error": str(e)}
-        if not act:
-            return {**info, "status": "none"}
         self.active = act
-        return {**info, "status": "active", "rule_set_id": act["rule_set_id"], "name": act["name"],
-                "filename": act["filename"], "updated_at": act["updated_at"], "n_rules": len(act["rules"])}
+        layers = (act or {}).get("layers") or []
+        books = [x for x in layers if x["scope"] == "general"]
+        extra = {"n_rules": len(act["rules"]) if act else 0,
+                 "n_handbook_rules": sum(x["n_rules"] for x in books),
+                 "handbooks": [x["name"] for x in books]}
+        if not info["aircraft_id"]:
+            return {**info, **extra, "status": "no_profile"}
+        if not act or not act.get("rule_set_id"):
+            return {**info, **extra, "status": "none"}
+        return {**info, **extra, "status": "active", "rule_set_id": act["rule_set_id"], "name": act["name"],
+                "filename": act["filename"], "updated_at": act["updated_at"]}

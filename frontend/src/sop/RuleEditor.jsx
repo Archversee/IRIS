@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KIND_LABEL, OP_TXT, metricInfo, phaseTxt, unitLabel, fmt } from "./ruleText.js";
+import { KIND_LABEL, OP_TXT, metricInfo, phaseTxt, unitLabel, fmt, gazeIsShare, gazeShow } from "./ruleText.js";
 
 // Number field that lets you type "-", "1." etc. without the value jumping;
 // reports null for an empty box.
@@ -52,7 +52,12 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
   function setKind(kind) {
     // keep what still makes sense; the server clears numbers for "not observable"
     const patch = { kind };
-    if (kind !== "unobservable" && !rule.metric) patch.metric = "ias";
+    if (kind !== "unobservable" && kind !== "gaze" && !rule.metric) patch.metric = "ias";
+    if (kind === "gaze") {
+      patch.aoi = rule.aoi || "outside";
+      patch.gaze_measure = rule.gaze_measure || "min_share";
+      if (!(rule.tags || []).includes("scan")) patch.tags = [...(rule.tags || []), "scan"].slice(0, 4);
+    }
     if (kind === "event" && !rule.op) patch.op = ">=";
     if (kind === "capture" && !rule.capture_at) patch.capture_at = "liftoff";
     set(patch);
@@ -75,7 +80,7 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
           {meta.kinds.map((x) => <option key={x} value={x}>{KIND_LABEL[x]}</option>)}
         </select>
       </Field>
-      {k !== "unobservable" && (
+      {k !== "unobservable" && k !== "gaze" && (
         <Field label="Measured value" htmlFor="sop-metric">
           <select id="sop-metric" value={rule.metric || ""} disabled={dis} onChange={(e) => set({ metric: e.target.value })}>
             {metrics.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -121,6 +126,34 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         <Num meta={meta} rule={rule} k="max_value" label="Maximum" set={set} disabled={dis} />
       </>}
 
+      {k === "gaze" && <>
+        <Field label="Look at" htmlFor="sop-aoi" hint="(AOI zone role)">
+          <select id="sop-aoi" value={rule.aoi || ""} disabled={dis} onChange={(e) => set({ aoi: e.target.value })}>
+            {!rule.aoi && <option value="">Choose…</option>}
+            {(meta.aoi_roles || []).map((a) => <option key={a.id} value={a.id} title={a.help}>{a.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Check" htmlFor="sop-gm">
+          <select id="sop-gm" value={rule.gaze_measure || ""} disabled={dis}
+            onChange={(e) => {
+              const m = e.target.value;
+              // seconds <-> share: a number typed for one makes no sense for the other
+              const keep = gazeIsShare(m) === gazeIsShare(rule.gaze_measure);
+              set({ gaze_measure: m, ...(keep ? {} : { value: null }) });
+            }}>
+            {!rule.gaze_measure && <option value="">Choose…</option>}
+            {(meta.gaze_measures || []).map((g) => <option key={g.id} value={g.id} title={g.help}>{g.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Threshold" htmlFor="sop-gv" hint={rule.value == null ? "(set by the instructor)" : ""}>
+          <div className="sop-unit">
+            <NumInput id="sop-gv" value={gazeShow(rule.gaze_measure, rule.value)} disabled={dis}
+              onChange={(v) => set({ value: v == null ? null : gazeIsShare(rule.gaze_measure) ? v / 100 : v })} />
+            <em>{gazeIsShare(rule.gaze_measure) ? "%" : "s"}</em>
+          </div>
+        </Field>
+      </>}
+
       {meta.tags && (
         <Field label="Tags" hint="(what the rule is about — up to 4)" wide>
           <div className="sop-phases">
@@ -148,7 +181,7 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         </div>
       </Field>
 
-      {k !== "unobservable" && (
+      {k !== "unobservable" && k !== "gaze" && (
         <Field label="Only while" wide>
           {conds.length === 0 && <div className="muted sop-small">No conditions</div>}
           {conds.map((c, i) => (
@@ -172,7 +205,7 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         </Field>
       )}
 
-      <Field label={`Source in the SOP${rule.source_page ? ` — page ${rule.source_page}` : ""}${rule.quote_score != null && rule.quote_score < 1 ? ` (${Math.round(rule.quote_score * 100)}% match)` : ""}`} wide htmlFor="sop-quote">
+      <Field label={`Source${rule.source_page ? ` — page ${rule.source_page}` : ""}${rule.quote_score != null && rule.quote_score < 1 ? ` (${Math.round(rule.quote_score * 100)}% match)` : ""}`} wide htmlFor="sop-quote">
         {quoteEditable && !dis ? (
           <div className="sop-quote-edit">
             <textarea id="sop-quote" rows={3} value={rule.source_quote || ""}

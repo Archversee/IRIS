@@ -17,8 +17,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-from .schema import (CAPTURE_AT, FOREIGN_UNITS, KINDS, METRIC_TAG, METRICS, OPS, SEVERITIES, TAGS,
-                     to_stored, unit_ok)
+from .schema import (AOI_ROLES, CAPTURE_AT, FOREIGN_UNITS, GAZE_MEASURES, GAZE_RANGE, KINDS, METRIC_TAG,
+                     METRICS, OPS, SEVERITIES, TAGS, gaze_unit_ok, to_stored, unit_ok)
 
 QUOTE_MIN = 0.85          # below this the quote isn't in the SOP -> auto-reject
 QUOTE_EXACT = 0.999
@@ -122,6 +122,8 @@ def normalise_candidate(raw: dict) -> tuple[dict, list[str], str | None]:
     unit = str(raw.get("unit") or "none")
     if kind not in KINDS:
         return {}, issues, f"unknown rule kind '{kind}'"
+    if kind == "gaze":
+        return _normalise_gaze(raw, unit)
     if kind != "unobservable" and metric not in METRICS:
         issues.append("No telemetry metric could be identified - converted to 'not observable'")
         kind, metric = "unobservable", None
@@ -173,11 +175,45 @@ def normalise_candidate(raw: dict) -> tuple[dict, list[str], str | None]:
     return rule, issues, reject
 
 
+def _normalise_gaze(raw: dict, unit: str) -> tuple[dict, list[str], str | None]:
+    """A gaze candidate: aoi + gaze_measure + value (seconds or a 0..1 share).
+    value may be null -- the book described the behaviour without a number,
+    and the instructor sets the threshold before saving."""
+    issues: list[str] = []
+    aoi, measure = raw.get("aoi") or None, raw.get("gaze_measure") or None
+    reject = None
+    if aoi not in AOI_ROLES:
+        reject = f"unknown area of interest '{aoi}'"
+    elif measure not in GAZE_MEASURES:
+        reject = f"unknown gaze check '{measure}'"
+    value = _f(raw.get("value"))
+    as_written: dict = {"unit": unit}
+    if value is not None:
+        as_written["value"] = raw.get("value")
+        if measure in GAZE_MEASURES and not gaze_unit_ok(unit, measure):
+            reject = reject or f"unit '{unit}' does not fit '{GAZE_MEASURES[measure][0].lower()}'"
+        value = to_stored(value, unit)
+    rule = {
+        "kind": "gaze",
+        "title": (str(raw.get("title") or "").strip() or "Untitled rule")[:120],
+        "phases": [str(p) for p in (raw.get("phases") or [])],
+        "metric": None, "target": None, "tol_hi": None, "tol_lo": None, "min_value": None, "max_value": None,
+        "op": None, "value": value, "gate_phase": None, "capture_at": None, "conditions": [],
+        "aoi": aoi, "gaze_measure": measure,
+        "severity": raw.get("severity") if raw.get("severity") in SEVERITIES else "advisory",
+        "source_quote": (str(raw.get("source_quote") or "").strip())[:600] or None,
+        "source_page": int(raw["page"]) if str(raw.get("page") or "").isdigit() else None,
+        "as_written": as_written,
+        "tags": normalise_tags(raw.get("tags"), "gaze", None),
+    }
+    return rule, issues, reject
+
+
 def normalise_tags(tags, kind: str | None, metric: str | None) -> list[str]:
     """Known tags only, no duplicates, and always the tag the metric implies
-    (so 'Pilot controls' / 'Flight telemetry' filters are reliable)."""
+    (so 'Pilot controls' / 'Flight telemetry' / 'Scan path' filters are reliable)."""
     out = [t for t in dict.fromkeys(tags or []) if t in TAGS]
-    implied = METRIC_TAG.get(metric or "")
+    implied = "scan" if kind == "gaze" else METRIC_TAG.get(metric or "")
     if implied and implied not in out:
         out.append(implied)
     if not out:
@@ -193,7 +229,7 @@ def foreign_quantity(rule: dict) -> str | None:
     """If the rule's numbers appear in its quote only as a quantity the sim can't
     measure ('20 PSI', '53 gallons', '2550 lbs'), return that quantity -- the LLM
     has put it on the wrong metric (e.g. oil pressure -> engine RPM)."""
-    if rule.get("kind") in (None, "unobservable") or not rule.get("source_quote"):
+    if rule.get("kind") in (None, "unobservable", "gaze") or not rule.get("source_quote"):
         return None
     written = rule.get("as_written") or {}
     nums = {_f(v) for k, v in written.items() if k not in ("unit", "when") and _f(v) is not None}
@@ -225,11 +261,15 @@ def check_rule(rule: dict, phases: list[str]) -> tuple[list[str], str | None]:
     if bad:
         rule["phases"] = [p for p in rule["phases"] if p in phases]
         issues.append(f"Dropped unknown phase(s): {', '.join(bad)}")
+    if kind != "gaze":
+        rule["aoi"] = rule["gaze_measure"] = None
     if kind == "unobservable":
         for k in _NUM_FIELDS:
             rule[k] = None
         rule["metric"] = None
         return issues, None
+    if kind == "gaze":
+        return _check_gaze(rule, issues)
     if metric not in METRICS:
         return issues, f"unknown metric '{metric}'"
 
@@ -269,6 +309,24 @@ def check_rule(rule: dict, phases: list[str]) -> tuple[list[str], str | None]:
     for c in rule.get("conditions") or []:
         if c.get("metric") not in METRICS or c.get("op") not in OPS or _f(c.get("value")) is None:
             return issues, "a condition is incomplete"
+    return issues, None
+
+
+def _check_gaze(rule: dict, issues: list[str]) -> tuple[list[str], str | None]:
+    for k in ("target", "tol_hi", "tol_lo", "min_value", "max_value"):
+        rule[k] = None
+    rule.update(metric=None, op=None, gate_phase=None, capture_at=None, conditions=[])
+    if rule.get("aoi") not in AOI_ROLES:
+        return issues, "choose the area of the cockpit (look at…)"
+    if rule.get("gaze_measure") not in GAZE_MEASURES:
+        return issues, "choose what is checked (how often / how long / share of time)"
+    v = _f(rule.get("value"))
+    if v is None:          # allowed in a draft; assess() blocks saving until it's set
+        return issues, None
+    lo, hi = GAZE_RANGE[GAZE_MEASURES[rule["gaze_measure"]][1]]
+    if not lo <= v <= hi:
+        what = f"{v:g} s" if GAZE_MEASURES[rule["gaze_measure"]][1] == "time" else f"{v * 100:g}%"
+        return issues, f"{what} is implausible for '{GAZE_MEASURES[rule['gaze_measure']][0].lower()}'"
     return issues, None
 
 
@@ -323,7 +381,8 @@ def dedupe(checked: list[Checked]) -> list[Checked]:
     out: list[Checked] = []
     for c in checked:
         r = c.rule
-        key = (r.get("kind"), r.get("metric"), r.get("op"), r.get("gate_phase"), r.get("capture_at"),
+        key = (r.get("kind"), r.get("metric"), r.get("aoi"), r.get("gaze_measure"),
+               r.get("op"), r.get("gate_phase"), r.get("capture_at"),
                *(round(r[k], 2) if r.get(k) is not None else None for k in _NUM_FIELDS),
                tuple(sorted((x["metric"], x["op"], round(x["value"], 2)) for x in r.get("conditions") or [])),
                norm_text(r.get("title", "")) if r.get("kind") == "unobservable" else "")
@@ -379,6 +438,8 @@ def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[
     issues, fatal = check_rule(rule, phases)
     if not fatal and rule.get("kind") == "band" and rule.get("tol_hi") is None and rule.get("tol_lo") is None:
         fatal = "set a tolerance (or make it a limit)"
+    if not fatal and rule.get("kind") == "gaze" and _f(rule.get("value")) is None:
+        fatal = "set the threshold - the source describes this without a number"
     quote = (rule.get("source_quote") or "").strip()
     if quote and pages:
         p_issues, p_fatal = check_provenance(rule, pages, ocr_pages)
@@ -394,8 +455,8 @@ def assess(rule: dict, phases: list[str], pages: dict[int, str], ocr_pages: set[
     else:
         rule["quote_score"] = None if not quote else rule.get("quote_score")
     if nominal is not None and not fatal:
-        from .profile import conflict_message, conflicts
-        msg = conflict_message(conflicts(rule, nominal))
+        from .profile import circuit_conflict
+        msg = circuit_conflict(rule, nominal)
         if msg:
             issues.append(msg)
     return issues, fatal

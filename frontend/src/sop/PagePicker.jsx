@@ -29,19 +29,40 @@ export function parsePages(text, n) {
   return [...out].filter((p) => p >= 1 && p <= n).sort((a, b) => a - b);
 }
 
+function pagesOf(outline, pred) {
+  const out = [];
+  for (const o of outline) if (pred(o)) for (let p = o.first; p <= o.last; p++) out.push(p);
+  return out;
+}
+
 /** Step between reading the PDF and running the LLM: choose which pages the
- *  LLM reads (sections detected from the POH's running headers/footers). */
+ *  LLM reads -- POH sections (from its running headers/footers) or handbook
+ *  chapters (from chapter headings and page labels like "8-3"). The document
+ *  type can still be switched here, before any LLM time is spent. */
 export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
   const n = d.page_count || 0;
+  const [docType, setDocType] = useState(d.doc_type || "poh");
+  const [book, setBook] = useState(d.handbook || d.handbook_detected || "");
+  const isHB = docType === "handbook";
+  const outline = (isHB ? d.chapters : d.outline) || [];
+  const suggestion = useMemo(() => {
+    const s = pagesOf(outline, (o) => o.suggested);
+    return s.length ? s : Array.from({ length: n }, (_, k) => k + 1);
+  }, [outline, n]);
   const [sel, setSel] = useState(() => new Set(d.selected_pages?.length ? d.selected_pages : d.suggested_pages || []));
   const [text, setText] = useState(() => compressPages([...sel]));
   const [textErr, setTextErr] = useState(null);
   const [aircraft, setAircraft] = useState(d.aircraft_profile || "");
   const scanned = useMemo(() => new Set(d.scanned_pages || []), [d.scanned_pages]);
-  const outline = d.outline || [];
 
   function apply(next) {
     setSel(next); setText(compressPages([...next])); setTextErr(null);
+  }
+  function switchType(t) {
+    setDocType(t);
+    const o = (t === "handbook" ? d.chapters : d.outline) || [];
+    const s = pagesOf(o, (x) => x.suggested);
+    apply(new Set(s.length ? s : Array.from({ length: n }, (_, k) => k + 1)));
   }
   function toggleSection(o, on) {
     const next = new Set(sel);
@@ -54,7 +75,10 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
   }
   const nSel = sel.size;
   const nScan = [...sel].filter((p) => scanned.has(p)).length;
-  const hasSections = outline.some((o) => o.section);
+  const hasSections = outline.some((o) => (isHB ? o.chapter : o.section));
+  const rowTitle = (o) => (isHB
+    ? `${o.chapter && /^\d+$/.test(o.chapter) && !o.title.startsWith("Chapter") ? `Chapter ${o.chapter} · ` : ""}${o.title}`
+    : `${o.section ? `Section ${o.section} · ` : ""}${o.title}`);
 
   return (
     <div className="card sop-picker">
@@ -63,24 +87,51 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
           <h2>{rerun ? "Change the pages and run again" : "Choose the pages to draft rules from"}</h2>
           <p className="muted">
             <b>{d.filename}</b> has {n} pages. The LLM reads only the pages you choose.
-            {hasSections
-              ? " For a POH, Limitations (Section 2) and Normal Procedures (Section 4) hold the rules the simulator can check. Supplements for optional equipment (autopilot, GPS, transponder…) only produce noise."
-              : " No POH sections were found in this document; choose the pages that contain operating limits and normal procedures."}
+            {isHB
+              ? (hasSections
+                ? " In the FAA handbooks the circuit and scan-path rules are in a few chapters: Basic Flight Maneuvers, Takeoffs and Departure Climbs, Airport Traffic Patterns, Approaches and Landings (Airplane Flying Handbook), Attitude Instrument Flying (Instrument Flying Handbook), Airport Operations and Aeromedical Factors (PHAK). Those are suggested; the rest of the book is theory."
+                : " No chapters were found in this document; choose the pages about circuit procedure and scanning.")
+              : (hasSections
+                ? " For a POH, Limitations (Section 2) and Normal Procedures (Section 4) hold the rules the simulator can check. Supplements for optional equipment (autopilot, GPS, transponder…) only produce noise."
+                : " No POH sections were found in this document; choose the pages that contain operating limits and normal procedures.")}
           </p>
         </div>
       </div>
+      {(d.warnings || []).map((w, i) => <div key={i} className="sop-warn">{w}</div>)}
 
-      <div className="sop-field sop-picker__ac">
-        <label htmlFor="sop-pick-ac">Aircraft</label>
-        <select id="sop-pick-ac" value={aircraft} onChange={(e) => setAircraft(e.target.value)}>
-          <option value="">Choose the aircraft…</option>
-          {meta.aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <span className="muted sop-small">Used to tell the LLM which aircraft this is, and to check every rule against a correctly flown circuit in it.</span>
+      <div className="sop-picker__type">
+        <div className="sop-field">
+          <label htmlFor="sop-pick-type">Document type</label>
+          <select id="sop-pick-type" value={docType} onChange={(e) => switchType(e.target.value)}>
+            {(meta.doc_types || []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+        {isHB ? (
+          <div className="sop-field">
+            <label htmlFor="sop-pick-book">Handbook</label>
+            <select id="sop-pick-book" value={book} onChange={(e) => setBook(e.target.value)}>
+              {!book && <option value="">Choose…</option>}
+              {(meta.books || []).map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div className="sop-field">
+            <label htmlFor="sop-pick-ac">Aircraft</label>
+            <select id="sop-pick-ac" value={aircraft} onChange={(e) => setAircraft(e.target.value)}>
+              <option value="">Choose the aircraft…</option>
+              {meta.aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+        <span className="muted sop-small sop-picker__typehint">
+          {isHB
+            ? "Rules from a training handbook apply to every aircraft, and are checked against a correctly flown circuit in each aircraft profile."
+            : "Used to tell the LLM which aircraft this is, and to check every rule against a correctly flown circuit in it."}
+        </span>
       </div>
 
       <table className="sop-table sop-picker__table">
-        <thead><tr><th /><th>Section</th><th>Pages</th><th /></tr></thead>
+        <thead><tr><th /><th>{isHB ? "Chapter" : "Section"}</th><th>Pages</th><th /></tr></thead>
         <tbody>
           {outline.map((o, i) => {
             const pages = Array.from({ length: o.last - o.first + 1 }, (_, k) => o.first + k);
@@ -94,7 +145,7 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
                     onChange={(e) => toggleSection(o, e.target.checked)} />
                 </td>
                 <td>
-                  <b>{o.section ? `Section ${o.section} · ` : ""}{o.title}</b>
+                  <b>{rowTitle(o)}</b>
                   {o.suggested && <span className="sop-chip sop-chip--ok sop-picker__sug">Suggested</span>}
                   {o.scanned > 0 && <span className="sop-chip">{o.scanned} scanned</span>}
                 </td>
@@ -117,14 +168,16 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
       <div className="sop-picker__foot">
         <span className="muted sop-small">
           {nSel} of {n} pages chosen{nScan ? ` · ${nScan} scanned page${nScan > 1 ? "s" : ""} will be read with OCR` : ""}
+          {isHB && nSel > 60 ? " · a long selection can take an hour or more with a local LLM" : ""}
           {rerun ? " · LLM-drafted rules are replaced; rules you added by hand are kept" : ""}
         </span>
         <div className="sop-btnrow">
-          <button type="button" className="secondary" onClick={() => apply(new Set(d.suggested_pages || []))}>Use suggestion</button>
+          <button type="button" className="secondary" onClick={() => apply(new Set(suggestion))}>Use suggestion</button>
           <button type="button" className="secondary" onClick={() => apply(new Set(Array.from({ length: n }, (_, k) => k + 1)))}>All pages</button>
           {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancel</button>}
-          <button type="button" disabled={!nSel || !!textErr || busy}
-            onClick={() => onRun({ pages: compressPages([...sel]), aircraft_profile: aircraft || null })}>
+          <button type="button" disabled={!nSel || !!textErr || busy || (isHB && !book)}
+            onClick={() => onRun({ pages: compressPages([...sel]), doc_type: docType,
+              ...(isHB ? { handbook: book } : { aircraft_profile: aircraft || null }) })}>
             {busy ? "Starting…" : `Draft rules from ${nSel} page${nSel === 1 ? "" : "s"}`}
           </button>
         </div>
