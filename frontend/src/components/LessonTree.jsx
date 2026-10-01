@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import { mavisApi } from "../live/api/mavisApi.js";
 
@@ -24,6 +26,7 @@ export default function LessonTree() {
   const activeLessonId = readingId || (pathname === "/live" ? state?.lesson_id : null);
   const [openModule, setOpenModule] = useState(null);
   const nav = useNavigate();
+  const { pathname } = useLocation();
 
   // Jumping to a lesson (sidebar, landing page, Curriculum link) re-opens
   // whichever module holds it, so its highlight is always visible.
@@ -34,6 +37,10 @@ export default function LessonTree() {
   }
 
   async function pick(lesson) {
+    if (lesson.kind === "sop") {          // Aircraft SOP pages, not a flight
+      nav(lesson.route || "/sop/rules");
+      return;
+    }
     if (lesson.kind === "reading") {
       nav(`/live?reading=${encodeURIComponent(lesson.id)}`);
       return;
@@ -49,7 +56,10 @@ export default function LessonTree() {
   return (
     <div className="sidebar__lesson-tree">
       {catalog.modules.map((mod, i) => {
-        const open = openModule === i || (openModule === null && mod.lessons.some((l) => l.id === activeLessonId));
+        // SOP pages highlight by route; flying lessons only while on /live
+        const isOn = (l) => (l.kind === "sop" ? pathname === l.route
+          : pathname.startsWith("/live") && l.kind !== "reading" && l.id === activeLessonId);
+        const open = openModule === i || (openModule === null && mod.lessons.some(isOn));
         return (
           <Fragment key={mod.title ?? i}>
           <div className="sidebar__module">
@@ -66,7 +76,7 @@ export default function LessonTree() {
                   <button
                     type="button"
                     key={les.id}
-                    className={"sidebar__lesson" + (les.id === activeLessonId ? " is-active" : "")}
+                    className={"sidebar__lesson" + (isOn(les) ? " is-active" : "")}
                     disabled={les.available === false}
                     onClick={() => pick(les)}
                   >

@@ -519,3 +519,8 @@
 .mg-diagram img { display: block; width: 100%; height: auto; }
 .mg-diagram .mg-empty { color: #8b98a5; }
 @media (max-width: 700px) { .mg-page { padding: 16px; } .mg-card { padding: 18px; } }
+.mavis-guide-table th, .mavis-guide-table td { border: 1px solid #232f3d; padding: 4px 8px; text-align: center; }
+.mavis-guide-table th { color: #8b98a5; font-weight: 600; }
+
+/* SOP rule set in use this flight (InFlightPanel) */
+.mavis-sop-chip--off { background: #232f3d; color: #8b98a5; }

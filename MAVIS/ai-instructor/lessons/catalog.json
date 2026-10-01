@@ -21,6 +21,22 @@
           "available": true,
           "kind": "reading",
           "duration_min": 20
+        },
+        {
+          "id": "sop_upload",
+          "title": "Upload SOP",
+          "subtitle": "Draft flight rules from an aircraft SOP",
+          "available": true,
+          "kind": "sop",
+          "route": "/sop/new"
+        },
+        {
+          "id": "sop_rules",
+          "title": "SOP Rules",
+          "subtitle": "View and edit saved flight rules",
+          "available": true,
+          "kind": "sop",
+          "route": "/sop/rules"
         }
       ]
     },

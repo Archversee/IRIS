@@ -70,6 +70,7 @@ migration on top of it (both are plain SQL, idempotent — safe to re-run):
 ```bash
 psql -U postgres -d postgres -f db/schema.sql
 psql -U postgres -d postgres -f db/schema_mavis_integration.sql
+psql -U postgres -d postgres -f db/schema_sop_rules.sql   # MAVIS SOP -> rules (see MAVIS/ai-instructor/docs/sop-rules.md)
 ```
 
 (It'll prompt for the postgres user's password each time unless you set
