@@ -145,7 +145,7 @@
 }
 .mavis-mode-card:hover:not(:disabled), .mavis-mode-card:focus-visible:not(:disabled) {
   outline: none;
-  filter: brightness(1.2) saturate(1.1);
+  filter: brightness(1.45) saturate(1.15);
   transform: translateY(-3px);
   border-color: var(--accent);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--accent);
