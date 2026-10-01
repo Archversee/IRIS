@@ -3,9 +3,9 @@ import { useMavisState, useMavisStatus } from "../live/hooks/useMavisSocket.js";
 import { ScoringGuideContent } from "../live/components/ScoringGuide.jsx";
 import "../live/live.css";
 
-// MAVIS reference pages in the sidebar -- Leaderboard, Scoring Guide and
-// the Controls guide -- ported from the original MAVIS page's pop-ups
-// (#boardView, #guideMenuView, #infoModal in web/static/index.html).
+// MAVIS reference pages -- Leaderboard and Scoring Guide (opened from the
+// Settings drawer) and the Controls guide -- ported from the original MAVIS
+// page's pop-ups (#boardView, #guideMenuView, #infoModal in web/static/index.html).
 
 function GuidePage({ title, sub, wide, children }) {
   return (
