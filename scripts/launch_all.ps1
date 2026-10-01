@@ -82,6 +82,26 @@ function Wait-HttpUp {
     return $false
 }
 
+# Services run in hidden windows, so closing this console (instead of
+# Ctrl+C) leaves them running on whatever code they started with. A new
+# copy then can't bind the port, while the stale one still answers the
+# health check -- so it looks "up" but is old code. Stop any leftover
+# listener on the port first.
+function Stop-PortOwner {
+    param([string]$Name, [int]$ListenPort)
+    $owners = Get-NetTCPConnection -LocalPort $ListenPort -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($procId in $owners) {
+        if (-not $procId) { continue }
+        $old = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        Write-Warning "[$Name] port $ListenPort is already held by $($old.ProcessName) (pid $procId) -- probably left over from an earlier run. Stopping it so the current code starts."
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    }
+    if ($owners) {
+        for ($i = 0; $i -lt 20 -and (Test-Port -Port $ListenPort); $i++) { Start-Sleep -Milliseconds 250 }
+    }
+}
+
 function Start-Backend {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -89,7 +109,8 @@ function Start-Backend {
         [Parameter(Mandatory)][string]$VenvPython,
         [Parameter(Mandatory)][string[]]$ArgList,
         [string]$HealthUrl,
-        [string]$SetupHint
+        [string]$SetupHint,
+        [int]$ListenPort = 0
     )
     if (-not (Test-Path $VenvPython)) {
         Write-Warning "[$Name] venv not found at $VenvPython -- skipping."
@@ -100,6 +121,7 @@ function Start-Backend {
         Write-Host "[$Name] (dry run) would run: `"$VenvPython`" $($ArgList -join ' ')  (cwd: $WorkDir)"
         return
     }
+    if ($ListenPort) { Stop-PortOwner -Name $Name -ListenPort $ListenPort }
 
     $outLog = Join-Path $LogDir "$Name.out.log"
     $errLog = Join-Path $LogDir "$Name.err.log"
@@ -168,6 +190,7 @@ Start-Backend -Name "MAVIS" `
     -VenvPython (Join-Path $RepoRoot "MAVIS\ai-instructor\.venv\Scripts\python.exe") `
     -ArgList @("main.py") `
     -HealthUrl "http://localhost:6945/" `
+    -ListenPort 6945 `
     -SetupHint "cd MAVIS\ai-instructor; python -m venv .venv; .venv\Scripts\pip install -r requirements.txt"
 
 Write-Host "`n=== 4/6: IRIS backend ==="
@@ -176,12 +199,23 @@ Start-Backend -Name "IRIS-backend" `
     -VenvPython (Join-Path $RepoRoot "backend\.venv\Scripts\python.exe") `
     -ArgList @("-m", "uvicorn", "app.main:app", "--port", "8000") `
     -HealthUrl "http://localhost:8000/health" `
+    -ListenPort 8000 `
     -SetupHint "cd backend; python -m venv .venv; .venv\Scripts\pip install -r requirements.txt"
 
 Write-Host "`n=== 5/6: OBS/Smart-Eye adapter (optional) ==="
 if ($SkipAdapter) {
     Write-Host "Skipped (-SkipAdapter). You can still start it later from IRIS's Live page."
 } else {
+    # No port to check -- and its lock file makes a new copy exit if an old
+    # one is still running, so stop any leftover LiveAdapter.py first.
+    if (-not $DryRun) {
+        Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*LiveAdapter.py*" } |
+            ForEach-Object {
+                Write-Warning "[Adapter] stopping leftover LiveAdapter.py (pid $($_.ProcessId)) so the current code starts."
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+    }
     Start-Backend -Name "Adapter" `
         -WorkDir (Join-Path $RepoRoot "Sim_Data_Adapter") `
         -VenvPython (Join-Path $RepoRoot "Sim_Data_Adapter\.venv\Scripts\python.exe") `
@@ -199,6 +233,7 @@ Start-Backend -Name "Proxy" `
     -VenvPython (Join-Path $RepoRoot "proxy\.venv\Scripts\python.exe") `
     -ArgList @("-m", "uvicorn", "app:app", "--port", "$Port") `
     -HealthUrl "http://localhost:$Port/health" `
+    -ListenPort $Port `
     -SetupHint "cd proxy; python -m venv .venv; .venv\Scripts\pip install -r requirements.txt"
 
 if ($DryRun) {

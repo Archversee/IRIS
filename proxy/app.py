@@ -22,6 +22,7 @@ from pathlib import Path
 import httpx
 import websockets
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
@@ -138,18 +139,19 @@ routes = [
 ]
 
 class SPAStaticFiles(StaticFiles):
-    """StaticFiles(html=True) only serves index.html for "/" -- a refresh or a
-    direct link to a client-side route (/live, /sop/new?draft=...) 404'd.
-    Fall back to index.html for any path that isn't a real file."""
+    """Serves frontend/dist, falling back to index.html for any path that
+    isn't a real file -- /monitor, /live/freeflight, /sessions/<id>/review
+    etc. only exist as React Router routes, so without this a browser
+    refresh (or opening such a link directly) 404s. Paths that look like a
+    file (have an extension, e.g. a missing /assets/x.js) still 404."""
 
     async def get_response(self, path, scope):
-        from starlette.exceptions import HTTPException as StarletteHTTPException
         try:
             return await super().get_response(path, scope)
-        except StarletteHTTPException as e:
-            if e.status_code != 404 or "." in path.rsplit("/", 1)[-1]:
-                raise                      # missing asset files still 404
-            return await super().get_response("index.html", scope)
+        except HTTPException as e:
+            if e.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                return await super().get_response("index.html", scope)
+            raise
 
 
 if FRONTEND_DIST.exists():

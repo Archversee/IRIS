@@ -8,8 +8,6 @@ import { mavisApi, mediaUrl } from "../api/mavisApi.js";
 // Lesson browsing lives in the persistent sidebar (LessonTree) now, not
 // duplicated here -- this screen is just "who's flying, at what level".
 export default function MainMenu({ state, onStarting }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [media, setMedia] = useState(null);
@@ -32,7 +30,6 @@ export default function MainMenu({ state, onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
-        trainee_name: [firstName, lastName].filter(Boolean).join(" "),
       });
       await mavisApi.start();
       onStarting();
@@ -48,10 +45,6 @@ export default function MainMenu({ state, onStarting }) {
     <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
       <div className="mavis-menu__main">
         <div className="mavis-menu__greeting">{state?.active_lesson?.title || "Ready to fly"}</div>
-        <div className="mavis-menu__names">
-          <input placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-          <input placeholder="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-        </div>
         <ModeCards onChoose={chooseMode} busy={busy} media={media} />
         {err && <div className="mavis-menu__error">{err}</div>}
       </div>

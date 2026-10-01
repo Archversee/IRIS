@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar.jsx";
 import Home from "./pages/Home.jsx";
 import Sessions from "./pages/Sessions.jsx";
@@ -9,29 +8,25 @@ import LiveSession from "./pages/LiveSession.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
+import { LeaderboardPage, ScoringGuidePage, ControlsGuidePage } from "./pages/MavisGuides.jsx";
 import SopNew from "./sop/SopNew.jsx";
 import SopRules from "./sop/SopRules.jsx";
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The landing page is full-screen -- no sidebar there.
+  const isLanding = useLocation().pathname === "/";
 
   return (
     <div className="shell">
-      {sidebarOpen && <Sidebar />}
-      <button
-        type="button"
-        className="shell__sidebar-toggle"
-        style={{ left: sidebarOpen ? 220 : 0 }}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        onClick={() => setSidebarOpen((v) => !v)}
-      >
-        {sidebarOpen ? "‹" : "›"}
-      </button>
+      {!isLanding && <Sidebar />}
       <main className="shell__main">
         <Routes>
-          <Route path="/" element={<div className="container"><Home /></div>} />
+          <Route path="/" element={<Home />} />
           <Route path="/live" element={<LiveCoach />} />
           <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/scoring" element={<ScoringGuidePage />} />
+          <Route path="/controls" element={<ControlsGuidePage />} />
           <Route path="/sop/new" element={<SopNew />} />
           <Route path="/sop/rules" element={<SopRules />} />
           <Route path="/monitor" element={<LiveSession />} />
