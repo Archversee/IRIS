@@ -35,11 +35,19 @@ export default function CockpitViewer({ lessonId, checkpoints, selectedId, onPic
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
   const [error, setError] = useState(null);
+  // Bumped once the model is in the scene; hotspots are (re)built from it
+  // and the checkpoints separately, since on a cold load MAVIS's
+  // reading_lessons data can arrive after the model does.
+  const [modelReady, setModelReady] = useState(0);
+  // MAVIS state arrives as fresh objects every tick, so key effects on the
+  // checkpoint ids rather than the array reference.
+  const cpKey = (checkpoints || []).map((c) => c.id).join("|");
 
   // Build the scene once per lesson (model swap needs a fresh scene).
   useEffect(() => {
     let cancelled = false;
     let resizeHandler = null;
+    setModelReady(0);
 
     loadThree()
       .then((THREE) => {
@@ -141,16 +149,8 @@ export default function CockpitViewer({ lessonId, checkpoints, selectedId, onPic
             }
             camera.lookAt(controls.target);
             grid.position.y = box.min.y;
-            const scale = cfg.scale || 0.46;
-            (checkpoints || []).forEach((cp, i) => {
-              const pos = cfg.pos[cp.id];
-              if (!pos) return;
-              const label = makeStepLabel(THREE, i + 1);
-              label.position.set(...pos);
-              scene.add(label);
-              hotspots.push({ id: cp.id, mesh: label, baseScale: scale, selected: cp.id === selectedId, isNext: i === 0 });
-            });
             loadingEl.remove();
+            setModelReady((n) => n + 1);
           },
           undefined,
           (err) => {
@@ -184,6 +184,32 @@ export default function CockpitViewer({ lessonId, checkpoints, selectedId, onPic
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
 
+  // (Re)build the numbered hotspots whenever the model is ready or the
+  // checkpoint list changes -- including when it first arrives after the model.
+  useEffect(() => {
+    const pf3D = pf3DRef.current;
+    if (!pf3D || !modelReady) return;
+    const { THREE, scene, hotspots } = pf3D;
+    const cfg = readingCfg(lessonId);
+    hotspots.forEach((h) => {
+      scene.remove(h.mesh);
+      h.mesh.material.map?.dispose();
+      h.mesh.material.dispose();
+    });
+    hotspots.length = 0;
+    const scale = cfg.scale || 0.46;
+    const selIdx = (checkpoints || []).findIndex((c) => c.id === selectedId);
+    (checkpoints || []).forEach((cp, i) => {
+      const pos = cfg.pos[cp.id];
+      if (!pos) return;
+      const label = makeStepLabel(THREE, i + 1);
+      label.position.set(...pos);
+      scene.add(label);
+      hotspots.push({ id: cp.id, mesh: label, baseScale: scale, selected: cp.id === selectedId, isNext: i === selIdx + 1 });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelReady, cpKey, lessonId]);
+
   // Drive hotspot selection + camera easing when the selected checkpoint changes.
   useEffect(() => {
     const pf3D = pf3DRef.current;
@@ -198,7 +224,8 @@ export default function CockpitViewer({ lessonId, checkpoints, selectedId, onPic
     if (view) {
       pf3D.goal = { pos: new pf3D.THREE.Vector3(...view.pos), target: new pf3D.THREE.Vector3(...view.target) };
     }
-  }, [selectedId, checkpoints, lessonId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, cpKey, lessonId, modelReady]);
 
   if (error) return <p className="muted" style={{ padding: 20 }}>{error}</p>;
   return <div className="mavis-pf3d" ref={containerRef} />;

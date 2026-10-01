@@ -54,6 +54,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 log = logging.getLogger("main")
 HERE = Path(__file__).parent
 
+# Live ground track size cap (points per attempt, ~1/s). Past TRACK_MAX the
+# older part is thinned 2:1 while the newest TRACK_KEEP_FULL stay full-rate.
+TRACK_MAX = 3000
+TRACK_KEEP_FULL = 1000
+
 
 class EmbeddedServer(uvicorn.Server):
     """Run uvicorn inside asyncio.run(); honour should_exit for clean Ctrl+C."""
@@ -168,6 +173,9 @@ async def amain(cfg):
     # old attempts render dim and there's no false line across the jump
     state: dict = {"phase": engine.phase, "circuit": 1, "total_circuits": int(lesson.get("total_circuits", 1)),
                    "session_id": None,
+                   # True from Start until quit/restart -- lets the web UI
+                   # reattach to a running session after navigating away.
+                   "lesson_running": False,
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "theme": cfg["web"].get("theme", {}),
@@ -351,6 +359,7 @@ async def amain(cfg):
         started.set()
         session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
+        state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
             await _apply_lesson_clock()
             engine.mark_night_done()
@@ -513,6 +522,7 @@ async def amain(cfg):
         _discard_card()
         state["speaking"] = False
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         checkpoints.clear()
         state["track"] = [[]]
@@ -565,8 +575,7 @@ async def amain(cfg):
         if ok:
             scorer.note_retry()
             engine.load_phase(want, ckpt["circuit"])
-            state["track"].append([])          # new attempt = new track segment
-            del state["track"][:-4]            # keep at most 4 attempts on screen
+            state["track"].append([])          # new attempt = new track segment (all attempts kept)
         else:
             await coach.say(phrases.render("TELEPORT_FAIL", {}))
 
@@ -688,6 +697,7 @@ async def amain(cfg):
         state["track"] = [[]]
         transcript.clear()
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         coach.resume()
         _apply_reference(reference or "planned")
@@ -994,6 +1004,8 @@ async def amain(cfg):
         coach.pause()
         engine.briefing_done = False
 
+    quit_task: dict = {"t": None}   # keeps a reference so the task isn't GC'd
+
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
         if scored["done"]:
@@ -1002,9 +1014,19 @@ async def amain(cfg):
         stop_speech()
         coach.pause()
         started.clear()
+        state["lesson_running"] = False
         intro_shown.clear()
         transcript.clear()
-        await finish_lesson(practice=True, spoken_close=False)
+        # Scoring + the LLM debrief can take a while (or fail); run them in
+        # the background so POST /demo/quit returns at once -- the scorecard
+        # arrives over the WS state like any other update. A failure here is
+        # logged instead of turning the quit itself into an HTTP 500.
+        async def _finish():
+            try:
+                await finish_lesson(practice=True, spoken_close=False)
+            except Exception:
+                log.exception("finishing the lesson after quit failed")
+        quit_task["t"] = asyncio.create_task(_finish())
 
     def _post_card(name: str = "", given: str = "", family: str = "") -> None:
         """Post the held scorecard once; an empty name posts as Anonymous."""
@@ -1122,13 +1144,25 @@ async def amain(cfg):
                 transcript=transcript[-60:], llm_ok=coach.llm_ok,
                 geom={"along": engine.geom.along, "cross": engine.geom.cross}
                      if engine.geom else None)
-            if not scored["done"] and t0 - last_track > 1.0 and not tel.on_ground and not spike \
+            # Ground track keeps the whole flight (taxi, take-off roll and
+            # rollout included), like IRIS's post-flight ground track. Long
+            # flights are thinned rather than trimmed: past TRACK_MAX points
+            # the older part is halved, so the full path stays on the map
+            # (just coarser at the start) and the payload stays bounded.
+            if not scored["done"] and t0 - last_track > 1.0 and not spike \
                     and abs(tel.lat) > 0.01:
                 seg = state["track"][-1]
-                d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 0.0
-                if d < 0.02:      # reject impossible jumps (> ~2 km/sample)
+                d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 1.0
+                if d >= 0.02:     # real reposition (> ~2 km/sample): new segment, no false line across the jump
+                    if seg:
+                        state["track"].append([])
+                        seg = state["track"][-1]
                     seg.append([tel.lat, tel.lon])
-                    del seg[:-600]
+                    last_track = t0
+                elif d > 2e-5:    # skip samples while parked (< ~2 m moved)
+                    seg.append([tel.lat, tel.lon])
+                    if len(seg) > TRACK_MAX:
+                        seg[:] = seg[:-TRACK_KEEP_FULL:2] + seg[-TRACK_KEEP_FULL:]
                     last_track = t0
             await asyncio.sleep(max(0.01, 1.0 / hz - (time.time() - t0)))
 
