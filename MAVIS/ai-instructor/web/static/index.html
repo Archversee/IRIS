@@ -1619,6 +1619,7 @@ function buildLessonSidebar(){
     const lessons=document.createElement("div");
     lessons.className="modLessons";
     (mod.lessons||[]).forEach(les=>{
+      if(les.kind==="sop")return;   // SOP pages live in the IRIS app (/sop/new, /sop/rules)
       const row=document.createElement("div");
       const badge=les.kind==="reading"?"Read":(les.available?"Ready":"Soon");
       const isOn=pfLesson?les.id===pfLesson:les.id===selId;
@@ -3749,6 +3750,7 @@ function fillInstRecLesson(){
   const prefer=currentLessonId();
   sel.innerHTML="";
   list.forEach(les=>{
+    if(les.kind==="sop")return;     // not a flight
     const o=document.createElement("option");
     const ok=lessonIsPlayable(les.id);
     o.value=les.id;

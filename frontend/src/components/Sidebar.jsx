@@ -24,6 +24,8 @@ const SECTIONS = [
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
       { to: "/leaderboard", path: "/leaderboard", label: "Leaderboard", icon: <TrophyIcon /> },
       { to: "/scoring", path: "/scoring", label: "Scoring Guide", icon: <ChecklistIcon /> },
+      { to: "/live?reading=lesson00_preflight", path: "/live", also: ["/sop"], label: "Curriculum", nested: <LessonTree /> },
+      { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight" },
     ],
   },
   {

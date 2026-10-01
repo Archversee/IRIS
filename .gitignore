@@ -19,3 +19,6 @@ logs/
 # frontend, and still MAVIS's web.media_dir). Mock-mode out-the-window clips
 # (~900 MB each) and replay recordings are local-only.
 frontend/public/media/videos/
+
+# instructor-uploaded SOP PDFs (may be proprietary) -- see MAVIS/ai-instructor/docs/sop-rules.md
+MAVIS/ai-instructor/data/sop/

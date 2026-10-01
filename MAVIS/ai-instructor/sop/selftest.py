@@ -1,0 +1,272 @@
+"""Self-test for the SOP pipeline's deterministic parts -- no Ollama, no
+Postgres, no PDF needed.
+
+Run:  python -m sop.selftest      (from ai-instructor/)
+Exits non-zero on failure. Covers: quote verification (the anti-hallucination
+gate), unit normalisation, kind requirements, plausibility, dedupe, aircraft
+cross-checks and chunking.
+"""
+from __future__ import annotations
+
+import sys
+
+from . import extract, validate
+from .llm_parse import parse_llm_output
+from .schema import known_phases
+
+PAGES = {
+    1: "4.1 Normal Takeoff\nRotate at 55 KIAS. Climb out at Vy, 74 KIAS, +10/-5 knots, until reaching\n"
+       "a safe altitude of at least 500 ft AGL.\nDo not exceed 30 degrees angle of bank below 1,000 ft AGL.",
+    2: "Maintain circuit altitude of 1,000 ft AGL, +/-100 ft, on the downwind leg.\n"
+       "Maximum flap extension speed: do not exceed 85 KIAS with flaps 30.\n"
+       "Make the after-takeoff radio call to tower.",
+    3: "Landing flaps 30 must be set before crossing 300 ft AGL on final.\n"
+       "Rate of descent shall not exceed 1000 fpm below 500 ft AGL.",
+}
+OCR = {3}
+PH = known_phases()
+
+_fails = 0
+
+
+def check(name: str, cond: bool, extra=""):
+    global _fails
+    print(("PASS " if cond else "FAIL ") + name + (f"  [{extra}]" if extra and not cond else ""))
+    _fails += 0 if cond else 1
+
+
+def v(raw):
+    return validate.validate_candidate(raw, PH, PAGES, OCR)
+
+
+def main() -> int:
+    band = v({"kind": "band", "title": "Downwind height", "phases": ["DOWNWIND"], "metric": "alt_agl",
+              "unit": "ft", "target": 1000, "tol_plus": 100, "tol_minus": 100, "severity": "caution",
+              "source_quote": "Maintain circuit altitude of 1,000 ft AGL, +/-100 ft, on the downwind leg.", "page": 2})
+    check("verbatim band rule accepted", band.status == "draft" and band.rule["quote_score"] == 1.0, band.reject_reason)
+    check("band stored in ft", band.rule["target"] == 1000 and band.rule["tol_hi"] == 100)
+
+    halluc = v({"kind": "limit", "title": "Vne", "phases": [], "metric": "ias", "unit": "kt", "max": 163,
+                "severity": "warning", "source_quote": "Never exceed 163 KIAS under any circumstances.", "page": 1})
+    check("invented quote auto-rejected", halluc.status == "auto_rejected", halluc.reject_reason)
+
+    wrong_page = v({"kind": "capture", "title": "Rotate", "phases": ["TAKEOFF_ROLL"], "metric": "ias", "unit": "kt",
+                    "capture_at": "liftoff", "min": 55, "severity": "caution",
+                    "source_quote": "Rotate at 55 KIAS.", "page": 2})
+    check("page corrected", wrong_page.status == "draft" and wrong_page.rule["source_page"] == 1,
+          wrong_page.issues)
+
+    sloppy = v({"kind": "band", "title": "Vy", "phases": ["CLIMB_OUT"], "metric": "ias", "unit": "kt",
+                "target": 74, "tol_plus": 10, "tol_minus": 5, "severity": "caution",
+                "source_quote": "Climb out at Vy, 74 KIAS, +10/-5 kts, until reaching a safe altitude", "page": 1})
+    check("near-verbatim quote accepted with note", sloppy.status == "draft"
+          and any("word for word" in i for i in sloppy.issues), (sloppy.reject_reason, sloppy.issues))
+
+    wrong_num = v({"kind": "limit", "title": "Bank", "phases": ["CLIMB_OUT"], "metric": "bank", "unit": "deg",
+                   "max": 45, "severity": "warning",
+                   "source_quote": "Do not exceed 30 degrees angle of bank below 1,000 ft AGL.", "page": 1})
+    check("number not in quote flagged", any("not in the quoted text" in i and "45" in i for i in wrong_num.issues),
+          wrong_num.issues)
+
+    metres = v({"kind": "limit", "title": "Height", "phases": [], "metric": "alt_agl", "unit": "m", "min": 500,
+                "severity": "caution", "source_quote": "a safe altitude of at least 500 ft AGL.", "page": 1})
+    check("metres converted to feet", abs(metres.rule["min_value"] - 1640.42) < 0.1)
+
+    bad_unit = v({"kind": "limit", "title": "Speed", "phases": [], "metric": "ias", "unit": "ft", "max": 85,
+                  "severity": "caution", "source_quote": "do not exceed 85 KIAS with flaps 30.", "page": 2})
+    check("unit/metric mismatch auto-rejected", bad_unit.status == "auto_rejected")
+
+    flaps = v({"kind": "limit", "title": "Vfe full", "phases": [], "metric": "ias", "unit": "kt", "max": 85,
+               "when": [{"metric": "flaps_deg", "op": ">=", "value": 30, "unit": "deg"}], "severity": "warning",
+               "source_quote": "Maximum flap extension speed: do not exceed 85 KIAS with flaps 30.", "page": 2})
+    check("conditional limit kept", flaps.status == "draft" and flaps.rule["conditions"][0]["value"] == 30)
+
+    event = v({"kind": "event", "title": "Landing flaps", "phases": ["FINAL"], "metric": "flaps_deg", "unit": "deg",
+               "op": ">=", "value": 30, "gate_phase": "FINAL", "severity": "caution",
+               "source_quote": "Landing flaps 30 must be set before crossing 300 ft AGL on final.", "page": 3})
+    check("event from OCR page flagged", event.status == "draft" and any("OCR" in i for i in event.issues))
+
+    radio = v({"kind": "unobservable", "title": "Radio call", "phases": ["CLIMB_OUT"], "metric": None,
+               "unit": "none", "severity": "advisory",
+               "source_quote": "Make the after-takeoff radio call to tower.", "page": 2})
+    check("unobservable kept without numbers", radio.status == "draft" and radio.rule["metric"] is None)
+
+    no_metric = v({"kind": "limit", "title": "Checklist", "phases": [], "metric": "fuel", "unit": "none",
+                   "severity": "advisory", "source_quote": "Make the after-takeoff radio call to tower.", "page": 2})
+    check("unknown metric downgraded to unobservable", no_metric.rule["kind"] == "unobservable")
+
+    silly = v({"kind": "limit", "title": "Speed", "phases": [], "metric": "ias", "unit": "kt", "max": 8500,
+               "severity": "caution", "source_quote": "do not exceed 85 KIAS with flaps 30.", "page": 2})
+    check("implausible value auto-rejected", silly.status == "auto_rejected")
+
+    no_target = v({"kind": "band", "title": "x", "phases": ["DOWNWIND"], "metric": "ias", "unit": "kt",
+                   "severity": "caution", "source_quote": "do not exceed 85 KIAS with flaps 30.", "page": 2})
+    check("band without target auto-rejected", no_target.status == "auto_rejected")
+
+    phase = v({**{"kind": "limit", "title": "Sink", "metric": "vs", "unit": "fpm", "min": -1000,
+                  "severity": "warning", "page": 3,
+                  "source_quote": "Rate of descent shall not exceed 1000 fpm below 500 ft AGL."},
+               "phases": ["FINAL", "APPROACH"]})
+    check("unknown phase dropped", phase.rule["phases"] == ["FINAL"])
+
+    d = validate.dedupe([band, v({"kind": "band", "title": "Circuit alt", "phases": ["BASE"], "metric": "alt_agl",
+                                  "unit": "ft", "target": 1000, "tol_plus": 100, "tol_minus": 100,
+                                  "severity": "caution", "page": 2,
+                                  "source_quote": "Maintain circuit altitude of 1,000 ft AGL"})])
+    check("duplicates merged", len(d) == 1 and set(d[0].rule["phases"]) == {"DOWNWIND", "BASE"})
+
+    warns = validate.aircraft_checks(
+        [{"title": "a", "metric": "ias", "kind": "limit", "max_value": 180, "phases": []},
+         {"title": "b", "metric": "flaps_deg", "kind": "event", "value": 25, "phases": []}],
+        {"v_speeds": {"vne": 163, "vs0": 40}, "flaps": {"detents_deg": [0, 10, 20, 30]}})
+    check("aircraft cross-check", len(warns) == 2, warns)
+
+    from .runtime import match_profile
+    profs = [{"id": "c172sp_g1000", "name": "Cessna 172SP G1000", "profile": {"sim_match": ["C172", "Skyhawk"]}},
+             {"id": "c172_classic", "name": "Cessna 172 Classic", "profile": {"sim_match": ["Skyhawk Classic"]}},
+             {"id": "da40", "name": "Diamond DA40", "profile": {"sim_match": ["DA40"]}}]
+    check("sim aircraft -> profile", match_profile({"title": "Cessna Skyhawk G1000 Asobo"}, profs)[0] == "c172sp_g1000")
+    check("most specific match wins",
+          match_profile({"title": "Cessna Skyhawk Classic Asobo"}, profs)[0] == "c172_classic")
+    check("ATC type code matches", match_profile({"title": "Foo", "atc_model": "TT:ATCCOM.AC_MODEL_DA40.0.text"}, profs)[0] == "da40")
+    check("unknown aircraft -> no profile", match_profile({"title": "Piper Cub"}, profs)[0] is None)
+    check("no ident -> no profile", match_profile(None, profs)[0] is None)
+
+    # ---- v2: unit mix-ups, circuit-profile conflicts, tags, page selection
+    from .validate import foreign_quantity, normalise_tags
+    from .profile import load_nominal, conflicts
+    from .extract import parse_pages, compress_pages, detect_section, outline
+    oil = {"kind": "limit", "metric": "rpm", "source_quote": "Oil Pressure, Minimum: 20 PSI.",
+           "as_written": {"min": 20, "unit": "rpm"}}
+    check("oil pressure (PSI) can't become an RPM rule", bool(foreign_quantity(oil)))
+    check("real RPM limit is not a unit mix-up", not foreign_quantity(
+        {"kind": "limit", "metric": "rpm", "source_quote": "Maximum Engine Speed: 2700 RPM.",
+         "as_written": {"max": 2700, "unit": "rpm"}}))
+    N = load_nominal("c172sp_g1000")
+    check("circuit profile loads from lesson + aircraft", N is not None and N["CLIMB_OUT"]["ias"] == (74.0, 74.0))
+    bad = {  # real mistakes from a POH run with prompt v1
+        "glide speed as climb limit": {"kind": "limit", "metric": "ias", "max_value": 68, "phases": ["CLIMB_OUT"]},
+        "magneto check as RPM limit": {"kind": "limit", "metric": "rpm", "max_value": 1800, "phases": []},
+        "autopilot min approach speed": {"kind": "limit", "metric": "ias", "min_value": 80, "phases": []},
+        "autopilot off below 200 ft": {"kind": "limit", "metric": "alt_agl", "min_value": 200, "phases": ["BASE", "FINAL"]},
+        "2000 ft over noise areas": {"kind": "band", "metric": "alt_agl", "target": 2000, "tol_hi": 0, "tol_lo": 1, "phases": []},
+        "coupled approach 90 kt": {"kind": "band", "metric": "ias", "target": 90, "tol_hi": 0, "tol_lo": 1, "phases": ["BASE", "FINAL"]},
+    }
+    for name, r in bad.items():
+        check(f"correct circuit breaks '{name}'", bool(conflicts(r, N)))
+    good = {
+        "Vne 163": {"kind": "limit", "metric": "ias", "max_value": 163, "phases": []},
+        "max RPM 2700": {"kind": "limit", "metric": "rpm", "max_value": 2700, "phases": []},
+        "Vfe 85 with flaps > 10": {"kind": "limit", "metric": "ias", "max_value": 85, "phases": [],
+                                   "conditions": [{"metric": "flaps_deg", "op": ">", "value": 10}]},
+        "approach 60-70 flaps down": {"kind": "limit", "metric": "ias", "min_value": 60, "max_value": 70, "phases": ["FINAL"],
+                                      "conditions": [{"metric": "flaps_deg", "op": ">", "value": 0}]},
+        "rotate at 55": {"kind": "capture", "metric": "ias", "capture_at": "liftoff", "min_value": 55},
+        "flaps 30 by final": {"kind": "event", "metric": "flaps_deg", "op": ">=", "value": 30, "gate_phase": "FINAL"},
+    }
+    for name, r in good.items():
+        check(f"correct circuit keeps '{name}'", not conflicts(r, N), conflicts(r, N))
+    check("metric tag always added", normalise_tags(["aircraft_limit"], "limit", "flaps_deg") == ["aircraft_limit", "pilot_controls"])
+    check("unknown tags dropped", normalise_tags(["nonsense"], "unobservable", None) == ["procedure"])
+    check("page ranges parse", parse_pages("1-3, 7, 9-8", 20) == [1, 2, 3, 7, 8, 9] and compress_pages([1, 2, 3, 7, 8, 9]) == "1-3, 7-9")
+    check("POH section from header", detect_section("SECTION 4\nNORMAL PROCEDURES\nblah\n4-5") == 4)
+    check("POH section from footer label", detect_section("text\nmore text\nMay 30/00 2-7") == 2)
+    ol = outline([{"page_no": i, "section": s, "needs_ocr": False} for i, s in [(1, 1), (2, 2), (3, 2), (4, 4)]])
+    check("outline suggests Limitations + Normal Procedures", [o["suggested"] for o in ol] == [False, True, True])
+
+    check("tolerant LLM JSON parse", len(parse_llm_output('```json\n{"rules":[{"kind":"limit"}]}\n```')) == 1)
+
+    # ---- training handbooks: gaze rules, chapters, book detection, prompt
+    HB = {5: "Fixation, or staring at a single instrument, is a common error.\n"
+             "On final approach, check the airspeed at least every 5 seconds.\n"
+             "Spend at least 70 percent of the time looking outside."}
+    g = lambda raw: validate.validate_candidate(raw, PH, HB, set())  # noqa: E731
+    open_gaze = g({"kind": "gaze", "title": "Don't fixate", "aoi": "instruments", "gaze_measure": "max_dwell",
+                   "value": None, "unit": "none", "metric": None, "phases": [], "severity": "advisory", "tags": [],
+                   "source_quote": "Fixation, or staring at a single instrument, is a common error.", "page": 5})
+    check("gaze rule without a number drafted", open_gaze.status == "draft" and open_gaze.rule["value"] is None,
+          (open_gaze.reject_reason, open_gaze.issues))
+    check("gaze rule gets the scan tag", open_gaze.rule["tags"] == ["scan"])
+    issues, fatal = validate.assess(dict(open_gaze.rule), PH, HB, set())
+    check("gaze rule can't be saved without a threshold", bool(fatal) and "threshold" in fatal, fatal)
+    gap = g({"kind": "gaze", "title": "Airspeed every 5 s", "aoi": "airspeed", "gaze_measure": "max_gap",
+             "value": 5, "unit": "s", "phases": ["FINAL"], "severity": "advisory",
+             "source_quote": "On final approach, check the airspeed at least every 5 seconds.", "page": 5})
+    issues, fatal = validate.assess(dict(gap.rule), PH, HB, set())
+    check("gaze rule with seconds accepted", gap.status == "draft" and gap.rule["value"] == 5 and not fatal,
+          (gap.reject_reason, fatal))
+    share = g({"kind": "gaze", "title": "Outside 70%", "aoi": "outside", "gaze_measure": "min_share",
+               "value": 70, "unit": "percent", "phases": [], "severity": "advisory",
+               "source_quote": "Spend at least 70 percent of the time looking outside.", "page": 5})
+    check("gaze share percent -> fraction", share.status == "draft" and abs(share.rule["value"] - 0.7) < 1e-9,
+          share.reject_reason)
+    wrong_u = g({"kind": "gaze", "title": "x", "aoi": "airspeed", "gaze_measure": "max_gap", "value": 70,
+                 "unit": "percent", "phases": [], "severity": "advisory",
+                 "source_quote": "Spend at least 70 percent of the time looking outside.", "page": 5})
+    check("gaze unit mismatch auto-rejected", wrong_u.status == "auto_rejected")
+    bad_aoi = g({"kind": "gaze", "title": "x", "aoi": "yoke", "gaze_measure": "max_gap", "value": 5, "unit": "s",
+                 "phases": [], "severity": "advisory",
+                 "source_quote": "On final approach, check the airspeed at least every 5 seconds.", "page": 5})
+    check("unknown AOI role auto-rejected", bad_aoi.status == "auto_rejected")
+    silly_g = dict(gap.rule, value=5000)
+    check("implausible gaze time blocked", bool(validate.check_rule(silly_g, PH)[1]))
+    lim = dict(band.rule, aoi="airspeed", gaze_measure="max_gap")
+    validate.check_rule(lim, PH)
+    check("non-gaze rule drops gaze fields", lim["aoi"] is None and lim["gaze_measure"] is None)
+    check("gaze rules never conflict with the circuit", not conflicts(gap.rule, N))
+
+    from .extract import chapter_outline, detect_book, detect_chapter, suggest_chapter_pages
+    check("chapter heading + title", detect_chapter("Chapter 8\nAirport Traffic Patterns\nIntroduction\n...") ==
+          ("8", "Airport Traffic Patterns"))
+    check("chapter title on the same line", detect_chapter("Chapter 9: Approaches and Landings\nblah") ==
+          ("9", "Approaches and Landings"))
+    check("chapter from footer label", detect_chapter("text\nmore\nAirplane Flying Handbook\n8-3") == ("8", None))
+    check("table of contents is not a chapter page",
+          detect_chapter("Contents\nChapter 1 Introduction ...1-1\nChapter 2 Ground Operations ...2-1") == (None, None))
+    check("glossary pages", detect_chapter("Glossary\nterm\nG-4")[0] == "G")
+    rows = [{"page_no": 1, "chapter": None, "chapter_title": None},
+            {"page_no": 2, "chapter": "7", "chapter_title": "Ground Reference Maneuvers"},
+            {"page_no": 3, "chapter": "7", "chapter_title": None},
+            {"page_no": 4, "chapter": "8", "chapter_title": "Airport Traffic Patterns"},
+            {"page_no": 5, "chapter": "8", "chapter_title": None},
+            {"page_no": 6, "chapter": "G", "chapter_title": None}]
+    co = chapter_outline(rows)
+    check("chapter outline groups pages", [(o["chapter"], o["first"], o["last"]) for o in co] ==
+          [(None, 1, 1), ("7", 2, 3), ("8", 4, 5), ("G", 6, 6)], co)
+    check("traffic-pattern chapter suggested", suggest_chapter_pages(rows) == [4, 5])
+    check("glossary named", co[-1]["title"] == "Glossary")
+    mk = lambda t: [{"text": t}]  # noqa: E731
+    check("AFH recognised", detect_book(mk("Airplane Flying Handbook (FAA-H-8083-3C)")) == ("afh", None))
+    check("IFH recognised", detect_book(mk("Instrument Flying Handbook FAA-H-8083-15B")) == ("ifh", None))
+    check("PHAK recognised", detect_book(mk("Pilot's Handbook of Aeronautical Knowledge FAA-H-8083-25C")) == ("phak", None))
+    check("IPH flagged as no-rules book",
+          detect_book(mk("Instrument Procedures Handbook FAA-H-8083-16B. See the Instrument Flying Handbook")) ==
+          (None, "iph"))
+    check("AMT handbook 8083-30 is not the AFH", detect_book(mk("FAA-H-8083-30 General handbook")) == (None, None))
+    check("a POH is no handbook", detect_book(mk("CESSNA MODEL 172S Pilot's Operating Handbook")) == (None, None))
+
+    from .llm_parse import handbook_prompt
+    from .schema import llm_json_schema
+    hp = handbook_prompt(PH, "ifh")
+    check("handbook prompt carries the book focus", "FIXATION" in hp and "Instrument Flying Handbook" in hp)
+    check("handbook prompt skips aircraft speeds", "V-speeds" in hp)
+    check("POH schema has no gaze kind", "gaze" not in llm_json_schema(PH)["properties"]["rules"]["items"]
+          ["properties"]["kind"]["enum"])
+    check("handbook schema has gaze fields", "aoi" in llm_json_schema(PH, gaze=True)["properties"]["rules"]["items"]
+          ["properties"])
+
+    from .profile import circuit_conflict
+    pattern = {"kind": "limit", "metric": "ias", "max_value": 68, "phases": ["CLIMB_OUT"]}
+    msg = circuit_conflict(pattern, [("Test plane", N)])
+    check("handbook rules checked against every aircraft", bool(msg) and "Test plane" in msg, msg)
+
+    pages = [extract.PageText(i, "para " * 400, "text") for i in (1, 2, 3)]
+    ch = extract.make_chunks(pages, 3000)
+    check("chunks carry page markers", all(c.text.startswith("[[PAGE") for c in ch) and len(ch) >= 3)
+
+    print("\nall passed" if not _fails else f"\n{_fails} FAILED")
+    return 1 if _fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
