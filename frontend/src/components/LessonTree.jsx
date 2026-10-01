@@ -1,7 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import { mavisApi } from "../live/api/mavisApi.js";
 
@@ -16,7 +14,6 @@ import { mavisApi } from "../live/api/mavisApi.js";
 export default function LessonTree() {
   const state = useMavisState();
   const catalog = state?.lesson_catalog;
-  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   // Highlight what's actually on screen: a reading lesson is only in the
   // URL (?reading=<id>), never MAVIS's lesson_id, so check that first; a
