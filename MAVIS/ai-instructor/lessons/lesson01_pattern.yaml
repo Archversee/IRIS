@@ -51,7 +51,7 @@ targets:                    # values may reference aircraft profile keys
 # weights sum is normalised; scale = the error that scores ~37/100 (bigger = more forgiving).
 scoring:
   weights:    { track: 25, speed: 15, altitude: 20, landing: 30, smoothness: 10 }
-  scales:     { track: 55, speed: 9, altitude: 120, smoothness: 0.22,
+  scales:     { track: 75, speed: 9, altitude: 120, smoothness: 0.22,
                 land_sink: 300, land_center: 40, land_speed: 10 }
   grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]   # else "F"
   retry_caps:  { "1": 85, "2": 78, "3": 70 }                  # trainee/pilot; 4+ -> floor

@@ -27,7 +27,10 @@ function TLTooltip({ active, payload }) {
 }
 
 // Chart + transport controls + flight-phase (takeoff/landing) event buttons.
+// `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
+// clickable phases/event buttons, no playback transport.
 export default function SessionTimeline({
+  readOnly = false,
   chartSeries, timelineTicks, filters, setFilters, hasEye,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
@@ -55,10 +58,10 @@ export default function SessionTimeline({
       </div>
       <ResponsiveContainer width="100%" height={150}>
         <LineChart data={chartSeries} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
-          style={{ cursor: "pointer" }}
-          onMouseDown={onChartMouseDown}
-          onMouseMove={onChartMouseMove}
-          onMouseUp={onChartMouseUp}
+          style={{ cursor: readOnly ? "default" : "pointer" }}
+          onMouseDown={readOnly ? undefined : onChartMouseDown}
+          onMouseMove={readOnly ? undefined : onChartMouseMove}
+          onMouseUp={readOnly ? undefined : onChartMouseUp}
         >
           <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
           <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
@@ -80,7 +83,7 @@ export default function SessionTimeline({
             return (
               <ReferenceArea key={p.key} x1={x1} x2={x2}
                 fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
-                onClick={() => seekTo(p.start)} style={{ cursor: "pointer" }}
+                onClick={readOnly ? undefined : () => seekTo(p.start)} style={{ cursor: readOnly ? "default" : "pointer" }}
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
@@ -93,7 +96,7 @@ export default function SessionTimeline({
           <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
         </LineChart>
       </ResponsiveContainer>
-      {flightPhases.length > 0 && (
+      {!readOnly && flightPhases.length > 0 && (
         <>
           <div className="phase-buttons-label">Events:</div>
           <div className="phase-buttons-row">
@@ -109,8 +112,8 @@ export default function SessionTimeline({
           </div>
         </>
       )}
-      <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>
-      <div className="tl-transport">
+      {!readOnly && <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>}
+      {!readOnly && <div className="tl-transport">
         <button className="tl-btn" title="Restart" onClick={onRestart}>↺</button>
         <button className="tl-btn" title="Back 10s" onClick={() => seek(-10)}>« 10s</button>
         <button className="tl-btn play" title="Play / pause" onClick={onTogglePlay}>
@@ -126,7 +129,7 @@ export default function SessionTimeline({
         {live && !followingLive && (
           <button className="tl-btn go-live" title="Jump back to the live edge" onClick={goLive}>● Go Live</button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -19,6 +19,9 @@ class Session(SessionCreate):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     created_at: datetime
+    # MAVIS-sourced sessions only (db/schema_mavis_integration.sql); null otherwise
+    lesson_id: str | None = None
+    mode: str | None = None
 
 
 class SessionUpdate(BaseModel):

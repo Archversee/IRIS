@@ -51,6 +51,8 @@ _SIMVARS = [
     ("BRAKE LEFT POSITION", "Position"),
     ("BRAKE RIGHT POSITION", "Position"),
     ("LOCAL TIME", "seconds"),
+    ("FLAPS HANDLE PERCENT", "Percent"),
+    ("ELEVATOR TRIM PCT", "Percent"),
 ]
 
 
@@ -120,7 +122,8 @@ class MSFSAdapter:
             raise ConnectionError(
                 "SimConnect connected but no telemetry arrived within 10s -- "
                 "make sure MSFS has an active flight loaded, not just the main menu.")
-        log.info("SimConnect connected (pysimconnect)")
+        log.info("SimConnect connected (pysimconnect) -- flaps handle %s%%, elevator trim %s%%",
+                 self._get("FLAPS HANDLE PERCENT", None), self._get("ELEVATOR TRIM PCT", None))
 
     def _get(self, name: str, default=0.0):
         v = (self._datadef.simdata or {}).get(name)
@@ -203,6 +206,8 @@ class MSFSAdapter:
             brake_left=self._brake(g("BRAKE LEFT POSITION", 0.0)),
             brake_right=self._brake(g("BRAKE RIGHT POSITION", 0.0)),
             local_time_h=g("LOCAL TIME", 43200) / 3600.0,
+            flaps_handle_pct=g("FLAPS HANDLE PERCENT", None),
+            elevator_trim_pct=g("ELEVATOR TRIM PCT", None),
         )
 
     def set_local_time(self, hour: int, minute: int) -> bool:

@@ -71,7 +71,7 @@ start the app - no code or config edits:
 | Drop in | What it is |
 |---|---|
 | `data/recordings/replay/flight.csv` | the logger's SimConnect CSV export |
-| `media/videos/replay.mp4` | screen recording of the same flight, started and stopped with the logger |
+| `../../frontend/public/media/videos/replay.mp4` | screen recording of the same flight, started and stopped with the logger |
 
 - The runway end is detected from the log's initial heading, and the lesson
   geometry (map, pattern, scoring) follows it.

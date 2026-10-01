@@ -89,7 +89,7 @@ export default function ReadingLesson({ lessonId, data, onExit }) {
         <span className="spacer" />
         <button type="button" className="secondary" onClick={() => step(-1)} disabled={idx <= 0}>‹ Prev</button>
         <span className="muted">{checkpoints.length ? (idx < 0 ? `/ ${checkpoints.length}` : `${idx + 1} / ${checkpoints.length}`) : ""}</span>
-        <button type="button" className="secondary" onClick={() => step(1)} disabled={idx < 0 || idx >= checkpoints.length - 1}>Next ›</button>
+        <button type="button" className="secondary" onClick={() => step(1)} disabled={!checkpoints.length || idx >= checkpoints.length - 1}>Next ›</button>
         <button type="button" onClick={togglePlayAll}>{playAll ? "⏸ Stop" : "▶ Play all"}</button>
       </div>
 
