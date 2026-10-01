@@ -1,5 +1,5 @@
 // Static content ported from the original app's #guideMenuView, shown on
-// the sidebar's Scoring Guide page (pages/MavisGuides.jsx).
+// the Scoring Guide page (pages/MavisGuides.jsx, opened from Settings).
 export function ScoringGuideContent() {
   return (
     <>

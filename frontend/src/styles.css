@@ -260,3 +260,13 @@ th { color: var(--muted); font-weight: 600; }
   background: var(--inset); color: var(--text); border: 1px solid var(--border);
 }
 .set-select:focus { outline: none; border-color: var(--accent); }
+.set-links { display: grid; gap: 8px; padding: 10px 0; }
+.set-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; border-radius: 10px; font-size: 14px; font-weight: 600; text-decoration: none;
+  background: var(--inset); color: var(--text); border: 1px solid var(--border);
+  transition: border-color .12s ease, color .12s ease;
+}
+.set-link:hover { color: var(--accent); border-color: var(--accent); }
+.set-link svg { width: 18px; height: 18px; flex: none; }
+.set-link__chev { margin-left: auto; color: var(--faint); font-size: 18px; line-height: 1; }
