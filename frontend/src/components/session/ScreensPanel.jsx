@@ -13,8 +13,8 @@ function useStreamBinding(ref, stream) {
 // (1 = oldest) at each glance -- instrument glances on their AOI zone,
 // OTW glances on the OTW screen where the eyes were -- sized by glance
 // length and joined by curved arrows in order, crossing between the two
-// screens. Older glances fade; a dashed arrow means the gaze went
-// somewhere unmapped in between.
+// screens. Older glances fade. Only labelled areas (AOI zones + OTW) are
+// steps -- see scanTrail in useSessionData.js.
 //
 // Smoothness: every glance keeps a stable key (its order in the flight)
 // and a fixed spot, so as playback runs circles fade/grow via CSS
@@ -72,7 +72,7 @@ function ScanTrail({ trail: raw, boxes }) {
         if (!d) return null;
         return (
           <path key={`${trail[k].id}-${b.id}`} d={d} pathLength="1"
-            className={"scan-trail__link" + (b.afterGap ? " is-gap" : "")}
+            className="scan-trail__link"
             style={{ opacity: alpha(k + 1) }} markerEnd="url(#scan-trail-arrow)" />
         );
       })}
