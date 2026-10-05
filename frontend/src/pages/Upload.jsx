@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
+import { EMPTY_LINKS, PilotPicker, VideoLinker, saveVideoLinks, usePilotOptions } from "../components/SessionFormParts.jsx";
 
 const EMPTY_DETAILS = { name: "", pilot_name: "", aircraft: "", sim_source: "", notes: "" };
 
+// Manual upload: pick or create a session, upload its CSV data files, link
+// videos, then Next -> Review. (A finished MAVIS flight goes to the Save
+// Session page instead -- no CSV step there, MAVIS already logged it.)
 export default function Upload() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState([]);
-  // Live page's End Session button lands here with ?session=<id> already
-  // picked -- same page the manual upload flow uses, so a live flight's
-  // name/pilot/aircraft/notes/videos get filled in the same way.
   const [sessionId, setSessionId] = useState(searchParams.get("session") || "");
   const [form, setForm] = useState({ name: "", pilot_name: "", aircraft: "", sim_source: "MSFS" });
   const [details, setDetails] = useState(EMPTY_DETAILS);
@@ -20,11 +21,10 @@ export default function Upload() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [videoFiles, setVideoFiles] = useState([]);
-  const [videoLinks, setVideoLinks] = useState({
-    instrument: { filename: "", offset_sec: 0 },
-    otw: { filename: "", offset_sec: 0 },
-  });
-  const [videoBusy, setVideoBusy] = useState(null);
+  const [videoLinks, setVideoLinks] = useState(EMPTY_LINKS);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [nextBusy, setNextBusy] = useState(false);
+  const pilots = usePilotOptions(sessions);
 
   useEffect(() => {
     api.listSessions().then(setSessions).catch((e) => setErr(e.message));
@@ -57,21 +57,32 @@ export default function Upload() {
     }
   }
 
-  async function saveVideo(screen) {
+  async function saveVideos() {
     if (!sessionId) return setErr("Pick or create a session first.");
-    setVideoBusy(screen);
+    setVideoBusy(true);
     setErr(null);
     try {
-      const { filename, offset_sec } = videoLinks[screen];
-      await api.linkVideo(sessionId, screen, {
-        filename: filename || null,
-        offset_sec: Number(offset_sec) || 0,
-      });
-      addLog(`${screen} video: linked ${filename || "(cleared)"} @ offset ${offset_sec}s`);
+      await saveVideoLinks(sessionId, videoLinks);
+      addLog("Videos linked.");
     } catch (e) {
       setErr(e.message);
     } finally {
-      setVideoBusy(null);
+      setVideoBusy(false);
+    }
+  }
+
+  // Next: save the details + any chosen videos, then open the review.
+  async function next() {
+    if (!sessionId) return setErr("Pick or create a session first.");
+    setNextBusy(true);
+    setErr(null);
+    try {
+      await api.updateSession(sessionId, details);
+      await saveVideoLinks(sessionId, videoLinks);
+      nav(`/sessions/${sessionId}/review`);
+    } catch (e) {
+      setErr(e.message);
+      setNextBusy(false);
     }
   }
 
@@ -113,12 +124,6 @@ export default function Upload() {
     }
   }
 
-// Filter the shared video list down to files that belong to this screen's folder 
-function filesForScreen(screen, allFiles) {
-  const keyword = screen === "instrument" ? "instrument" : "otw";
-  return allFiles.filter((f) => f.toLowerCase().includes(keyword));
-}
-
   return (
     <>
       <div className="card">
@@ -143,7 +148,8 @@ function filesForScreen(screen, allFiles) {
               </div>
               <div className="col">
                 <label>Pilot</label>
-                <input value={form.pilot_name} onChange={(e) => setForm({ ...form, pilot_name: e.target.value })} />
+                <PilotPicker value={form.pilot_name} options={pilots}
+                  onChange={(v) => setForm({ ...form, pilot_name: v })} />
               </div>
             </div>
             <div className="row">
@@ -169,7 +175,8 @@ function filesForScreen(screen, allFiles) {
               </div>
               <div className="col">
                 <label>Pilot</label>
-                <input value={details.pilot_name} onChange={(e) => setDetails({ ...details, pilot_name: e.target.value })} />
+                <PilotPicker value={details.pilot_name} options={pilots}
+                  onChange={(v) => setDetails({ ...details, pilot_name: v })} />
               </div>
             </div>
             <div className="row">
@@ -216,50 +223,21 @@ function filesForScreen(screen, allFiles) {
 
       <div className="card">
         <h2>3. Videos</h2>
-        {videoFiles.length === 0 ? (
-          <p className="muted">
-            No video files found in the backend's video folder. Drop MP4s in there (see <code>video_dir</code> in
-            config.py) and reload this page.
-          </p>
-        ) : (
-          <div className="row">
-            {["instrument", "otw"].map((screen) => (
-              <div className="col" key={screen}>
-                <label>{screen === "instrument" ? "Instrument screen" : "OTW screen"}</label>
-                <select
-                  value={videoLinks[screen].filename}
-                  onChange={(e) =>
-                    setVideoLinks((v) => ({ ...v, [screen]: { ...v[screen], filename: e.target.value } }))
-                  }
-                >
-                  <option value="">— none —</option>
-                  {filesForScreen(screen, videoFiles).map((f) => (
-                    <option key={f} value={f}>{f}</option>
-                  ))}
-                </select>
-                <label style={{ marginTop: 8 }}>Sync offset (sec)</label>
-                <input
-                  type="number" step="0.1"
-                  value={videoLinks[screen].offset_sec}
-                  onChange={(e) =>
-                    setVideoLinks((v) => ({ ...v, [screen]: { ...v[screen], offset_sec: e.target.value } }))
-                  }
-                />
-                <br />
-                <button
-                  style={{ marginTop: 8 }}
-                  onClick={() => saveVideo(screen)}
-                  disabled={!sessionId || videoBusy === screen}
-                >
-                  {videoBusy === screen ? "Saving…" : `Save ${screen} video`}
-                </button>
-              </div>
-            ))}
-          </div>
+        <VideoLinker files={videoFiles} links={videoLinks} setLinks={setVideoLinks} />
+        {videoFiles.length > 0 && (
+          <button style={{ marginTop: 12 }} onClick={saveVideos} disabled={!sessionId || videoBusy}>
+            {videoBusy ? "Saving…" : "Save videos"}
+          </button>
         )}
       </div>
 
       {err && <p className="err">{err}</p>}
+      <div className="save-session__actions">
+        <button type="button" className="next-btn" onClick={next} disabled={!sessionId || nextBusy}
+          title={sessionId ? "Save and open the session review" : "Pick or create a session first"}>
+          {nextBusy ? "Saving…" : "Next › Review"}
+        </button>
+      </div>
       {log.length > 0 && (
         <div className="card">
           <h3>Log</h3>

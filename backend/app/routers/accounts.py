@@ -6,6 +6,7 @@
   PATCH  /auth/me               {full_name?, email?}
   POST   /auth/me/password      {current_password, new_password}
 
+  GET    /users/pilots          any signed-in user: trainee names (pilot dropdown)
   GET    /users                 admin: every account
   POST   /users                 admin: create
   PATCH  /users/{id}            admin: edit details / role / instructor / reset password
@@ -147,6 +148,16 @@ async def list_users(_: dict = Depends(require_admin)):
     async with db.acquire() as conn:
         ids = await conn.fetch("select id from users order by role, full_name, username")
         return [await _profile(conn, r["id"]) for r in ids]
+
+
+@router.get("/users/pilots")
+async def list_pilots(_: dict = Depends(current_user)):
+    """Trainee accounts, for the pilot dropdown when saving/uploading a
+    session -- any signed-in user (names only, no account details)."""
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            "select id, username, full_name from users where role = 'trainee' order by full_name, username")
+    return [dict(r) for r in rows]
 
 
 @router.post("/users", status_code=201)

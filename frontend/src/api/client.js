@@ -79,6 +79,7 @@ export const api = {
   changePassword: (current_password, new_password) =>
     req("/auth/me/password", json("POST", { current_password, new_password })),
   listUsers: () => req("/users"),
+  listPilots: () => req("/users/pilots"),
   createUser: (body) => req("/users", json("POST", body)),
   updateUser: (id, body) => req(`/users/${id}`, json("PATCH", body)),
   deleteUser: (id) => req(`/users/${id}`, { method: "DELETE" }),
