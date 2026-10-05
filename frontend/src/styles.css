@@ -166,11 +166,10 @@ th { color: var(--muted); font-weight: 600; }
 .landing__enter:hover::before, .landing__enter:focus-visible::before { filter: brightness(0.85); transform: scale(1.03); }
 .landing__enter:focus-visible { outline: none; }
 
-/* The card fills 80% of the screen, with the title scaled to match. */
 .landing__label {
   position: relative; z-index: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3vh;
-  width: 80vw; height: 80vh; padding: 4vh 4vw; border-radius: 24px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 40px 64px; border-radius: 18px; max-width: calc(100vw - 32px);
   background: rgba(10, 16, 24, 0.45); border: 1px solid rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(4px);
   transition: background 0.35s ease, border-color 0.35s ease;
@@ -179,15 +178,15 @@ th { color: var(--muted); font-weight: 600; }
   background: rgba(10, 16, 24, 0.6); border-color: var(--accent);
 }
 .landing__title {
-  font-size: min(18vw, 30vh); font-weight: 800; letter-spacing: 0.14em; line-height: 1;
+  font-size: clamp(64px, 11vw, 150px); font-weight: 800; letter-spacing: 0.14em; line-height: 1;
   margin-right: -0.14em; /* letter-spacing adds trailing space -- keep the word visually centred */
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
 }
-.landing__full { font-size: clamp(16px, min(2.4vw, 3.6vh), 36px); color: #e6edf3; font-weight: 400; text-align: center; }
+.landing__full { font-size: clamp(14px, 1.6vw, 22px); color: #e6edf3; font-weight: 400; text-align: center; }
 .landing__full b { font-weight: 800; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 .landing__cta {
-  margin-top: 1vh; padding: 1.4vh 3vw; border-radius: 999px;
-  font-size: clamp(14px, min(1.6vw, 2.4vh), 24px); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  margin-top: 6px; padding: 10px 22px; border-radius: 999px;
+  font-size: clamp(13px, 1.2vw, 16px); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: #4aa8ff; border: 1px solid rgba(74, 168, 255, 0.55); background: rgba(74, 168, 255, 0.08);
   transition: background 0.25s ease, color 0.25s ease;
 }

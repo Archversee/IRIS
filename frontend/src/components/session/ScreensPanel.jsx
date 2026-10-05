@@ -10,8 +10,10 @@ function useStreamBinding(ref, stream) {
 
 // Gaze trail over the Instruments screen (1920x1080 overlay coordinates):
 // numbered circles at each glanced zone (1 = oldest), sized by glance
-// length, joined by curved arrows in order. Older glances fade; a dashed
-// arrow means the gaze went elsewhere (e.g. OTW) in between.
+// length, joined by curved arrows in order. Out-the-window glances are
+// steps too, in a labelled band along the top (the windscreen "above" the
+// panel). Older glances fade; a dashed arrow means the gaze went somewhere
+// unmapped in between.
 //
 // Smoothness: every glance keeps a stable key (its order in the flight)
 // and a fixed position, so as playback runs circles fade/grow via CSS
@@ -23,6 +25,8 @@ const TRAIL_RING = 150; // px from the zone centre for repeat visits
 // stays in the trail (the hub instrument recurs every other glance, and
 // alternating orders land on different spots).
 function trailPos(p) {
+  // OTW glances spread sideways along the top band instead of a ring
+  if (p.isOtw) return { x: p.x + ((p.id % 5) - 2) * 230, y: p.y };
   const slot = p.id % 5;
   if (!slot) return { x: p.x, y: p.y };
   const ang = (slot - 1) * (Math.PI / 2) - Math.PI / 4;
@@ -65,8 +69,12 @@ function ScanTrail({ trail: raw }) {
             style={{ opacity: alpha(k + 1) }} markerEnd="url(#scan-trail-arrow)" />
         );
       })}
+      {trail.some((p) => p.isOtw) && (
+        <text x="960" y="18" textAnchor="middle" dominantBaseline="hanging" className="scan-trail__band">▲ OUT THE WINDOW</text>
+      )}
       {trail.map((p, i) => (
-        <g key={p.id} className={"scan-trail__dot" + (p.isCurrent ? " scan-trail__now" : "")} style={{ opacity: alpha(i) }}>
+        <g key={p.id} className={"scan-trail__dot" + (p.isCurrent ? " scan-trail__now" : "") + (p.isOtw ? " is-otw" : "")}
+          style={{ opacity: alpha(i) }}>
           <circle cx={p.x} cy={p.y} r={radius(p.dur)} fill={p.color} fillOpacity="0.32"
             stroke={p.color} strokeWidth={p.isCurrent ? 10 : 6} />
           <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{i + 1}</text>
