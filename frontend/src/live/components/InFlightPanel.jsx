@@ -13,7 +13,8 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
       <div className="mavis-hud__left">
         {toolbar}
         <AvatarBox speaking={state?.speaking} />
-        <ChatPanel transcript={state?.transcript} chatEnabled={state?.session?.policy?.chat} />
+        <ChatPanel transcript={state?.transcript} chatEnabled={state?.session?.policy?.chat}
+          joyPtt={!!state?.ctrl?.ptt} speakerName={state?.session?.name || ""} />
       </div>
 
       <div className="mavis-hud__right">

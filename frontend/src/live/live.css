@@ -314,6 +314,23 @@
 .mavis-chat__send:hover:not(:disabled) { background: #6cbaff; }
 .mavis-chat__send:active:not(:disabled) { transform: scale(0.94); }
 .mavis-chat__send:disabled { background: var(--border); color: var(--faint); opacity: 1; }
+.mavis-chat__mic {
+  width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--inset); color: var(--text); border: 1px solid var(--border-strong);
+  touch-action: none; user-select: none;
+}
+.mavis-chat__mic:hover:not(:disabled) { border-color: var(--accent); }
+.mavis-chat__mic.is-hot {
+  background: #ff9f43; color: #1a0f00; border-color: #ff9f43;
+  animation: mavis-ptt-pulse 1.2s infinite;
+}
+.mavis-chat__mic:disabled { opacity: 0.4; }
+@keyframes mavis-ptt-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(255, 159, 67, 0); }
+}
+.mavis-chat__voice { padding: 0 12px 8px; font-size: 12px; color: var(--faint); background: var(--panel); }
 
 /* ---- Map ---- */
 .mavis-map {
@@ -344,6 +361,9 @@
 .mavis-todo__step.is-done .mavis-todo__mark { color: #3ddc84; }
 .mavis-todo__step.is-done .mavis-todo__name { text-decoration: line-through; }
 .mavis-todo__step.is-todo { opacity: 0.5; }
+.mavis-todo__step.is-skipped { opacity: 0.6; }
+.mavis-todo__step.is-skipped .mavis-todo__mark { color: #ff9f43; }
+.mavis-todo__skipped { font-size: 12px; color: #ff9f43; }
 .mavis-todo__step.is-active .mavis-todo__name { font-weight: 700; }
 .mavis-todo__lines { margin: 4px 0 0; padding-left: 16px; line-height: 1.45; font-size: 13px; }
 .mavis-todo__progress {

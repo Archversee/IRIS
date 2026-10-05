@@ -56,9 +56,16 @@ finish:
   radius_nm: 2.0
 
 # Hold the aircraft frozen (position, altitude, attitude) while MAVIS briefs
-# and explains each step, then "You have control" -- like MSFS's own lessons.
+# and explains a step, then "You have control" -- like MSFS's own lessons.
+# Only steps that teach something new freeze (step_notes.*.freeze, default
+# true); the rest are spoken while you keep flying.
 # Not in Exam mode (silent coaching), where nothing is explained.
 freeze_during_instructions: true
+
+# Once scored, the aircraft is put back on the runway centreline this far past
+# the runway 02 threshold, stopped, throttle idle -- free to fly again.
+end_reposition:
+  along_m: 60
 
 briefing:
   layman: >-
@@ -73,8 +80,8 @@ briefing:
     and a descent, then locate Paya Lebar visually and point at it. No landing
     required. Task list top right.
 
-# Spoken when each step begins, picked by jargon, while the aircraft is held
-# frozen (freeze_during_instructions); "You have control" then releases it.
+# Spoken when each step begins, picked by jargon. freeze: false = spoken while
+# the trainee keeps flying (no hold, no "You have control").
 # Numbers are ranges, never exact targets. {placeholders} come from the step:
 # alt_lo/alt_hi (the band to be in), spd_lo/spd_hi, bank_lo/bank_hi,
 # climb_lo/climb_hi, descend_lo/descend_hi, hold_s, brg_lo/brg_hi, dist_nm,
@@ -128,14 +135,13 @@ step_notes:
       - "Turn roughly a quarter circle, then wings level"
       - "Height: {alt_lo:,} to {alt_hi:,} ft"
     look: [attitude, heading]
+    freeze: false
     layman: >-
-      Same again, the other way. Ease the stick right until the triangle
-      at the top shows somewhere around {bank_lo} to {bank_hi} degrees of
-      tilt, watch the compass circle turn about a quarter, then level the
-      wings.
+      Nice. Same again to the right, about {bank_lo} to {bank_hi} degrees of
+      tilt, then level the wings.
     pilot: >-
-      Right turn, {bank_lo} to {bank_hi} degrees of bank, roughly ninety
-      degrees. Hold altitude, roll out wings level.
+      Right turn, {bank_lo} to {bank_hi} degrees of bank, roll out after
+      roughly ninety.
   CLIMB:
     title: Climb
     todo:
@@ -161,13 +167,13 @@ step_notes:
       - "Come down {descend_lo} to {descend_hi} ft"
       - "Level off between {alt_lo:,} and {alt_hi:,} ft"
     look: [altitude, vsi]
+    freeze: false
     layman: >-
-      Good climb. Now bring the throttle back a little and lower the nose
-      gently. Watch the height numbers on the right count down. Come down
-      roughly {descend_lo} to {descend_hi} feet, then level off.
+      Good climb. Now throttle back a little and let the nose down gently,
+      about {descend_lo} to {descend_hi} feet, then level off.
     pilot: >-
       Descend {descend_lo} to {descend_hi} feet, level between {alt_lo:,} and
-      {alt_hi:,}. Reduce power, cruise descent.
+      {alt_hi:,}.
   FIND_AIRFIELD:
     title: Find Paya Lebar & point at it
     todo:
@@ -176,14 +182,11 @@ step_notes:
       - "Turn until it sits right in front of the nose"
       - "Hold it there a few seconds to finish"
     look: [outside]
+    freeze: false
     layman: >-
-      Great flying. Last job: find Paya Lebar and point us at it. Look out of
-      the window now, not at the screen, for a long runway inland. Changi is
-      the big airport right on the coast, so don't be fooled, Paya Lebar is
-      further west. It's somewhere around your {clock} o'clock, about
-      {dist_nm} miles away. Once it's sitting right in front of the nose,
-      hold it there for a few seconds and we're done.
+      Last job: look outside and find Paya Lebar, around your {clock}
+      o'clock, about {dist_nm} miles. Not Changi on the coast. Point the nose
+      at it and hold it there.
     pilot: >-
-      Exercises complete. Locate Paya Lebar visually, approximately your
-      {clock} o'clock, about {dist_nm} miles. Don't confuse it with Changi on
-      the coast. Put it on the nose and hold it to finish.
+      Locate Paya Lebar visually, approximately {clock} o'clock, {dist_nm}
+      miles. Put it on the nose and hold it.

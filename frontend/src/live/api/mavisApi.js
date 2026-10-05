@@ -30,6 +30,14 @@ export const mavisApi = {
   quit: () => postJson("/demo/quit"),
   restart: () => postJson("/demo/restart"),
   chat: (text) => postJson("/chat", { text }),
+  // Push-to-talk: WAV blob -> Whisper on MAVIS -> same handler as typed chat.
+  // -> {ok, text} or {ok: false, reason}
+  voicePtt: (blob, name = "", signal) => {
+    const fd = new FormData();
+    fd.append("audio", blob, "ptt.wav");
+    if (name) fd.append("name", name);
+    return req("/voice/ptt", { method: "POST", body: fd, signal });
+  },
   // On-demand TTS narration for one reading-lesson checkpoint -> {ok, url}
   readingSay: (id, lesson) => postJson("/reading/say", { id, lesson }),
   // {stem: "/media/filename.ext"} for whichever of splash-bg/menu-bg/

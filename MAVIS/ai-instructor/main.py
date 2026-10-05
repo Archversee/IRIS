@@ -35,7 +35,8 @@ from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer,
-                                  field_center, is_familiarization, start_position)
+                                  field_center, is_familiarization, runway_start,
+                                  start_position)
 from lessons import lesson00_preflight, lesson00_cockpit
 
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
@@ -446,6 +447,29 @@ async def amain(cfg):
                 await _set_frozen(False)
                 eng.release()
 
+    async def _fam_finish():
+        """End of the exercise: hold the aircraft while it's scored, then put
+        it back at the start of the runway, stopped, ready for whatever's next."""
+        gen = run_gen["n"]
+        await _set_frozen(True)
+        try:
+            await finish_lesson(False)
+        except Exception:
+            log.exception("finishing the familiarization lesson failed")
+        if gen != run_gen["n"]:
+            return                      # Fly again / reset already took over
+        await _set_frozen(False)
+        fn = getattr(sim, "set_position", None)
+        lat, lon, hdg = runway_start(lesson)
+        elev = lesson["airport"]["elevation_ft"]
+        ok = fn is not None and await loop.run_in_executor(
+            None, lambda: fn(lat, lon, elev, hdg, 0, throttle_pct=0, on_ground=True))
+        if ok:
+            log.info("familiarization done: aircraft back at the start of runway %s",
+                     lesson["runway"]["ident"])
+        else:
+            log.warning("couldn't put the aircraft back on the runway after the lesson")
+
     async def _airborne_start():
         """Familiarization: place the aircraft in the air before the session
         starts. Raises (a 500 on POST /demo/start, shown on the start menu)
@@ -515,11 +539,24 @@ async def amain(cfg):
         if not silent:
             await coach.say(phrases.render("NIGHT_AFTER", {}))
 
+    # weather words -> config.yaml sim.weather preset; first match wins, so
+    # "thunderstorm" is a storm before it's rain
+    WEATHER_WORDS = [(r"thunder|storm|lightning", "storm"), (r"rain|shower|drizzle|wet", "rain"),
+                     (r"fog|mist|haze|murk", "fog"), (r"snow", "snow"),
+                     (r"cloud|overcast|grey|gray|gloomy", "cloudy"),
+                     (r"clear|sunny|blue sk|nice weather|good weather|fine weather", "clear")]
+    WEATHER_HINT = (r"(thunder|storm|lightning|rain|shower|drizzle|fog|mist|haze|snow|cloud|"
+                    r"overcast|sunny|clear sk|blue sk|weather)")
+    # a request, not a question: "can we get some fog" yes, "do we have rain?" no
+    ENV_ASK_RE = (r"\b(change|switch|make|set|turn|try|add|bring|give|want|get|put|"
+                  r"see what|looks? like|show me|let'?s)\b")
+    QUESTION_RE = r"^\s*(is|are|will|was|were|what'?s?|why|how|does|do|did|when|where|which)\b"
     TIMES = {"dusk": (19, 15), "sunset": (19, 10), "sunrise": (7, 0), "dawn": (6, 45),
              "morning": (8, 0), "noon": (12, 0), "midday": (12, 0), "night": (20, 30),
              "midnight": (0, 0), "daytime": (10, 0), "evening": (19, 45),
              "afternoon": (15, 0)}
-    CHANGE_RE = r"(change|switch|make|set|turn|try|see what|looks? like|show me)"
+    # word boundaries: "set" must not match inside "sunset"
+    CHANGE_RE = r"\b(change|switch|make|set|turn|try|see what|looks? like|show me)\b"
     TIME_QUERY_RE = (r"(what'?s?|tell me|do you know).{0,25}\b(time|clock)\b|"
                      r"\bwhat time is it\b|\bcurrent time\b|\bthe time\s*(now|right now)?\s*\??\s*$")
     TIME_HINT = (r"(time|clock|hrs|o'?clock|[ap]\.?m\b|\d{1,2}[:.]\d{2}|night|day(time)?|dusk|"
@@ -543,6 +580,11 @@ async def amain(cfg):
         if m:
             h = int(m.group(1)) % 12 + (12 if "p" in m.group(2) else 0)
             if 0 <= h < 24: return h, 0
+        # bare 24-hour time after to/at/for: "set it to 1400", "at 0630"
+        m = re.search(r"\b(?:to|at|for)\s+(\d{2})(\d{2})\b", t)
+        if m:
+            h, mi = int(m.group(1)), int(m.group(2))
+            if 0 <= h < 24 and 0 <= mi < 60: return h, mi
         return None
 
     async def set_sim_time(h: int, m: int):
@@ -595,33 +637,53 @@ async def amain(cfg):
                 now = _dt.datetime.now()
                 await coach.say(f"It's {now.strftime('%H%M')} hours here on the instructor station.")
             return
-        # --- environment intents: time of day ---
+        # --- environment intents: time of day and/or weather ---
+        # Requests only ("is it sunset yet?" is a question, not a change). One
+        # sentence can ask for both: "make it a stormy night".
+        asking = bool(re.search(ENV_ASK_RE, t)) and not re.search(QUESTION_RE, t)
+        weather_ask = asking and bool(re.search(WEATHER_HINT, t))
+        wcond = (next((c for pat, c in WEATHER_WORDS if re.search(pat, t)), None)
+                 if weather_ask else None)
+
+        async def _time_then_weather(h: int, m: int):
+            await set_sim_time(h, m)
+            if wcond:
+                await _tool_weather(wcond)
+
         # 1) explicit clock time ("12:45pm", "1400 hrs") - deterministic, no LLM needed
         hm = parse_clock(t)
-        if hm and re.search(CHANGE_RE + r"|\b(at|to)\b", t):
-            await set_sim_time(*hm)
+        if hm and not re.search(QUESTION_RE, t) and re.search(CHANGE_RE + r"|\b(at|to)\b", t):
+            await _time_then_weather(*hm)
             return
-        # 2) named time of day ("make it night", "try dusk") - deterministic
-        if re.search(CHANGE_RE, t):
-            for word, (h, m) in TIMES.items():
-                if word in t:
-                    await set_sim_time(h, m)
+        # 2) named time of day ("make it night", "try dusk") - deterministic;
+        #    longest word first so "midnight" isn't "night", "afternoon" isn't "noon"
+        if asking:
+            for word in sorted(TIMES, key=len, reverse=True):
+                if re.search(rf"\b{word}\b", t):
+                    await _time_then_weather(*TIMES[word])
                     return
         # 3) fuzzy but time-flavoured ("just before the sun goes down") - ask the LLM
-        if re.search(TIME_HINT, t) and re.search(CHANGE_RE, t) and coach.llm_ok:
+        if asking and re.search(TIME_HINT, t) and coach.llm_ok:
             hm = await coach.extract_time(text)
             if hm:
-                await set_sim_time(*hm)
+                await _time_then_weather(*hm)
                 return
-        if re.search(r"(thunderstorm|storm|rain|fog|snow|wind|weather|cloud)", t) and re.search(CHANGE_RE, t):
-            await coach.say("I can change the time of day for you anytime, weather changes are "
-                            "still being wired up, so that one's coming soon.")
+        # weather on its own ("make it rain", "can we get some fog")
+        if weather_ask:
+            if wcond:
+                await _tool_weather(wcond)
+            else:
+                await coach.say("I can set clear skies, clouds, rain, a storm, fog or snow, "
+                                "and change the time of day. Which would you like?")
             return
         # --- agentic fallback: let the local LLM pick ONE safe tool for a fuzzy
         #     request the rules above didn't catch (deterministic path already ran) ---
         decision = await router.decide(
             text, {"phase": engine.phase, "time": state.get("tel", {}).get("local_time_h")},
             allow_regex=False)
+        if (decision.kind == "tool" and decision.tool in ("set_weather", "set_time_of_day")
+                and re.search(QUESTION_RE, t)):
+            decision.kind = "answer"     # "is it going to rain?" asks, it doesn't order
         if decision.kind == "tool":
             tool = tools.get(decision.tool)
             log.info("agent tool -> %s %s (%s)", decision.tool, decision.args, decision.source)
@@ -963,14 +1025,20 @@ async def amain(cfg):
             state["ui_cmd"] = {"action": "open_guide", "seq": time.time()}
             await coach.say("Here's the controls guide. Just say 'close the guide' when you're done.")
 
+    WEATHER_SAY = {"clear": "clear skies", "cloudy": "some cloud", "rain": "some rain",
+                   "storm": "a storm", "fog": "some fog", "snow": "some snow"}
+
     async def _tool_weather(condition: str = ""):
         fn = getattr(sim, "set_weather", None)
         ok = await loop.run_in_executor(None, fn, condition) if fn else False
+        what = WEATHER_SAY.get(condition, condition)
         if ok:
-            await coach.say(f"Of course. Bringing in some {condition} for you.")
+            # the sim can't confirm weather back, so don't promise it arrived
+            await coach.say(f"Okay, I've asked the simulator for {what}. "
+                            "Give it a moment to roll in.")
         else:
-            await coach.say("I can change the time of day for you anytime, weather changes "
-                            "aren't available in this simulator yet, so that one's coming soon.")
+            await coach.say(f"Sorry, the simulator isn't letting me set {what} right now. "
+                            "I can still change the time of day for you.")
 
     tools.register(Tool(
         "set_time_of_day",
@@ -994,10 +1062,10 @@ async def amain(cfg):
         _tool_guide, examples=["where are the flaps again", "hide that diagram"]))
     tools.register(Tool(
         "set_weather",
-        "Set the weather to a preset (works on MSFS 2024 once configured; a graceful "
-        "'coming soon' on MSFS 2020, which can't set weather).",
+        "Set the simulator weather to a preset (config.yaml sim.weather; MAVIS says "
+        "so if the simulator won't take it).",
         {"condition": {"type": "string",
-                       "enum": ["clear", "cloudy", "rain", "storm", "fog"],
+                       "enum": ["clear", "cloudy", "rain", "storm", "fog", "snow"],
                        "description": "closest weather preset to what the student asked for"}},
         _tool_weather, examples=["can you add some clouds", "make it rainy"]))
 
@@ -1078,8 +1146,8 @@ async def amain(cfg):
             return _sanitize_debrief(fallback, who)
 
     async def _make_fam_debrief(card, sc) -> str:
-        names = {"altitude": "height holding", "bank": "turns",
-                 "climb_speed": "climb speed", "smoothness": "smooth hands"}
+        names = {"exercises": "getting through every exercise", "altitude": "height holding",
+                 "bank": "turns", "climb_speed": "climb speed", "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = (f"Lovely familiarisation flight. Your {names[best]} was the strongest part. "
                     f"A little more attention to {names[worst]} next time.")
@@ -1145,6 +1213,8 @@ async def amain(cfg):
         pol = session.get("policy") or policy_for(session.get("mode", "visitor"))
         if pol.get("auto_practice_summary"):
             practice = True
+        if hasattr(scorer, "skipped"):         # familiarization: timed-out steps cost points
+            scorer.skipped = set(getattr(engine, "skipped", ()))
         card = scorer.finalize(
             session.get("name", ""), session["mode"], lesson_id, practice,
             score_caps=bool(pol.get("score_caps")))
@@ -1282,7 +1352,7 @@ async def amain(cfg):
                     if ev.code == "LESSON_NOTE" and is_familiarization(lesson):
                         state["look_at"] = {"items": ev.data.get("look") or [],
                                             "phase": ev.data.get("phase"), "seq": time.time()}
-                        if _fam_freezes():
+                        if _fam_freezes() and ev.data.get("freeze", True):
                             engine.hold()       # judge nothing until "you have control"
                             asyncio.create_task(_fam_instruct(ev))
                             continue
@@ -1310,10 +1380,10 @@ async def amain(cfg):
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         scored["done"] = True
                         if is_familiarization(lesson):
-                            # practice is over: hold the aircraft until Fly again /
-                            # Finish (restart / quit release it)
-                            asyncio.create_task(_set_frozen(True))
-                        asyncio.create_task(finish_lesson(False))
+                            # practice over: freeze, score, then back to the runway
+                            asyncio.create_task(_fam_finish())
+                        else:
+                            asyncio.create_task(finish_lesson(False))
             elif not spike:
                 last_good = tel
             if not scored["done"] and lesson.get("night_event") \
@@ -1325,7 +1395,7 @@ async def amain(cfg):
                 targets=engine.targets(),
                 night=not (6.0 < tel.local_time_h < 18.5),
                 transcript=transcript[-60:], llm_ok=coach.llm_ok,
-                fam_todo=engine.todo() if hasattr(engine, "todo") else None,
+                fam_todo=engine.todo() if started.is_set() and hasattr(engine, "todo") else None,
                 geom={"along": engine.geom.along, "cross": engine.geom.cross}
                      if engine.geom else None)
             # Ground track keeps the whole flight (taxi, take-off roll and

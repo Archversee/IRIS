@@ -141,6 +141,10 @@ class MockAdapter:
         self.local_h = hour + minute / 60.0
         return True
 
+    def set_weather(self, condition: str) -> bool:
+        self.weather = condition          # nothing to draw; lets the chat path be tested
+        return True
+
     _SNAP = ("e", "n", "alt", "spd", "hdg", "bank", "flaps", "_seg", "_airborne",
              "circuit", "stopping", "released", "_rotate_at", "_free", "_tgt")
 
@@ -164,6 +168,10 @@ class MockAdapter:
         self.hdg, self.spd, self.bank, self.flaps = wrap(hdg), (0.0 if on_ground else ias), 0.0, 0.0
         self._airborne = not on_ground
         self._free = not on_ground
+        if on_ground:                 # parked on the runway: sit there, no auto take-off
+            self.released = False
+            self._seg = 0
+            self._rotate_at = None
         self.stopping = False
         self._tgt = {"hdg": self.hdg, "alt": self.alt, "spd": self.spd or 95.0, "home": False}
         self._t = time.time()
