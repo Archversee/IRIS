@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from .. import db, mavis_bridge
+from .. import db, mavis_bridge, videos
 from ..schemas import Session, SessionCreate, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -86,7 +86,11 @@ async def update_session(session_id: UUID, body: SessionUpdate):
 
 @router.delete("/{session_id}", status_code=204)
 async def delete_session(session_id: UUID):
+    """Deletes the session, all its data (cascade), and its video files:
+    linked videos + OBS recordings no other session uses (see videos.py)."""
     async with db.acquire() as conn:
+        files = await videos.session_files(conn, session_id)
         result = await conn.execute("delete from sessions where id = $1", session_id)
     if result.endswith("0"):
         raise HTTPException(404, "Session not found")
+    videos.delete_files(files)

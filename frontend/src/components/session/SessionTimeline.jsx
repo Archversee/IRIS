@@ -3,7 +3,6 @@ import {
 } from "recharts";
 import { METRICS } from "./constants.js";
 import { fmt } from "./utils.js";
-import ScanStrip from "./ScanStrip.jsx";
 
 function TLTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
@@ -32,7 +31,6 @@ function TLTooltip({ active, payload }) {
 // clickable phases/event buttons, no playback transport.
 export default function SessionTimeline({
   readOnly = false,
-  scanStrip = null, // Review: gaze scan strip under the chart, on the same time axis
   chartSeries, timelineTicks, filters, setFilters, hasEye,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
@@ -98,7 +96,6 @@ export default function SessionTimeline({
           <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
         </LineChart>
       </ResponsiveContainer>
-      {scanStrip && <ScanStrip {...scanStrip} chartMinT={chartMinT} chartMaxT={chartMaxT} curT={curT} seekTo={seekTo} />}
       {!readOnly && flightPhases.length > 0 && (
         <>
           <div className="phase-buttons-label">Events:</div>
