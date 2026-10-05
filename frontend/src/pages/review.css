@@ -116,7 +116,15 @@
    would otherwise throw off the box's true shape, leaving the video
    slightly pillarboxed and the AOI overlay (which assumes an exact 16:9
    box) stretched out of alignment with it */
-.rev-screen .body { position: relative; flex: 1; background: #06100f; min-height: 0; aspect-ratio: 16 / 9; max-height: 38vh; }
+.rev-screen .body {
+  position: relative; flex: none; background: #06100f; min-height: 0; aspect-ratio: 16 / 9;
+  /* Limit size by WIDTH (centred), never by height: a max-height cap kept the
+     full width while shortening the box, breaking 16:9 -- the video got bars
+     and the AOI/gaze overlays (which assume an exact 16:9 box) drifted. */
+  width: 100%; max-width: calc(var(--screen-max-h, 38vh) * 16 / 9); margin: 0 auto;
+}
+/* The 80%-zoomed Review keeps the same on-screen height limit. */
+.rev--zoom80 { --screen-max-h: 47.5vh; }
 .screen-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -596,24 +604,25 @@
   .lsp { padding: 20px 16px; }
 }
 
-/* ---- Gaze trail on the Instruments screen ---- */
+/* ---- Gaze trail (one layer over the OTW + Instruments screens, in px) ---- */
+.rev-screens { position: relative; }
+.scan-trail-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: visible; }
 /* Smooth: ageing glances fade, circles grow while held, new links sweep in. */
 .scan-trail__dot { transition: opacity .6s ease; animation: scan-trail-in .35s ease-out; transform-box: fill-box; transform-origin: center; }
-.scan-trail__dot circle { transition: r .35s ease-out, stroke-width .35s ease; }
-.scan-trail__band { font-size: 30px; font-weight: 800; letter-spacing: .2em; fill: rgba(255, 255, 255, .55); }
-.scan-trail__dot.is-otw circle { stroke-dasharray: 18 10; }
-.scan-trail__num { font-size: 52px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 6px; }
+.scan-trail__dot circle { stroke-width: 2px; transition: r .35s ease-out, cx .5s ease, cy .5s ease, stroke-width .35s ease; }
+.scan-trail__dot.is-otw circle { stroke-dasharray: 5 3; }
+.scan-trail__num { font-size: 11px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 2px; }
 .scan-trail__link {
-  fill: none; stroke: #fff; stroke-width: 7; stroke-linecap: round;
+  fill: none; stroke: #fff; stroke-width: 2px; stroke-linecap: round;
   stroke-dasharray: 1; stroke-dashoffset: 0;
   transition: opacity .6s ease; animation: scan-trail-draw .45s ease-out;
 }
 .scan-trail__link.is-gap { stroke-dasharray: 0.035 0.03; animation: scan-trail-fade .45s ease-out; }
-.scan-trail__now circle { animation: scan-trail-pulse 1.6s ease-in-out infinite; }
+.scan-trail__now circle { stroke-width: 3px; animation: scan-trail-pulse 1.6s ease-in-out infinite; }
 @keyframes scan-trail-in { from { opacity: 0; transform: scale(.6); } }
 @keyframes scan-trail-draw { from { stroke-dashoffset: 1; } }
 @keyframes scan-trail-fade { from { opacity: 0; } }
-@keyframes scan-trail-pulse { 50% { stroke-width: 14px; } }
+@keyframes scan-trail-pulse { 50% { stroke-width: 5px; } }
 .trail-btn { opacity: .55; }
 .trail-btn.is-on { opacity: 1; border-color: var(--rev-cyan); color: var(--rev-cyan); }
 @media (prefers-reduced-motion: reduce) { .scan-trail__dot, .scan-trail__link, .scan-trail__now circle { animation: none; transition: none; } }
