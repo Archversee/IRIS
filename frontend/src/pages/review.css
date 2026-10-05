@@ -34,6 +34,9 @@
   min-height: 100%;
 }
 .rev--no-rail { grid-template-columns: 1fr; }
+/* Session Review only: everything at 80% scale so the dense layout fits.
+   (Percentage sizes aren't scaled by zoom, so the box still fills the page.) */
+.rev--zoom80 { zoom: 0.8; }
 
 /* ---- left toolbar rail ---- */
 .rev-rail {
@@ -597,6 +600,8 @@
 /* Smooth: ageing glances fade, circles grow while held, new links sweep in. */
 .scan-trail__dot { transition: opacity .6s ease; animation: scan-trail-in .35s ease-out; transform-box: fill-box; transform-origin: center; }
 .scan-trail__dot circle { transition: r .35s ease-out, stroke-width .35s ease; }
+.scan-trail__band { font-size: 30px; font-weight: 800; letter-spacing: .2em; fill: rgba(255, 255, 255, .55); }
+.scan-trail__dot.is-otw circle { stroke-dasharray: 18 10; }
 .scan-trail__num { font-size: 52px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 6px; }
 .scan-trail__link {
   fill: none; stroke: #fff; stroke-width: 7; stroke-linecap: round;

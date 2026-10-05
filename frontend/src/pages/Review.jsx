@@ -33,7 +33,7 @@ export default function Review() {
   const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
-    <div className="rev rev--embedded rev--no-rail">
+    <div className="rev rev--embedded rev--no-rail rev--zoom80">
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}
       <div className="rev-main">
