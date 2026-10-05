@@ -150,54 +150,49 @@ th { color: var(--muted); font-weight: 600; }
 .err { color: var(--danger); font-size: 14px; }
 .gaze-box { position: relative; background: #06101a; border: 1px solid var(--border); border-radius: 8px; }
 
-/* ---- Landing page: splash-bg.jpeg split in half, MAVIS left / IRIS right ---- */
-.landing { position: relative; display: flex; width: 100%; height: 100vh; background: #000; }
-.landing__half {
-  position: relative; flex: 1; min-width: 0; height: 100%;
-  margin: 0; padding: 0; border: 0; border-radius: 0;
-  background: transparent; color: #fff; cursor: pointer; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-  transition: flex 0.35s ease;
+/* ---- Landing page (after sign-in): one MIRIS screen over splash-bg.jpeg;
+   clicking anywhere enters Preflight & Cockpit ---- */
+.landing { position: relative; width: 100%; height: 100vh; background: #000; overflow: hidden; }
+.landing__enter {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
+  color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
-/* Each half shows its own side of one full-width image: the pseudo-element
-   is two halves wide, anchored left for MAVIS and right for IRIS. */
-.landing__half::before {
-  content: ""; position: absolute; top: 0; bottom: 0; width: 200%;
+.landing__enter::before {
+  content: ""; position: absolute; inset: 0;
   background: url("/media/splash-bg.jpeg") center / cover no-repeat;
-  transition: transform 0.5s ease, filter 0.35s ease;
-  filter: brightness(0.7);
+  filter: brightness(0.62); transition: transform 0.8s ease, filter 0.4s ease;
 }
-.landing__half--mavis::before { left: 0; transform-origin: 25% 50%; }
-.landing__half--iris::before { right: 0; transform-origin: 75% 50%; }
-.landing__half--mavis { border-right: 2px solid rgba(255, 255, 255, 0.35); }
-.landing__half:hover, .landing__half:focus-visible { flex: 1.15; outline: none; }
-.landing__half:hover::before, .landing__half:focus-visible::before { filter: brightness(1); transform: scale(1.04); }
-.landing:hover .landing__half:not(:hover)::before { filter: brightness(0.45); }
+.landing__enter:hover::before, .landing__enter:focus-visible::before { filter: brightness(0.85); transform: scale(1.03); }
+.landing__enter:focus-visible { outline: none; }
 
 .landing__label {
   position: relative; z-index: 1;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  padding: 32px 56px; border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 40px 64px; border-radius: 18px; max-width: calc(100vw - 32px);
   background: rgba(10, 16, 24, 0.45); border: 1px solid rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(4px);
   transition: background 0.35s ease, border-color 0.35s ease;
 }
-.landing__half:hover .landing__label { background: rgba(10, 16, 24, 0.6); border-color: var(--accent); }
+.landing__enter:hover .landing__label, .landing__enter:focus-visible .landing__label {
+  background: rgba(10, 16, 24, 0.6); border-color: var(--accent);
+}
 .landing__title {
-  font-size: clamp(48px, 8vw, 110px); font-weight: 800; letter-spacing: 0.12em; line-height: 1;
+  font-size: clamp(64px, 11vw, 150px); font-weight: 800; letter-spacing: 0.14em; line-height: 1;
+  margin-right: -0.14em; /* letter-spacing adds trailing space -- keep the word visually centred */
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
 }
-.landing__full { font-size: clamp(13px, 1.3vw, 18px); color: #e6edf3; font-weight: 400; text-align: center; }
+.landing__full { font-size: clamp(14px, 1.6vw, 22px); color: #e6edf3; font-weight: 400; text-align: center; }
 .landing__full b { font-weight: 800; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
-.landing__sub {
-  font-size: clamp(14px, 1.4vw, 20px); color: var(--accent); font-weight: 700;
-  letter-spacing: 0.18em; text-transform: uppercase;
+.landing__cta {
+  margin-top: 6px; padding: 10px 22px; border-radius: 999px;
+  font-size: clamp(13px, 1.2vw, 16px); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #4aa8ff; border: 1px solid rgba(74, 168, 255, 0.55); background: rgba(74, 168, 255, 0.08);
+  transition: background 0.25s ease, color 0.25s ease;
 }
-
+.landing__enter:hover .landing__cta { background: #4aa8ff; color: #06121f; }
 @media (max-width: 700px) {
-  .landing { flex-direction: column; }
-  .landing__half--mavis { border-right: 0; border-bottom: 2px solid rgba(255, 255, 255, 0.35); }
-  .landing__label { padding: 20px 28px; }
+  .landing__label { padding: 26px 22px; }
 }
 
 /* ---- Settings drawer (sidebar gear) ---- */
