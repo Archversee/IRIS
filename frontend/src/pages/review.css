@@ -182,8 +182,9 @@
 
 /* ---- bottom row ---- */
 .rev-bottom { display: grid; grid-template-columns: 1.3fr 1fr 0.85fr; gap: 10px; min-height: 0; }
-/* Review: the gauges card needs the widest column. */
-.rev-bottom--telemetry { grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 0.8fr); }
+/* Review: scan path + region viewing side by side (both gaze), then the
+   gauges card, which needs the widest column. */
+.rev-bottom--telemetry { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 2.2fr); }
 .rev-card {
   background: var(--rev-panel); border: 1px solid var(--rev-line);
   border-radius: 10px; padding: 12px; min-height: 0; overflow: auto;
@@ -626,3 +627,13 @@
 .trail-btn { opacity: .55; }
 .trail-btn.is-on { opacity: 1; border-color: var(--rev-cyan); color: var(--rev-cyan); }
 @media (prefers-reduced-motion: reduce) { .scan-trail__dot, .scan-trail__link, .scan-trail__now circle { animation: none; transition: none; } }
+
+/* ---- Ground track: MAVIS reference route (drawn under the flown path) ---- */
+.route-select {
+  margin-left: auto; max-width: 62%; padding: 2px 6px; font-size: 11px; border-radius: 6px;
+  background: #0f2a29; color: #cfe9e6; border: 1px solid #2f5b57;
+}
+/* A wide, soft band (not a thin line) so it stays visible even where the
+   flight path runs right on top of it. */
+.ground-route__path { fill: none; stroke: #f5a623; stroke-width: 4; opacity: .28; stroke-linejoin: round; stroke-linecap: round; }
+.ground-route__runway { stroke: #c9d4df; stroke-width: 2.6; stroke-linecap: round; opacity: .6; }

@@ -48,8 +48,8 @@ export default function Review() {
 
         <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />
-          <FlightTelemetryCard {...liveState} altMax={altMax} />
           <RegionPieCard {...regionPie} />
+          <FlightTelemetryCard {...liveState} altMax={altMax} />
         </div>
       </div>
 

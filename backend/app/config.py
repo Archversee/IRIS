@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # feed into Postgres -- see docs/INTEGRATION_PLAN.md §1b.
     mavis_ws_url: str = "ws://localhost:6945/ws"
 
+    # MAVIS's lesson files -- the Review ground track's preset routes
+    # (routers/routes.py) are built from these.
+    mavis_lessons_dir: str = str(_REPO_ROOT / "MAVIS" / "ai-instructor" / "lessons")
+
     # First admin account, created at startup only if no admin exists yet
     # (see app/auth.py). Change the password from Profile after signing in,
     # or set ADMIN_USERNAME / ADMIN_PASSWORD in .env before first start.
