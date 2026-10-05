@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { RoleTag, useAuth } from "../auth/AuthContext.jsx";
 
-// Full-screen landing after sign-in: one MIRIS screen over splash-bg.jpeg
+// Full-screen landing after sign-in: one MARIE screen over splash-bg.jpeg
 // (frontend/public/media, served by the frontend itself so it shows even
 // when MAVIS isn't running). Clicking anywhere opens Preflight & Cockpit ->
 // External Walk-Around (a client-side reading lesson, so nothing needs
@@ -9,11 +9,11 @@ import { RoleTag, useAuth } from "../auth/AuthContext.jsx";
 // route (see App.jsx).
 const WALK_AROUND = "/live?reading=lesson00_preflight";
 
-// Full name with the acronym's letters (M·I·R·I·S) bolded and underlined.
-// [word, highlight first letter?] -- "Aviation" and "&" aren't in MIRIS.
+// Full name with the acronym's letters (M·A·R·I·E) bolded and underlined.
+// [word, highlight first letter?] -- "&" isn't part of MARIE.
 const FULL_NAME = [
-  ["Multimodal", true], ["Aviation", false], ["Instruction", true], ["&", false],
-  ["Review", true], ["Intelligence", true], ["System", true],
+  ["Multimodal", true], ["Aviation", true], ["Review", true], ["&", false],
+  ["Instruction", true], ["Engine", true],
 ];
 
 export default function Home() {
@@ -33,7 +33,7 @@ export default function Home() {
 
       <button type="button" className="landing__enter" onClick={() => nav(WALK_AROUND)}>
         <span className="landing__label">
-          <span className="landing__title">MIRIS</span>
+          <span className="landing__title">MARIE</span>
           <span className="landing__full">
             {FULL_NAME.map(([word, hl], i) => (
               <span key={i}>

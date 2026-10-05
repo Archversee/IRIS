@@ -12,7 +12,7 @@ import "./review.css";
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanStrip, scanPath, liveState, regionPie, phases } =
+  const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie, phases } =
     useSessionData({ id, live: false });
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
@@ -44,7 +44,7 @@ export default function Review() {
         </div>
 
         <ScreensPanel {...screens} />
-        <SessionTimeline {...timeline} scanStrip={scanStrip} />
+        <SessionTimeline {...timeline} />
 
         <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />

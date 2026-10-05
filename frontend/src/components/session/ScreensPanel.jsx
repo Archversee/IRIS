@@ -9,47 +9,64 @@ function useStreamBinding(ref, stream) {
 }
 
 // Gaze trail over the Instruments screen (1920x1080 overlay coordinates):
-// numbered circles at each glanced zone's centre (1 = oldest), sized by
-// glance length, joined by arrows in order. Older glances fade; a dashed
+// numbered circles at each glanced zone (1 = oldest), sized by glance
+// length, joined by curved arrows in order. Older glances fade; a dashed
 // arrow means the gaze went elsewhere (e.g. OTW) in between.
+//
+// Smoothness: every glance keeps a stable key (its order in the flight)
+// and a fixed position, so as playback runs circles fade/grow via CSS
+// transitions instead of being re-drawn, and each new connector sweeps in.
+const TRAIL_RING = 150; // px from the zone centre for repeat visits
+
+// Fixed spot for a glance: the zone centre, or one of 4 points on a ring
+// around it -- picked from the glance's order, so it never moves while it
+// stays in the trail (the hub instrument recurs every other glance, and
+// alternating orders land on different spots).
+function trailPos(p) {
+  const slot = p.id % 5;
+  if (!slot) return { x: p.x, y: p.y };
+  const ang = (slot - 1) * (Math.PI / 2) - Math.PI / 4;
+  return { x: p.x + Math.cos(ang) * TRAIL_RING, y: p.y + Math.sin(ang) * TRAIL_RING };
+}
+
 function ScanTrail({ trail: raw }) {
   if (!raw?.length) return null;
   const n = raw.length;
   const radius = (dur) => Math.max(48, Math.min(110, 48 + dur * 12));
-  // The same zone often recurs (the attitude indicator is the scan's hub):
-  // fan repeat visits out around the zone centre so their circles, numbers
-  // and arrows don't all stack on one spot.
-  const seen = new Map();
-  const trail = raw.map((p) => {
-    const k = seen.get(p.aoi) || 0;
-    seen.set(p.aoi, k + 1);
-    if (!k) return p;
-    const ang = (k - 1) * (Math.PI / 3) - Math.PI / 2;
-    return { ...p, x: p.x + Math.cos(ang) * 165, y: p.y + Math.sin(ang) * 165 };
-  });
-  const alpha = (i) => (n === 1 ? 1 : 0.3 + (0.7 * i) / (n - 1));
+  const alpha = (i) => (n === 1 ? 1 : 0.25 + (0.75 * i) / (n - 1));
+  const trail = raw.map((p) => ({ ...p, ...trailPos(p) }));
+
+  // Curved connector from a to b, trimmed to the circles' edges; bends
+  // gently to one side so back-and-forth moves don't overlap.
+  const curve = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    const ra = radius(a.dur) + 8, rb = radius(b.dur) + 16;
+    if (len <= ra + rb) return null;
+    const ux = dx / len, uy = dy / len;
+    const x1 = a.x + ux * ra, y1 = a.y + uy * ra, x2 = b.x - ux * rb, y2 = b.y - uy * rb;
+    const bend = Math.min(120, len * 0.18);
+    const cx = (x1 + x2) / 2 - uy * bend, cy = (y1 + y2) / 2 + ux * bend;
+    return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+  };
+
   return (
     <g className="scan-trail">
       <defs>
-        <marker id="scan-trail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <marker id="scan-trail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" fill="#fff" />
         </marker>
       </defs>
-      {trail.slice(1).map((p, k) => {
-        const a = trail[k];
-        const dx = p.x - a.x, dy = p.y - a.y, len = Math.hypot(dx, dy);
-        if (len < 1) return null;
-        const ux = dx / len, uy = dy / len;
-        const ra = radius(a.dur) + 6, rb = radius(p.dur) + 14;
-        if (len <= ra + rb) return null;
+      {trail.slice(1).map((b, k) => {
+        const d = curve(trail[k], b);
+        if (!d) return null;
         return (
-          <line key={"l" + k} x1={a.x + ux * ra} y1={a.y + uy * ra} x2={p.x - ux * rb} y2={p.y - uy * rb}
-            stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity={alpha(k + 1)}
-            strokeDasharray={p.afterGap ? "14 12" : undefined} markerEnd="url(#scan-trail-arrow)" />
+          <path key={`${trail[k].id}-${b.id}`} d={d} pathLength="1"
+            className={"scan-trail__link" + (b.afterGap ? " is-gap" : "")}
+            style={{ opacity: alpha(k + 1) }} markerEnd="url(#scan-trail-arrow)" />
         );
       })}
       {trail.map((p, i) => (
-        <g key={"c" + i} opacity={alpha(i)} className={p.isCurrent ? "scan-trail__now" : undefined}>
+        <g key={p.id} className={"scan-trail__dot" + (p.isCurrent ? " scan-trail__now" : "")} style={{ opacity: alpha(i) }}>
           <circle cx={p.x} cy={p.y} r={radius(p.dur)} fill={p.color} fillOpacity="0.32"
             stroke={p.color} strokeWidth={p.isCurrent ? 10 : 6} />
           <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{i + 1}</text>

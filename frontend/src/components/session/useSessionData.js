@@ -404,6 +404,7 @@ export function useSessionData({ id, live }) {
       const z = zoneByName.get(r.aoi);
       if (!z) { gap = true; continue; }
       out.push({
+        id: r.order, // stable per glance -- lets the trail animate instead of re-drawing
         aoi: r.aoi, color: scanLogColor.get(r.aoi),
         x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2,
         dur: Math.max(0, Math.min(r.end, curT) - r.start),
@@ -591,8 +592,6 @@ export function useSessionData({ id, live }) {
       speed, setSpeed,
       live, followingLive, goLive,
     },
-
-    scanStrip: { scanLog, scanLogColor, allAois, hiddenAois, toggleAoiHidden },
 
     scanPath: {
       curEye, curAoi,
