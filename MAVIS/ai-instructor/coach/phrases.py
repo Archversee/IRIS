@@ -108,6 +108,17 @@ TEMPLATES = {
     "BRIEFING_2": ["Whenever you're ready, we'll get started. I'll talk you through each step."],
     "BRIEFING_1_REF": ["Record one circuit for the reference library. Take off, four turns, "
                         "and a full-stop landing on the same runway."],
+    # Flight familiarization (airborne lesson, core/familiarization.py). Step
+    # instructions are lesson-authored (step_notes); these are the live cues.
+    "FAM_LOW": ["We're getting low, only {agl} feet above the ground. Add power and raise the nose gently."],
+    "FAM_SLOW": ["Speed's getting low at {ias} knots. Lower the nose a little and add some power."],
+    "FAM_FAST": ["We're quick at {ias} knots. Ease the throttle back and raise the nose a touch."],
+    "FAM_STEEP": ["That's a steep tilt. Ease the stick back toward the middle, gentle turns only."],
+    "FAM_TURN_REMIND": ["Whenever you're ready, ease the stick {dir} for that turn, about {bank} degrees of tilt."],
+    "FAM_FIELD_HINT": ["{field} is at your {clock} o'clock, about {dist_nm} miles. Try a heading of about {brg}."],
+    "FAM_FIELD_AHEAD": ["That's it, {field} is right ahead of you, about {dist_nm} miles. Keep flying toward it."],
+    "FAM_DEBRIEF": ["And there's Paya Lebar. You found it and flew us home. Lovely work, let's talk about it."],
+    "FAM_YOU_HAVE_CONTROL": ["Okay. You have control."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
@@ -151,6 +162,15 @@ PILOT_TEMPLATES = {
     "SINK_HIGH": ["High sink rate. Add power and reduce the descent."],
     "SMOOTH_HANDS": ["Smaller, smoother inputs. Anticipate the corrections, don't chase them."],
     "PHASE_ENTER_DEBRIEF": ["That's a full stop. Brakes to a stop. We'll taxi clear and debrief the circuit."],
+    "FAM_LOW": ["Low, {agl} feet AGL. Power up, climb."],
+    "FAM_SLOW": ["Airspeed {ias}, low. Lower the nose, add power."],
+    "FAM_FAST": ["Airspeed {ias}, high. Reduce power."],
+    "FAM_STEEP": ["Bank {bank} degrees. Shallow the turn."],
+    "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank} degrees of bank."],
+    "FAM_FIELD_HINT": ["{field}, {clock} o'clock, {dist_nm} miles. Suggest heading {brg}."],
+    "FAM_FIELD_AHEAD": ["{field} on the nose, {dist_nm} miles."],
+    "FAM_DEBRIEF": ["Field in sight and inside two miles. Exercise complete. We'll debrief the flight."],
+    "FAM_YOU_HAVE_CONTROL": ["You have control."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],
     "TELEPORT_FAIL": ["Unable to reposition. We'll fly the circuit round and set up for another approach."],

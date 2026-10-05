@@ -128,6 +128,9 @@ class MockAdapter:
         self.stopping = False
         self.released = False
         self._rotate_at = None
+        self._free = False          # airborne start (familiarization): free flight, no circuit
+        self.frozen = False
+        self._tgt = {}
         self._t = time.time()
 
     def release(self):
@@ -139,10 +142,11 @@ class MockAdapter:
         return True
 
     _SNAP = ("e", "n", "alt", "spd", "hdg", "bank", "flaps", "_seg", "_airborne",
-             "circuit", "stopping", "released", "_rotate_at")
+             "circuit", "stopping", "released", "_rotate_at", "_free", "_tgt")
 
     def save_state(self) -> dict:
-        return {k: getattr(self, k) for k in self._SNAP}
+        return {k: (dict(v) if isinstance(v, dict) else v)
+                for k in self._SNAP for v in [getattr(self, k)]}
 
     def restore_state(self, s: dict):
         for k in self._SNAP:
@@ -150,7 +154,34 @@ class MockAdapter:
                 setattr(self, k, s[k])
         self._t = time.time()
 
+    def set_position(self, lat: float, lon: float, alt_msl: float, hdg: float,
+                     ias: float, throttle_pct: float | None = None,
+                     on_ground: bool = False) -> bool:
+        """Airborne start: jump there and free-fly (hold heading/alt/speed)."""
+        self.n = (lat - self.lat0) * 111320.0
+        self.e = (lon - self.lon0) * 111320.0 * math.cos(math.radians(self.lat0))
+        self.alt = 0.0 if on_ground else max(0.0, (alt_msl - self.elev) * FT2M)
+        self.hdg, self.spd, self.bank, self.flaps = wrap(hdg), (0.0 if on_ground else ias), 0.0, 0.0
+        self._airborne = not on_ground
+        self._free = not on_ground
+        self.stopping = False
+        self._tgt = {"hdg": self.hdg, "alt": self.alt, "spd": self.spd or 95.0, "home": False}
+        self._t = time.time()
+        return True
+
+    def set_frozen(self, on: bool) -> bool:
+        self.frozen = bool(on)
+        return True
+
     def comply(self, code: str, data: dict):
+        if self._free:
+            m = data.get("mock") if code.startswith("PHASE_ENTER_") else None
+            if m:
+                self._tgt["hdg"] = wrap(self.hdg + m.get("hdg_delta", 0.0))
+                self._tgt["alt"] = self.alt + m.get("alt_delta_ft", 0.0) * FT2M
+                self._tgt["spd"] = float(m.get("spd", self._tgt["spd"]))
+                self._tgt["home"] = bool(m.get("home"))
+            return
         if code in ("ROTATE_NOW", "ROTATE_LATE"):
             if not self._airborne:
                 lag = self.rotate_speech_lag_s if code == "ROTATE_NOW" else 0.4
@@ -183,7 +214,16 @@ class MockAdapter:
         self._vs = climb / FT2M * 60.0
 
     def _step(self, dt: float):
-        if not self.released:
+        if not self.released or self.frozen:
+            return
+        if self._free:
+            t = self._tgt
+            hdg = t["hdg"]
+            if t.get("home"):     # head for the runway midpoint
+                mid = self._runway_length_m / 2.0
+                e_m, n_m = self._pt(mid, 0.0)
+                hdg = wrap(math.degrees(math.atan2(e_m - self.e, n_m - self.n)))
+            self._fly_heading(hdg, t["spd"], t["alt"], 0.0, dt)
             return
         if self.stopping:
             self.alt = 0.0
@@ -249,7 +289,8 @@ class MockAdapter:
         on_gnd = self.alt < 0.5
         idle = (not self.released) or (self.stopping and self.spd < 30)
         climbing = not on_gnd and self._vs > 80
-        tgt_spd = 60 if not self._airborne else self._leg_spd[min(self._seg, 4)]
+        tgt_spd = (self._tgt.get("spd", 95.0) if self._free else
+                   60 if not self._airborne else self._leg_spd[min(self._seg, 4)])
         return Telemetry(
             lat=lat, lon=lon,
             alt_msl=self.alt / FT2M + self.elev,

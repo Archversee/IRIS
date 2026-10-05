@@ -116,6 +116,7 @@
 /* ---- Menu main (mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+.mavis-menu__note { margin: -8px 0 16px; max-width: 640px; font-size: 14px; line-height: 1.45; opacity: 0.85; }
 .mavis-menu--solo { max-width: none; width: 100%; }
 .mavis-menu__error { margin-top: 12px; color: #ff8a8a; font-size: 13px; }
 
@@ -325,6 +326,30 @@
   overflow: hidden;
 }
 .mavis-map canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+
+/* Familiarization "where to look" card (LookCard.jsx), under the map */
+.mavis-look {
+  display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 6px 16px;
+  align-items: center; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.mavis-look__title { grid-column: 1 / -1; font-weight: 700; color: var(--accent); }
+.mavis-look__pfd { width: 100%; height: auto; display: block; }
+.mavis-look__labels { margin: 0; padding-left: 18px; line-height: 1.5; font-size: 14px; }
+.mavis-look__bezel { fill: #10141c; stroke: var(--border); }
+.mavis-look__sky { fill: #2f6fb0; }
+.mavis-look__ground { fill: #7a5530; }
+.mavis-look__tape { fill: #1c2230; }
+.mavis-look__line, .mavis-look__frame { fill: none; stroke: #cdd9ec; stroke-width: 1.5; }
+.mavis-look__frame { stroke: transparent; stroke-width: 3; }
+.mavis-look__mark { fill: #fff; }
+.mavis-look__symbol { fill: none; stroke: #ffd23f; stroke-width: 3; stroke-linejoin: round; }
+.mavis-look__num { fill: #e8eef8; font: 600 13px system-ui; text-anchor: middle; }
+.mavis-look__part { opacity: 0.35; transition: opacity 0.3s; }
+.mavis-look__part.is-on { opacity: 1; }
+.mavis-look__part.is-on .mavis-look__frame { stroke: var(--accent); filter: drop-shadow(0 0 4px var(--accent)); }
+.mavis-look--outside .mavis-look__pfd { opacity: 0.5; }
+@media (max-width: 560px) { .mavis-look { grid-template-columns: 1fr; } }
 .mavis-map canvas.is-dragging { cursor: grabbing; }
 .mavis-map__zoom {
   position: absolute; left: 10px; bottom: 10px;

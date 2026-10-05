@@ -1,0 +1,136 @@
+name: "Flight Familiarization"
+# Airborne lesson: no take-off or landing. Engine + scorer live in
+# core/familiarization.py; main.py switches on this type.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map, and as the target the
+# trainee navigates back to at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# Where Start places the aircraft (SimConnect InitPosition, already flying).
+# ~6 nm south-east of Paya Lebar over the sea off East Coast, heading east.
+airborne_start:
+  lat: 1.2750
+  lon: 103.9800
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
+
+exercises:
+  straight_level_hold_s: 20 # seconds wings-level within 150 ft to pass
+  turn_deg: 90              # heading change for each turn
+  turn_bank_deg: 20
+  climb_ft: 500
+  descend_ft: 500
+  step_timeout_s: 120       # a step that isn't completed moves on anyway
+  hint_every_s: 35          # "Paya Lebar is at your 10 o'clock" while searching
+
+# Lesson ends (no landing) once within this distance of the runway midpoint.
+finish_radius_nm: 2.0
+
+# Hold the aircraft frozen (position, altitude, attitude) while MAVIS briefs
+# and explains each step, then "You have control" -- like MSFS's own lessons.
+# Not in Exam mode (silent coaching), where nothing is explained.
+freeze_during_instructions: true
+
+briefing:
+  layman: >-
+    This is a familiarisation flight. I've put us in the air at {alt} feet over
+    the sea, so you can get a feel for the aeroplane without worrying about
+    take-off or landing. We'll fly straight, do a couple of gentle turns, a
+    climb and a descent, and then you'll find Paya Lebar and fly us back to it.
+  pilot: >-
+    Familiarisation flight, airborne start at {alt} feet. Straight and level,
+    medium turns each way, a climb and a descent, then visual navigation back
+    to Paya Lebar. No landing required.
+
+# Spoken when each step begins, picked by jargon, while the aircraft is held
+# frozen (freeze_during_instructions); "You have control" then releases it.
+# {placeholders} come from the step data: bank, turn_deg, climb_ft,
+# descend_ft, tgt_alt, vy, brg, dist_nm, clock.
+# look: what the tablet highlights on its PFD diagram -- attitude, airspeed,
+# altitude, vsi, heading, or outside (look out of the window).
+step_notes:
+  STRAIGHT_LEVEL:
+    look: [attitude, altitude]
+    layman: >-
+      I'm holding the aeroplane still for a moment so you can look around.
+      On the big screen in front of you, the picture in the middle with blue
+      sky and brown ground is the attitude indicator. It shows the wings and
+      the nose. Keep the little yellow aeroplane symbol sitting level on the
+      line between blue and brown. The numbers on the right are your height.
+      We want them to stay at {tgt_alt} feet.
+    pilot: >-
+      Straight and level, {tgt_alt} feet. Attitude indicator: wings level,
+      nose on the horizon. Cross-check the altimeter tape on the right. Set
+      cruise power and trim off the pressure.
+  TURN_LEFT:
+    look: [attitude, heading]
+    layman: >-
+      Next, a gentle turn to the left. Look at the top of that middle
+      picture: there's a curved scale with a small white triangle. When you
+      ease the stick left, the triangle slides along the scale to show how far
+      the wings tilt. Aim for the second mark, about {bank} degrees. The
+      compass circle at the bottom of the screen turns as we turn. After a
+      quarter circle, level the wings again.
+    pilot: >-
+      Left turn, {bank} degrees of bank on the roll scale, through {turn_deg}
+      degrees on the HSI. Hold altitude, roll out wings level.
+  TURN_RIGHT:
+    look: [attitude, heading]
+    layman: >-
+      Same again, the other way. Ease the stick right until the triangle
+      at the top shows about {bank} degrees of tilt, watch the compass circle
+      turn a quarter, then level the wings.
+    pilot: >-
+      Right turn, {bank} degrees of bank, through {turn_deg} degrees. Hold
+      altitude, roll out wings level.
+  CLIMB:
+    look: [airspeed, vsi]
+    layman: >-
+      Now let's go up a little. The tape on the left of the screen is your
+      speed. Push the throttle forward, then gently raise the nose until the
+      speed settles near {vy} knots. The thin scale just right of the height
+      numbers shows we're climbing. We'll climb {climb_ft} feet, to {tgt_alt}.
+    pilot: >-
+      Climb {climb_ft} feet to {tgt_alt}. Full power, pitch for Vy, {vy}
+      knots on the airspeed tape. Monitor the VSI.
+  DESCEND:
+    look: [altitude, vsi]
+    layman: >-
+      Good climb. Now bring the throttle back a little and lower the nose
+      gently. Watch the height numbers on the right count down. We'll come
+      down {descend_ft} feet, to about {tgt_alt}, then level off.
+    pilot: >-
+      Descend {descend_ft} feet to {tgt_alt}. Reduce power, cruise descent,
+      level off on the altimeter.
+  FIND_AIRFIELD:
+    look: [outside]
+    layman: >-
+      Great flying. Last job: find Paya Lebar and fly us towards it. Look
+      out of the window now, not at the screen, for a long runway inland.
+      Changi is the big airport right on the coast, so don't be fooled, Paya
+      Lebar is further west. It's at your {clock} o'clock, about {dist_nm}
+      miles away.
+    pilot: >-
+      Exercises complete. Navigate visually to Paya Lebar, currently your
+      {clock} o'clock, {dist_nm} miles. Don't confuse it with Changi on the
+      coast. Lesson ends inside two miles.

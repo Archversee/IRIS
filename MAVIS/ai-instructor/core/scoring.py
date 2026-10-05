@@ -62,6 +62,7 @@ class ScoreCard:
     debrief: str = ""
     given: str = ""
     family: str = ""
+    incomplete: bool | None = None   # None = circuit rule (no landing scored)
 
     def to_entry(self) -> dict:
         e = {"name": self.name, "mode": self.mode, "lesson": self.lesson,
