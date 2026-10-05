@@ -42,7 +42,7 @@ export default function Home() {
               </span>
             ))}
           </span>
-          <span className="landing__cta">Enter · Preflight &amp; Cockpit ›</span>
+          <span className="landing__cta">Click to enter</span>
         </span>
       </button>
     </div>
