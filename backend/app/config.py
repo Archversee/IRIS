@@ -34,5 +34,11 @@ class Settings(BaseSettings):
     # feed into Postgres -- see docs/INTEGRATION_PLAN.md §1b.
     mavis_ws_url: str = "ws://localhost:6945/ws"
 
+    # First admin account, created at startup only if no admin exists yet
+    # (see app/auth.py). Change the password from Profile after signing in,
+    # or set ADMIN_USERNAME / ADMIN_PASSWORD in .env before first start.
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+
 
 settings = Settings()

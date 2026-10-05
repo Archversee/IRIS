@@ -1,14 +1,47 @@
 const BASE = import.meta.env.VITE_API_BASE || "/api";
 
+// Sign-in token (see auth/AuthContext.jsx) -- sent on every request; only
+// the /auth and /users routes require it.
+const TOKEN_KEY = "authToken";
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+export function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* storage unavailable -- token lives for this page only */ }
+}
+function withAuth(opts = {}) {
+  const token = getToken();
+  return token ? { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` } } : opts;
+}
+
+// Errors carry .status and .detail (FastAPI's {"detail": ...} message) so
+// forms can show the server's own wording ("Incorrect username or password").
+async function httpError(res) {
+  const text = await res.text();
+  let detail = text;
+  try { detail = JSON.parse(text).detail ?? text; } catch { /* not JSON */ }
+  if (typeof detail !== "string") detail = JSON.stringify(detail);
+  const err = new Error(`${res.status} ${res.statusText}: ${text}`);
+  err.status = res.status;
+  err.detail = detail;
+  return err;
+}
+
 async function req(path, opts = {}) {
-  const res = await fetch(BASE + path, opts);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
-  }
+  const res = await fetch(BASE + path, withAuth(opts));
+  if (!res.ok) throw await httpError(res);
   if (res.status === 204) return null;
   return res.json();
 }
+
+const json = (method, body) => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
 
 // Same as req(), but reports download progress via onProgress(loadedBytes,
 // totalBytes) as the body streams in -- for the large flight/eye payloads,
@@ -16,11 +49,8 @@ async function req(path, opts = {}) {
 // Falls back to a single 100% callback if the size is unknown (no
 // Content-Length) or the browser can't stream the body.
 async function reqWithProgress(path, onProgress) {
-  const res = await fetch(BASE + path);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
-  }
+  const res = await fetch(BASE + path, withAuth());
+  if (!res.ok) throw await httpError(res);
   const total = Number(res.headers.get("content-length")) || 0;
   if (!res.body || !total) {
     const data = await res.json();
@@ -41,6 +71,18 @@ async function reqWithProgress(path, onProgress) {
 }
 
 export const api = {
+  // ---- accounts (backend/app/routers/accounts.py) ----
+  login: (username, password) => req("/auth/login", json("POST", { username, password })),
+  logout: () => req("/auth/logout", { method: "POST" }),
+  me: () => req("/auth/me"),
+  updateMe: (body) => req("/auth/me", json("PATCH", body)),
+  changePassword: (current_password, new_password) =>
+    req("/auth/me/password", json("POST", { current_password, new_password })),
+  listUsers: () => req("/users"),
+  createUser: (body) => req("/users", json("POST", body)),
+  updateUser: (id, body) => req(`/users/${id}`, json("PATCH", body)),
+  deleteUser: (id) => req(`/users/${id}`, { method: "DELETE" }),
+
   listSessions: () => req("/sessions"),
   getSession: (id) => req(`/sessions/${id}`),
   createSession: (body) =>

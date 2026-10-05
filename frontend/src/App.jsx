@@ -9,10 +9,25 @@ import Analytics from "./pages/Analytics.jsx";
 import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
 import { LeaderboardPage, ScoringGuidePage, ControlsGuidePage } from "./pages/MavisGuides.jsx";
+import Login from "./pages/Login.jsx";
+import Profile from "./pages/Profile.jsx";
+import Accounts from "./pages/Accounts.jsx";
+import { useAuth } from "./auth/AuthContext.jsx";
 
 export default function App() {
+  const { user, checking } = useAuth();
+  const location = useLocation();
   // The landing page is full-screen -- no sidebar there.
-  const isLanding = useLocation().pathname === "/";
+  const isLanding = location.pathname === "/";
+
+  // Signed-out: only the login page. Anything else bounces there and comes
+  // back to the page you asked for after signing in.
+  if (checking) return <div className="login"><div className="login__checking">Loading…</div></div>;
+  if (!user) {
+    return location.pathname === "/login"
+      ? <Login />
+      : <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
 
   return (
     <div className="shell">
@@ -20,6 +35,9 @@ export default function App() {
       <main className="shell__main">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/accounts" element={user.role === "admin" ? <Accounts /> : <Navigate to="/" replace />} />
           <Route path="/live" element={<LiveCoach />} />
           <Route path="/live/freeflight" element={<LiveCoach freeFlight />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
