@@ -34,7 +34,7 @@
           "title": "Flight Familiarization",
           "subtitle": "Airborne start · get a feel for the aircraft",
           "available": true,
-          "start_note": "When you press start, MAVIS places your aircraft in the air at 2,500 ft, 6 nm south-east of Paya Lebar. Fly the exercises, then find Paya Lebar and head for it. No landing needed.",
+          "start_note": "When you press start, MAVIS places your aircraft in the air at about 2,500 ft, roughly 3 nm south of Paya Lebar. Fly the exercises on your to-do list, then find Paya Lebar and point the nose at it. No landing needed.",
           "duration_min": 15
         },
         {

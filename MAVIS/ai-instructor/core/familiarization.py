@@ -2,8 +2,9 @@
 
 The aircraft is placed in the air (lesson `airborne_start`), the trainee flies
 a short set of exercises -- straight & level, a gentle turn each way, a climb
-and a descent -- then finds Paya Lebar and heads for it. The lesson ends when
-the aircraft is within `finish_radius_nm` of the runway; no landing needed.
+and a descent -- then finds Paya Lebar and heads for it. The lesson ends once
+the trainee points the aircraft at the field for a few seconds (or gets within
+`finish.radius_nm` of it); no landing needed.
 
 FamiliarizationEngine / FamiliarizationScorer mirror the LessonEngine / Scorer
 interfaces main.py drives (tick, start_flying, load_phase, sample, finalize...)
@@ -40,11 +41,37 @@ def field_center(lesson: dict) -> tuple[float, float]:
             lon0 + half * math.sin(h) / (111320.0 * math.cos(math.radians(lat0))))
 
 
+def start_position(lesson: dict) -> tuple[float, float]:
+    """airborne_start lat/lon: explicit, or bearing/distance from the field."""
+    a = lesson["airborne_start"]
+    if "lat" in a and "lon" in a:
+        return a["lat"], a["lon"]
+    lat0, lon0 = field_center(lesson)
+    b = math.radians(a["bearing_from_field_deg"])
+    d = float(a["distance_nm"]) * M_PER_NM
+    return (lat0 + d * math.cos(b) / 111320.0,
+            lon0 + d * math.sin(b) / (111320.0 * math.cos(math.radians(lat0))))
+
+
 def bearing_dist(lat: float, lon: float, lat2: float, lon2: float) -> tuple[float, float]:
     """True bearing (deg) and distance (m) from (lat, lon) to (lat2, lon2)."""
     dn = (lat2 - lat) * 111320.0
     de = (lon2 - lon) * 111320.0 * math.cos(math.radians(lat))
     return math.degrees(math.atan2(de, dn)) % 360.0, math.hypot(de, dn)
+
+
+def _r(x: float, step: float) -> int:
+    return int(round(x / step) * step)
+
+
+def _hdg(x: float) -> int:
+    """Rounded heading in 1..360 (a pilot says 360, not 0)."""
+    return _r(x % 360.0, 10) % 360 or 360
+
+
+STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left turn",
+               "TURN_RIGHT": "Gentle right turn", "CLIMB": "Climb", "DESCEND": "Descend",
+               "FIND_AIRFIELD": "Find Paya Lebar & point at it"}
 
 
 def clock_position(rel_deg: float) -> int:
@@ -84,7 +111,12 @@ class FamiliarizationEngine:
         self.descend_ft = float(ex.get("descend_ft", 500))
         self.step_max_s = float(ex.get("step_timeout_s", 120))
         self.hint_s = float(ex.get("hint_every_s", 35))
-        self.finish_m = float(lesson.get("finish_radius_nm", 2.0)) * M_PER_NM
+        self.alt_band = float(ex.get("altitude_band_ft", 200))
+        fin = lesson.get("finish") or {}
+        self.finish_m = float(fin.get("radius_nm", 2.0)) * M_PER_NM
+        self.point_deg = float(fin.get("pointing_within_deg", 15))
+        self.point_s = float(fin.get("pointing_hold_s", 5))
+        self.point_max_m = float(fin.get("pointing_max_nm", 10)) * M_PER_NM
         self.field = field_center(lesson)
         self.field_name = lesson["airport"].get("name", "the airfield")
         self.notes = lesson.get("step_notes") or {}
@@ -156,7 +188,9 @@ class FamiliarizationEngine:
         self._prev_hdg = None
         self._prev_t = None
         self._last_hint = 0.0
-        self._ahead_called = False
+        self._pointing = 0.0
+        self._data: dict = {}
+        self._live = ""
 
     def _target_alt(self):
         a = self._entry.get("alt")
@@ -179,8 +213,8 @@ class FamiliarizationEngine:
 
     def _field(self, tel: Telemetry) -> dict:
         brg, dist = bearing_dist(tel.lat, tel.lon, *self.field)
-        return {"brg": round(brg / 10.0) * 10 % 360 or 360,
-                "dist_nm": round(dist / M_PER_NM, 1),
+        return {"brg_lo": _hdg(brg - 15), "brg_hi": _hdg(brg + 15),
+                "dist_nm": max(1, round(dist / M_PER_NM)),
                 "clock": clock_position(brg - tel.hdg),
                 "rel": hdg_diff(brg, tel.hdg), "dist_m": dist,
                 "field": self.field_name}
@@ -193,14 +227,22 @@ class FamiliarizationEngine:
         self._last_hint = now
         p = self.phase
         f = self._field(tel)
+        # every number spoken or listed is a range or an "about" -- the trainee
+        # flies to a band, not a needle
+        a = tel.alt_msl
+        band = {"CLIMB": (a + self.climb_ft - 100, a + self.climb_ft + 100),
+                "DESCEND": (a - self.descend_ft - 100, a - self.descend_ft + 100)}.get(
+                    p, (a - self.alt_band, a + self.alt_band))
         data = {"phase": p, "circuit": 1, "total_circuits": 1,
-                "bank": round(self.bank), "turn_deg": round(self.turn_deg),
-                "climb_ft": round(self.climb_ft), "descend_ft": round(self.descend_ft),
-                "alt": round(tel.alt_msl / 100.0) * 100, "vy": round(self.vy),
-                **{k: f[k] for k in ("brg", "dist_nm", "clock", "field")}}
-        tgt = self._target_alt()
-        if tgt is not None:
-            data["tgt_alt"] = round(tgt / 100.0) * 100
+                "bank_lo": _r(self.bank - 5, 5), "bank_hi": _r(self.bank + 5, 5),
+                "climb_lo": _r(self.climb_ft - 100, 100), "climb_hi": _r(self.climb_ft + 100, 100),
+                "descend_lo": _r(self.descend_ft - 100, 100),
+                "descend_hi": _r(self.descend_ft + 100, 100),
+                "alt_lo": _r(band[0], 100), "alt_hi": _r(band[1], 100),
+                "spd_lo": _r(self.vy - 5, 5), "spd_hi": _r(self.vy + 5, 5),
+                "hold_s": round(self.hold_s),
+                **{k: f[k] for k in ("brg_lo", "brg_hi", "dist_nm", "clock", "field")}}
+        self._data = data
         # what the mock autopilot should fly for this step
         mock = {"STRAIGHT_LEVEL": {"hdg_delta": 0},
                 "TURN_LEFT": {"hdg_delta": -self.turn_deg},
@@ -214,17 +256,22 @@ class FamiliarizationEngine:
         note = self.notes.get(p)
         if note:
             out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
-        log.info("familiarization step -> %s (alt %.0f, hdg %.0f, field %s nm at %s)",
-                 p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg"])
+        log.info("familiarization step -> %s (alt %.0f, hdg %.0f, field ~%s nm, bearing from %s)",
+                 p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
         return out
 
     def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
         p, e = self.phase, self._entry
         if p == "FIND_AIRFIELD":
-            return self._field(tel)["dist_m"] <= self.finish_m
+            f = self._field(tel)
+            if f["dist_m"] <= self.point_max_m and abs(f["rel"]) <= self.point_deg:
+                self._pointing += dt
+            else:
+                self._pointing = 0.0
+            return f["dist_m"] <= self.finish_m or self._pointing >= self.point_s
         timed_out = now - e["t"] > self.step_max_s
         if p == "STRAIGHT_LEVEL":
-            if abs(tel.bank) < 6 and abs(tel.alt_msl - e["alt"]) < 150:
+            if abs(tel.bank) < 6 and abs(tel.alt_msl - e["alt"]) < self.alt_band:
                 self._held += dt
             return self._held >= self.hold_s or timed_out
         if p in ("TURN_LEFT", "TURN_RIGHT"):
@@ -253,14 +300,11 @@ class FamiliarizationEngine:
             if self._turned * want < 15 and abs(tel.bank) < 5:
                 out.append(CoachEvent("FAM_TURN_REMIND", "nudge",
                                       {"dir": "left" if want < 0 else "right",
-                                       "bank": round(self.bank)}, cooldown_s=25))
+                                       "bank_lo": self._data.get("bank_lo"),
+                                       "bank_hi": self._data.get("bank_hi")}, cooldown_s=25))
         if self.phase == "FIND_AIRFIELD":
             f = self._field(tel)
-            if not self._ahead_called and abs(f["rel"]) < 20 and f["dist_m"] < 7 * M_PER_NM:
-                self._ahead_called = True
-                self._last_hint = now
-                out.append(CoachEvent("FAM_FIELD_AHEAD", "info", f, cooldown_s=0))
-            elif now - self._last_hint >= self.hint_s and abs(f["rel"]) >= 20:
+            if now - self._last_hint >= self.hint_s and abs(f["rel"]) > self.point_deg:
                 self._last_hint = now
                 out.append(CoachEvent("FAM_FIELD_HINT", "nudge", f, cooldown_s=0))
         return out
@@ -277,16 +321,60 @@ class FamiliarizationEngine:
         self._prev_hdg, self._prev_t = tel.hdg, now
         if self._announced != self.phase:
             return self._enter(tel, now)
+        self._live = self._progress(tel)
         if self._step_done(tel, dt, now):
             order = self.detector.ORDER
             self.detector.advance(order[order.index(self.phase) + 1])
             if self.phase == "DEBRIEF":
+                self._live = ""
                 return [CoachEvent("PHASE_ENTER_DEBRIEF", "info", {"phase": "DEBRIEF"}, cooldown_s=0)]
             return self._enter(tel, now)
         for ev in self._monitors(tel, now):
             if ev.cooldown_s == 0 or self._cooled(ev):
                 out.append(ev)
         return out
+
+
+    def _progress(self, tel: Telemetry) -> str:
+        p, e = self.phase, self._entry
+        if p == "STRAIGHT_LEVEL":
+            return f"Held steady {self._held:.0f} of {self.hold_s:.0f} s"
+        if p in ("TURN_LEFT", "TURN_RIGHT"):
+            return f"Turned about {_r(abs(self._turned), 5)}\u00b0 of a quarter circle"
+        if p == "CLIMB":
+            return f"Up {max(0, _r(tel.alt_msl - e['alt'], 50))} ft so far"
+        if p == "DESCEND":
+            return f"Down {max(0, _r(e['alt'] - tel.alt_msl, 50))} ft so far"
+        if p == "FIND_AIRFIELD":
+            f = self._field(tel)
+            if abs(f["rel"]) <= self.point_deg and f["dist_m"] <= self.point_max_m:
+                return "On the nose \u2014 hold it there\u2026"
+            return f"Paya Lebar: your {f['clock']} o'clock, about {f['dist_nm']} nm"
+        return ""
+
+    def todo(self) -> dict | None:
+        """To-do list for the pilot view: every step with its status; the
+        active one carries its short checklist lines and live progress."""
+        if self.phase == "BRIEFING" and not self.briefing_done:
+            return None
+        order = self.detector.ORDER[1:-1]
+        cur = order.index(self.phase) if self.phase in order else len(order)
+        steps = []
+        for i, sid in enumerate(order):
+            note = self.notes.get(sid) or {}
+            row = {"id": sid, "title": note.get("title") or STEP_TITLES.get(sid, sid),
+                   "status": "done" if i < cur else ("active" if i == cur else "todo")}
+            if i == cur and self._data:
+                lines = []
+                for ln in note.get("todo") or []:
+                    try:
+                        lines.append(ln.format(**self._data))
+                    except (KeyError, IndexError, ValueError):
+                        lines.append(ln)
+                row["lines"] = lines
+                row["progress"] = "Listen to MAVIS \u2014 aircraft held" if self.held else self._live
+            steps.append(row)
+        return {"steps": steps, "complete": self.phase == "DEBRIEF"}
 
 
 class FamiliarizationScorer:

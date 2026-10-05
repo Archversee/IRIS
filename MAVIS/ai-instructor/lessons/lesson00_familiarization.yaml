@@ -24,27 +24,36 @@ pattern:                    # not flown; kept so shared map/scorer code has its 
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
 
-# Where Start places the aircraft (SimConnect InitPosition, already flying).
-# ~6 nm south-east of Paya Lebar over the sea off East Coast, heading east.
+# Where Start places the aircraft (SimConnect InitPosition, already flying),
+# given relative to the runway midpoint. Heading east means the exercises
+# carry you along past the field rather than straight away from it.
+# (Explicit lat/lon instead of bearing/distance also works.)
 airborne_start:
-  lat: 1.2750
-  lon: 103.9800
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
   alt_msl_ft: 2500
   heading_true: 90
   ias_kt: 95
   throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
 
 exercises:
-  straight_level_hold_s: 20 # seconds wings-level within 150 ft to pass
+  straight_level_hold_s: 20 # seconds wings-level, inside the altitude band, to pass
+  altitude_band_ft: 200     # "hold height" means within +/- this
   turn_deg: 90              # heading change for each turn
-  turn_bank_deg: 20
-  climb_ft: 500
+  turn_bank_deg: 20         # spoken as a range: 15-25 degrees
+  climb_ft: 500             # spoken as a range: 400-600 feet
   descend_ft: 500
   step_timeout_s: 120       # a step that isn't completed moves on anyway
   hint_every_s: 35          # "Paya Lebar is at your 10 o'clock" while searching
 
-# Lesson ends (no landing) once within this distance of the runway midpoint.
-finish_radius_nm: 2.0
+# The lesson ends -- aircraft frozen, scorecard up -- once the trainee has found
+# Paya Lebar: pointing at it (within pointing_within_deg) for pointing_hold_s,
+# from no further than pointing_max_nm, or simply arriving within radius_nm.
+finish:
+  pointing_within_deg: 15
+  pointing_hold_s: 5
+  pointing_max_nm: 10
+  radius_nm: 2.0
 
 # Hold the aircraft frozen (position, altitude, attitude) while MAVIS briefs
 # and explains each step, then "You have control" -- like MSFS's own lessons.
@@ -53,23 +62,34 @@ freeze_during_instructions: true
 
 briefing:
   layman: >-
-    This is a familiarisation flight. I've put us in the air at {alt} feet over
-    the sea, so you can get a feel for the aeroplane without worrying about
-    take-off or landing. We'll fly straight, do a couple of gentle turns, a
-    climb and a descent, and then you'll find Paya Lebar and fly us back to it.
+    This is a familiarisation flight. I've put us in the air at about {alt}
+    feet, a few miles south of Paya Lebar, so you can get a feel for the
+    aeroplane without worrying about take-off or landing. We'll fly straight,
+    do a couple of gentle turns, a climb and a descent, and then you'll find
+    Paya Lebar and point us at it. Your to-do list is in the top right.
   pilot: >-
-    Familiarisation flight, airborne start at {alt} feet. Straight and level,
-    medium turns each way, a climb and a descent, then visual navigation back
-    to Paya Lebar. No landing required.
+    Familiarisation flight, airborne start at about {alt} feet, three miles
+    south of Paya Lebar. Straight and level, medium turns each way, a climb
+    and a descent, then locate Paya Lebar visually and point at it. No landing
+    required. Task list top right.
 
 # Spoken when each step begins, picked by jargon, while the aircraft is held
 # frozen (freeze_during_instructions); "You have control" then releases it.
-# {placeholders} come from the step data: bank, turn_deg, climb_ft,
-# descend_ft, tgt_alt, vy, brg, dist_nm, clock.
+# Numbers are ranges, never exact targets. {placeholders} come from the step:
+# alt_lo/alt_hi (the band to be in), spd_lo/spd_hi, bank_lo/bank_hi,
+# climb_lo/climb_hi, descend_lo/descend_hi, hold_s, brg_lo/brg_hi, dist_nm,
+# clock. Use {x:,} for a thousands separator.
+# title/todo: the step's row in the pilot view's to-do list (todo = short
+# checklist lines shown while the step is active).
 # look: what the tablet highlights on its PFD diagram -- attitude, airspeed,
 # altitude, vsi, heading, or outside (look out of the window).
 step_notes:
   STRAIGHT_LEVEL:
+    title: Straight & level
+    todo:
+      - "Wings level, nose on the horizon"
+      - "Stay between {alt_lo:,} and {alt_hi:,} ft"
+      - "Hold it about {hold_s} seconds"
     look: [attitude, altitude]
     layman: >-
       I'm holding the aeroplane still for a moment so you can look around.
@@ -77,60 +97,93 @@ step_notes:
       sky and brown ground is the attitude indicator. It shows the wings and
       the nose. Keep the little yellow aeroplane symbol sitting level on the
       line between blue and brown. The numbers on the right are your height.
-      We want them to stay at {tgt_alt} feet.
+      Try to keep them somewhere between {alt_lo:,} and {alt_hi:,} feet.
     pilot: >-
-      Straight and level, {tgt_alt} feet. Attitude indicator: wings level,
-      nose on the horizon. Cross-check the altimeter tape on the right. Set
-      cruise power and trim off the pressure.
+      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Attitude indicator:
+      wings level, nose on the horizon. Cross-check the altimeter tape on the
+      right. Set cruise power and trim off the pressure.
   TURN_LEFT:
+    title: Gentle left turn
+    todo:
+      - "Ease the stick left"
+      - "Tilt about {bank_lo} to {bank_hi} degrees"
+      - "Turn roughly a quarter circle, then wings level"
+      - "Height: {alt_lo:,} to {alt_hi:,} ft"
     look: [attitude, heading]
     layman: >-
       Next, a gentle turn to the left. Look at the top of that middle
       picture: there's a curved scale with a small white triangle. When you
       ease the stick left, the triangle slides along the scale to show how far
-      the wings tilt. Aim for the second mark, about {bank} degrees. The
-      compass circle at the bottom of the screen turns as we turn. After a
-      quarter circle, level the wings again.
+      the wings tilt. Somewhere around {bank_lo} to {bank_hi} degrees is
+      plenty. The compass circle at the bottom of the screen turns as we turn.
+      After roughly a quarter circle, level the wings again.
     pilot: >-
-      Left turn, {bank} degrees of bank on the roll scale, through {turn_deg}
-      degrees on the HSI. Hold altitude, roll out wings level.
+      Left turn, {bank_lo} to {bank_hi} degrees of bank on the roll scale,
+      roughly ninety degrees on the HSI. Hold altitude, roll out wings level.
   TURN_RIGHT:
+    title: Gentle right turn
+    todo:
+      - "Ease the stick right"
+      - "Tilt about {bank_lo} to {bank_hi} degrees"
+      - "Turn roughly a quarter circle, then wings level"
+      - "Height: {alt_lo:,} to {alt_hi:,} ft"
     look: [attitude, heading]
     layman: >-
       Same again, the other way. Ease the stick right until the triangle
-      at the top shows about {bank} degrees of tilt, watch the compass circle
-      turn a quarter, then level the wings.
+      at the top shows somewhere around {bank_lo} to {bank_hi} degrees of
+      tilt, watch the compass circle turn about a quarter, then level the
+      wings.
     pilot: >-
-      Right turn, {bank} degrees of bank, through {turn_deg} degrees. Hold
-      altitude, roll out wings level.
+      Right turn, {bank_lo} to {bank_hi} degrees of bank, roughly ninety
+      degrees. Hold altitude, roll out wings level.
   CLIMB:
+    title: Climb
+    todo:
+      - "Throttle forward, then raise the nose gently"
+      - "Speed around {spd_lo} to {spd_hi} kt"
+      - "Climb {climb_lo} to {climb_hi} ft"
+      - "Level off between {alt_lo:,} and {alt_hi:,} ft"
     look: [airspeed, vsi]
     layman: >-
       Now let's go up a little. The tape on the left of the screen is your
       speed. Push the throttle forward, then gently raise the nose until the
-      speed settles near {vy} knots. The thin scale just right of the height
-      numbers shows we're climbing. We'll climb {climb_ft} feet, to {tgt_alt}.
+      speed settles somewhere around {spd_lo} to {spd_hi} knots. The thin
+      scale just right of the height numbers shows we're climbing. Climb
+      roughly {climb_lo} to {climb_hi} feet, then level off.
     pilot: >-
-      Climb {climb_ft} feet to {tgt_alt}. Full power, pitch for Vy, {vy}
-      knots on the airspeed tape. Monitor the VSI.
+      Climb {climb_lo} to {climb_hi} feet, level between {alt_lo:,} and
+      {alt_hi:,}. Full power, pitch for Vy, {spd_lo} to {spd_hi} knots on the
+      airspeed tape. Monitor the VSI.
   DESCEND:
+    title: Descend
+    todo:
+      - "Throttle back a little, lower the nose gently"
+      - "Come down {descend_lo} to {descend_hi} ft"
+      - "Level off between {alt_lo:,} and {alt_hi:,} ft"
     look: [altitude, vsi]
     layman: >-
       Good climb. Now bring the throttle back a little and lower the nose
-      gently. Watch the height numbers on the right count down. We'll come
-      down {descend_ft} feet, to about {tgt_alt}, then level off.
+      gently. Watch the height numbers on the right count down. Come down
+      roughly {descend_lo} to {descend_hi} feet, then level off.
     pilot: >-
-      Descend {descend_ft} feet to {tgt_alt}. Reduce power, cruise descent,
-      level off on the altimeter.
+      Descend {descend_lo} to {descend_hi} feet, level between {alt_lo:,} and
+      {alt_hi:,}. Reduce power, cruise descent.
   FIND_AIRFIELD:
+    title: Find Paya Lebar & point at it
+    todo:
+      - "Look outside for a long runway inland"
+      - "Not Changi: that's the big one on the coast"
+      - "Turn until it sits right in front of the nose"
+      - "Hold it there a few seconds to finish"
     look: [outside]
     layman: >-
-      Great flying. Last job: find Paya Lebar and fly us towards it. Look
-      out of the window now, not at the screen, for a long runway inland.
-      Changi is the big airport right on the coast, so don't be fooled, Paya
-      Lebar is further west. It's at your {clock} o'clock, about {dist_nm}
-      miles away.
+      Great flying. Last job: find Paya Lebar and point us at it. Look out of
+      the window now, not at the screen, for a long runway inland. Changi is
+      the big airport right on the coast, so don't be fooled, Paya Lebar is
+      further west. It's somewhere around your {clock} o'clock, about
+      {dist_nm} miles away. Once it's sitting right in front of the nose,
+      hold it there for a few seconds and we're done.
     pilot: >-
-      Exercises complete. Navigate visually to Paya Lebar, currently your
-      {clock} o'clock, {dist_nm} miles. Don't confuse it with Changi on the
-      coast. Lesson ends inside two miles.
+      Exercises complete. Locate Paya Lebar visually, approximately your
+      {clock} o'clock, about {dist_nm} miles. Don't confuse it with Changi on
+      the coast. Put it on the nose and hold it to finish.
