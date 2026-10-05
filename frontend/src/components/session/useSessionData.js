@@ -4,10 +4,19 @@ import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constan
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
-const SCAN_TRAIL_LEN = 8; // glances shown in the Instruments-screen gaze trail
-// Where OTW glances sit in the trail (1920x1080 panel space): a band along
-// the top -- ScreensPanel spreads repeat visits sideways from here.
-const OTW_BAND = { x: 960, y: 130 };
+const SCAN_TRAIL_LEN = 8; // glances shown in the gaze trail (Instruments + OTW screens)
+
+// Mean OTW-screen gaze point (1920x1080 space) over one glance, or null.
+function meanOtwGaze(eye, eyeTimeline, start, end) {
+  let sx = 0, sy = 0, n = 0;
+  for (let i = nearestIndexForTime(eyeTimeline, start); i < eye.length && eyeTimeline[i].t <= end; i++) {
+    const e = eye[i];
+    if (!e.blink && e.aoi === "OTW" && e.gaze_point_x != null && e.gaze_point_y != null) {
+      sx += e.gaze_point_x; sy += e.gaze_point_y; n++;
+    }
+  }
+  return n ? { x: sx / n, y: sy / n } : null;
+}
 
 // All state, data-fetching and derived computations behind a session
 // viewer (Review and Live pages both use this). `id` may be null/undefined
@@ -395,11 +404,12 @@ export function useSessionData({ id, live }) {
 
   const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
 
-  // Gaze trail over the Instruments screen: the last few glances up to now,
-  // placed at each AOI zone's centre -- and out-the-window glances in a band
-  // along the top (`isOtw`), as if the windscreen sits above the panel.
-  // `afterGap` marks a glance that came after a look somewhere unmapped
-  // (panel but no zone, unlabelled) in between.
+  // Gaze trail across the Instruments and OTW screens: the last few glances
+  // up to now. Instrument glances sit at their AOI zone's centre; OTW
+  // glances on the OTW screen where the eyes actually were (mean gaze
+  // point, or the screen centre if there's none). Coordinates are each
+  // screen's own 1920x1080 space; `screen` says which. `afterGap` marks a
+  // glance after a look somewhere unmapped (panel but no zone, unlabelled).
   const scanTrail = useMemo(() => {
     const zoneByName = new Map(aoiZones.map((z) => [z.name, z]));
     const recent = scanLog.filter((r) => r.start <= curT && !hiddenAois.has(r.aoi)).slice(-SCAN_TRAIL_LEN);
@@ -411,15 +421,17 @@ export function useSessionData({ id, live }) {
       if (!z && !isOtw) { gap = true; continue; }
       out.push({
         id: r.order, // stable per glance -- lets the trail animate instead of re-drawing
-        aoi: r.aoi, color: scanLogColor.get(r.aoi), isOtw,
-        ...(isOtw ? { x: OTW_BAND.x, y: OTW_BAND.y } : { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }),
+        aoi: r.aoi, color: scanLogColor.get(r.aoi), isOtw, screen: isOtw ? "otw" : "instrument",
+        ...(isOtw
+          ? (meanOtwGaze(eye, eyeTimeline, r.start, Math.min(r.end, curT)) || { x: 960, y: 540 })
+          : { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }),
         dur: Math.max(0, Math.min(r.end, curT) - r.start),
         isCurrent: curT < r.end, afterGap: gap && out.length > 0,
       });
       gap = false;
     }
     return out;
-  }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor]);
+  }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor, eye, eyeTimeline]);
 
   const scanLogRows = useMemo(() => {
     const rows = [];
