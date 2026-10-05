@@ -12,10 +12,13 @@ export default function TodoCard({ todo }) {
         {todo.steps.map((s) => (
           <li key={s.id} className={"mavis-todo__step is-" + s.status}>
             <span className="mavis-todo__mark" aria-hidden="true">
-              {s.status === "done" ? "✓" : s.status === "active" ? "▶" : ""}
+              {s.status === "done" ? "✓" : s.status === "skipped" ? "–" : s.status === "active" ? "▶" : ""}
             </span>
             <div className="mavis-todo__body">
-              <div className="mavis-todo__name">{s.title}</div>
+              <div className="mavis-todo__name">
+                {s.title}
+                {s.status === "skipped" && <span className="mavis-todo__skipped"> (ran out of time)</span>}
+              </div>
               {s.status === "active" && s.lines?.length > 0 && (
                 <ul className="mavis-todo__lines">
                   {s.lines.map((l) => <li key={l}>{l}</li>)}
@@ -29,7 +32,7 @@ export default function TodoCard({ todo }) {
         ))}
       </ol>
       {todo.complete && (
-        <div className="mavis-todo__done">You found Paya Lebar. The aircraft is held; see your scorecard.</div>
+        <div className="mavis-todo__done">You found Paya Lebar. After your score you're put back at the start of the runway.</div>
       )}
     </div>
   );

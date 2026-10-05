@@ -53,6 +53,22 @@ def start_position(lesson: dict) -> tuple[float, float]:
             lon0 + d * math.sin(b) / (111320.0 * math.cos(math.radians(lat0))))
 
 
+def runway_start(lesson: dict) -> tuple[float, float, float]:
+    """Lined-up spot at the start of the runway (lat, lon, true heading) the
+    aircraft is put back on once the exercise is scored. Applies the lesson's
+    centerline_offset_m calibration so it lands on the real centreline."""
+    rw = lesson["runway"]
+    lat0, lon0 = rw["threshold"]["lat"], rw["threshold"]["lon"]
+    h = math.radians(rw["heading_true"])
+    along = float((lesson.get("end_reposition") or {}).get("along_m", 60))
+    left = float(lesson["pattern"].get("centerline_offset_m", 0.0))
+    n = along * math.cos(h) + left * math.sin(h)
+    e = along * math.sin(h) - left * math.cos(h)
+    return (lat0 + n / 111320.0,
+            lon0 + e / (111320.0 * math.cos(math.radians(lat0))),
+            float(rw["heading_true"]))
+
+
 def bearing_dist(lat: float, lon: float, lat2: float, lon2: float) -> tuple[float, float]:
     """True bearing (deg) and distance (m) from (lat, lon) to (lat2, lon2)."""
     dn = (lat2 - lat) * 111320.0
@@ -124,6 +140,7 @@ class FamiliarizationEngine:
         self.held = False                        # frozen while a step is explained
         self.night_done = True                   # no night switch in this lesson
         self.geom = None
+        self.skipped: set[str] = set()          # steps that timed out unfinished
         self._last_fire: dict[str, float] = {}
         self._reset_step()
 
@@ -160,12 +177,15 @@ class FamiliarizationEngine:
         self.detector.phase = "BRIEFING"
         self.briefing_done = False
         self.held = False
+        self.skipped.clear()
         self._last_fire.clear()
         self._reset_step()
 
     def load_phase(self, phase: str, circuit: int):
         """Checkpoint retry: re-enter the step fresh (re-announced on next tick)."""
         self.detector.advance(phase)
+        order = self.detector.ORDER
+        self.skipped -= set(order[order.index(phase):])
         self._reset_step()
 
     def wants_night_switch(self) -> bool:
@@ -260,7 +280,8 @@ class FamiliarizationEngine:
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
         return out
 
-    def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
+    def _achieved(self, tel: Telemetry, dt: float) -> bool:
+        """Has the trainee done what the current step asks?"""
         p, e = self.phase, self._entry
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
@@ -269,18 +290,28 @@ class FamiliarizationEngine:
             else:
                 self._pointing = 0.0
             return f["dist_m"] <= self.finish_m or self._pointing >= self.point_s
-        timed_out = now - e["t"] > self.step_max_s
         if p == "STRAIGHT_LEVEL":
             if abs(tel.bank) < 6 and abs(tel.alt_msl - e["alt"]) < self.alt_band:
                 self._held += dt
-            return self._held >= self.hold_s or timed_out
+            return self._held >= self.hold_s
         if p in ("TURN_LEFT", "TURN_RIGHT"):
             want = -1.0 if p == "TURN_LEFT" else 1.0
-            return (self._turned * want >= self.turn_deg - 20 and abs(tel.bank) < 8) or timed_out
+            return self._turned * want >= self.turn_deg - 20 and abs(tel.bank) < 8
         if p == "CLIMB":
-            return tel.alt_msl >= e["alt"] + self.climb_ft - 100 or timed_out
+            return tel.alt_msl >= e["alt"] + self.climb_ft - 100
         if p == "DESCEND":
-            return tel.alt_msl <= e["alt"] - self.descend_ft + 100 or timed_out
+            return tel.alt_msl <= e["alt"] - self.descend_ft + 100
+        return False
+
+    def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
+        """Done, or out of time (finding the field never times out: it's the
+        lesson's goal). A timed-out step moves on but is marked skipped."""
+        if self._achieved(tel, dt):
+            return True
+        if self.phase != "FIND_AIRFIELD" and now - self._entry["t"] > self.step_max_s:
+            self.skipped.add(self.phase)
+            log.info("familiarization step %s timed out -- moving on", self.phase)
+            return True
         return False
 
     def _monitors(self, tel: Telemetry, now: float) -> list[CoachEvent]:
@@ -348,22 +379,25 @@ class FamiliarizationEngine:
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
             if abs(f["rel"]) <= self.point_deg and f["dist_m"] <= self.point_max_m:
-                return "On the nose \u2014 hold it there\u2026"
+                left = max(1, math.ceil(self.point_s - self._pointing))
+                return f"On the nose \u2014 hold it {left} more second{'s' if left > 1 else ''}"
             return f"Paya Lebar: your {f['clock']} o'clock, about {f['dist_nm']} nm"
         return ""
 
     def todo(self) -> dict | None:
         """To-do list for the pilot view: every step with its status; the
         active one carries its short checklist lines and live progress."""
-        if self.phase == "BRIEFING" and not self.briefing_done:
-            return None
         order = self.detector.ORDER[1:-1]
-        cur = order.index(self.phase) if self.phase in order else len(order)
+        if self.phase == "BRIEFING":
+            cur = -1                              # briefing: preview, nothing active yet
+        else:
+            cur = order.index(self.phase) if self.phase in order else len(order)
         steps = []
         for i, sid in enumerate(order):
             note = self.notes.get(sid) or {}
+            done = "skipped" if sid in self.skipped else "done"
             row = {"id": sid, "title": note.get("title") or STEP_TITLES.get(sid, sid),
-                   "status": "done" if i < cur else ("active" if i == cur else "todo")}
+                   "status": done if i < cur else ("active" if i == cur else "todo")}
             if i == cur and self._data:
                 lines = []
                 for ln in note.get("todo") or []:
@@ -379,10 +413,13 @@ class FamiliarizationEngine:
 
 class FamiliarizationScorer:
     """Practice score for the familiarization flight -- never posted to the
-    leaderboard. Metrics (0-100): altitude hold (straight & level and turns),
-    bank control (turns), climb speed, smoothness. 'Incomplete' until the
-    trainee reaches the airfield."""
-    WEIGHTS = {"altitude": 30, "bank": 25, "climb_speed": 20, "smoothness": 25}
+    leaderboard. Metrics (0-100): exercises (share of the five flown rather
+    than timed out), altitude hold (straight & level and turns), bank control
+    (turns), climb speed, smoothness. 'Incomplete' until the trainee reaches
+    the airfield. main.py hands over the engine's skipped steps before
+    finalize()."""
+    WEIGHTS = {"exercises": 25, "altitude": 25, "bank": 20, "climb_speed": 10, "smoothness": 20}
+    EXERCISES = ("STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND")
 
     def __init__(self, lesson: dict, aircraft: dict):
         ex = lesson.get("exercises") or {}
@@ -394,9 +431,12 @@ class FamiliarizationScorer:
         self.reset()
 
     def reset(self) -> None:
-        self._acc = {k: [0.0, 0] for k in self.WEIGHTS}
+        self._acc = {k: [0.0, 0] for k in self.WEIGHTS if k != "exercises"}
+        self._seen: set[str] = set()
+        self.skipped: set[str] = set()
         self._prev_ctrl = None
         self._phase = None
+        self._phase_t = 0.0
         self._ref_alt = None
         self.reached = False
         self.retries = 0
@@ -418,13 +458,20 @@ class FamiliarizationScorer:
             self.reached = True
         if tel.get("on_ground", True):
             return
+        if phase in self.EXERCISES:
+            self._seen.add(phase)
         if phase != self._phase:
             self._phase, self._ref_alt = phase, tel.get("alt_msl", 0.0)
+            self._phase_t = time.time()
         if phase in ("STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT"):
             self._add("altitude", abs(tel.get("alt_msl", 0.0) - self._ref_alt))
-        if phase in ("TURN_LEFT", "TURN_RIGHT") and abs(tel.get("bank", 0.0)) > 5:
+        # bank accuracy once established in the turn -- rolling in and out
+        # passes through small angles on the way and isn't an error
+        if phase in ("TURN_LEFT", "TURN_RIGHT") and abs(tel.get("bank", 0.0)) >= self.bank / 2:
             self._add("bank", abs(abs(tel.get("bank", 0.0)) - self.bank))
-        if phase == "CLIMB":
+        # climb speed once actually climbing and settled (cruise speed bleeds
+        # off for the first several seconds of a correct climb)
+        if phase == "CLIMB" and tel.get("vs", 0.0) > 200 and time.time() - self._phase_t > 10:
             self._add("climb_speed", abs(tel.get("ias", 0.0) - self.vy))
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)
         pitch = ctrl["pitch"] if ctrl and ctrl.get("available") else -tel.get("elevator", 0.0)
@@ -437,16 +484,25 @@ class FamiliarizationScorer:
         scale = {"altitude": self.s["altitude"], "bank": self.s["bank"],
                  "climb_speed": self.s["speed"], "smoothness": self.s["smoothness"]}
         scores = {}
+        attempted = self._seen | (self.skipped & set(self.EXERCISES))
+        scores["exercises"] = (round(100 * len(attempted - self.skipped) / len(attempted))
+                               if attempted else None)
         for k, (tot, n) in self._acc.items():
             scores[k] = round(_curve(tot / n, scale[k])) if n else None
         flown = {k: v for k, v in scores.items() if v is not None}
         wsum = sum(self.WEIGHTS[k] for k in flown) or 1
         total = round(sum(v * self.WEIGHTS[k] for k, v in flown.items()) / wsum) if flown else 0
+        # an exercise left undone can't come out top-grade: each one caps the
+        # total 10 lower, starting at 85 (a B)
+        n_skipped = len(self.skipped & set(self.EXERCISES))
+        capped = n_skipped > 0 and total > 95 - 10 * n_skipped
+        if capped:
+            total = 95 - 10 * n_skipped
         grade = "F"
         for thr, g in self.grade_bands:
             if total >= thr:
                 grade = g
                 break
         return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, grade, False, True,
+                         self.retries, total, grade, capped, True,
                          incomplete=not self.reached)

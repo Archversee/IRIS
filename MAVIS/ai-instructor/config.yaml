@@ -10,18 +10,21 @@ sim:
   host: 127.0.0.1       # SIM PC's LAN IP (app runs on the laptop). Use 127.0.0.1 if same PC
   port: 500
   tick_hz: 10              # telemetry poll rate
-  # Weather is NOT settable via SimConnect on MSFS 2020 (leave method: none).
-  # MSFS 2024's SDK is more capable, but the exact weather trigger still has to be
-  # confirmed at the sim - discover the event/var (SimConnect Inspector or SDK docs)
-  # and drop it in below. method: event fires a key event; simvar sets a variable.
+  # Weather by chat/voice ("make it rain"). EXPERIMENTAL: MSFS may accept the
+  # request and still not change the sky (MSFS 2020 largely ignores SimConnect
+  # weather). method: theme calls SimConnect_WeatherSetModeTheme(<theme>) --
+  # the names below are MSFS's weather-preset names; adjust if your sim uses
+  # others. method: event fires a key event; simvar sets a variable; none = off.
+  # Time of day needs no setup: it uses the sim clock events and is confirmed.
   weather:
-    method: none           # none | event | simvar
-    presets:               # canonical name -> trigger (fill event/value or var/value)
-      clear:  { event: "", value: 0 }
-      cloudy: { event: "", value: 0 }
-      rain:   { event: "", value: 0 }
-      storm:  { event: "", value: 0 }
-      fog:    { event: "", value: 0 }
+    method: theme          # none | theme | event | simvar
+    presets:               # canonical name -> trigger (theme, or event/value, or var/value)
+      clear:  { theme: "Clear Skies" }
+      cloudy: { theme: "Overcast" }
+      rain:   { theme: "Rain" }
+      storm:  { theme: "Storm" }
+      fog:    { theme: "Fog" }
+      snow:   { theme: "Snow" }
 
 aircraft_profile: profiles/aircraft/c172sp_g1000.yaml
 lesson: lessons/lesson01_pattern.yaml

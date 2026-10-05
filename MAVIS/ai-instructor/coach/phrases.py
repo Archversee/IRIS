@@ -116,7 +116,7 @@ TEMPLATES = {
     "FAM_STEEP": ["That's a steep tilt. Ease the stick back toward the middle, gentle turns only."],
     "FAM_TURN_REMIND": ["Whenever you're ready, ease the stick {dir} for that turn, roughly {bank_lo} to {bank_hi} degrees of tilt."],
     "FAM_FIELD_HINT": ["{field} is somewhere around your {clock} o'clock, about {dist_nm} miles. Try a heading roughly between {brg_lo} and {brg_hi}."],
-    "FAM_DEBRIEF": ["There it is, Paya Lebar, right on the nose. You found it. That's the end of the exercise, I'm holding the aeroplane here. Lovely work."],
+    "FAM_DEBRIEF": ["There it is, Paya Lebar, right on the nose. You found it. Lovely work. Once you've seen your score, I'll put you back at the start of the runway."],
     "FAM_YOU_HAVE_CONTROL": ["Okay. You have control."],
 }
 
@@ -167,7 +167,7 @@ PILOT_TEMPLATES = {
     "FAM_STEEP": ["Bank too steep. Shallow the turn."],
     "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank_lo} to {bank_hi} degrees of bank."],
     "FAM_FIELD_HINT": ["{field}, approximately {clock} o'clock, about {dist_nm} miles. Suggest heading {brg_lo} to {brg_hi}."],
-    "FAM_DEBRIEF": ["Field on the nose. Exercise complete, aircraft held. We'll debrief the flight."],
+    "FAM_DEBRIEF": ["Field on the nose. Exercise complete. After the debrief you'll be repositioned to the start of runway 02."],
     "FAM_YOU_HAVE_CONTROL": ["You have control."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],

@@ -7,11 +7,10 @@ specific sim PC/Sim Update combination that `pysimconnect` connects to
 successfully, so this adapter was ported to it. See git history for the
 AircraftRequests/AircraftEvents-based version this replaced.
 
-Event-SENDING (day/night time-of-day switch, weather) is not wired up for
-`pysimconnect` yet -- `set_local_time()` always returns False (its documented
-"unsupported" contract, so callers already fall back gracefully), and
-`set_weather()` is omitted entirely (called via getattr elsewhere in MAVIS, so
-its absence degrades gracefully too). `set_position()` IS ported: it writes
+Writes to the sim: `set_local_time()` sends the CLOCK_*_SET events (ZULU_*
+fallback) and confirms against LOCAL TIME; `set_weather()` applies a preset
+named in config.yaml sim.weather (a weather theme by default -- EXPERIMENTAL,
+MSFS may ignore it); `set_position()` writes
 SimConnect's InitPosition struct (the airborne start used by the flight
 familiarization lesson, and checkpoint retries), and `set_frozen()` sends the
 FREEZE_* toggle events (held still while the instructor explains a step).
@@ -51,6 +50,7 @@ _SIMVARS = [
     ("BRAKE LEFT POSITION", "Position"),
     ("BRAKE RIGHT POSITION", "Position"),
     ("LOCAL TIME", "seconds"),
+    ("ZULU TIME", "seconds"),
     ("FLAPS HANDLE PERCENT", "Percent"),
     ("ELEVATOR TRIM PCT", "Percent"),
     ("IS LATITUDE LONGITUDE FREEZE ON", "Bool"),
@@ -205,12 +205,88 @@ class MSFSAdapter:
             elevator_trim_pct=g("ELEVATOR TRIM PCT", None),
         )
 
+    def _wait_for(self, pred, timeout_s: float) -> bool:
+        """Pump SimConnect until pred() holds. Takes the lock per pump, never
+        across the wait, so the tick loop's telemetry keeps flowing meanwhile
+        (the map/tablet would otherwise stall while the sim confirms)."""
+        import time as _time
+        deadline = _time.time() + timeout_s
+        while _time.time() < deadline:
+            with self._lock:
+                self._sm.receive()
+            if pred():
+                return True
+            _time.sleep(0.05)
+        return pred()
+
+    def _drain(self) -> None:
+        with self._lock:
+            while self._sm.receive():
+                pass
+
     def set_local_time(self, hour: int, minute: int) -> bool:
-        """Event-sending isn't ported to pysimconnect yet (see module
-        docstring) -- always False, which is this method's documented
-        "unsupported" contract, so callers (night-lesson switch, the ground
-        clock chat command) already fall back gracefully rather than error."""
+        """Set the sim's local time of day (sky, sun, lighting all follow).
+        Tries CLOCK_HOURS/MINUTES_SET first, then the ZULU_* events using the
+        sim's own local-vs-zulu offset. True only once LOCAL TIME reads back
+        within two minutes of what was asked."""
+        if self._sm is None:
+            return False
+        want = (int(hour) * 60 + int(minute)) % 1440
+
+        def landed() -> bool:
+            d = abs((self._get("LOCAL TIME", 0) / 60.0) % 1440 - want)
+            return min(d, 1440 - d) <= 2
+
+        try:
+            self._drain()
+            if landed():
+                return True
+            with self._lock:
+                self._sm.send_event("CLOCK_HOURS_SET", int(hour) % 24)
+                self._sm.send_event("CLOCK_MINUTES_SET", int(minute) % 60)
+            if self._wait_for(landed, 2.0):
+                log.info("sim local time -> %02d:%02d", hour, minute)
+                return True
+            offset = round((self._get("LOCAL TIME", 0) - self._get("ZULU TIME", 0)) / 60.0)
+            z = (want - offset) % 1440
+            with self._lock:
+                self._sm.send_event("ZULU_HOURS_SET", z // 60)
+                self._sm.send_event("ZULU_MINUTES_SET", z % 60)
+            if self._wait_for(landed, 2.0):
+                log.info("sim local time -> %02d:%02d (via zulu %02d:%02d)",
+                         hour, minute, z // 60, z % 60)
+                return True
+        except Exception as e:
+            log.error("SimConnect set_local_time failed: %s", e)
+            return False
+        log.warning("sim didn't take the time change to %02d:%02d", hour, minute)
         return False
+
+    def set_weather(self, condition: str) -> bool:
+        """Apply a weather preset from config.yaml sim.weather. EXPERIMENTAL:
+        method "theme" calls SimConnect_WeatherSetModeTheme (the sim may accept
+        the call yet not change the sky -- there's no simvar to confirm it);
+        "event"/"simvar" fire a key event / set a var you've confirmed at the
+        sim. True means the request was sent without error. Never raises."""
+        method = self._weather.get("method", "none")
+        entry = (self._weather.get("presets") or {}).get((condition or "").lower())
+        if self._sm is None or method == "none" or not entry:
+            return False
+        try:
+            with self._lock:
+                if method == "theme" and entry.get("theme"):
+                    self._sm.WeatherSetModeTheme(entry["theme"])
+                elif method == "event" and entry.get("event"):
+                    self._sm.send_event(entry["event"], int(entry.get("value", 0)))
+                elif method == "simvar" and entry.get("var"):
+                    self._sm.set_simdatum(entry["var"], entry.get("value", 0))
+                else:
+                    return False
+        except Exception as e:
+            log.warning("set_weather(%s) via %s failed: %s", condition, method, e)
+            return False
+        log.info("set_weather(%s) requested via %s", condition, method)
+        return True
 
     def set_position(self, lat: float, lon: float, alt_msl: float, hdg: float,
                      ias: float, throttle_pct: float | None = None,
@@ -253,22 +329,20 @@ class MSFSAdapter:
         """Hold the aircraft still (position, altitude and attitude) while the
         instructor explains, like MSFS's own lessons; on=False hands it back.
         Returns True once the sim reports the requested state."""
-        import time as _time
         if self._sm is None:
             return False
+
+        def settled() -> bool:
+            return all(bool(self._get(var, 0)) == on for var, _ in _FREEZES)
+
         try:
+            self._drain()
             with self._lock:
-                while self._sm.receive():
-                    pass
                 for var, event in _FREEZES:
                     if bool(self._get(var, 0)) != on:
                         self._sm.send_event(event)
-                deadline = _time.time() + 1.5
-                while _time.time() < deadline:
-                    self._sm.receive()
-                    if all(bool(self._get(var, 0)) == on for var, _ in _FREEZES):
-                        return True
-                    _time.sleep(0.05)
+            if self._wait_for(settled, 1.5):
+                return True
         except Exception as e:
             log.error("SimConnect set_frozen(%s) failed: %s", on, e)
             return False
