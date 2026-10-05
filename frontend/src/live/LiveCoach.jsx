@@ -28,7 +28,7 @@ const SCORECARD_WAIT_MS = 15000;
 export default function LiveCoach({ freeFlight = false }) {
   const status = useMavisStatus();
   const state = useMavisState();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const nav = useNavigate();
   // Purely local, deliberately -- MAVIS never nulls out session_id on
   // quit (it only mints a fresh one on the next /demo/start), so deriving
@@ -91,7 +91,7 @@ export default function LiveCoach({ freeFlight = false }) {
     const sid = state?.session_id;
     setEnding(false);
     setStartedHere(false);
-    nav(sid ? `/upload?session=${sid}` : "/upload");
+    nav(sid ? `/sessions/${sid}/save` : "/upload");
   }
 
   useEffect(() => {
@@ -105,12 +105,10 @@ export default function LiveCoach({ freeFlight = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ending, state?.scorecard]);
 
-  // From the scorecard's "Main menu" button -- score first (already on
-  // screen), then IRIS's own Upload form (name/pilot/aircraft/notes, CSV
-  // ingest, video linking) pre-filled with this session, same as any other
-  // flight's end-of-session flow. Goes all the way back through Upload
-  // rather than straight to "/", since there's now always a save/upload
-  // step between finishing a flight and returning to the dashboard.
+  // From the scorecard's "Finish & save" button -- score first (already on
+  // screen), then the Save Session page (name, pilot, aircraft, notes,
+  // video linking -- no CSV, MAVIS already logged the flight), whose Next
+  // button opens this session's review.
   async function backToDashboardHome() {
     const sid = state?.session_id;
     try {
@@ -120,7 +118,7 @@ export default function LiveCoach({ freeFlight = false }) {
     }
     await markEnded();
     setStartedHere(false);
-    nav(sid ? `/upload?session=${sid}` : "/upload");
+    nav(sid ? `/sessions/${sid}/save` : "/upload");
   }
 
   // From the scorecard's "Finish & discard" button -- same quit as above,
@@ -150,7 +148,6 @@ export default function LiveCoach({ freeFlight = false }) {
         <ReadingLesson
           lessonId={readingId}
           data={state?.reading_lessons?.[readingId]}
-          onExit={() => setSearchParams({}, { replace: true })}
         />
       </div>
     );

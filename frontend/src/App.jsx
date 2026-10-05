@@ -12,6 +12,7 @@ import { LeaderboardPage, ScoringGuidePage, ControlsGuidePage } from "./pages/Ma
 import Login from "./pages/Login.jsx";
 import Profile from "./pages/Profile.jsx";
 import Accounts from "./pages/Accounts.jsx";
+import SaveSession from "./pages/SaveSession.jsx";
 import { useAuth } from "./auth/AuthContext.jsx";
 
 export default function App() {
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />
+          <Route path="/sessions/:id/save" element={<SaveSession />} />
           <Route path="/sessions/:id/review" element={<Review />} />
           <Route path="/sessions/:id/analytics" element={<div className="container"><Analytics /></div>} />
           <Route path="/aoi-zones" element={<div className="container"><AoiEditor /></div>} />

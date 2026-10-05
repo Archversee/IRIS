@@ -379,3 +379,12 @@ th { color: var(--muted); font-weight: 600; }
 .acct-modal__wide { grid-column: 1 / -1; }
 .acct-modal__err { margin-top: 12px; }
 @media (max-width: 600px) { .acct-modal__grid { grid-template-columns: 1fr; } }
+
+/* ---- Save Session / Upload: pilot picker + Next ---- */
+.pilot-picker { display: flex; flex-direction: column; gap: 8px; }
+.save-session__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.save-session__head h1 { margin: 0 0 4px; }
+.save-session__head p { margin: 0; }
+.save-session__id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.save-session__actions { display: flex; justify-content: flex-end; margin: 8px 0 24px; }
+.next-btn { padding: 12px 26px; font-size: 15px; border-radius: 10px; }
