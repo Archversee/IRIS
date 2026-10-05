@@ -441,32 +441,44 @@ export function useSessionData({ id, live }) {
   const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
 
   // Gaze trail across the Instruments and OTW screens: the last few glances
-  // up to now. Instrument glances sit at their AOI zone's centre; OTW
-  // glances on the OTW screen where the eyes actually were (mean gaze
-  // point, or the screen centre if there's none). Coordinates are each
-  // screen's own 1920x1080 space; `screen` says which. `afterGap` marks a
-  // glance after a look somewhere unmapped (panel but no zone, unlabelled).
+  // up to now, counting ONLY labelled areas -- the named AOI zones and OTW.
+  // Unlabelled samples and plain "Instruments" (on the panel but outside
+  // every zone) are skipped: they're not steps, and a return to the same
+  // area across one of them stays a single glance. Instrument glances sit at
+  // their zone's centre; OTW glances on the OTW screen where the eyes were
+  // (mean gaze point, else the screen centre). Coordinates are each screen's
+  // own 1920x1080 space; `screen` says which.
   const scanTrail = useMemo(() => {
     const zoneByName = new Map(aoiZones.map((z) => [z.name, z]));
-    const recent = scanLog.filter((r) => r.start <= curT && !hiddenAois.has(r.aoi)).slice(-SCAN_TRAIL_LEN);
-    const out = [];
-    let gap = false;
-    for (const r of recent) {
-      const z = zoneByName.get(r.aoi);
-      const isOtw = r.aoi === "OTW";
-      if (!z && !isOtw) { gap = true; continue; }
-      out.push({
-        id: r.order, // stable per glance -- lets the trail animate instead of re-drawing
-        aoi: r.aoi, color: scanLogColor.get(r.aoi), isOtw, screen: isOtw ? "otw" : "instrument",
-        ...(isOtw
-          ? (meanOtwGaze(eye, eyeTimeline, r.start, Math.min(r.end, curT)) || { x: 960, y: 540 })
-          : { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }),
-        dur: Math.max(0, Math.min(r.end, curT) - r.start),
-        isCurrent: curT < r.end, afterGap: gap && out.length > 0,
-      });
-      gap = false;
+    const labelled = (aoi) => aoi === "OTW" || zoneByName.has(aoi);
+    // Walk back from now, merging consecutive same-area runs, until enough steps.
+    const steps = [];
+    let latest = null; // the run the gaze is in right now (labelled or not)
+    for (let i = scanLog.length - 1; i >= 0; i--) {
+      const r = scanLog[i];
+      if (r.start > curT) continue;
+      if (!latest) latest = r;
+      if (hiddenAois.has(r.aoi) || !labelled(r.aoi)) continue;
+      const end = Math.min(r.end, curT), dur = Math.max(0, end - r.start);
+      const head = steps[0];
+      if (head && head.aoi === r.aoi) {          // same area again -> one glance
+        head.start = r.start; head.id = r.order; head.dur += dur; continue;
+      }
+      if (steps.length === SCAN_TRAIL_LEN) break;
+      steps.unshift({ id: r.order, aoi: r.aoi, start: r.start, end, dur, isCurrent: r === latest && curT < r.end });
     }
-    return out;
+    return steps.map((st) => {
+      const isOtw = st.aoi === "OTW";
+      const z = zoneByName.get(st.aoi);
+      return {
+        id: st.id, // earliest run of the glance -- stable, so the trail animates instead of re-drawing
+        aoi: st.aoi, color: scanLogColor.get(st.aoi), isOtw, screen: isOtw ? "otw" : "instrument",
+        ...(isOtw
+          ? (meanOtwGaze(eye, eyeTimeline, st.start, st.end) || { x: 960, y: 540 })
+          : { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }),
+        dur: st.dur, isCurrent: st.isCurrent,
+      };
+    });
   }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor, eye, eyeTimeline]);
 
   const scanLogRows = useMemo(() => {

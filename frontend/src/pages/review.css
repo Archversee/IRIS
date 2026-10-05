@@ -611,18 +611,17 @@
 /* Smooth: ageing glances fade, circles grow while held, new links sweep in. */
 .scan-trail__dot { transition: opacity .6s ease; animation: scan-trail-in .35s ease-out; transform-box: fill-box; transform-origin: center; }
 .scan-trail__dot circle { stroke-width: 2px; transition: r .35s ease-out, cx .5s ease, cy .5s ease, stroke-width .35s ease; }
-.scan-trail__dot.is-otw circle { stroke-dasharray: 5 3; }
+/* OTW steps: hollow-ish with a double ring, to tell them from instruments */
+.scan-trail__dot.is-otw circle { fill-opacity: .12; stroke-width: 3px; paint-order: stroke; filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 1.5px rgba(255,255,255,.9)); }
 .scan-trail__num { font-size: 11px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 2px; }
 .scan-trail__link {
   fill: none; stroke: #fff; stroke-width: 2px; stroke-linecap: round;
   stroke-dasharray: 1; stroke-dashoffset: 0;
   transition: opacity .6s ease; animation: scan-trail-draw .45s ease-out;
 }
-.scan-trail__link.is-gap { stroke-dasharray: 0.035 0.03; animation: scan-trail-fade .45s ease-out; }
 .scan-trail__now circle { stroke-width: 3px; animation: scan-trail-pulse 1.6s ease-in-out infinite; }
 @keyframes scan-trail-in { from { opacity: 0; transform: scale(.6); } }
 @keyframes scan-trail-draw { from { stroke-dashoffset: 1; } }
-@keyframes scan-trail-fade { from { opacity: 0; } }
 @keyframes scan-trail-pulse { 50% { stroke-width: 5px; } }
 .trail-btn { opacity: .55; }
 .trail-btn.is-on { opacity: 1; border-color: var(--rev-cyan); color: var(--rev-cyan); }
