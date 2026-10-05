@@ -613,6 +613,7 @@
 .scan-trail__dot circle { stroke-width: 2px; transition: r .35s ease-out, cx .5s ease, cy .5s ease, stroke-width .35s ease; }
 /* OTW steps: hollow-ish with a double ring, to tell them from instruments */
 .scan-trail__dot.is-otw circle { fill-opacity: .12; stroke-width: 3px; paint-order: stroke; filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 1.5px rgba(255,255,255,.9)); }
+.scan-trail__num.is-multi { font-size: 9.5px; letter-spacing: -.02em; }
 .scan-trail__num { font-size: 11px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 2px; }
 .scan-trail__link {
   fill: none; stroke: #fff; stroke-width: 2px; stroke-linecap: round;
