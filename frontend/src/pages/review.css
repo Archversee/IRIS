@@ -592,3 +592,36 @@
 @media (max-width: 700px) {
   .lsp { padding: 20px 16px; }
 }
+
+/* ---- Scan strip (under the session timeline) ---- */
+.scan-strip { margin: 6px 0 2px; }
+.scan-strip__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
+.scan-strip__title { font-size: 12px; font-weight: 700; color: var(--rev-muted); letter-spacing: .04em; text-transform: uppercase; }
+.scan-strip__legend { display: flex; flex-wrap: wrap; gap: 5px; }
+.scan-strip__chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 500; background: transparent; color: var(--rev-text);
+  border: 1px solid var(--rev-line); cursor: pointer;
+}
+.scan-strip__chip .swatch { width: 8px; height: 8px; border-radius: 2px; }
+.scan-strip__chip.is-off { opacity: .4; text-decoration: line-through; }
+.scan-strip__pct { color: var(--rev-muted); font-variant-numeric: tabular-nums; }
+/* inset to the chart's plot area: 2px left, 8px right (see ScanStrip.jsx) */
+.scan-strip__track {
+  position: relative; height: 26px; margin: 0 8px 0 2px; border-radius: 4px;
+  background: var(--inset); border: 1px solid var(--rev-line); overflow: hidden;
+}
+.scan-strip__seg {
+  position: absolute; top: 0; bottom: 0; padding: 0; border: 0; border-radius: 0; min-width: 1px;
+  cursor: pointer; opacity: .9; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .35);
+}
+.scan-strip__seg:hover { opacity: 1; filter: brightness(1.25); z-index: 1; }
+.scan-strip__cursor { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #ff5c5c; pointer-events: none; z-index: 2; }
+
+/* ---- Gaze trail on the Instruments screen ---- */
+.scan-trail__num { font-size: 52px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 6px; }
+.scan-trail__now circle { animation: scan-trail-pulse 1.2s ease-in-out infinite; }
+@keyframes scan-trail-pulse { 50% { stroke-width: 14px; } }
+.trail-btn { opacity: .55; }
+.trail-btn.is-on { opacity: 1; border-color: var(--rev-cyan); color: var(--rev-cyan); }
+@media (prefers-reduced-motion: reduce) { .scan-trail__now circle { animation: none; } }

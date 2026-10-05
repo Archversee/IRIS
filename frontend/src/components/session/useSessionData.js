@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
 import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
-import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi } from "./utils.js";
+import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
+
+const SCAN_TRAIL_LEN = 8; // glances shown in the Instruments-screen gaze trail
 
 // All state, data-fetching and derived computations behind a session
 // viewer (Review and Live pages both use this). `id` may be null/undefined
@@ -271,42 +273,14 @@ export function useSessionData({ id, live }) {
     return ticks;
   }, [series]);
 
-  const rawRuns = useMemo(() => {
-    const out = [];
-    let prev = null;
-    for (const e of eye) {
-      if (e.blink) continue;
-      const a = effectiveAoi(e, aoiZones);
-      if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
-    }
-    return out;
-  }, [eye, aoiZones]);
-
   const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
 
-  const runs = useMemo(() => {
-    if (rawRuns.length < 2) return rawRuns;
-    let merged = rawRuns.map((r) => ({ ...r }));
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let i = 1; i < merged.length; i++) {
-        const end = i + 1 < merged.length ? merged[i + 1].t : lastEyeT;
-        if (end - merged[i].t < minAoiDwellSec) {
-          merged[i].aoi = merged[i - 1].aoi;
-          changed = true;
-        }
-      }
-      if (changed) {
-        const collapsed = [];
-        for (const r of merged) {
-          if (!collapsed.length || collapsed[collapsed.length - 1].aoi !== r.aoi) collapsed.push(r);
-        }
-        merged = collapsed;
-      }
-    }
-    return merged;
-  }, [rawRuns, minAoiDwellSec, lastEyeT]);
+  // [{aoi, t}] -- see buildScanRuns() in utils.js (shared with Analytics).
+  const runs = useMemo(
+    () => buildScanRuns(eye, aoiZones, elapsed, minAoiDwellSec, lastEyeT),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eye, aoiZones, minAoiDwellSec, lastEyeT, t0],
+  );
 
   const regions = useMemo(() => {
     const durations = {};
@@ -417,6 +391,28 @@ export function useSessionData({ id, live }) {
   }, [scanLog]);
 
   const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
+
+  // Gaze trail over the Instruments screen: the last few glances up to now
+  // that landed on an AOI zone, placed at each zone's centre. `afterGap`
+  // marks a glance that came after a look elsewhere (OTW etc.) in between.
+  const scanTrail = useMemo(() => {
+    const zoneByName = new Map(aoiZones.map((z) => [z.name, z]));
+    const recent = scanLog.filter((r) => r.start <= curT && !hiddenAois.has(r.aoi)).slice(-SCAN_TRAIL_LEN);
+    const out = [];
+    let gap = false;
+    for (const r of recent) {
+      const z = zoneByName.get(r.aoi);
+      if (!z) { gap = true; continue; }
+      out.push({
+        aoi: r.aoi, color: scanLogColor.get(r.aoi),
+        x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2,
+        dur: Math.max(0, Math.min(r.end, curT) - r.start),
+        isCurrent: curT < r.end, afterGap: gap && out.length > 0,
+      });
+      gap = false;
+    }
+    return out;
+  }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor]);
 
   const scanLogRows = useMemo(() => {
     const rows = [];
@@ -575,7 +571,7 @@ export function useSessionData({ id, live }) {
     screens: {
       otwVideoRef, otwVideoSrc, lookingAtOtw,
       instrumentVideoRef, instrumentVideoSrc, lookingAtInstruments,
-      aoiZones, curAoi,
+      aoiZones, curAoi, scanTrail,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
       onGroundMouseDown: (e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); },
@@ -595,6 +591,8 @@ export function useSessionData({ id, live }) {
       speed, setSpeed,
       live, followingLive, goLive,
     },
+
+    scanStrip: { scanLog, scanLogColor, allAois, hiddenAois, toggleAoiHidden },
 
     scanPath: {
       curEye, curAoi,

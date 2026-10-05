@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 // Binds a live MediaStream (browser screen-capture) to a <video> ref --
 // srcObject can't be set as a JSX attribute like src can.
@@ -6,6 +6,57 @@ function useStreamBinding(ref, stream) {
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream || null;
   }, [ref, stream]);
+}
+
+// Gaze trail over the Instruments screen (1920x1080 overlay coordinates):
+// numbered circles at each glanced zone's centre (1 = oldest), sized by
+// glance length, joined by arrows in order. Older glances fade; a dashed
+// arrow means the gaze went elsewhere (e.g. OTW) in between.
+function ScanTrail({ trail: raw }) {
+  if (!raw?.length) return null;
+  const n = raw.length;
+  const radius = (dur) => Math.max(48, Math.min(110, 48 + dur * 12));
+  // The same zone often recurs (the attitude indicator is the scan's hub):
+  // fan repeat visits out around the zone centre so their circles, numbers
+  // and arrows don't all stack on one spot.
+  const seen = new Map();
+  const trail = raw.map((p) => {
+    const k = seen.get(p.aoi) || 0;
+    seen.set(p.aoi, k + 1);
+    if (!k) return p;
+    const ang = (k - 1) * (Math.PI / 3) - Math.PI / 2;
+    return { ...p, x: p.x + Math.cos(ang) * 165, y: p.y + Math.sin(ang) * 165 };
+  });
+  const alpha = (i) => (n === 1 ? 1 : 0.3 + (0.7 * i) / (n - 1));
+  return (
+    <g className="scan-trail">
+      <defs>
+        <marker id="scan-trail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#fff" />
+        </marker>
+      </defs>
+      {trail.slice(1).map((p, k) => {
+        const a = trail[k];
+        const dx = p.x - a.x, dy = p.y - a.y, len = Math.hypot(dx, dy);
+        if (len < 1) return null;
+        const ux = dx / len, uy = dy / len;
+        const ra = radius(a.dur) + 6, rb = radius(p.dur) + 14;
+        if (len <= ra + rb) return null;
+        return (
+          <line key={"l" + k} x1={a.x + ux * ra} y1={a.y + uy * ra} x2={p.x - ux * rb} y2={p.y - uy * rb}
+            stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity={alpha(k + 1)}
+            strokeDasharray={p.afterGap ? "14 12" : undefined} markerEnd="url(#scan-trail-arrow)" />
+        );
+      })}
+      {trail.map((p, i) => (
+        <g key={"c" + i} opacity={alpha(i)} className={p.isCurrent ? "scan-trail__now" : undefined}>
+          <circle cx={p.x} cy={p.y} r={radius(p.dur)} fill={p.color} fillOpacity="0.32"
+            stroke={p.color} strokeWidth={p.isCurrent ? 10 : 6} />
+          <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{i + 1}</text>
+        </g>
+      ))}
+    </g>
+  );
 }
 
 // The three video/track panels at the top of the session viewer: OTW,
@@ -17,7 +68,7 @@ function useStreamBinding(ref, stream) {
 export default function ScreensPanel({
   otwVideoRef, otwVideoSrc, otwStream, lookingAtOtw,
   instrumentVideoRef, instrumentVideoSrc, instrumentStream, lookingAtInstruments,
-  aoiZones, curAoi,
+  aoiZones, curAoi, scanTrail,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
@@ -28,6 +79,10 @@ export default function ScreensPanel({
 
   const hasOtw = !!(otwStream || otwVideoSrc);
   const hasInstrument = !!(instrumentStream || instrumentVideoSrc);
+  const [showTrail, setShowTrail] = useState(true);
+  // Draw zones + trail even without a linked recording -- the layout of
+  // the zones alone still shows where the eyes went.
+  const showInstrumentOverlay = hasInstrument || (scanTrail?.length > 0 && aoiZones.length > 0);
 
   return (
     <div className="rev-screens">
@@ -63,6 +118,12 @@ export default function ScreensPanel({
       <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
         <div className="head">
           Instruments
+          {scanTrail && (
+            <button type="button" className={"capture-btn trail-btn" + (showTrail ? " is-on" : "")}
+              onClick={() => setShowTrail((v) => !v)} title="Show the last few glances as a numbered trail">
+              Trail
+            </button>
+          )}
           {live && (
             <button className="capture-btn" onClick={instrumentStream ? onStopInstrument : onCaptureInstrument}>
               {instrumentStream ? "■ Stop" : "◻ Capture"}
@@ -76,7 +137,7 @@ export default function ScreensPanel({
             <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
           ) : null}
-          {hasInstrument && (
+          {showInstrumentOverlay && (
             <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
               {aoiZones.map((z) => {
                 const active = z.name === curAoi;
@@ -90,6 +151,7 @@ export default function ScreensPanel({
                     opacity={active ? "0.95" : "0.55"} />
                 );
               })}
+              {showTrail && <ScanTrail trail={scanTrail} />}
               {lookingAtInstruments && gaze?.x != null && gaze?.y != null && (
                 <g className="gaze-cursor"
                   style={{
