@@ -35,7 +35,7 @@ from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer,
-                                  field_center, is_familiarization)
+                                  field_center, is_familiarization, start_position)
 from lessons import lesson00_preflight, lesson00_cockpit
 
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
@@ -129,7 +129,7 @@ def lesson_state(lesson) -> dict:
     if is_familiarization(lesson):
         lat, lon = field_center(lesson)
         out.update(type="familiarization", field={"lat": lat, "lon": lon},
-                   finish_radius_nm=float(lesson.get("finish_radius_nm", 2.0)))
+                   finish_radius_nm=float((lesson.get("finish") or {}).get("radius_nm", 2.0)))
     return out
 
 
@@ -451,9 +451,10 @@ async def amain(cfg):
         starts. Raises (a 500 on POST /demo/start, shown on the start menu)
         if the sim can't do it, so no session is minted."""
         a = lesson.get("airborne_start") or {}
+        lat, lon = start_position(lesson)
         fn = getattr(sim, "set_position", None)
         ok = fn is not None and await loop.run_in_executor(
-            None, lambda: fn(a["lat"], a["lon"], a["alt_msl_ft"], a["heading_true"],
+            None, lambda: fn(lat, lon, a["alt_msl_ft"], a["heading_true"],
                              a["ias_kt"], throttle_pct=a.get("throttle_pct")))
         if not ok:
             raise RuntimeError("Couldn't place the aircraft in the air for the "
@@ -759,6 +760,8 @@ async def amain(cfg):
             return {"ok": False, "error": "lesson not available"}
         if started.is_set():
             return {"ok": False, "error": "lesson in progress"}
+        if is_familiarization(lesson):
+            await _set_frozen(False)
         stop_speech()
         coach.pause()
         lesson = load_yaml(path)
@@ -798,6 +801,8 @@ async def amain(cfg):
                                 tone: str = "warm"):
         stop_speech()
         coach.pause()
+        if is_familiarization(lesson):
+            await _set_frozen(False)
         mid = normalize_mode(mode)
         policy = policy_for(mid)
         session["mode"] = mid
@@ -1167,13 +1172,13 @@ async def amain(cfg):
         stop_speech()
         coach.pause()
         engine.briefing_done = False
-        if is_familiarization(lesson):
-            await _set_frozen(False)
 
     quit_task: dict = {"t": None}   # keeps a reference so the task isn't GC'd
 
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
+        if is_familiarization(lesson):
+            await _set_frozen(False)        # hand the aircraft back on the way out
         if scored["done"]:
             return
         scored["done"] = True
@@ -1304,6 +1309,10 @@ async def amain(cfg):
                     prev_on_ground = tel.on_ground
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         scored["done"] = True
+                        if is_familiarization(lesson):
+                            # practice is over: hold the aircraft until Fly again /
+                            # Finish (restart / quit release it)
+                            asyncio.create_task(_set_frozen(True))
                         asyncio.create_task(finish_lesson(False))
             elif not spike:
                 last_good = tel
@@ -1316,6 +1325,7 @@ async def amain(cfg):
                 targets=engine.targets(),
                 night=not (6.0 < tel.local_time_h < 18.5),
                 transcript=transcript[-60:], llm_ok=coach.llm_ok,
+                fam_todo=engine.todo() if hasattr(engine, "todo") else None,
                 geom={"along": engine.geom.along, "cross": engine.geom.cross}
                      if engine.geom else None)
             # Ground track keeps the whole flight (taxi, take-off roll and
