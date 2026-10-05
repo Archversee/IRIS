@@ -10,50 +10,55 @@ function useStreamBinding(ref, stream) {
 
 // Gaze trail across the OTW and Instruments screens, drawn on one layer
 // over the whole screens row (in on-screen pixels): numbered circles
-// (1 = oldest) at each glance -- instrument glances on their AOI zone,
+// (newest = 5, counting down to the oldest) at each glance -- instrument glances on their AOI zone,
 // OTW glances on the OTW screen where the eyes were -- sized by glance
 // length and joined by curved arrows in order, crossing between the two
 // screens. Older glances fade. Only labelled areas (AOI zones + OTW) are
 // steps -- see scanTrail in useSessionData.js.
 //
-// Smoothness: circles keep stable keys (the instrument, or the OTW glance)
-// and fixed spots, so as playback runs they fade/grow via CSS transitions
-// instead of being re-drawn, and each new connector sweeps in.
+// Smoothness: every circle keeps a stable key (its glance), so as playback
+// runs it fades/grows/slides via CSS transitions instead of being re-drawn,
+// and each new connector sweeps in.
 
 // The video picture inside a 16:9 screen body is the whole body (the body
 // is kept exactly 16:9), so 1920x1080 maps straight onto it.
 const toScreen = (box, x, y) => ({ x: box.x + (x / 1920) * box.w, y: box.y + (y / 1080) * box.h });
 
-function ScanTrail({ trail: raw, boxes }) {
+function ScanTrail({ trail: raw, boxes, maxLen }) {
   if (!raw?.length || !boxes?.instrument || !boxes?.otw) return null;
   const n = raw.length;
   const u = boxes.instrument.w / 1920;                 // 1920-space units -> px
   const radius = (dur) => Math.max(48, Math.min(110, 48 + dur * 12)) * u;
   const alpha = (i) => (n === 1 ? 1 : 0.25 + (0.75 * i) / (n - 1));
 
-  // Each step on screen: instruments exactly on their zone centre, OTW where
-  // the eyes were.
-  const steps = raw.map((p, i) => ({ ...p, step: i + 1, ...toScreen(boxes[p.screen], p.x, p.y) }));
+  // Numbered from the newest down: the latest glance is always maxLen (5),
+  // the one before it 4, and so on -- every number shifts down by one as a
+  // new glance arrives. Each step sits on screen with instruments exactly on
+  // their zone centre and OTW where the eyes were.
+  const top = Math.max(maxLen || n, n);
+  const steps = raw.map((p, i) => ({ ...p, step: top - (n - 1 - i), ...toScreen(boxes[p.screen], p.x, p.y) }));
 
-  // One circle per instrument, however many times it recurs in the trail
-  // (the scan's hub usually does) -- labelled with all its step numbers, e.g.
-  // "1·3·5" -- so every circle sits right on its instrument. OTW steps stay
-  // separate (each is where the eyes actually were).
-  const nodes = [];
-  const byAoi = new Map();
-  steps.forEach((p, i) => {
-    const node = !p.isOtw && byAoi.get(p.aoi);
-    if (node) {
-      node.steps.push(p.step);
-      node.dur = p.dur; node.alpha = alpha(i); node.isCurrent = p.isCurrent;
-    } else {
-      const fresh = { key: p.isOtw ? `otw-${p.id}` : `zone-${p.aoi}`, x: p.x, y: p.y, color: p.color, isOtw: p.isOtw,
-        steps: [p.step], dur: p.dur, alpha: alpha(i), isCurrent: p.isCurrent };
-      nodes.push(fresh);
-      if (!p.isOtw) byAoi.set(p.aoi, fresh);
-    }
-  });
-  const nodeOf = (p) => (p.isOtw ? nodes.find((nd) => nd.key === `otw-${p.id}`) : byAoi.get(p.aoi));
+  // Every step is its own circle with its own number. When an instrument
+  // recurs in the trail (the scan's hub usually does), its circles sit side
+  // by side as a group centred on the instrument -- one visit sits right on
+  // the centre -- and slide back to centre as older visits drop off.
+  // Lay each instrument's circles out in a row, touching-but-not-overlapping
+  // (spacing from their actual sizes + a small gap), then centre the row.
+  const GAP = 6; // px between neighbouring repeat-visit circles
+  const offsets = new Map(); // step index -> dx
+  const groups = new Map();
+  steps.forEach((p, i) => { if (!p.isOtw) groups.set(p.aoi, [...(groups.get(p.aoi) || []), i]); });
+  for (const idxs of groups.values()) {
+    let x = 0;
+    const xs = idxs.map((i, j) => {
+      if (j) x += radius(steps[idxs[j - 1]].dur) + radius(steps[i].dur) + GAP;
+      return x;
+    });
+    const mid = (xs[0] + xs[xs.length - 1]) / 2;
+    idxs.forEach((i, j) => offsets.set(i, xs[j] - mid));
+  }
+  const nodes = steps.map((p, i) => ({ ...p, key: p.id, x: p.x + (offsets.get(i) || 0), label: String(p.step), alpha: alpha(i) }));
+  const nodeOf = (p) => nodes[steps.indexOf(p)];
 
   // Curved connector between two circles, trimmed to their edges. It bends
   // to the left of the direction of travel, so A->B and B->A curve to
@@ -88,8 +93,7 @@ function ScanTrail({ trail: raw, boxes }) {
         <g key={nd.key} className={"scan-trail__dot" + (nd.isCurrent ? " scan-trail__now" : "") + (nd.isOtw ? " is-otw" : "")}
           style={{ opacity: nd.alpha }}>
           <circle cx={nd.x} cy={nd.y} r={radius(nd.dur)} fill={nd.color} fillOpacity="0.32" stroke={nd.color} />
-          <text x={nd.x} y={nd.y} textAnchor="middle" dominantBaseline="central"
-            className={"scan-trail__num" + (nd.steps.length > 1 ? " is-multi" : "")}>{nd.steps.join("·")}</text>
+          <text x={nd.x} y={nd.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{nd.label}</text>
         </g>
       ))}
     </g>
@@ -130,7 +134,7 @@ function useScreenBoxes(rowRef, otwRef, instRef) {
 export default function ScreensPanel({
   otwVideoRef, otwVideoSrc, otwStream, lookingAtOtw,
   instrumentVideoRef, instrumentVideoSrc, instrumentStream, lookingAtInstruments,
-  aoiZones, curAoi, scanTrail,
+  aoiZones, curAoi, scanTrail, scanTrailLen,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
   routes, routeKey, setRouteKey, groundRoute,
@@ -270,7 +274,7 @@ export default function ScreensPanel({
       {/* Gaze trail on top of both screens, so arrows can cross between them. */}
       {showTrail && boxes && scanTrail?.length > 0 && (
         <svg className="scan-trail-layer" viewBox={`0 0 ${boxes.row.w} ${boxes.row.h}`} preserveAspectRatio="none">
-          <ScanTrail trail={scanTrail} boxes={boxes} />
+          <ScanTrail trail={scanTrail} boxes={boxes} maxLen={scanTrailLen} />
         </svg>
       )}
     </div>

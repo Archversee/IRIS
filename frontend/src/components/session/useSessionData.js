@@ -638,7 +638,7 @@ export function useSessionData({ id, live }) {
     screens: {
       otwVideoRef, otwVideoSrc, lookingAtOtw,
       instrumentVideoRef, instrumentVideoSrc, lookingAtInstruments,
-      aoiZones, curAoi, scanTrail,
+      aoiZones, curAoi, scanTrail, scanTrailLen: SCAN_TRAIL_LEN,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
       routes, routeKey: routeKey ?? "", setRouteKey, groundRoute,
