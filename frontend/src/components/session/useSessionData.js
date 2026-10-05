@@ -38,6 +38,9 @@ export function useSessionData({ id, live }) {
   const [flightLoaded, setFlightLoaded] = useState(false); // distinguishes "still fetching" from "fetched, genuinely empty"
   const [loadProgress, setLoadProgress] = useState(null); // 0..1 while fetching (Review only); null = unknown/indeterminate
   const [aoiZones, setAoiZones] = useState([]);
+  // Ground track reference route (MAVIS planned circuit): "" = none.
+  const [routes, setRoutes] = useState([]);
+  const [routeKey, setRouteKey] = useState(null); // null = not chosen yet -> auto-pick once
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -73,6 +76,7 @@ export function useSessionData({ id, live }) {
     api.summary(id).then((sm) => { if (!cancelled) setSummary(sm); })
       .catch((e) => { if (!cancelled) setErr(e.message); });
     api.listAoiZones().then(setAoiZones).catch(() => {});
+    api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
 
@@ -306,29 +310,61 @@ export function useSessionData({ id, live }) {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
-  const groundTrack = useMemo(() => {
+  // Auto-pick the reference route once: the session's own lesson if MAVIS
+  // flew it, otherwise any route -- from the runway end nearest where the
+  // flight starts (within 3 km). Falls back to none.
+  useEffect(() => {
+    if (routeKey !== null || !routes.length || !flight.length || !summary) return;
+    const start = flight.find((r) => r.latitude != null && r.longitude != null);
+    if (!start) return;
+    const lessonId = summary.session?.lesson_id;
+    const km = (a) => Math.hypot((a[0] - start.latitude) * 111.32,
+      (a[1] - start.longitude) * 111.32 * Math.cos((start.latitude * Math.PI) / 180));
+    const ranked = routes
+      .map((r) => ({ r, d: km(r.runway[0]) - (lessonId && r.lesson_id === lessonId ? 1000 : 0) }))
+      .sort((a, b) => a.d - b.d);
+    const best = ranked[0];
+    setRouteKey(best && km(best.r.runway[0]) <= 3 ? best.r.key : "");
+  }, [routes, flight, summary, routeKey]);
+
+  const route = routes.find((r) => r.key === routeKey) || null;
+
+  // Ground track in a 100x100 box. The view fits the flown path AND the
+  // reference route (if one is shown), so both use the same projection.
+  const groundGeo = useMemo(() => {
     const pts = flight
       .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
       .filter((p) => p.lat != null && p.lon != null);
-    if (pts.length < 2) return [];
+    if (pts.length < 2) return { track: [], project: null };
 
-    const lats = pts.map((p) => p.lat);
+    const extra = route ? [...route.path, ...route.runway] : [];
+    const lats = [...pts.map((p) => p.lat), ...extra.map((q) => q[0])];
     const lonScale = Math.cos(((Math.min(...lats) + Math.max(...lats)) / 2) * Math.PI / 180) || 1;
-    const xs = pts.map((p) => p.lon * lonScale);
-    const ys = pts.map((p) => p.lat);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const xsAll = [...pts.map((p) => p.lon * lonScale), ...extra.map((q) => q[1] * lonScale)];
+    const xMin = Math.min(...xsAll), xMax = Math.max(...xsAll);
+    const yMin = Math.min(...lats), yMax = Math.max(...lats);
     const range = Math.max(xMax - xMin, yMax - yMin) || 1;
     const xOffset = (range - (xMax - xMin)) / 2;
     const yOffset = (range - (yMax - yMin)) / 2;
 
     const SIZE = 100, PAD = 8, inner = SIZE - PAD * 2;
-    return pts.map((p, i) => ({
-      x: PAD + ((xs[i] - xMin + xOffset) / range) * inner,
-      y: PAD + inner - ((ys[i] - yMin + yOffset) / range) * inner,
-      t: p.t,
-    }));
-  }, [flight]);
+    const project = (lat, lon) => ({
+      x: PAD + ((lon * lonScale - xMin + xOffset) / range) * inner,
+      y: PAD + inner - ((lat - yMin + yOffset) / range) * inner,
+    });
+    return { track: pts.map((p) => ({ ...project(p.lat, p.lon), t: p.t })), project };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flight, route]);
+  const groundTrack = groundGeo.track;
+
+  const toPoints = (arr) => arr.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const groundRoute = useMemo(() => {
+    if (!route || !groundGeo.project) return null;
+    const P = (q) => groundGeo.project(q[0], q[1]);
+    const [a, b] = route.runway.map(P);
+    return { path: toPoints(route.path.map(P)), runway: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }, ident: route.runway_ident };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, groundGeo]);
 
   const groundFullPath = useMemo(
     () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
@@ -593,6 +629,7 @@ export function useSessionData({ id, live }) {
       aoiZones, curAoi, scanTrail,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
+      routes, routeKey: routeKey ?? "", setRouteKey, groundRoute,
       onGroundMouseDown: (e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseMove: (e) => { if (groundScrubbing) seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseUp: () => setGroundScrubbing(false),

@@ -125,6 +125,7 @@ export default function ScreensPanel({
   aoiZones, curAoi, scanTrail,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
+  routes, routeKey, setRouteKey, groundRoute,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
   live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
 }) {
@@ -221,7 +222,16 @@ export default function ScreensPanel({
       </div>
 
       <div className="rev-screen">
-        <div className="head">Ground track</div>
+        <div className="head">
+          Ground track
+          {routes?.length > 0 && setRouteKey && (
+            <select className="route-select" value={routeKey} onChange={(e) => setRouteKey(e.target.value)}
+              title="Draw a MAVIS preset route under the flown path">
+              <option value="">No reference route</option>
+              {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
+          )}
+        </div>
         <div className="body">
           {groundTrack.length > 1 ? (
             <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet"
@@ -230,6 +240,13 @@ export default function ScreensPanel({
               onMouseMove={onGroundMouseMove}
               onMouseUp={onGroundMouseUp}
             >
+              {/* MAVIS reference route, under the actual flight path */}
+              {groundRoute && (
+                <g className="ground-route">
+                  <polyline points={groundRoute.path} className="ground-route__path" />
+                  <line {...groundRoute.runway} className="ground-route__runway" />
+                </g>
+              )}
               <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
               <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
               {groundCurPoint && (
