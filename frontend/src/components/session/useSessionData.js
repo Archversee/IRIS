@@ -4,7 +4,7 @@ import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constan
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
-const SCAN_TRAIL_LEN = 8; // glances shown in the gaze trail (Instruments + OTW screens)
+const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW screens)
 
 // Mean OTW-screen gaze point (1920x1080 space) over one glance, or null.
 function meanOtwGaze(eye, eyeTimeline, start, end) {

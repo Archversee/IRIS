@@ -16,9 +16,9 @@ function useStreamBinding(ref, stream) {
 // screens. Older glances fade. Only labelled areas (AOI zones + OTW) are
 // steps -- see scanTrail in useSessionData.js.
 //
-// Smoothness: every glance keeps a stable key (its order in the flight)
-// and a fixed spot, so as playback runs circles fade/grow via CSS
-// transitions instead of being re-drawn, and each new connector sweeps in.
+// Smoothness: circles keep stable keys (the instrument, or the OTW glance)
+// and fixed spots, so as playback runs they fade/grow via CSS transitions
+// instead of being re-drawn, and each new connector sweeps in.
 
 // The video picture inside a 16:9 screen body is the whole body (the body
 // is kept exactly 16:9), so 1920x1080 maps straight onto it.
@@ -31,57 +31,65 @@ function ScanTrail({ trail: raw, boxes }) {
   const radius = (dur) => Math.max(48, Math.min(110, 48 + dur * 12)) * u;
   const alpha = (i) => (n === 1 ? 1 : 0.25 + (0.75 * i) / (n - 1));
 
-  // Fixed spot per glance. The hub instrument recurs every other glance, so
-  // repeat visits sit on a ring around the zone centre, picked from the
-  // glance's order (alternating orders land on different spots).
-  const trail = raw.map((p) => {
-    const box = boxes[p.screen];
-    let { x, y } = p;
-    if (!p.isOtw) {
-      const slot = p.id % 5;
-      if (slot) {
-        const ang = (slot - 1) * (Math.PI / 2) - Math.PI / 4;
-        x += Math.cos(ang) * 150; y += Math.sin(ang) * 150;
-      }
-    }
-    return { ...p, ...toScreen(box, x, y) };
-  });
+  // Each step on screen: instruments exactly on their zone centre, OTW where
+  // the eyes were.
+  const steps = raw.map((p, i) => ({ ...p, step: i + 1, ...toScreen(boxes[p.screen], p.x, p.y) }));
 
-  // Curved connector from a to b, trimmed to the circles' edges, bending
-  // gently to one side so back-and-forth moves don't overlap.
+  // One circle per instrument, however many times it recurs in the trail
+  // (the scan's hub usually does) -- labelled with all its step numbers, e.g.
+  // "1·3·5" -- so every circle sits right on its instrument. OTW steps stay
+  // separate (each is where the eyes actually were).
+  const nodes = [];
+  const byAoi = new Map();
+  steps.forEach((p, i) => {
+    const node = !p.isOtw && byAoi.get(p.aoi);
+    if (node) {
+      node.steps.push(p.step);
+      node.dur = p.dur; node.alpha = alpha(i); node.isCurrent = p.isCurrent;
+    } else {
+      const fresh = { key: p.isOtw ? `otw-${p.id}` : `zone-${p.aoi}`, x: p.x, y: p.y, color: p.color, isOtw: p.isOtw,
+        steps: [p.step], dur: p.dur, alpha: alpha(i), isCurrent: p.isCurrent };
+      nodes.push(fresh);
+      if (!p.isOtw) byAoi.set(p.aoi, fresh);
+    }
+  });
+  const nodeOf = (p) => (p.isOtw ? nodes.find((nd) => nd.key === `otw-${p.id}`) : byAoi.get(p.aoi));
+
+  // Curved connector between two circles, trimmed to their edges. It bends
+  // to the left of the direction of travel, so A->B and B->A curve to
+  // opposite sides instead of drawing on top of each other.
   const curve = (a, b) => {
     const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
     const ra = radius(a.dur) + 2, rb = radius(b.dur) + 4;
     if (len <= ra + rb) return null;
     const ux = dx / len, uy = dy / len;
     const x1 = a.x + ux * ra, y1 = a.y + uy * ra, x2 = b.x - ux * rb, y2 = b.y - uy * rb;
-    const bend = Math.min(40, len * 0.18);
+    const bend = Math.min(40, len * 0.22);
     const cx = (x1 + x2) / 2 - uy * bend, cy = (y1 + y2) / 2 + ux * bend;
     return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
   };
 
   return (
-    <g className="scan-trail" style={{ "--u": u }}>
+    <g className="scan-trail">
       <defs>
         <marker id="scan-trail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" fill="#fff" />
         </marker>
       </defs>
-      {trail.slice(1).map((b, k) => {
-        const d = curve(trail[k], b);
+      {steps.slice(1).map((b, k) => {
+        const d = curve(nodeOf(steps[k]), nodeOf(b));
         if (!d) return null;
         return (
-          <path key={`${trail[k].id}-${b.id}`} d={d} pathLength="1"
-            className="scan-trail__link"
+          <path key={`${steps[k].id}-${b.id}`} d={d} pathLength="1" className="scan-trail__link"
             style={{ opacity: alpha(k + 1) }} markerEnd="url(#scan-trail-arrow)" />
         );
       })}
-      {trail.map((p, i) => (
-        <g key={p.id} className={"scan-trail__dot" + (p.isCurrent ? " scan-trail__now" : "") + (p.isOtw ? " is-otw" : "")}
-          style={{ opacity: alpha(i) }}>
-          <circle cx={p.x} cy={p.y} r={radius(p.dur)} fill={p.color} fillOpacity="0.32"
-            stroke={p.color} />
-          <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{i + 1}</text>
+      {nodes.map((nd) => (
+        <g key={nd.key} className={"scan-trail__dot" + (nd.isCurrent ? " scan-trail__now" : "") + (nd.isOtw ? " is-otw" : "")}
+          style={{ opacity: nd.alpha }}>
+          <circle cx={nd.x} cy={nd.y} r={radius(nd.dur)} fill={nd.color} fillOpacity="0.32" stroke={nd.color} />
+          <text x={nd.x} y={nd.y} textAnchor="middle" dominantBaseline="central"
+            className={"scan-trail__num" + (nd.steps.length > 1 ? " is-multi" : "")}>{nd.steps.join("·")}</text>
         </g>
       ))}
     </g>
