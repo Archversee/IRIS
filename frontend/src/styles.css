@@ -388,3 +388,31 @@ th { color: var(--muted); font-weight: 600; }
 .save-session__id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
 .save-session__actions { display: flex; justify-content: flex-end; margin: 8px 0 24px; }
 .next-btn { padding: 12px 26px; font-size: 15px; border-radius: 10px; }
+
+/* ---- Analytics: instrument cross-check ---- */
+.xc__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.xc__head h3 { margin: 0; }
+.xc__head .muted { font-size: 13px; }
+.xc__stats { margin-bottom: 14px; }
+.xc__v-sm { font-size: 15px; }
+.xc__missed { margin-bottom: 14px; font-size: 13px; color: var(--danger); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.xc__missed-tag { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--danger); }
+.xc__grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr); gap: 24px; }
+@media (max-width: 900px) { .xc__grid { grid-template-columns: 1fr; } }
+.xc__grid h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.xc__pairs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.xc__pairs li { display: grid; grid-template-columns: minmax(0, 1.4fr) 1fr 36px; align-items: center; gap: 10px; font-size: 13px; }
+.xc__pair { display: inline-flex; align-items: center; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xc__pair .swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.xc__arrow { color: var(--muted); margin: 0 2px; }
+.xc__bar { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.xc__bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.xc__n { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.xc__matrix-wrap { overflow-x: auto; }
+.xc__matrix { width: auto; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.xc__matrix th, .xc__matrix td { border: 1px solid var(--border); padding: 0; text-align: center; }
+.xc__matrix td { width: 38px; height: 30px; font-weight: 700; }
+.xc__matrix tbody th { padding: 0 8px; text-align: right; font-weight: 600; white-space: nowrap; color: var(--muted); }
+.xc__matrix thead th { height: 92px; vertical-align: bottom; padding-bottom: 6px; color: var(--muted); font-weight: 600; }
+.xc__matrix thead th span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+.xc__self { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--panel-2) 4px 8px); }

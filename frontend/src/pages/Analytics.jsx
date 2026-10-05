@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { api } from "../api/client.js";
+import CrossCheckCard from "../components/session/CrossCheckCard.jsx";
 
 const num = (v, d = 2) => (v == null ? "—" : Number(v).toFixed(d));
 const pct = (v) => (v == null ? "—" : (Number(v) * 100).toFixed(1) + "%");
@@ -72,6 +73,8 @@ export default function Analytics() {
           </ResponsiveContainer>
         )}
       </div>
+
+      <CrossCheckCard sessionId={id} />
     </>
   );
 }
