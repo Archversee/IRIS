@@ -7,14 +7,14 @@ specific sim PC/Sim Update combination that `pysimconnect` connects to
 successfully, so this adapter was ported to it. See git history for the
 AircraftRequests/AircraftEvents-based version this replaced.
 
-Event-SENDING (day/night time-of-day switch, experimental teleport, weather)
-is not wired up for `pysimconnect` yet -- `set_local_time()` always returns
-False (its documented "unsupported" contract, so callers already fall back
-gracefully), and `set_position()`/`set_weather()` are omitted entirely
-(both are called via hasattr/getattr elsewhere in MAVIS, so their absence
-degrades gracefully too, by the same design). Only telemetry READING is
-ported. Restoring event-sending on `pysimconnect` -- or switching back once
-`SimConnect` is fixed -- is follow-up work, not done here.
+Event-SENDING (day/night time-of-day switch, weather) is not wired up for
+`pysimconnect` yet -- `set_local_time()` always returns False (its documented
+"unsupported" contract, so callers already fall back gracefully), and
+`set_weather()` is omitted entirely (called via getattr elsewhere in MAVIS, so
+its absence degrades gracefully too). `set_position()` IS ported: it writes
+SimConnect's InitPosition struct (the airborne start used by the flight
+familiarization lesson, and checkpoint retries), and `set_frozen()` sends the
+FREEZE_* toggle events (held still while the instructor explains a step).
 
 Run on the sim PC. Variable/event names may need per-sim-version tweaks --
 this is the milestone-1 spike surface. Everything sim-specific lives here.
@@ -53,7 +53,22 @@ _SIMVARS = [
     ("LOCAL TIME", "seconds"),
     ("FLAPS HANDLE PERCENT", "Percent"),
     ("ELEVATOR TRIM PCT", "Percent"),
+    ("IS LATITUDE LONGITUDE FREEZE ON", "Bool"),
+    ("IS ALTITUDE FREEZE ON", "Bool"),
+    ("IS ATTITUDE FREEZE ON", "Bool"),
 ]
+
+# (state simvar, toggle event) -- set_frozen() reads the state and toggles only
+# what differs, so it never depends on how a sim version reads FREEZE_*_SET's arg
+_FREEZES = [
+    ("IS LATITUDE LONGITUDE FREEZE ON", "FREEZE_LATITUDE_LONGITUDE_TOGGLE"),
+    ("IS ALTITUDE FREEZE ON", "FREEZE_ALTITUDE_TOGGLE"),
+    ("IS ATTITUDE FREEZE ON", "FREEZE_ATTITUDE_TOGGLE"),
+]
+
+# Our own data-definition id for the InitPosition write -- well clear of the
+# small sequential ids pysimconnect's DataDefinition hands out (0, 1, 2...).
+_INITPOS_DEF_ID = 900
 
 
 class MSFSAdapter:
@@ -61,6 +76,11 @@ class MSFSAdapter:
         self.host, self.port = host, port
         self._sm = None
         self._datadef = None
+        self._initpos_defined = False
+        # the tick loop and a teleport both run in executor threads -- one
+        # SimConnect call at a time on the shared handle
+        import threading
+        self._lock = threading.Lock()
         self._weather = weather or {}      # config.yaml sim.weather -- unused for now, see module docstring
         self._prev_alt = None   # for self-computed, smoothed vertical speed
         self._prev_t = 0.0
@@ -148,8 +168,9 @@ class MSFSAdapter:
             return Telemetry()
         # Drain any buffered messages so self._datadef.simdata reflects the
         # latest frame -- same pump pattern the old LiveAdapter.py used.
-        while self._sm.receive():
-            pass
+        with self._lock:
+            while self._sm.receive():
+                pass
         g = self._get
         alt = g("PLANE ALTITUDE")
         # vertical speed: computed from altitude ourselves (sim var units are
@@ -189,6 +210,69 @@ class MSFSAdapter:
         docstring) -- always False, which is this method's documented
         "unsupported" contract, so callers (night-lesson switch, the ground
         clock chat command) already fall back gracefully rather than error."""
+        return False
+
+    def set_position(self, lat: float, lon: float, alt_msl: float, hdg: float,
+                     ias: float, throttle_pct: float | None = None,
+                     on_ground: bool = False) -> bool:
+        """Place the aircraft at lat/lon/alt (ft MSL), true heading, already
+        flying at `ias` knots, wings level -- SimConnect's InitPosition with
+        OnGround=0, the same mechanism MSFS's own airborne starts use
+        (on_ground=True instead parks it on the surface, for runway checkpoints).
+        Optionally sets throttle too (a hardware throttle overrides it as soon
+        as it's moved). Returns False if the sim refused or isn't connected."""
+        if self._sm is None:
+            return False
+        from ctypes import byref, c_void_p, cast, sizeof
+        from simconnect.scdefs import (DATA_INITPOSITION, DATATYPE_INITPOSITION,
+                                       OBJECT_ID_USER, UNUSED)
+        try:
+            with self._lock:
+                if not self._initpos_defined:
+                    self._sm.AddToDataDefinition(_INITPOS_DEF_ID, "Initial Position", "",
+                                                 DATATYPE_INITPOSITION, 0.0, UNUSED)
+                    self._initpos_defined = True
+                ip = DATA_INITPOSITION(Latitude=lat, Longitude=lon, Altitude=alt_msl,
+                                       Pitch=0.0, Bank=0.0, Heading=hdg % 360.0,
+                                       OnGround=1 if on_ground else 0,
+                                       Airspeed=0 if on_ground else int(round(ias)))
+                self._sm.SetDataOnSimObject(_INITPOS_DEF_ID, OBJECT_ID_USER, 0, 0,
+                                            sizeof(ip), cast(byref(ip), c_void_p))
+                if throttle_pct is not None:
+                    self._sm.set_simdatum("GENERAL ENG THROTTLE LEVER POSITION:1",
+                                          float(throttle_pct), "percent")
+        except Exception as e:
+            log.error("SimConnect set_position failed: %s", e)
+            return False
+        self._prev_alt = None        # don't turn the jump into a vertical-speed spike
+        log.info("aircraft placed at %.4f,%.4f %.0f ft hdg %.0f %.0f kt",
+                 lat, lon, alt_msl, hdg, ias)
+        return True
+
+    def set_frozen(self, on: bool) -> bool:
+        """Hold the aircraft still (position, altitude and attitude) while the
+        instructor explains, like MSFS's own lessons; on=False hands it back.
+        Returns True once the sim reports the requested state."""
+        import time as _time
+        if self._sm is None:
+            return False
+        try:
+            with self._lock:
+                while self._sm.receive():
+                    pass
+                for var, event in _FREEZES:
+                    if bool(self._get(var, 0)) != on:
+                        self._sm.send_event(event)
+                deadline = _time.time() + 1.5
+                while _time.time() < deadline:
+                    self._sm.receive()
+                    if all(bool(self._get(var, 0)) == on for var, _ in _FREEZES):
+                        return True
+                    _time.sleep(0.05)
+        except Exception as e:
+            log.error("SimConnect set_frozen(%s) failed: %s", on, e)
+            return False
+        log.warning("sim didn't confirm freeze=%s within 1.5 s", on)
         return False
 
     def close(self) -> None:

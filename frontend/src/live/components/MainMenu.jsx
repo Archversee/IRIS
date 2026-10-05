@@ -45,6 +45,9 @@ export default function MainMenu({ state, onStarting }) {
     <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
       <div className="mavis-menu__main">
         <div className="mavis-menu__greeting">{state?.active_lesson?.title || "Ready to fly"}</div>
+        {state?.active_lesson?.start_note && (
+          <div className="mavis-menu__note">{state.active_lesson.start_note}</div>
+        )}
         <ModeCards onChoose={chooseMode} busy={busy} media={media} />
         {err && <div className="mavis-menu__error">{err}</div>}
       </div>
