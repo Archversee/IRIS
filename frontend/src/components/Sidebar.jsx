@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon } from "./SidebarIcons.jsx";
+import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -61,6 +62,9 @@ export default function Sidebar() {
   const [width, setWidth] = useState(loadWidth);
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { user } = useAuth();
+  const displayName = user.full_name || user.username;
+  const initials = (displayName.match(/\b\w/g) || ["?"]).slice(0, 2).join("").toUpperCase();
   const lastExpanded = useRef(width > COLLAPSED_W ? width : DEFAULT_W);
   const collapsed = width < COLLAPSE_BELOW;
 
@@ -133,6 +137,21 @@ export default function Sidebar() {
         );
       })}
       <div className="sidebar__footer">
+        {user.role === "admin" && (
+          <NavLink to="/accounts" className="sidebar__link" title={collapsed ? "Accounts" : undefined}>
+            <UsersIcon />
+            <span className="sidebar__text">Accounts</span>
+          </NavLink>
+        )}
+        {/* Signed-in user + role tag -> Profile */}
+        <NavLink to="/profile" className="sidebar__user"
+          title={collapsed ? `${displayName} · ${ROLE_LABELS[user.role]}` : "Your profile"}>
+          <span className={`sidebar__avatar sidebar__avatar--${user.role}`}>{initials}</span>
+          <span className="sidebar__text sidebar__user-text">
+            <span className="sidebar__user-name">{displayName}</span>
+            <RoleTag role={user.role} small />
+          </span>
+        </NavLink>
         <button type="button" className={"sidebar__link sidebar__settings"
           + (settingsOpen || SETTINGS_PATHS.some((p) => pathname.startsWith(p)) ? " active" : "")}
           title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>

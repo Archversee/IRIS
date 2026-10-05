@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { RoleTag, useAuth } from "../auth/AuthContext.jsx";
 
 // Full-screen landing: splash-bg.jpeg split down the middle, left half is
 // MAVIS, right half is IRIS. The sidebar is hidden on this route (see
@@ -27,9 +28,18 @@ function FullName({ text }) {
 
 export default function Home() {
   const nav = useNavigate();
+  const { user, logout } = useAuth();
 
   return (
     <div className="landing">
+      {/* Signed-in chip: name + role tag (-> Profile), and Log out. */}
+      <div className="landing__user">
+        <button type="button" className="landing__user-chip" onClick={() => nav("/profile")} title="Your profile">
+          <span>{user.full_name || user.username}</span>
+          <RoleTag role={user.role} small />
+        </button>
+        <button type="button" className="landing__logout" onClick={logout}>Log out</button>
+      </div>
       <button type="button" className="landing__half landing__half--mavis" onClick={() => nav(WALK_AROUND)}>
         <span className="landing__label">
           <span className="landing__title">MAVIS</span>
