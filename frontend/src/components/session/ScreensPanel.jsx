@@ -38,26 +38,11 @@ function ScanTrail({ trail: raw, boxes, maxLen }) {
   const top = Math.max(maxLen || n, n);
   const steps = raw.map((p, i) => ({ ...p, step: top - (n - 1 - i), ...toScreen(boxes[p.screen], p.x, p.y) }));
 
-  // Every step is its own circle with its own number. When an instrument
-  // recurs in the trail (the scan's hub usually does), its circles sit side
-  // by side as a group centred on the instrument -- one visit sits right on
-  // the centre -- and slide back to centre as older visits drop off.
-  // Lay each instrument's circles out in a row, touching-but-not-overlapping
-  // (spacing from their actual sizes + a small gap), then centre the row.
-  const GAP = 6; // px between neighbouring repeat-visit circles
-  const offsets = new Map(); // step index -> dx
-  const groups = new Map();
-  steps.forEach((p, i) => { if (!p.isOtw) groups.set(p.aoi, [...(groups.get(p.aoi) || []), i]); });
-  for (const idxs of groups.values()) {
-    let x = 0;
-    const xs = idxs.map((i, j) => {
-      if (j) x += radius(steps[idxs[j - 1]].dur) + radius(steps[i].dur) + GAP;
-      return x;
-    });
-    const mid = (xs[0] + xs[xs.length - 1]) / 2;
-    idxs.forEach((i, j) => offsets.set(i, xs[j] - mid));
-  }
-  const nodes = steps.map((p, i) => ({ ...p, key: p.id, x: p.x + (offsets.get(i) || 0), label: String(p.step), alpha: alpha(i) }));
+  // Every step is its own circle with its own number, right on its
+  // instrument's centre (or where the eyes were, for OTW). Repeat visits to
+  // the same instrument simply overlap; circles are drawn oldest first, so
+  // the newest is always on top and readable.
+  const nodes = steps.map((p, i) => ({ ...p, key: p.id, label: String(p.step), alpha: alpha(i) }));
   const nodeOf = (p) => nodes[steps.indexOf(p)];
 
   // Curved connector between two circles, trimmed to their edges. It bends
