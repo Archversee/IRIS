@@ -41,6 +41,7 @@ input:
 
 coach:
   ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
+  #ollama_url: http://192.168.0.112:11434 # CHANGE to LLM running the alptop
   model: qwen2.5:14b-instruct
   timeout_s: 1.0           # fall back to template phrase beyond this
   min_speak_interval_s: 3  # gentleness vs latency: nudges wait at most this long
