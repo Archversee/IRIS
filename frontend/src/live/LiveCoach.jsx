@@ -28,7 +28,7 @@ const SCORECARD_WAIT_MS = 15000;
 export default function LiveCoach({ freeFlight = false }) {
   const status = useMavisStatus();
   const state = useMavisState();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const nav = useNavigate();
   // Purely local, deliberately -- MAVIS never nulls out session_id on
   // quit (it only mints a fresh one on the next /demo/start), so deriving
@@ -38,6 +38,9 @@ export default function LiveCoach({ freeFlight = false }) {
   const [startedHere, setStartedHere] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [ending, setEnding] = useState(false); // End Session confirmed, waiting for MAVIS's scorecard
+  const [confirmingRestart, setConfirmingRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState(null);
   const inLesson = startedHere;
   const readingId = searchParams.get("reading");
   // startedHere is lost when this page unmounts (switching tabs) -- if MAVIS
@@ -87,11 +90,26 @@ export default function LiveCoach({ freeFlight = false }) {
     }
   }
 
+  // Topbar "Restart": back to the lesson's start position and fly it again,
+  // same session (MAVIS keeps the session_id, so recording/IRIS carry on).
+  async function confirmRestart() {
+    setConfirmingRestart(false);
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      await mavisApi.relaunch();
+    } catch (e) {
+      setRestartError(e.message || "Couldn't restart.");
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   function goToSave() {
     const sid = state?.session_id;
     setEnding(false);
     setStartedHere(false);
-    nav(sid ? `/upload?session=${sid}` : "/upload");
+    nav(sid ? `/sessions/${sid}/save` : "/upload");
   }
 
   useEffect(() => {
@@ -105,12 +123,10 @@ export default function LiveCoach({ freeFlight = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ending, state?.scorecard]);
 
-  // From the scorecard's "Main menu" button -- score first (already on
-  // screen), then IRIS's own Upload form (name/pilot/aircraft/notes, CSV
-  // ingest, video linking) pre-filled with this session, same as any other
-  // flight's end-of-session flow. Goes all the way back through Upload
-  // rather than straight to "/", since there's now always a save/upload
-  // step between finishing a flight and returning to the dashboard.
+  // From the scorecard's "Finish & save" button -- score first (already on
+  // screen), then the Save Session page (name, pilot, aircraft, notes,
+  // video linking -- no CSV, MAVIS already logged the flight), whose Next
+  // button opens this session's review.
   async function backToDashboardHome() {
     const sid = state?.session_id;
     try {
@@ -120,7 +136,7 @@ export default function LiveCoach({ freeFlight = false }) {
     }
     await markEnded();
     setStartedHere(false);
-    nav(sid ? `/upload?session=${sid}` : "/upload");
+    nav(sid ? `/sessions/${sid}/save` : "/upload");
   }
 
   // From the scorecard's "Finish & discard" button -- same quit as above,
@@ -150,7 +166,6 @@ export default function LiveCoach({ freeFlight = false }) {
         <ReadingLesson
           lessonId={readingId}
           data={state?.reading_lessons?.[readingId]}
-          onExit={() => setSearchParams({}, { replace: true })}
         />
       </div>
     );
@@ -168,6 +183,14 @@ export default function LiveCoach({ freeFlight = false }) {
           {ending ? "Ending…" : "‹ End Session"}
         </button>
       )}
+      {inLesson && !state?.scorecard && (
+        <button type="button" className="secondary" disabled={ending || restarting}
+          title="Back to the start position and fly the lesson again"
+          onClick={() => setConfirmingRestart(true)}>
+          {restarting ? "Restarting…" : "↺ Restart"}
+        </button>
+      )}
+      {restartError && <span className="mavis-topbar__error" role="alert">{restartError}</span>}
     </div>
   );
 
@@ -180,6 +203,15 @@ export default function LiveCoach({ freeFlight = false }) {
         <FreeFlightMenu onStarting={() => setStartedHere(true)} />
       ) : (
         <MainMenu state={state} onStarting={() => setStartedHere(true)} />
+      )}
+      {confirmingRestart && (
+        <ConfirmDialog
+          title="Restart from the start?"
+          message="Your aircraft goes back to where this lesson starts and the lesson begins again. This attempt won't be scored."
+          confirmLabel="Restart"
+          onConfirm={confirmRestart}
+          onCancel={() => setConfirmingRestart(false)}
+        />
       )}
       {confirmingEnd && (
         <ConfirmDialog

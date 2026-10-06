@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
 import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
-import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi } from "./utils.js";
+import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
+
+const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW screens)
+
+// Mean gaze point (1920x1080 space of that screen) over one glance, using
+// samples whose raw area is `rawAoi` ("OTW" or "Instruments"), or null.
+function meanGaze(eye, eyeTimeline, rawAoi, start, end) {
+  let sx = 0, sy = 0, n = 0;
+  for (let i = nearestIndexForTime(eyeTimeline, start); i < eye.length && eyeTimeline[i].t <= end; i++) {
+    const e = eye[i];
+    if (!e.blink && e.aoi === rawAoi && e.gaze_point_x != null && e.gaze_point_y != null) {
+      sx += e.gaze_point_x; sy += e.gaze_point_y; n++;
+    }
+  }
+  return n ? { x: sx / n, y: sy / n } : null;
+}
 
 // All state, data-fetching and derived computations behind a session
 // viewer (Review and Live pages both use this). `id` may be null/undefined
@@ -24,6 +39,9 @@ export function useSessionData({ id, live }) {
   const [flightLoaded, setFlightLoaded] = useState(false); // distinguishes "still fetching" from "fetched, genuinely empty"
   const [loadProgress, setLoadProgress] = useState(null); // 0..1 while fetching (Review only); null = unknown/indeterminate
   const [aoiZones, setAoiZones] = useState([]);
+  // Ground track reference route (MAVIS planned circuit): "" = none.
+  const [routes, setRoutes] = useState([]);
+  const [routeKey, setRouteKey] = useState(null); // null = not chosen yet -> auto-pick once
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -59,6 +77,7 @@ export function useSessionData({ id, live }) {
     api.summary(id).then((sm) => { if (!cancelled) setSummary(sm); })
       .catch((e) => { if (!cancelled) setErr(e.message); });
     api.listAoiZones().then(setAoiZones).catch(() => {});
+    api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
 
@@ -271,42 +290,14 @@ export function useSessionData({ id, live }) {
     return ticks;
   }, [series]);
 
-  const rawRuns = useMemo(() => {
-    const out = [];
-    let prev = null;
-    for (const e of eye) {
-      if (e.blink) continue;
-      const a = effectiveAoi(e, aoiZones);
-      if (a !== prev) { out.push({ aoi: a, t: elapsed(e.ts) }); prev = a; }
-    }
-    return out;
-  }, [eye, aoiZones]);
-
   const lastEyeT = eye.length ? elapsed(eye[eye.length - 1].ts) : 0;
 
-  const runs = useMemo(() => {
-    if (rawRuns.length < 2) return rawRuns;
-    let merged = rawRuns.map((r) => ({ ...r }));
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let i = 1; i < merged.length; i++) {
-        const end = i + 1 < merged.length ? merged[i + 1].t : lastEyeT;
-        if (end - merged[i].t < minAoiDwellSec) {
-          merged[i].aoi = merged[i - 1].aoi;
-          changed = true;
-        }
-      }
-      if (changed) {
-        const collapsed = [];
-        for (const r of merged) {
-          if (!collapsed.length || collapsed[collapsed.length - 1].aoi !== r.aoi) collapsed.push(r);
-        }
-        merged = collapsed;
-      }
-    }
-    return merged;
-  }, [rawRuns, minAoiDwellSec, lastEyeT]);
+  // [{aoi, t}] -- see buildScanRuns() in utils.js (shared with Analytics).
+  const runs = useMemo(
+    () => buildScanRuns(eye, aoiZones, elapsed, minAoiDwellSec, lastEyeT),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eye, aoiZones, minAoiDwellSec, lastEyeT, t0],
+  );
 
   const regions = useMemo(() => {
     const durations = {};
@@ -320,29 +311,61 @@ export function useSessionData({ id, live }) {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
-  const groundTrack = useMemo(() => {
+  // Auto-pick the reference route once: the session's own lesson if MAVIS
+  // flew it, otherwise any route -- from the runway end nearest where the
+  // flight starts (within 3 km). Falls back to none.
+  useEffect(() => {
+    if (routeKey !== null || !routes.length || !flight.length || !summary) return;
+    const start = flight.find((r) => r.latitude != null && r.longitude != null);
+    if (!start) return;
+    const lessonId = summary.session?.lesson_id;
+    const km = (a) => Math.hypot((a[0] - start.latitude) * 111.32,
+      (a[1] - start.longitude) * 111.32 * Math.cos((start.latitude * Math.PI) / 180));
+    const ranked = routes
+      .map((r) => ({ r, d: km(r.runway[0]) - (lessonId && r.lesson_id === lessonId ? 1000 : 0) }))
+      .sort((a, b) => a.d - b.d);
+    const best = ranked[0];
+    setRouteKey(best && km(best.r.runway[0]) <= 3 ? best.r.key : "");
+  }, [routes, flight, summary, routeKey]);
+
+  const route = routes.find((r) => r.key === routeKey) || null;
+
+  // Ground track in a 100x100 box. The view fits the flown path AND the
+  // reference route (if one is shown), so both use the same projection.
+  const groundGeo = useMemo(() => {
     const pts = flight
       .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
       .filter((p) => p.lat != null && p.lon != null);
-    if (pts.length < 2) return [];
+    if (pts.length < 2) return { track: [], project: null };
 
-    const lats = pts.map((p) => p.lat);
+    const extra = route ? [...route.path, ...route.runway] : [];
+    const lats = [...pts.map((p) => p.lat), ...extra.map((q) => q[0])];
     const lonScale = Math.cos(((Math.min(...lats) + Math.max(...lats)) / 2) * Math.PI / 180) || 1;
-    const xs = pts.map((p) => p.lon * lonScale);
-    const ys = pts.map((p) => p.lat);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const xsAll = [...pts.map((p) => p.lon * lonScale), ...extra.map((q) => q[1] * lonScale)];
+    const xMin = Math.min(...xsAll), xMax = Math.max(...xsAll);
+    const yMin = Math.min(...lats), yMax = Math.max(...lats);
     const range = Math.max(xMax - xMin, yMax - yMin) || 1;
     const xOffset = (range - (xMax - xMin)) / 2;
     const yOffset = (range - (yMax - yMin)) / 2;
 
     const SIZE = 100, PAD = 8, inner = SIZE - PAD * 2;
-    return pts.map((p, i) => ({
-      x: PAD + ((xs[i] - xMin + xOffset) / range) * inner,
-      y: PAD + inner - ((ys[i] - yMin + yOffset) / range) * inner,
-      t: p.t,
-    }));
-  }, [flight]);
+    const project = (lat, lon) => ({
+      x: PAD + ((lon * lonScale - xMin + xOffset) / range) * inner,
+      y: PAD + inner - ((lat - yMin + yOffset) / range) * inner,
+    });
+    return { track: pts.map((p) => ({ ...project(p.lat, p.lon), t: p.t })), project };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flight, route]);
+  const groundTrack = groundGeo.track;
+
+  const toPoints = (arr) => arr.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const groundRoute = useMemo(() => {
+    if (!route || !groundGeo.project) return null;
+    const P = (q) => groundGeo.project(q[0], q[1]);
+    const [a, b] = route.runway.map(P);
+    return { path: toPoints(route.path.map(P)), runway: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }, ident: route.runway_ident };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, groundGeo]);
 
   const groundFullPath = useMemo(
     () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
@@ -417,6 +440,48 @@ export function useSessionData({ id, live }) {
   }, [scanLog]);
 
   const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
+
+  // Gaze trail across the Instruments and OTW screens: the last few glances
+  // up to now. Steps are the named AOI zones, OTW, and plain "Instruments"
+  // (on the panel but outside every zone). Unlabelled samples are skipped:
+  // not a step, and a return to the same area across one stays a single
+  // glance. Zone glances sit at their zone's centre; OTW and plain
+  // Instruments glances where the eyes were on that screen (mean gaze
+  // point, else the screen centre). Coordinates are each screen's own
+  // 1920x1080 space; `screen` says which.
+  const scanTrail = useMemo(() => {
+    const zoneByName = new Map(aoiZones.map((z) => [z.name, z]));
+    const labelled = (aoi) => aoi === "OTW" || aoi === "Instruments" || zoneByName.has(aoi);
+    // Walk back from now, merging consecutive same-area runs, until enough steps.
+    const steps = [];
+    let latest = null; // the run the gaze is in right now (labelled or not)
+    for (let i = scanLog.length - 1; i >= 0; i--) {
+      const r = scanLog[i];
+      if (r.start > curT) continue;
+      if (!latest) latest = r;
+      if (hiddenAois.has(r.aoi) || !labelled(r.aoi)) continue;
+      const end = Math.min(r.end, curT), dur = Math.max(0, end - r.start);
+      const head = steps[0];
+      if (head && head.aoi === r.aoi) {          // same area again -> one glance
+        head.start = r.start; head.id = r.order; head.dur += dur; continue;
+      }
+      if (steps.length === SCAN_TRAIL_LEN) break;
+      steps.unshift({ id: r.order, aoi: r.aoi, start: r.start, end, dur, isCurrent: r === latest && curT < r.end });
+    }
+    return steps.map((st) => {
+      const isOtw = st.aoi === "OTW";
+      const z = zoneByName.get(st.aoi);
+      return {
+        id: st.id, // earliest run of the glance -- stable, so the trail animates instead of re-drawing
+        aoi: st.aoi, color: scanLogColor.get(st.aoi), isOtw, isPanel: !isOtw && !z,
+        screen: isOtw ? "otw" : "instrument",
+        ...(z
+          ? { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }
+          : (meanGaze(eye, eyeTimeline, st.aoi, st.start, st.end) || { x: 960, y: 540 })),
+        dur: st.dur, isCurrent: st.isCurrent,
+      };
+    });
+  }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor, eye, eyeTimeline]);
 
   const scanLogRows = useMemo(() => {
     const rows = [];
@@ -575,9 +640,10 @@ export function useSessionData({ id, live }) {
     screens: {
       otwVideoRef, otwVideoSrc, lookingAtOtw,
       instrumentVideoRef, instrumentVideoSrc, lookingAtInstruments,
-      aoiZones, curAoi,
+      aoiZones, curAoi, scanTrail, scanTrailLen: SCAN_TRAIL_LEN,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
+      routes, routeKey: routeKey ?? "", setRouteKey, groundRoute,
       onGroundMouseDown: (e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseMove: (e) => { if (groundScrubbing) seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseUp: () => setGroundScrubbing(false),

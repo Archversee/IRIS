@@ -7,7 +7,7 @@ import { readingCfg } from "./readingConfig.js";
 // Preflight/cockpit "reading" lessons -- no telemetry, a narrated
 // checklist with an optional 3D walk-around/cockpit viewer. Mirrors the
 // original app's openReadingLesson()/pfStep()/playPreflightAudio() flow.
-export default function ReadingLesson({ lessonId, data, onExit }) {
+export default function ReadingLesson({ lessonId, data }) {
   const [tab, setTab] = useState("3d");
   const [selectedId, setSelectedId] = useState(null);
   const [playingId, setPlayingId] = useState(null);
@@ -76,7 +76,6 @@ export default function ReadingLesson({ lessonId, data, onExit }) {
           <h2 style={{ margin: 0 }}>{data?.title}</h2>
           <p className="muted" style={{ margin: 0 }}>{cfg.blurb}</p>
         </div>
-        <button type="button" className="secondary" onClick={onExit}>‹ Back to menu</button>
       </div>
 
       <div className="row" style={{ marginBottom: 10, alignItems: "center" }}>

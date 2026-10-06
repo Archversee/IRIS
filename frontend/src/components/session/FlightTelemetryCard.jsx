@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fmt } from "./utils.js";
 
-// Live flight telemetry for Live Monitor, drawn the way MAVIS's own in-flight
+// Flight telemetry for Live Monitor and Review (the current instant), drawn the way MAVIS's own in-flight
 // panel does it (vertical speed/height/climb tapes, stick-style control bars)
 // plus an attitude indicator, with a toggle to the raw numbers.
 //
@@ -147,6 +147,7 @@ function Numbers({ cur }) {
         <RO k="Rudder" v={fmt(cur.rudder_position, 2)} />
         <RO k="Elev trim" v={`${fmt(cur.elevator_trim_pct)}%`} />
         <RO k="Flaps" v={`${fmt(cur.flaps_handle_pct, 0)}%`} />
+        <RO k="Gear" v={cur.gear_handle_position ? "DOWN" : "UP"} />
       </div>
       <div className="ro-group">
         <h4>Environment</h4>

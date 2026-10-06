@@ -64,3 +64,59 @@ export function effectiveAoi(e, zones) {
   }
   return e.aoi || "unlabelled";
 }
+
+// Gaze samples -> "runs": [{aoi, t}] where each run starts when the gaze
+// moves to a different area. Blinks are skipped (a run continues across
+// one). Glances shorter than minDwellSec are folded into the previous run,
+// repeatedly, so a quick flick doesn't break up a steady look.
+// elapsedOf(ts) -> seconds on the session clock; endT = when gaze data ends.
+export function buildScanRuns(eye, zones, elapsedOf, minDwellSec, endT) {
+  const raw = [];
+  let prev = null;
+  for (const e of eye) {
+    if (e.blink) continue;
+    const a = effectiveAoi(e, zones);
+    if (a !== prev) { raw.push({ aoi: a, t: elapsedOf(e.ts) }); prev = a; }
+  }
+  if (raw.length < 2) return raw;
+  let merged = raw.map((r) => ({ ...r }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 1; i < merged.length; i++) {
+      const end = i + 1 < merged.length ? merged[i + 1].t : endT;
+      if (end - merged[i].t < minDwellSec) {
+        merged[i].aoi = merged[i - 1].aoi;
+        changed = true;
+      }
+    }
+    if (changed) {
+      const collapsed = [];
+      for (const r of merged) {
+        if (!collapsed.length || collapsed[collapsed.length - 1].aoi !== r.aoi) collapsed.push(r);
+      }
+      merged = collapsed;
+    }
+  }
+  return merged;
+}
+
+// Cross-check counts: how often the gaze moved directly between each pair
+// of areas (either direction), from consecutive runs.
+export function scanTransitions(runs) {
+  const counts = new Map();
+  const visits = new Map();
+  for (let i = 0; i < runs.length; i++) {
+    visits.set(runs[i].aoi, (visits.get(runs[i].aoi) || 0) + 1);
+    if (i === 0) continue;
+    const a = runs[i - 1].aoi, b = runs[i].aoi;
+    if (a === b) continue;
+    const key = a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const pairs = [...counts.entries()]
+    .map(([k, n]) => { const [a, b] = k.split("\u0000"); return { a, b, count: n }; })
+    .sort((x, y) => y.count - x.count);
+  const total = pairs.reduce((s, p) => s + p.count, 0);
+  return { pairs, total, visits };
+}

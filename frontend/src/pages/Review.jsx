@@ -4,7 +4,7 @@ import LoadingBar from "../components/session/LoadingBar.jsx";
 import ScreensPanel from "../components/session/ScreensPanel.jsx";
 import SessionTimeline from "../components/session/SessionTimeline.jsx";
 import ScanPathCard from "../components/session/ScanPathCard.jsx";
-import LiveStateCard from "../components/session/LiveStateCard.jsx";
+import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
@@ -30,8 +30,10 @@ export default function Review() {
       </div>
     );
 
+  const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
+
   return (
-    <div className="rev rev--embedded rev--no-rail">
+    <div className="rev rev--embedded rev--no-rail rev--zoom80">
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}
       <div className="rev-main">
@@ -44,10 +46,10 @@ export default function Review() {
         <ScreensPanel {...screens} />
         <SessionTimeline {...timeline} />
 
-        <div className="rev-bottom">
+        <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />
-          <LiveStateCard {...liveState} />
           <RegionPieCard {...regionPie} />
+          <FlightTelemetryCard {...liveState} altMax={altMax} />
         </div>
       </div>
 

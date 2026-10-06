@@ -1,0 +1,161 @@
+name: "Flight Familiarization"
+# Airborne lesson: no take-off or landing. Engine + scorer live in
+# core/familiarization.py; main.py switches on this type.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map, and as the target the
+# trainee navigates back to at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# Where Start places the aircraft (SimConnect InitPosition, already flying),
+# given relative to the runway midpoint. Heading east means the exercises
+# carry you along past the field rather than straight away from it.
+# (Explicit lat/lon instead of bearing/distance also works.)
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
+
+exercises:
+  straight_level_hold_s: 20 # seconds wings-level, inside the altitude band, to pass
+  altitude_band_ft: 200     # "hold height" means within +/- this
+  turn_deg: 90              # heading change for each turn
+  turn_bank_deg: 20         # spoken as a range: 15-25 degrees
+  climb_ft: 500             # spoken as a range: 400-600 feet
+  descend_ft: 500
+  step_timeout_s: 120       # a step that isn't completed moves on anyway
+  hint_every_s: 35          # "Paya Lebar is at your 10 o'clock" while searching
+
+# The lesson ends -- aircraft frozen, scorecard up -- once the trainee has found
+# Paya Lebar: pointing at it (within pointing_within_deg) for pointing_hold_s,
+# from no further than pointing_max_nm, or simply arriving within radius_nm.
+finish:
+  pointing_within_deg: 15
+  pointing_hold_s: 5
+  pointing_max_nm: 10
+  radius_nm: 2.0
+
+# Hold the aircraft frozen (position, altitude, attitude) while MAVIS briefs
+# and explains a step, then "You have control" -- like MSFS's own lessons.
+# Only steps that teach something new freeze (step_notes.*.freeze, default
+# true); the rest are spoken while you keep flying.
+# Not in Exam mode (silent coaching), where nothing is explained.
+freeze_during_instructions: true
+
+# Once scored, the aircraft is put back on the runway centreline this far past
+# the runway 02 threshold, stopped, throttle idle -- free to fly again.
+end_reposition:
+  along_m: 60
+
+briefing:
+  layman: >-
+    Familiarisation flight. We're up at about {alt} feet, just south of Paya
+    Lebar. Follow the to-do list, top right, then find Paya Lebar and point at it.
+  pilot: >-
+    Familiarisation flight, airborne at {alt} feet south of Paya Lebar. Work
+    the task list, then locate Paya Lebar and point at it.
+
+# Spoken when each step begins, picked by jargon -- kept short: the to-do list
+# carries the numbers. freeze: false = spoken while the trainee keeps flying
+# (no hold, no "You have control"). Numbers are ranges, never exact targets.
+# {placeholders}: alt_lo/alt_hi, spd_lo/spd_hi, bank_lo/bank_hi, climb_lo/
+# climb_hi, descend_lo/descend_hi, hold_s, brg_lo/brg_hi, dist_nm, clock.
+# Use {x:,} for a thousands separator.
+# title/todo: the step's row in the to-do list (todo = short action lines;
+# the live "now / target" readout under them comes from the engine).
+# look: what the tablet highlights on its PFD diagram -- attitude, airspeed,
+# altitude, vsi, heading, or outside (look out of the window).
+step_notes:
+  STRAIGHT_LEVEL:
+    title: Straight & level
+    todo:
+      - "Wings level, nose on the horizon"
+    look: [attitude, altitude]
+    layman: >-
+      I'm holding us still. In the middle screen, keep the yellow plane level
+      on the horizon line, and your height between {alt_lo:,} and {alt_hi:,} feet.
+    pilot: >-
+      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Wings level, nose on
+      the horizon, trim.
+  TURN_LEFT:
+    title: Gentle left turn
+    todo:
+      - "Stick left, hold the bank"
+      - "Roll level after about 90°"
+    look: [attitude, heading]
+    layman: >-
+      Gentle left turn. Ease the stick left until the triangle at the top
+      shows {bank_lo} to {bank_hi} degrees. Level out after a quarter circle.
+    pilot: >-
+      Left turn, {bank_lo} to {bank_hi} degrees of bank, about ninety degrees.
+      Hold altitude.
+  TURN_RIGHT:
+    title: Gentle right turn
+    todo:
+      - "Stick right, hold the bank"
+      - "Roll level after about 90°"
+    look: [attitude, heading]
+    freeze: false
+    layman: >-
+      Same again to the right, {bank_lo} to {bank_hi} degrees, then level out.
+    pilot: >-
+      Right turn, {bank_lo} to {bank_hi} degrees, roll out after ninety.
+  CLIMB:
+    title: Climb
+    todo:
+      - "Throttle forward, nose up gently"
+      - "Level off at the top"
+    look: [airspeed, vsi]
+    layman: >-
+      Now climb. Throttle forward, raise the nose gently, and keep the speed
+      tape on the left at {spd_lo} to {spd_hi} knots. Up {climb_lo} to
+      {climb_hi} feet.
+    pilot: >-
+      Climb {climb_lo} to {climb_hi} feet. Full power, Vy, {spd_lo} to
+      {spd_hi} knots.
+  DESCEND:
+    title: Descend
+    todo:
+      - "Throttle back a little, nose down gently"
+      - "Level off at the bottom"
+    look: [altitude, vsi]
+    freeze: false
+    layman: >-
+      Now down. Throttle back a little, nose down gently, {descend_lo} to
+      {descend_hi} feet.
+    pilot: >-
+      Descend {descend_lo} to {descend_hi} feet, level between {alt_lo:,} and
+      {alt_hi:,}.
+  FIND_AIRFIELD:
+    title: Find Paya Lebar & point at it
+    todo:
+      - "Look outside, not at the screen"
+      - "Not Changi: that's the big one on the coast"
+      - "Point the nose at it and hold"
+    look: [outside]
+    freeze: false
+    layman: >-
+      Last job: find Paya Lebar, around your {clock} o'clock, about {dist_nm}
+      miles. Not Changi on the coast. Point the nose at it.
+    pilot: >-
+      Locate Paya Lebar, {clock} o'clock, {dist_nm} miles. Put it on the nose.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { mavisApi } from "../api/mavisApi.js";
+import { recordMicWav, VOICE_REASONS } from "../voice/recordWav.js";
 
 // MAVIS tags transcript lines who: "instructor" (its own callouts/replies)
 // or who: "trainee" (what the pilot typed/said) -- see coach/llm_coach.py's
@@ -11,11 +12,17 @@ function timeOf(t) {
   return new Date(t.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// Text chat only -- push-to-talk voice input isn't ported yet (needs its
-// own mic-recording hook, see docs/LIVE_REBUILD_PLAN.md, Slice G).
-export default function ChatPanel({ transcript, chatEnabled }) {
+// Typed chat plus push-to-talk: hold the mic button (or the joystick's PTT
+// button, joyPtt = state.ctrl.ptt) and speak -- MAVIS transcribes it and
+// handles it exactly like typed text ("make it night", "can we get some rain").
+export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, speakerName = "" }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [talking, setTalking] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("");
+  const stopRef = useRef(null);
+  const busyRef = useRef(false);
+  const statusTimer = useRef(null);
   const listRef = useRef(null);
   const lines = transcript || [];
 
@@ -38,6 +45,70 @@ export default function ChatPanel({ transcript, chatEnabled }) {
   }
 
   const disabled = chatEnabled === false;
+
+  // status line: "Listening…"/"Transcribing…" stay up; results fade after a few seconds
+  function showStatus(msg, sticky = false) {
+    clearTimeout(statusTimer.current);
+    setVoiceStatus(msg);
+    if (!sticky && msg) statusTimer.current = setTimeout(() => setVoiceStatus(""), 6000);
+  }
+
+  // leaving the page mid-recording must release the mic
+  useEffect(() => () => {
+    stopRef.current?.();
+    clearTimeout(statusTimer.current);
+  }, []);
+
+  async function beginTalk() {
+    if (disabled || busyRef.current) return;
+    busyRef.current = true;
+    const stop = new Promise((r) => { stopRef.current = r; });
+    setTalking(true);
+    showStatus("Listening… release when done", true);
+    let rec;
+    try {
+      rec = await recordMicWav({ stopSignal: stop });
+    } catch (e) {
+      stopRef.current = null;
+      busyRef.current = false;
+      setTalking(false);
+      showStatus(VOICE_REASONS[e.code] || VOICE_REASONS.mic_error);
+      return;
+    }
+    setTalking(false);
+    if (rec.durationMs < 350 || rec.peak < 0.008) {
+      busyRef.current = false;
+      showStatus(VOICE_REASONS.too_short);
+      return;
+    }
+    showStatus("Transcribing…", true);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 45000);
+    try {
+      const j = await mavisApi.voicePtt(rec.blob, speakerName, ac.signal);
+      showStatus(j?.ok ? `Heard: “${j.text}”` : (VOICE_REASONS[j?.reason] || "Couldn't use that recording."));
+    } catch (e) {
+      showStatus(e?.name === "AbortError" ? VOICE_REASONS.stt_timeout : "Couldn't reach speech recognition.");
+    } finally {
+      clearTimeout(timer);
+      busyRef.current = false;
+    }
+  }
+
+  function endTalk() {
+    if (stopRef.current) {
+      stopRef.current();
+      stopRef.current = null;
+    }
+    setTalking(false);
+  }
+
+  // joystick push-to-talk mirrors holding the on-screen button
+  useEffect(() => {
+    if (joyPtt) beginTalk();
+    else endTalk();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joyPtt]);
 
   return (
     <div className="mavis-chat">
@@ -79,6 +150,28 @@ export default function ChatPanel({ transcript, chatEnabled }) {
         />
         <button
           type="button"
+          className={"mavis-chat__mic" + (talking ? " is-hot" : "")}
+          title="Hold to talk (or hold the joystick push-to-talk button)"
+          aria-label="Hold to talk"
+          disabled={disabled}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            // keep the hold if the finger drifts off the button while talking
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* fine */ }
+            beginTalk();
+          }}
+          onPointerUp={endTalk}
+          onPointerCancel={endTalk}
+          onLostPointerCapture={endTalk}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="22" />
+          </svg>
+        </button>
+        <button
+          type="button"
           className="mavis-chat__send"
           title="Send"
           aria-label="Send"
@@ -91,6 +184,7 @@ export default function ChatPanel({ transcript, chatEnabled }) {
           </svg>
         </button>
       </div>
+      {voiceStatus && <div className="mavis-chat__voice" role="status">{voiceStatus}</div>}
     </div>
   );
 }

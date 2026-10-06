@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getTheme, setTheme } from "../theme.js";
+import { TrophyIcon, ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
 
 // Settings drawer, opened from the sidebar's gear. Only Theme is wired up;
 // everything else is a placeholder (selectable, but not saved or applied
@@ -107,6 +109,36 @@ export default function SettingsPanel({ onClose }) {
                 { value: "on", label: "On" },
               ]} />
             </Field>
+          </section>
+          <section className="set-section">
+            <h3>MAVIS</h3>
+            <nav className="set-links">
+              <Link to="/leaderboard" className="set-link" onClick={onClose}>
+                <TrophyIcon />
+                <span>Leaderboard</span>
+                <span className="set-link__chev" aria-hidden="true">›</span>
+              </Link>
+              <Link to="/scoring" className="set-link" onClick={onClose}>
+                <ChecklistIcon />
+                <span>Scoring Guide</span>
+                <span className="set-link__chev" aria-hidden="true">›</span>
+              </Link>
+            </nav>
+          </section>
+          <section className="set-section">
+            <h3>IRIS</h3>
+            <nav className="set-links">
+              <Link to="/upload" className="set-link" onClick={onClose}>
+                <UploadIcon />
+                <span>Upload</span>
+                <span className="set-link__chev" aria-hidden="true">›</span>
+              </Link>
+              <Link to="/aoi-zones" className="set-link" onClick={onClose}>
+                <TargetIcon />
+                <span>AOI Zones</span>
+                <span className="set-link__chev" aria-hidden="true">›</span>
+              </Link>
+            </nav>
           </section>
           {/* More sections go here. */}
         </div>
