@@ -50,7 +50,6 @@ _SIMVARS = [
     ("BRAKE LEFT POSITION", "Position"),
     ("BRAKE RIGHT POSITION", "Position"),
     ("LOCAL TIME", "seconds"),
-    ("ZULU TIME", "seconds"),
     ("FLAPS HANDLE PERCENT", "Percent"),
     ("ELEVATOR TRIM PCT", "Percent"),
     ("IS LATITUDE LONGITUDE FREEZE ON", "Bool"),
@@ -129,24 +128,38 @@ class MSFSAdapter:
                     "global IPv4/port 500 section, (2) MSFS was RESTARTED after editing "
                     "it, (3) firewall allows TCP 500. Verify with: "
                     f"Test-NetConnection {self.host} -Port {self.port}") from e
-        self._sm = SimConnect()
-        subscribe_list = [dict(name=n, units=u) for n, u in _SIMVARS]
-        self._datadef = self._sm.subscribe_simdata(subscribe_list, period=PERIOD_VISUAL_FRAME)
-
+        # Built in locals and only kept once telemetry is flowing: a failure
+        # half-way (e.g. the subscription raising) used to leave self._sm set
+        # with no subscription, so every retry returned "connected" and the
+        # first telemetry read crashed MAVIS ("no attribute 'simdata'").
         import time as _time
-        deadline = _time.time() + 10
-        while not self._datadef.simdata and _time.time() < deadline:
-            self._sm.receive()
-            _time.sleep(0.05)
-        if not self._datadef.simdata:
-            raise ConnectionError(
-                "SimConnect connected but no telemetry arrived within 10s -- "
-                "make sure MSFS has an active flight loaded, not just the main menu.")
+        sm = SimConnect()
+        try:
+            subscribe_list = [dict(name=n, units=u) for n, u in _SIMVARS]
+            dd = sm.subscribe_simdata(subscribe_list, period=PERIOD_VISUAL_FRAME)
+            deadline = _time.time() + 10
+            while not dd.simdata and _time.time() < deadline:
+                sm.receive()
+                _time.sleep(0.05)
+            if not dd.simdata:
+                err = ConnectionError(
+                    "SimConnect connected but no telemetry arrived within 10s -- "
+                    "make sure MSFS has an active flight loaded, not just the main menu.")
+                err.no_retry = True         # retrying won't load a flight
+                raise err
+        except Exception:
+            try:
+                sm.Close()
+            except Exception:
+                pass
+            raise
+        self._sm, self._datadef = sm, dd
         log.info("SimConnect connected (pysimconnect) -- flaps handle %s%%, elevator trim %s%%",
                  self._get("FLAPS HANDLE PERCENT", None), self._get("ELEVATOR TRIM PCT", None))
 
     def _get(self, name: str, default=0.0):
-        v = (self._datadef.simdata or {}).get(name)
+        dd = self._datadef
+        v = ((dd.simdata if dd is not None else None) or {}).get(name)
         return default if v is None else v
 
     def _brake(self, v: float) -> float:
@@ -159,7 +172,7 @@ class MSFSAdapter:
 
     def get_telemetry(self) -> Telemetry:
         import time as _time
-        if self._sm is None:
+        if self._sm is None or self._datadef is None:
             # Not connected yet -- connect() is deferred to start() now, but
             # the tick loop polls telemetry continuously from process boot
             # regardless of whether a lesson has started. A default/zeroed
@@ -247,7 +260,12 @@ class MSFSAdapter:
             if self._wait_for(landed, 2.0):
                 log.info("sim local time -> %02d:%02d", hour, minute)
                 return True
-            offset = round((self._get("LOCAL TIME", 0) - self._get("ZULU TIME", 0)) / 60.0)
+            with self._lock:
+                zulu = self._sm.get_simdatum("ZULU TIME", "seconds", timeout_seconds=1)
+            if zulu is None:
+                log.warning("time change: sim didn't report ZULU TIME, can't use the zulu fallback")
+                return False
+            offset = round((self._get("LOCAL TIME", 0) - zulu) / 60.0)
             z = (want - offset) % 1440
             with self._lock:
                 self._sm.send_event("ZULU_HOURS_SET", z // 60)
