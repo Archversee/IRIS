@@ -34,6 +34,9 @@
   min-height: 100%;
 }
 .rev--no-rail { grid-template-columns: 1fr; }
+/* Session Review only: everything at 80% scale so the dense layout fits.
+   (Percentage sizes aren't scaled by zoom, so the box still fills the page.) */
+.rev--zoom80 { zoom: 0.8; }
 
 /* ---- left toolbar rail ---- */
 .rev-rail {
@@ -113,7 +116,15 @@
    would otherwise throw off the box's true shape, leaving the video
    slightly pillarboxed and the AOI overlay (which assumes an exact 16:9
    box) stretched out of alignment with it */
-.rev-screen .body { position: relative; flex: 1; background: #06100f; min-height: 0; aspect-ratio: 16 / 9; max-height: 38vh; }
+.rev-screen .body {
+  position: relative; flex: none; background: #06100f; min-height: 0; aspect-ratio: 16 / 9;
+  /* Limit size by WIDTH (centred), never by height: a max-height cap kept the
+     full width while shortening the box, breaking 16:9 -- the video got bars
+     and the AOI/gaze overlays (which assume an exact 16:9 box) drifted. */
+  width: 100%; max-width: calc(var(--screen-max-h, 38vh) * 16 / 9); margin: 0 auto;
+}
+/* The 80%-zoomed Review keeps the same on-screen height limit. */
+.rev--zoom80 { --screen-max-h: 47.5vh; }
 .screen-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -171,6 +182,9 @@
 
 /* ---- bottom row ---- */
 .rev-bottom { display: grid; grid-template-columns: 1.3fr 1fr 0.85fr; gap: 10px; min-height: 0; }
+/* Review: scan path + region viewing side by side (both gaze), then the
+   gauges card, which needs the widest column. */
+.rev-bottom--telemetry { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 2.2fr); }
 .rev-card {
   background: var(--rev-panel); border: 1px solid var(--rev-line);
   border-radius: 10px; padding: 12px; min-height: 0; overflow: auto;
@@ -388,6 +402,7 @@
   --ft-good: var(--rev-green);
   --ft-warn: var(--rev-amber);
   display: flex; flex-direction: column;
+  container-type: inline-size;
 }
 .ft-card .readout-cols { grid-template-columns: repeat(3, 1fr); }
 .ft-toggle {
@@ -473,7 +488,9 @@
   transform: translate(-50%, -50%); transition: left .12s linear, top .12s linear;
 }
 
-@media (max-width: 1100px) {
+/* Wrap by the card's own width, so it works full-width (Live Monitor) and
+   in Review's bottom-row column alike. */
+@container (max-width: 860px) {
   .ft-gauges { flex-wrap: wrap; }
   .ft-group { flex: 1 1 260px; }
   .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
@@ -587,3 +604,36 @@
 @media (max-width: 700px) {
   .lsp { padding: 20px 16px; }
 }
+
+/* ---- Gaze trail (one layer over the OTW + Instruments screens, in px) ---- */
+.rev-screens { position: relative; }
+.scan-trail-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: visible; }
+/* Smooth: ageing glances fade, circles grow while held, new links sweep in. */
+.scan-trail__dot { transition: opacity .6s ease; animation: scan-trail-in .35s ease-out; transform-box: fill-box; transform-origin: center; }
+.scan-trail__dot circle { stroke-width: 2px; transition: r .35s ease-out, cx .5s ease, cy .5s ease, stroke-width .35s ease; }
+/* Free-gaze steps (OTW, or the panel outside any zone) -- drawn where the
+   eyes were rather than on a zone: hollow-ish with a glowing ring. */
+.scan-trail__dot.is-free circle { fill-opacity: .12; stroke-width: 3px; paint-order: stroke; filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 1.5px rgba(255,255,255,.9)); }
+.scan-trail__num { font-size: 11px; font-weight: 800; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 2px; }
+.scan-trail__link {
+  fill: none; stroke: #fff; stroke-width: 2px; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 0;
+  transition: opacity .6s ease; animation: scan-trail-draw .45s ease-out;
+}
+.scan-trail__now circle { stroke-width: 3px; animation: scan-trail-pulse 1.6s ease-in-out infinite; }
+@keyframes scan-trail-in { from { opacity: 0; transform: scale(.6); } }
+@keyframes scan-trail-draw { from { stroke-dashoffset: 1; } }
+@keyframes scan-trail-pulse { 50% { stroke-width: 5px; } }
+.trail-btn { opacity: .55; }
+.trail-btn.is-on { opacity: 1; border-color: var(--rev-cyan); color: var(--rev-cyan); }
+@media (prefers-reduced-motion: reduce) { .scan-trail__dot, .scan-trail__link, .scan-trail__now circle { animation: none; transition: none; } }
+
+/* ---- Ground track: MAVIS reference route (drawn under the flown path) ---- */
+.route-select {
+  margin-left: auto; max-width: 62%; padding: 2px 6px; font-size: 11px; border-radius: 6px;
+  background: #0f2a29; color: #cfe9e6; border: 1px solid #2f5b57;
+}
+/* A wide, soft band (not a thin line) so it stays visible even where the
+   flight path runs right on top of it. */
+.ground-route__path { fill: none; stroke: #f5a623; stroke-width: 4; opacity: .28; stroke-linejoin: round; stroke-linecap: round; }
+.ground-route__runway { stroke: #c9d4df; stroke-width: 2.6; stroke-linecap: round; opacity: .6; }

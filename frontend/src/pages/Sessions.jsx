@@ -24,7 +24,7 @@ export default function Sessions() {
   }, []);
 
   async function remove(id) {
-    if (!confirm("Delete this session and all its data?")) return;
+    if (!confirm("Delete this session and all its data, including its video recordings? This can't be undone.")) return;
     await api.deleteSession(id);
     load();
   }

@@ -51,3 +51,9 @@ export const ChecklistIcon = () => (
     <polyline points="3 12 4.5 13.5 7 11" /><polyline points="3 18 4.5 19.5 7 17" />
   </Icon>
 );
+export const UsersIcon = () => (
+  <Icon>
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+  </Icon>
+);

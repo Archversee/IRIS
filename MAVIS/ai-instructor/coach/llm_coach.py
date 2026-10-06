@@ -3,6 +3,7 @@ fallback) and answers free-form typed questions. Fully local via Ollama."""
 from __future__ import annotations
 import asyncio
 import logging
+import re
 import time
 
 import httpx
@@ -19,8 +20,30 @@ VERBATIM = frozenset({
     "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
+    "FAM_TURN_REMIND", "FAM_FIELD_HINT", "FAM_DEBRIEF",
 })
 
+
+
+def clip_spoken(text: str, max_words: int = 30) -> str:
+    """Keep a spoken line short: whole sentences up to max_words (at least the
+    first sentence, cut at a word if even that runs long). Models don't always
+    honour a length limit in the prompt."""
+    text = " ".join((text or "").split())
+    if len(text.split()) <= max_words:
+        return text
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    out, n = [], 0
+    for snt in sentences:
+        w = len(snt.split())
+        if out and n + w > max_words:
+            break
+        out.append(snt)
+        n += w
+    clipped = " ".join(out)
+    if len(clipped.split()) > max_words:
+        clipped = " ".join(clipped.split()[:max_words]).rstrip(",;:") + "."
+    return clipped
 
 class Coach:
     def __init__(self, cfg: dict, aircraft: dict, speak_fn, transcript):
@@ -186,10 +209,11 @@ class Coach:
         return None
 
     async def answer(self, question: str, tel_snippet: dict, phase: str) -> str:
+        # kept short on purpose: it's read aloud mid-flight and shown in chat
         sys = (phrases.PERSONA +
                f"\nMAVIS stands for {phrases.MAVIS_ACRONYM}, answer plainly if asked.\n"
-               "The student just typed a question mid-lesson. Answer it helpfully in "
-               "1-3 short spoken sentences, then hand attention back to flying.\n"
+               "The student just asked a question mid-lesson. Answer in one or two short "
+               "spoken sentences, 25 words at most in total. No preamble, no filler.\n"
                f"Aircraft facts:\n{self.aircraft.get('facts','')}\n"
                f"Current phase: {phase}. Telemetry: {tel_snippet}\n"
                "If asked the current time, use local_time_h from telemetry (decimal hours, "
@@ -208,6 +232,7 @@ class Coach:
                    "eyes up and keep flying, you're doing great.")
         import re
         out = re.sub(r",?\s*please\.?$", "", out, flags=re.I).strip()
+        out = clip_spoken(out, 30)
         await self.say(out)
         return out
 

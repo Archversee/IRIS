@@ -94,13 +94,27 @@ export default function MapCanvas({ state }) {
 
     ctx.clearRect(0, 0, cv.width, cv.height);
 
-    // Planned circuit (dashed rounded rectangle)
-    ctx.strokeStyle = ACC + "55";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([7, 7]);
-    drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px, 220, sc);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (L.type === "familiarization" && L.field) {
+      // Familiarization: no circuit -- the dashed ring is "fly back to here",
+      // the lesson ends once the aircraft is inside it.
+      const [fa, fc] = en(L.field.lat, L.field.lon);
+      const [fx, fy] = px(fa, fc);
+      ctx.strokeStyle = GOOD + "88";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath();
+      ctx.arc(fx, fy, (L.finish_radius_nm || 2) * 1852 * sc, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      // Planned circuit (dashed rounded rectangle)
+      ctx.strokeStyle = ACC + "55";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 7]);
+      drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px, 220, sc);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Runway
     const [r1x, r1y] = px(0, 0);

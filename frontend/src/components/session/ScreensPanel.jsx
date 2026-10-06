@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // Binds a live MediaStream (browser screen-capture) to a <video> ref --
 // srcObject can't be set as a JSX attribute like src can.
@@ -6,6 +6,108 @@ function useStreamBinding(ref, stream) {
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream || null;
   }, [ref, stream]);
+}
+
+// Gaze trail across the OTW and Instruments screens, drawn on one layer
+// over the whole screens row (in on-screen pixels): numbered circles
+// (newest = 5, counting down to the oldest) at each glance -- instrument glances on their AOI zone,
+// OTW glances on the OTW screen where the eyes were -- sized by glance
+// length and joined by curved arrows in order, crossing between the two
+// screens. Older glances fade. Only labelled areas (AOI zones + OTW) are
+// steps -- see scanTrail in useSessionData.js.
+//
+// Smoothness: every circle keeps a stable key (its glance), so as playback
+// runs it fades/grows/slides via CSS transitions instead of being re-drawn,
+// and each new connector sweeps in.
+
+// The video picture inside a 16:9 screen body is the whole body (the body
+// is kept exactly 16:9), so 1920x1080 maps straight onto it.
+const toScreen = (box, x, y) => ({ x: box.x + (x / 1920) * box.w, y: box.y + (y / 1080) * box.h });
+
+function ScanTrail({ trail: raw, boxes, maxLen }) {
+  if (!raw?.length || !boxes?.instrument || !boxes?.otw) return null;
+  const n = raw.length;
+  const u = boxes.instrument.w / 1920;                 // 1920-space units -> px
+  const radius = (dur) => Math.max(48, Math.min(110, 48 + dur * 12)) * u;
+  const alpha = (i) => (n === 1 ? 1 : 0.25 + (0.75 * i) / (n - 1));
+
+  // Numbered from the newest down: the latest glance is always maxLen (5),
+  // the one before it 4, and so on -- every number shifts down by one as a
+  // new glance arrives. Each step sits on screen with instruments exactly on
+  // their zone centre and OTW where the eyes were.
+  const top = Math.max(maxLen || n, n);
+  const steps = raw.map((p, i) => ({ ...p, step: top - (n - 1 - i), ...toScreen(boxes[p.screen], p.x, p.y) }));
+
+  // Every step is its own circle with its own number, right on its
+  // instrument's centre (or where the eyes were, for OTW). Repeat visits to
+  // the same instrument simply overlap; circles are drawn oldest first, so
+  // the newest is always on top and readable.
+  const nodes = steps.map((p, i) => ({ ...p, key: p.id, label: String(p.step), alpha: alpha(i) }));
+  const nodeOf = (p) => nodes[steps.indexOf(p)];
+
+  // Curved connector between two circles, trimmed to their edges. It bends
+  // to the left of the direction of travel, so A->B and B->A curve to
+  // opposite sides instead of drawing on top of each other.
+  const curve = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    const ra = radius(a.dur) + 2, rb = radius(b.dur) + 4;
+    if (len <= ra + rb) return null;
+    const ux = dx / len, uy = dy / len;
+    const x1 = a.x + ux * ra, y1 = a.y + uy * ra, x2 = b.x - ux * rb, y2 = b.y - uy * rb;
+    const bend = Math.min(40, len * 0.22);
+    const cx = (x1 + x2) / 2 - uy * bend, cy = (y1 + y2) / 2 + ux * bend;
+    return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+  };
+
+  return (
+    <g className="scan-trail">
+      <defs>
+        <marker id="scan-trail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#fff" />
+        </marker>
+      </defs>
+      {steps.slice(1).map((b, k) => {
+        const d = curve(nodeOf(steps[k]), nodeOf(b));
+        if (!d) return null;
+        return (
+          <path key={`${steps[k].id}-${b.id}`} d={d} pathLength="1" className="scan-trail__link"
+            style={{ opacity: alpha(k + 1) }} markerEnd="url(#scan-trail-arrow)" />
+        );
+      })}
+      {nodes.map((nd) => (
+        <g key={nd.key} className={"scan-trail__dot" + (nd.isCurrent ? " scan-trail__now" : "") + (nd.isOtw || nd.isPanel ? " is-free" : "")}
+          style={{ opacity: nd.alpha }}>
+          <circle cx={nd.x} cy={nd.y} r={radius(nd.dur)} fill={nd.color} fillOpacity="0.32" stroke={nd.color} />
+          <text x={nd.x} y={nd.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{nd.label}</text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+// Where the OTW and Instruments screen bodies sit inside the screens row,
+// in the row's own on-screen pixels (re-measured on resize). Using one
+// coordinate space for the row lets trail arrows cross between screens.
+function useScreenBoxes(rowRef, otwRef, instRef) {
+  const [boxes, setBoxes] = useState(null);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const measure = () => {
+      const r = row.getBoundingClientRect();
+      const rel = (el) => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.left - r.left, y: b.top - r.top, w: b.width, h: b.height };
+      };
+      setBoxes({ row: { w: r.width, h: r.height }, otw: rel(otwRef.current), instrument: rel(instRef.current) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [rowRef, otwRef, instRef]);
+  return boxes;
 }
 
 // The three video/track panels at the top of the session viewer: OTW,
@@ -17,9 +119,10 @@ function useStreamBinding(ref, stream) {
 export default function ScreensPanel({
   otwVideoRef, otwVideoSrc, otwStream, lookingAtOtw,
   instrumentVideoRef, instrumentVideoSrc, instrumentStream, lookingAtInstruments,
-  aoiZones, curAoi,
+  aoiZones, curAoi, scanTrail, scanTrailLen,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
+  routes, routeKey, setRouteKey, groundRoute,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
   live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
 }) {
@@ -28,9 +131,15 @@ export default function ScreensPanel({
 
   const hasOtw = !!(otwStream || otwVideoSrc);
   const hasInstrument = !!(instrumentStream || instrumentVideoSrc);
+  const [showTrail, setShowTrail] = useState(true);
+  const rowRef = useRef(null), otwBodyRef = useRef(null), instBodyRef = useRef(null);
+  const boxes = useScreenBoxes(rowRef, otwBodyRef, instBodyRef);
+  // Draw zones + trail even without a linked recording -- the layout of
+  // the zones alone still shows where the eyes went.
+  const showInstrumentOverlay = hasInstrument || (scanTrail?.length > 0 && aoiZones.length > 0);
 
   return (
-    <div className="rev-screens">
+    <div className="rev-screens" ref={rowRef}>
       <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
         <div className="head">
           OTW
@@ -40,7 +149,7 @@ export default function ScreensPanel({
             </button>
           )}
         </div>
-        <div className="body">
+        <div className="body" ref={otwBodyRef}>
           {otwStream ? (
             <video ref={otwVideoRef} className="screen-video" autoPlay muted playsInline />
           ) : otwVideoSrc ? (
@@ -63,20 +172,26 @@ export default function ScreensPanel({
       <div className={"rev-screen" + (lookingAtInstruments ? " active-screen" : "")}>
         <div className="head">
           Instruments
+          {scanTrail && (
+            <button type="button" className={"capture-btn trail-btn" + (showTrail ? " is-on" : "")}
+              onClick={() => setShowTrail((v) => !v)} title="Show the last few glances as a numbered trail">
+              Trail
+            </button>
+          )}
           {live && (
             <button className="capture-btn" onClick={instrumentStream ? onStopInstrument : onCaptureInstrument}>
               {instrumentStream ? "■ Stop" : "◻ Capture"}
             </button>
           )}
         </div>
-        <div className="body">
+        <div className="body" ref={instBodyRef}>
           {instrumentStream ? (
             <video ref={instrumentVideoRef} className="screen-video" autoPlay muted playsInline />
           ) : instrumentVideoSrc ? (
             <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
           ) : null}
-          {hasInstrument && (
+          {showInstrumentOverlay && (
             <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
               {aoiZones.map((z) => {
                 const active = z.name === curAoi;
@@ -104,7 +219,16 @@ export default function ScreensPanel({
       </div>
 
       <div className="rev-screen">
-        <div className="head">Ground track</div>
+        <div className="head">
+          Ground track
+          {routes?.length > 0 && setRouteKey && (
+            <select className="route-select" value={routeKey} onChange={(e) => setRouteKey(e.target.value)}
+              title="Draw a MAVIS preset route under the flown path">
+              <option value="">No reference route</option>
+              {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
+          )}
+        </div>
         <div className="body">
           {groundTrack.length > 1 ? (
             <svg viewBox="0 0 100 100" className="ground-track-svg" preserveAspectRatio="xMidYMid meet"
@@ -113,6 +237,13 @@ export default function ScreensPanel({
               onMouseMove={onGroundMouseMove}
               onMouseUp={onGroundMouseUp}
             >
+              {/* MAVIS reference route, under the actual flight path */}
+              {groundRoute && (
+                <g className="ground-route">
+                  <polyline points={groundRoute.path} className="ground-route__path" />
+                  <line {...groundRoute.runway} className="ground-route__runway" />
+                </g>
+              )}
               <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
               <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
               {groundCurPoint && (
@@ -124,6 +255,13 @@ export default function ScreensPanel({
           )}
         </div>
       </div>
+
+      {/* Gaze trail on top of both screens, so arrows can cross between them. */}
+      {showTrail && boxes && scanTrail?.length > 0 && (
+        <svg className="scan-trail-layer" viewBox={`0 0 ${boxes.row.w} ${boxes.row.h}`} preserveAspectRatio="none">
+          <ScanTrail trail={scanTrail} boxes={boxes} maxLen={scanTrailLen} />
+        </svg>
+      )}
     </div>
   );
 }

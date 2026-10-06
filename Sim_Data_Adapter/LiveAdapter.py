@@ -277,6 +277,25 @@ def _discard_worker(sid: str, paths: list[str]) -> None:
         print(f"Discarded session {sid}: no recording files found at {paths}")
 
 
+def register_recordings(sid: str, paths: list[str]) -> None:
+    """Tell IRIS which files OBS wrote for this session, so deleting the
+    session later (Sessions page, Finish & discard, any time) removes them
+    -- not just a discard this process happens to still remember.
+    Best-effort: a 404 just means the session was already deleted."""
+    req = urllib.request.Request(
+        f"{API_BASE_URL}/sessions/{sid}/recordings",
+        data=json.dumps({"paths": [os.path.abspath(p) for p in paths]}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            print(f"Registered {len(paths)} recording(s) with IRIS for session {sid}")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"Couldn't register recordings for {sid} with IRIS: HTTP {e.code}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        print(f"Couldn't register recordings for {sid} with IRIS: {e}")
+
+
 def delete_recordings(sid: str, paths: list[str]) -> None:
     """Finish & discard: remove the files OBS wrote for this session (plus
     any remuxed copy), on a background thread so the main loop isn't held
@@ -626,6 +645,7 @@ def main():
     def stop_and_remember(sid: str) -> None:
         paths = stop_obs_recordings(obs_clients)
         if paths:
+            register_recordings(sid, paths)
             saved[sid] = paths
             with _recent_lock:
                 if sid not in _recent_sids:

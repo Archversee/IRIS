@@ -6,15 +6,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import db, mavis_bridge, videos
+from . import auth, db, mavis_bridge, videos
 from .config import settings
-from .routers import adapter, aoi_zones, analytics, data, ingest, sessions, stream
+from .routers import accounts, adapter, aoi_zones, analytics, data, ingest, routes, sessions, stream
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.connect()
+    await auth.ensure_schema()  # users/auth_tokens tables + first admin account
+    await videos.ensure_schema()  # sessions.recording_paths (OBS files to delete with a session)
     # Background WS client into MAVIS -- reconnects on its own if MAVIS
     # isn't up yet/goes away, so this never blocks IRIS's own startup or
     # crashes the app when MAVIS is offline. See docs/INTEGRATION_PLAN.md §1b.
@@ -33,6 +35,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(accounts.router)
+app.include_router(routes.router)
 app.include_router(sessions.router)
 app.include_router(adapter.router)
 app.include_router(aoi_zones.router)

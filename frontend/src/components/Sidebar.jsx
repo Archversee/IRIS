@@ -2,19 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, TrophyIcon, ChecklistIcon, PulseIcon, ListIcon, UploadIcon, TargetIcon, GearIcon } from "./SidebarIcons.jsx";
+import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
 // from IRIS (view/debrief -- everything that only reads sessions MAVIS
 // already created, whether in progress or finished). Live Monitor is a
 // pure viewer with no start/stop control of its own now, so it lives under
-// IRIS alongside Sessions/Upload even though what it shows is live.
+// IRIS alongside Sessions even though what it shows is live.
 // Curriculum's lesson tree nests directly under that one link, not the
 // whole section, so it doesn't read as if it belongs under Free Flight.
 // Curriculum defaults to Preflight & Cockpit (the walk-around) rather than
 // the bare mode-selection screen -- that's the natural first stop before
 // "Basic Flight", matching how the curriculum is meant to be entered.
+// Leaderboard, Scoring Guide, Upload and AOI Zones are reached from the
+// Settings drawer.
 const SECTIONS = [
   {
     label: "MAVIS",
@@ -22,8 +25,6 @@ const SECTIONS = [
     links: [
       { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls"] },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
-      { to: "/leaderboard", path: "/leaderboard", label: "Leaderboard", icon: <TrophyIcon /> },
-      { to: "/scoring", path: "/scoring", label: "Scoring Guide", icon: <ChecklistIcon /> },
     ],
   },
   {
@@ -32,11 +33,12 @@ const SECTIONS = [
     links: [
       { to: "/monitor", path: "/monitor", label: "Live Monitor", icon: <PulseIcon /> },
       { to: "/sessions", path: "/sessions", label: "Sessions", icon: <ListIcon /> },
-      { to: "/upload", path: "/upload", label: "Upload", icon: <UploadIcon /> },
-      { to: "/aoi-zones", path: "/aoi-zones", label: "AOI Zones", icon: <TargetIcon /> },
     ],
   },
 ];
+
+// Pages opened from the Settings drawer -- the gear lights up on these.
+const SETTINGS_PATHS = ["/leaderboard", "/scoring", "/upload", "/aoi-zones"];
 
 // Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
 // icon-only; otherwise it stays at the dragged width and shows full names.
@@ -60,6 +62,9 @@ export default function Sidebar() {
   const [width, setWidth] = useState(loadWidth);
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { user } = useAuth();
+  const displayName = user.full_name || user.username;
+  const initials = (displayName.match(/\b\w/g) || ["?"]).slice(0, 2).join("").toUpperCase();
   const lastExpanded = useRef(width > COLLAPSED_W ? width : DEFAULT_W);
   const collapsed = width < COLLAPSE_BELOW;
 
@@ -132,7 +137,23 @@ export default function Sidebar() {
         );
       })}
       <div className="sidebar__footer">
-        <button type="button" className={"sidebar__link sidebar__settings" + (settingsOpen ? " active" : "")}
+        {user.role === "admin" && (
+          <NavLink to="/accounts" className="sidebar__link" title={collapsed ? "Accounts" : undefined}>
+            <UsersIcon />
+            <span className="sidebar__text">Accounts</span>
+          </NavLink>
+        )}
+        {/* Signed-in user + role tag -> Profile */}
+        <NavLink to="/profile" className="sidebar__user"
+          title={collapsed ? `${displayName} · ${ROLE_LABELS[user.role]}` : "Your profile"}>
+          <span className={`sidebar__avatar sidebar__avatar--${user.role}`}>{initials}</span>
+          <span className="sidebar__text sidebar__user-text">
+            <span className="sidebar__user-name">{displayName}</span>
+            <RoleTag role={user.role} small />
+          </span>
+        </NavLink>
+        <button type="button" className={"sidebar__link sidebar__settings"
+          + (settingsOpen || SETTINGS_PATHS.some((p) => pathname.startsWith(p)) ? " active" : "")}
           title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>
           <GearIcon />
           <span className="sidebar__text">Settings</span>
