@@ -378,11 +378,13 @@ async def amain(cfg):
             except Exception as e:
                 last_err = e
                 log.warning("SimConnect connect attempt %d/%d failed: %s", i + 1, attempts, e)
+                if getattr(e, "no_retry", False):
+                    raise                   # e.g. MSFS at its main menu: say so now
                 if i < attempts - 1:
                     await asyncio.sleep(delay_s)
         raise ConnectionError(
             f"Couldn't connect to MSFS after {attempts} attempts -- make sure it's "
-            "running with a flight loaded, then press Start again."
+            f"running with a flight loaded, then press Start again. (Last error: {last_err})"
         ) from last_err
 
     def _orient_lesson_to_aircraft(tel) -> None:
@@ -1319,9 +1321,20 @@ async def amain(cfg):
         night_task = None
         last_good = prev_raw = None
         prev_on_ground = None
+        last_tick_error = 0.0
         while True:
             t0 = time.time()
-            tel = await loop.run_in_executor(None, sim.get_telemetry)
+            # One bad sim read must never take MAVIS down: an exception here
+            # used to end the whole process (asyncio.gather), which the web
+            # proxy then reports as 502. Log it (throttled) and keep ticking.
+            try:
+                tel = await loop.run_in_executor(None, sim.get_telemetry)
+            except Exception:
+                if t0 - last_tick_error > 10:
+                    log.exception("reading sim telemetry failed -- will keep trying")
+                    last_tick_error = t0
+                await asyncio.sleep(0.5)
+                continue
             ctrl = hid.poll() if hid and hid.ok else ControlSample()
             # glitch guard: SimConnect sometimes emits a one-sample position
             # spike. Ignore isolated spikes for lesson logic + track; accept
