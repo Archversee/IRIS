@@ -69,25 +69,20 @@ end_reposition:
 
 briefing:
   layman: >-
-    This is a familiarisation flight. I've put us in the air at about {alt}
-    feet, a few miles south of Paya Lebar, so you can get a feel for the
-    aeroplane without worrying about take-off or landing. We'll fly straight,
-    do a couple of gentle turns, a climb and a descent, and then you'll find
-    Paya Lebar and point us at it. Your to-do list is in the top right.
+    Familiarisation flight. We're up at about {alt} feet, just south of Paya
+    Lebar. Follow the to-do list, top right, then find Paya Lebar and point at it.
   pilot: >-
-    Familiarisation flight, airborne start at about {alt} feet, three miles
-    south of Paya Lebar. Straight and level, medium turns each way, a climb
-    and a descent, then locate Paya Lebar visually and point at it. No landing
-    required. Task list top right.
+    Familiarisation flight, airborne at {alt} feet south of Paya Lebar. Work
+    the task list, then locate Paya Lebar and point at it.
 
-# Spoken when each step begins, picked by jargon. freeze: false = spoken while
-# the trainee keeps flying (no hold, no "You have control").
-# Numbers are ranges, never exact targets. {placeholders} come from the step:
-# alt_lo/alt_hi (the band to be in), spd_lo/spd_hi, bank_lo/bank_hi,
-# climb_lo/climb_hi, descend_lo/descend_hi, hold_s, brg_lo/brg_hi, dist_nm,
-# clock. Use {x:,} for a thousands separator.
-# title/todo: the step's row in the pilot view's to-do list (todo = short
-# checklist lines shown while the step is active).
+# Spoken when each step begins, picked by jargon -- kept short: the to-do list
+# carries the numbers. freeze: false = spoken while the trainee keeps flying
+# (no hold, no "You have control"). Numbers are ranges, never exact targets.
+# {placeholders}: alt_lo/alt_hi, spd_lo/spd_hi, bank_lo/bank_hi, climb_lo/
+# climb_hi, descend_lo/descend_hi, hold_s, brg_lo/brg_hi, dist_nm, clock.
+# Use {x:,} for a thousands separator.
+# title/todo: the step's row in the to-do list (todo = short action lines;
+# the live "now / target" readout under them comes from the engine).
 # look: what the tablet highlights on its PFD diagram -- attitude, airspeed,
 # altitude, vsi, heading, or outside (look out of the window).
 step_notes:
@@ -95,98 +90,72 @@ step_notes:
     title: Straight & level
     todo:
       - "Wings level, nose on the horizon"
-      - "Stay between {alt_lo:,} and {alt_hi:,} ft"
-      - "Hold it about {hold_s} seconds"
     look: [attitude, altitude]
     layman: >-
-      I'm holding the aeroplane still for a moment so you can look around.
-      On the big screen in front of you, the picture in the middle with blue
-      sky and brown ground is the attitude indicator. It shows the wings and
-      the nose. Keep the little yellow aeroplane symbol sitting level on the
-      line between blue and brown. The numbers on the right are your height.
-      Try to keep them somewhere between {alt_lo:,} and {alt_hi:,} feet.
+      I'm holding us still. In the middle screen, keep the yellow plane level
+      on the horizon line, and your height between {alt_lo:,} and {alt_hi:,} feet.
     pilot: >-
-      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Attitude indicator:
-      wings level, nose on the horizon. Cross-check the altimeter tape on the
-      right. Set cruise power and trim off the pressure.
+      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Wings level, nose on
+      the horizon, trim.
   TURN_LEFT:
     title: Gentle left turn
     todo:
-      - "Ease the stick left"
-      - "Tilt about {bank_lo} to {bank_hi} degrees"
-      - "Turn roughly a quarter circle, then wings level"
-      - "Height: {alt_lo:,} to {alt_hi:,} ft"
+      - "Stick left, hold the bank"
+      - "Roll level after about 90°"
     look: [attitude, heading]
     layman: >-
-      Next, a gentle turn to the left. Look at the top of that middle
-      picture: there's a curved scale with a small white triangle. When you
-      ease the stick left, the triangle slides along the scale to show how far
-      the wings tilt. Somewhere around {bank_lo} to {bank_hi} degrees is
-      plenty. The compass circle at the bottom of the screen turns as we turn.
-      After roughly a quarter circle, level the wings again.
+      Gentle left turn. Ease the stick left until the triangle at the top
+      shows {bank_lo} to {bank_hi} degrees. Level out after a quarter circle.
     pilot: >-
-      Left turn, {bank_lo} to {bank_hi} degrees of bank on the roll scale,
-      roughly ninety degrees on the HSI. Hold altitude, roll out wings level.
+      Left turn, {bank_lo} to {bank_hi} degrees of bank, about ninety degrees.
+      Hold altitude.
   TURN_RIGHT:
     title: Gentle right turn
     todo:
-      - "Ease the stick right"
-      - "Tilt about {bank_lo} to {bank_hi} degrees"
-      - "Turn roughly a quarter circle, then wings level"
-      - "Height: {alt_lo:,} to {alt_hi:,} ft"
+      - "Stick right, hold the bank"
+      - "Roll level after about 90°"
     look: [attitude, heading]
     freeze: false
     layman: >-
-      Nice. Same again to the right, about {bank_lo} to {bank_hi} degrees of
-      tilt, then level the wings.
+      Same again to the right, {bank_lo} to {bank_hi} degrees, then level out.
     pilot: >-
-      Right turn, {bank_lo} to {bank_hi} degrees of bank, roll out after
-      roughly ninety.
+      Right turn, {bank_lo} to {bank_hi} degrees, roll out after ninety.
   CLIMB:
     title: Climb
     todo:
-      - "Throttle forward, then raise the nose gently"
-      - "Speed around {spd_lo} to {spd_hi} kt"
-      - "Climb {climb_lo} to {climb_hi} ft"
-      - "Level off between {alt_lo:,} and {alt_hi:,} ft"
+      - "Throttle forward, nose up gently"
+      - "Level off at the top"
     look: [airspeed, vsi]
     layman: >-
-      Now let's go up a little. The tape on the left of the screen is your
-      speed. Push the throttle forward, then gently raise the nose until the
-      speed settles somewhere around {spd_lo} to {spd_hi} knots. The thin
-      scale just right of the height numbers shows we're climbing. Climb
-      roughly {climb_lo} to {climb_hi} feet, then level off.
+      Now climb. Throttle forward, raise the nose gently, and keep the speed
+      tape on the left at {spd_lo} to {spd_hi} knots. Up {climb_lo} to
+      {climb_hi} feet.
     pilot: >-
-      Climb {climb_lo} to {climb_hi} feet, level between {alt_lo:,} and
-      {alt_hi:,}. Full power, pitch for Vy, {spd_lo} to {spd_hi} knots on the
-      airspeed tape. Monitor the VSI.
+      Climb {climb_lo} to {climb_hi} feet. Full power, Vy, {spd_lo} to
+      {spd_hi} knots.
   DESCEND:
     title: Descend
     todo:
-      - "Throttle back a little, lower the nose gently"
-      - "Come down {descend_lo} to {descend_hi} ft"
-      - "Level off between {alt_lo:,} and {alt_hi:,} ft"
+      - "Throttle back a little, nose down gently"
+      - "Level off at the bottom"
     look: [altitude, vsi]
     freeze: false
     layman: >-
-      Good climb. Now throttle back a little and let the nose down gently,
-      about {descend_lo} to {descend_hi} feet, then level off.
+      Now down. Throttle back a little, nose down gently, {descend_lo} to
+      {descend_hi} feet.
     pilot: >-
       Descend {descend_lo} to {descend_hi} feet, level between {alt_lo:,} and
       {alt_hi:,}.
   FIND_AIRFIELD:
     title: Find Paya Lebar & point at it
     todo:
-      - "Look outside for a long runway inland"
+      - "Look outside, not at the screen"
       - "Not Changi: that's the big one on the coast"
-      - "Turn until it sits right in front of the nose"
-      - "Hold it there a few seconds to finish"
+      - "Point the nose at it and hold"
     look: [outside]
     freeze: false
     layman: >-
-      Last job: look outside and find Paya Lebar, around your {clock}
-      o'clock, about {dist_nm} miles. Not Changi on the coast. Point the nose
-      at it and hold it there.
+      Last job: find Paya Lebar, around your {clock} o'clock, about {dist_nm}
+      miles. Not Changi on the coast. Point the nose at it.
     pilot: >-
-      Locate Paya Lebar visually, approximately {clock} o'clock, {dist_nm}
-      miles. Put it on the nose and hold it.
+      Locate Paya Lebar, {clock} o'clock, {dist_nm} miles. Put it on the nose.

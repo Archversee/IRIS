@@ -25,7 +25,7 @@ APP_VERSION = "0.2.0"
 import uvicorn
 
 from adapters.input_hid import HIDInput, ControlSample
-from coach.llm_coach import Coach
+from coach.llm_coach import Coach, clip_spoken
 from coach import phrases
 from core.events import CoachEvent
 from core.lesson_engine import LessonEngine
@@ -596,10 +596,10 @@ async def amain(cfg):
         return None
 
     async def set_sim_time(h: int, m: int):
-        await coach.say(f"Of course. Setting the clock to {h:02d}{m:02d} hours, watch the sky.")
+        await coach.say(f"Setting the clock to {h:02d}{m:02d} hours.")
         ok = await loop.run_in_executor(None, sim.set_local_time, h, m)
         if not ok:
-            await coach.say("Hmm, the simulator didn't accept that, we'll try again on the ground.")
+            await coach.say("The sim didn't take that time. Try again in a moment.")
 
     async def chat(text: str):
         if not text:
@@ -619,9 +619,8 @@ async def amain(cfg):
             await coach.say("Here's the controls guide. Just say 'close the guide' when you're done.")
             return
         if re.search(r"\bflaps?\b", t) and re.search(r"(what|why|for|explain|tell me|mean|do)", t):
-            await coach.say("Flaps are panels on the wing that hinge down, they let you fly "
-                            "slower and more safely for landing, and we use them on downwind, "
-                            "base, and final. Eyes outside, you're doing fine.")
+            await coach.say("Flaps are wing panels that hinge down so we can fly slower, "
+                            "mainly for landing.")
             return
         # --- retry intents: "let me try the landing again", "go back" ---
         if re.search(r"((try|do|fly|attempt).{0,25}again)|go back|redo|rewind|"
@@ -681,8 +680,8 @@ async def amain(cfg):
             if wcond:
                 await _tool_weather(wcond)
             else:
-                await coach.say("I can set clear skies, clouds, rain, a storm, fog or snow, "
-                                "and change the time of day. Which would you like?")
+                await coach.say("I can do clear, cloudy, rain, storm, fog or snow, "
+                                "or a time of day. Which one?")
             return
         # --- agentic fallback: let the local LLM pick ONE safe tool for a fuzzy
         #     request the rules above didn't catch (deterministic path already ran) ---
@@ -1060,11 +1059,9 @@ async def amain(cfg):
         what = WEATHER_SAY.get(condition, condition)
         if ok:
             # the sim can't confirm weather back, so don't promise it arrived
-            await coach.say(f"Okay, I've asked the simulator for {what}. "
-                            "Give it a moment to roll in.")
+            await coach.say(f"Asked the sim for {what}. Give it a moment.")
         else:
-            await coach.say(f"Sorry, the simulator isn't letting me set {what} right now. "
-                            "I can still change the time of day for you.")
+            await coach.say(f"The sim won't take {what} right now. Time of day still works.")
 
     tools.register(Tool(
         "set_time_of_day",
@@ -1131,7 +1128,9 @@ async def amain(cfg):
         return re.sub(r"\s{2,}", " ", out).strip()
 
     def _sanitize_debrief(text: str, name: str) -> str:
-        """Use the trainee's name at most once; strip invented names when none on file."""
+        """Use the trainee's name at most once; strip invented names when none
+        on file; keep it to a short spoken length."""
+        text = clip_spoken(text, 35)
         n = (name or "").strip()
         if n:
             return _limit_name_mentions(text, n)
@@ -1148,19 +1147,17 @@ async def amain(cfg):
         if is_familiarization(lesson):
             return await _make_fam_debrief(card, sc)
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
-        fallback = (f"Nice circuit. Your {best} was the strongest part. A little more "
-                    f"attention to {worst} next time and it'll be even better.")
+        fallback = f"Nice circuit. Best was your {best}; work on {worst} next time."
         if card.scores.get("landing") is None:
-            fallback = (f"Good effort on the parts you flew. Your {best} stood out. "
-                        "We didn't reach a landing, so that isn't scored yet.")
+            fallback = f"Good effort. Your {best} stood out. No landing yet, so that's unscored."
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a 2-3 sentence spoken debrief of the trainee's "
-                "circuit from these 0-100 scores. Warm and specific: name one strength and "
-                "one thing to work on. No lists; don't read out every number. " + who_line)
+        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's circuit from "
+                "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
+                "and one thing to work on. No lists; don't read out the numbers. " + who_line)
         try:
             out = await coach._ollama(
                 sysp, f"scores={sc} retries={card.retries} total={card.total} grade={card.grade}", 10.0)
@@ -1175,22 +1172,19 @@ async def amain(cfg):
         names = {"exercises": "getting through every exercise", "altitude": "height holding",
                  "bank": "turns", "climb_speed": "climb speed", "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
-        fallback = (f"Lovely familiarisation flight. Your {names[best]} was the strongest part. "
-                    f"A little more attention to {names[worst]} next time.")
+        fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
         if card.incomplete:
-            fallback = (f"Good effort on the parts you flew. Your {names[best]} stood out. "
-                        "We didn't make it back to Paya Lebar this time.")
+            fallback = f"Good effort. Your {names[best]} stood out. We didn't reach Paya Lebar this time."
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a 2-3 sentence spoken debrief of the trainee's "
-                "flight familiarisation exercise (an airborne start, straight and level, a turn "
-                "each way, a climb and a descent, then finding Paya Lebar and flying to it; no "
-                "take-off or landing) from these 0-100 scores. Warm and specific: name one "
-                "strength and one thing to work on. No lists; don't read out every number. "
-                + who_line)
+        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's flight "
+                "familiarisation exercise (airborne start, straight and level, a turn each way, "
+                "a climb and a descent, then finding Paya Lebar; no take-off or landing) from "
+                "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
+                "and one thing to work on. No lists; don't read out the numbers. " + who_line)
         reached = "yes" if not card.incomplete else "no"
         try:
             out = await coach._ollama(
