@@ -116,6 +116,7 @@
 /* ---- Menu main (mode cards) ---- */
 .mavis-menu__main { flex: 1; min-width: 0; }
 .mavis-menu__greeting { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+.mavis-menu__note { margin: -8px 0 16px; max-width: 640px; font-size: 14px; line-height: 1.45; opacity: 0.85; }
 .mavis-menu--solo { max-width: none; width: 100%; }
 .mavis-menu__error { margin-top: 12px; color: #ff8a8a; font-size: 13px; }
 
@@ -313,6 +314,24 @@
 .mavis-chat__send:hover:not(:disabled) { background: #6cbaff; }
 .mavis-chat__send:active:not(:disabled) { transform: scale(0.94); }
 .mavis-chat__send:disabled { background: var(--border); color: var(--faint); opacity: 1; }
+.mavis-chat__mic {
+  width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--inset); color: var(--text); border: 1px solid var(--border-strong);
+  touch-action: none; user-select: none;
+}
+.mavis-chat__mic:hover:not(:disabled) { border-color: var(--accent); }
+.mavis-chat__mic.is-hot {
+  background: #ff9f43; color: #1a0f00; border-color: #ff9f43;
+  animation: mavis-ptt-pulse 1.2s infinite;
+}
+.mavis-chat__mic:disabled { opacity: 0.4; }
+@keyframes mavis-ptt-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(255, 159, 67, 0); }
+}
+.mavis-topbar__error { font-size: 12px; color: #ff8a8a; max-width: 320px; }
+.mavis-chat__voice { padding: 0 12px 8px; font-size: 12px; color: var(--faint); background: var(--panel); }
 
 /* ---- Map ---- */
 .mavis-map {
@@ -325,6 +344,73 @@
   overflow: hidden;
 }
 .mavis-map canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+
+/* Familiarization to-do list (TodoCard.jsx), floating top right of the map */
+.mavis-hud__right { position: relative; }
+.mavis-todo {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: min(320px, 46%); max-height: calc(100% - 20px); overflow-y: auto;
+  padding: 12px 14px; border-radius: 10px;
+  background: rgba(10, 14, 22, 0.88); border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); color: #e8eef8;
+}
+.mavis-todo__title { font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.mavis-todo__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mavis-todo__step { display: grid; grid-template-columns: 18px 1fr; gap: 6px; font-size: 14px; }
+.mavis-todo__mark { color: var(--accent); font-weight: 700; text-align: center; }
+.mavis-todo__step.is-done { opacity: 0.6; }
+.mavis-todo__step.is-done .mavis-todo__mark { color: #3ddc84; }
+.mavis-todo__step.is-done .mavis-todo__name { text-decoration: line-through; }
+.mavis-todo__step.is-todo { opacity: 0.5; }
+.mavis-todo__step.is-skipped { opacity: 0.6; }
+.mavis-todo__step.is-skipped .mavis-todo__mark { color: #ff9f43; }
+.mavis-todo__skipped { font-size: 12px; color: #ff9f43; }
+.mavis-todo__step.is-active .mavis-todo__name { font-weight: 700; }
+.mavis-todo__lines { margin: 4px 0 0; padding-left: 16px; line-height: 1.45; font-size: 13px; }
+.mavis-todo__progress {
+  margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 13px;
+  background: rgba(74, 168, 255, 0.15); color: #bfe0ff;
+}
+.mavis-todo__meters { display: grid; gap: 4px; margin-top: 6px; }
+.mavis-todo__meter {
+  display: grid; grid-template-columns: 70px 1fr 44px; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: 6px; font-size: 13px; background: rgba(255, 255, 255, 0.05);
+}
+.mavis-todo__meter-label { color: #9fb2cf; }
+.mavis-todo__meter-val b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.mavis-todo__meter-of { color: #9fb2cf; }
+.mavis-todo__bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.mavis-todo__bar i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.mavis-todo__meter.is-ok .mavis-todo__bar i { background: #3ddc84; }
+.mavis-todo__dot { justify-self: end; width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.25); }
+.mavis-todo__meter.is-ok .mavis-todo__dot { background: #3ddc84; }
+.mavis-todo__meter.is-off .mavis-todo__dot { background: #ff9f43; }
+.mavis-todo__done { margin-top: 10px; font-size: 13px; color: #3ddc84; }
+@media (max-width: 720px) { .mavis-todo { position: static; width: auto; max-height: none; } }
+
+/* Familiarization "where to look" card (LookCard.jsx), under the map */
+.mavis-look {
+  display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 6px 16px;
+  align-items: center; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.mavis-look__title { grid-column: 1 / -1; font-weight: 700; color: var(--accent); }
+.mavis-look__pfd { width: 100%; height: auto; display: block; }
+.mavis-look__labels { margin: 0; padding-left: 18px; line-height: 1.5; font-size: 14px; }
+.mavis-look__bezel { fill: #10141c; stroke: var(--border); }
+.mavis-look__sky { fill: #2f6fb0; }
+.mavis-look__ground { fill: #7a5530; }
+.mavis-look__tape { fill: #1c2230; }
+.mavis-look__line, .mavis-look__frame { fill: none; stroke: #cdd9ec; stroke-width: 1.5; }
+.mavis-look__frame { stroke: transparent; stroke-width: 3; }
+.mavis-look__mark { fill: #fff; }
+.mavis-look__symbol { fill: none; stroke: #ffd23f; stroke-width: 3; stroke-linejoin: round; }
+.mavis-look__num { fill: #e8eef8; font: 600 13px system-ui; text-anchor: middle; }
+.mavis-look__part { opacity: 0.35; transition: opacity 0.3s; }
+.mavis-look__part.is-on { opacity: 1; }
+.mavis-look__part.is-on .mavis-look__frame { stroke: var(--accent); filter: drop-shadow(0 0 4px var(--accent)); }
+.mavis-look--outside .mavis-look__pfd { opacity: 0.5; }
+@media (max-width: 560px) { .mavis-look { grid-template-columns: 1fr; } }
 .mavis-map canvas.is-dragging { cursor: grabbing; }
 .mavis-map__zoom {
   position: absolute; left: 10px; bottom: 10px;

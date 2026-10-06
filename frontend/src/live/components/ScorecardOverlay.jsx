@@ -1,6 +1,9 @@
 import { mavisApi } from "../api/mavisApi.js";
 
 const GRADE_LABEL = { S: "S", A: "A", B: "B", C: "C", D: "D", F: "F" };
+// Scorer keys -> what the bar is about (the familiarization lesson's keys
+// aren't self-explanatory; circuit keys read fine as they are)
+const METRIC_LABEL = { altitude: "height hold", bank: "turns", climb_speed: "climb speed" };
 
 // Ported to match the original app's #scoreView styling (grade-pill
 // gradients, metric bars, debrief text). The scoring guide lives in the
@@ -10,11 +13,13 @@ export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard }) {
 
   // No parent callback needed here -- MAVIS clears state.scorecard on
   // restart, so this overlay just disappears once the new attempt begins.
+  // restart alone only reset MAVIS and left the HUD idle; relaunch also puts
+  // the aircraft back at the start and begins the lesson again
   async function flyAgain() {
     try {
-      await mavisApi.restart();
+      await mavisApi.relaunch();
     } catch {
-      // best-effort
+      // best-effort -- the HUD's own Restart button shows errors
     }
   }
 
@@ -34,7 +39,7 @@ export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard }) {
         <div className="mavis-score-metrics">
           {Object.entries(scores).map(([k, v]) => (
             <div className="mavis-score-metric" key={k}>
-              <div className="mavis-score-metric__label">{k}</div>
+              <div className="mavis-score-metric__label">{METRIC_LABEL[k] || k.replace(/_/g, " ")}</div>
               <div className="mavis-score-metric__bar">
                 <div className="mavis-score-metric__fill" style={{ width: `${Math.max(0, Math.min(100, v ?? 0))}%` }} />
               </div>

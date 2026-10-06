@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
@@ -230,7 +230,14 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
         fn = actions.get(action)
         if not fn:
             return {"ok": False}
-        await fn()
+        try:
+            await fn()
+        except Exception as e:
+            # still a 500 (callers treat it as failure), but with the reason in
+            # the body so the menu can show "Couldn't connect to MSFS ... (Last
+            # error: ...)" rather than a bare "Internal Server Error"
+            log.exception("/demo/%s failed", action)
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
         return {"ok": True}
 
     # ---- voice enrolment + PTT (§16) ----
