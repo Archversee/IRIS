@@ -7,7 +7,10 @@ async function req(path, opts = {}) {
   const res = await fetch(BASE + path, opts);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    // MAVIS's /demo/* failures carry {"error": "..."} -- show that sentence
+    let reason = null;
+    try { reason = JSON.parse(text)?.error || null; } catch { /* not JSON */ }
+    throw new Error(reason || `${res.status} ${res.statusText}: ${text}`);
   }
   if (res.status === 204) return null;
   const ct = res.headers.get("content-type") || "";
@@ -29,6 +32,9 @@ export const mavisApi = {
   start: () => postJson("/demo/start"),
   quit: () => postJson("/demo/quit"),
   restart: () => postJson("/demo/restart"),
+  // Restart button / Fly again: reset, aircraft back to the lesson's start
+  // position (airborne for familiarization, runway start otherwise), go again
+  relaunch: () => postJson("/demo/relaunch"),
   chat: (text) => postJson("/chat", { text }),
   // Push-to-talk: WAV blob -> Whisper on MAVIS -> same handler as typed chat.
   // -> {ok, text} or {ok: false, reason}
