@@ -461,16 +461,21 @@ async def amain(cfg):
         if gen != run_gen["n"]:
             return                      # Fly again / reset already took over
         await _set_frozen(False)
+        await _to_runway_start()
+
+    async def _to_runway_start() -> bool:
+        """Aircraft lined up at the start of the lesson's runway, stopped,
+        throttle idle."""
         fn = getattr(sim, "set_position", None)
         lat, lon, hdg = runway_start(lesson)
         elev = lesson["airport"]["elevation_ft"]
         ok = fn is not None and await loop.run_in_executor(
             None, lambda: fn(lat, lon, elev, hdg, 0, throttle_pct=0, on_ground=True))
         if ok:
-            log.info("familiarization done: aircraft back at the start of runway %s",
-                     lesson["runway"]["ident"])
+            log.info("aircraft placed at the start of runway %s", lesson["runway"]["ident"])
         else:
-            log.warning("couldn't put the aircraft back on the runway after the lesson")
+            log.warning("couldn't put the aircraft at the start of the runway")
+        return ok
 
     async def _airborne_start():
         """Familiarization: place the aircraft in the air before the session
@@ -495,7 +500,7 @@ async def amain(cfg):
             await asyncio.sleep(0.2)
         log.warning("airborne start: telemetry still not airborne after 6 s, continuing")
 
-    async def start():
+    async def start(keep_session: bool = False):
         if started.is_set():
             return
         if cfg["sim"]["adapter"] == "msfs":
@@ -508,7 +513,8 @@ async def amain(cfg):
                 await _set_frozen(True)     # held through the briefing
         state["look_at"] = None
         started.set()
-        session["session_id"] = str(uuid.uuid4())
+        if not (keep_session and session.get("session_id")):
+            session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
         state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
@@ -722,6 +728,24 @@ async def amain(cfg):
         if hasattr(sim, "reset"):
             sim.reset()
             await _apply_lesson_clock()   # mock reset returns to daytime
+
+    relaunching = asyncio.Lock()
+
+    async def relaunch():
+        """Restart button (and the scorecard's Fly again): reset the run, put
+        the aircraft back where the lesson starts -- the airborne start for
+        familiarization (start() does that), the start of the runway for the
+        circuit lessons -- and begin again under the same session."""
+        if relaunching.locked():
+            return                      # a double-click shouldn't restart twice
+        async with relaunching:
+            await restart()
+            if not is_familiarization(lesson) and cfg["sim"]["adapter"] == "msfs":
+                await _connect_msfs_with_retries()
+                if not await _to_runway_start():
+                    raise RuntimeError("Couldn't move the aircraft back to the start of the "
+                                       "runway -- check MAVIS's log.")
+            await start(keep_session=True)
 
     async def mute():
         state["muted"] = not state.get("muted", False)
@@ -1297,6 +1321,7 @@ async def amain(cfg):
 
     actions = {"start": start, "night": night_sequence,
                "skip": _wrap(lambda: engine.skip_phase()), "restart": restart,
+               "relaunch": relaunch,
                "chat": chat, "mute": mute, "intro": intro, "retry": retry,
                "configure_session": configure_session,
                "select_lesson": select_lesson,

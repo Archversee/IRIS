@@ -38,6 +38,9 @@ export default function LiveCoach({ freeFlight = false }) {
   const [startedHere, setStartedHere] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [ending, setEnding] = useState(false); // End Session confirmed, waiting for MAVIS's scorecard
+  const [confirmingRestart, setConfirmingRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState(null);
   const inLesson = startedHere;
   const readingId = searchParams.get("reading");
   // startedHere is lost when this page unmounts (switching tabs) -- if MAVIS
@@ -84,6 +87,21 @@ export default function LiveCoach({ freeFlight = false }) {
       await mavisApi.quit();
     } catch {
       goToSave();
+    }
+  }
+
+  // Topbar "Restart": back to the lesson's start position and fly it again,
+  // same session (MAVIS keeps the session_id, so recording/IRIS carry on).
+  async function confirmRestart() {
+    setConfirmingRestart(false);
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      await mavisApi.relaunch();
+    } catch (e) {
+      setRestartError(e.message || "Couldn't restart.");
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -168,6 +186,14 @@ export default function LiveCoach({ freeFlight = false }) {
           {ending ? "Ending…" : "‹ End Session"}
         </button>
       )}
+      {inLesson && !state?.scorecard && (
+        <button type="button" className="secondary" disabled={ending || restarting}
+          title="Back to the start position and fly the lesson again"
+          onClick={() => setConfirmingRestart(true)}>
+          {restarting ? "Restarting…" : "↺ Restart"}
+        </button>
+      )}
+      {restartError && <span className="mavis-topbar__error" role="alert">{restartError}</span>}
     </div>
   );
 
@@ -180,6 +206,15 @@ export default function LiveCoach({ freeFlight = false }) {
         <FreeFlightMenu onStarting={() => setStartedHere(true)} />
       ) : (
         <MainMenu state={state} onStarting={() => setStartedHere(true)} />
+      )}
+      {confirmingRestart && (
+        <ConfirmDialog
+          title="Restart from the start?"
+          message="Your aircraft goes back to where this lesson starts and the lesson begins again. This attempt won't be scored."
+          confirmLabel="Restart"
+          onConfirm={confirmRestart}
+          onCancel={() => setConfirmingRestart(false)}
+        />
       )}
       {confirmingEnd && (
         <ConfirmDialog

@@ -13,11 +13,13 @@ export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard }) {
 
   // No parent callback needed here -- MAVIS clears state.scorecard on
   // restart, so this overlay just disappears once the new attempt begins.
+  // restart alone only reset MAVIS and left the HUD idle; relaunch also puts
+  // the aircraft back at the start and begins the lesson again
   async function flyAgain() {
     try {
-      await mavisApi.restart();
+      await mavisApi.relaunch();
     } catch {
-      // best-effort
+      // best-effort -- the HUD's own Restart button shows errors
     }
   }
 
