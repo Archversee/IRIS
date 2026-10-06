@@ -108,6 +108,16 @@ TEMPLATES = {
     "BRIEFING_2": ["Whenever you're ready, we'll get started. I'll talk you through each step."],
     "BRIEFING_1_REF": ["Record one circuit for the reference library. Take off, four turns, "
                         "and a full-stop landing on the same runway."],
+    # Flight familiarization (airborne lesson, core/familiarization.py). Step
+    # instructions are lesson-authored (step_notes); these are the live cues.
+    "FAM_LOW": ["Getting low. Add power, raise the nose."],
+    "FAM_SLOW": ["Speed's low. Nose down a little, add power."],
+    "FAM_FAST": ["Bit fast. Ease the throttle back."],
+    "FAM_STEEP": ["Too steep. Ease the turn off."],
+    "FAM_TURN_REMIND": ["Ease the stick {dir}, {bank_lo} to {bank_hi} degrees."],
+    "FAM_FIELD_HINT": ["Paya Lebar: {clock} o'clock, about {dist_nm} miles. Head {brg_lo} to {brg_hi}."],
+    "FAM_DEBRIEF": ["That's Paya Lebar on the nose. Well found. Runway start after your score."],
+    "FAM_YOU_HAVE_CONTROL": ["You have control."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
@@ -151,6 +161,14 @@ PILOT_TEMPLATES = {
     "SINK_HIGH": ["High sink rate. Add power and reduce the descent."],
     "SMOOTH_HANDS": ["Smaller, smoother inputs. Anticipate the corrections, don't chase them."],
     "PHASE_ENTER_DEBRIEF": ["That's a full stop. Brakes to a stop. We'll taxi clear and debrief the circuit."],
+    "FAM_LOW": ["Low. Power, climb."],
+    "FAM_SLOW": ["Airspeed low. Nose down, power."],
+    "FAM_FAST": ["Airspeed high. Reduce power."],
+    "FAM_STEEP": ["Bank too steep. Shallow it."],
+    "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank_lo} to {bank_hi} degrees."],
+    "FAM_FIELD_HINT": ["Paya Lebar, {clock} o'clock, {dist_nm} miles. Heading {brg_lo} to {brg_hi}."],
+    "FAM_DEBRIEF": ["Field on the nose. Exercise complete. Runway start after the debrief."],
+    "FAM_YOU_HAVE_CONTROL": ["You have control."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],
     "TELEPORT_FAIL": ["Unable to reposition. We'll fly the circuit round and set up for another approach."],

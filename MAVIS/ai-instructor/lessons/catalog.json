@@ -30,6 +30,14 @@
       "subtitle": "C172 · Paya Lebar",
       "lessons": [
         {
+          "id": "lesson00_familiarization",
+          "title": "Flight Familiarization",
+          "subtitle": "Airborne start · get a feel for the aircraft",
+          "available": true,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. Follow the to-do list, then point the nose at Paya Lebar. No landing.",
+          "duration_min": 15
+        },
+        {
           "id": "lesson01_pattern",
           "title": "Your First Circuit",
           "subtitle": "One lap · take-off and land",
