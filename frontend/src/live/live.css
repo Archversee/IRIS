@@ -330,6 +330,7 @@
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.45); }
   50% { box-shadow: 0 0 0 7px rgba(255, 159, 67, 0); }
 }
+.mavis-topbar__error { font-size: 12px; color: #ff8a8a; max-width: 320px; }
 .mavis-chat__voice { padding: 0 12px 8px; font-size: 12px; color: var(--faint); background: var(--panel); }
 
 /* ---- Map ---- */
