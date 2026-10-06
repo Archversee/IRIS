@@ -210,7 +210,7 @@ class FamiliarizationEngine:
         self._last_hint = 0.0
         self._pointing = 0.0
         self._data: dict = {}
-        self._live = ""
+        self._meters: list[dict] = []
 
     def _target_alt(self):
         a = self._entry.get("alt")
@@ -263,6 +263,7 @@ class FamiliarizationEngine:
                 "hold_s": round(self.hold_s),
                 **{k: f[k] for k in ("brg_lo", "brg_hi", "dist_nm", "clock", "field")}}
         self._data = data
+        self._meters = self._readout(tel)        # targets visible while it's explained
         # what the mock autopilot should fly for this step
         mock = {"STRAIGHT_LEVEL": {"hdg_delta": 0},
                 "TURN_LEFT": {"hdg_delta": -self.turn_deg},
@@ -352,12 +353,12 @@ class FamiliarizationEngine:
         self._prev_hdg, self._prev_t = tel.hdg, now
         if self._announced != self.phase:
             return self._enter(tel, now)
-        self._live = self._progress(tel)
+        self._meters = self._readout(tel)
         if self._step_done(tel, dt, now):
             order = self.detector.ORDER
             self.detector.advance(order[order.index(self.phase) + 1])
             if self.phase == "DEBRIEF":
-                self._live = ""
+                self._meters = []
                 return [CoachEvent("PHASE_ENTER_DEBRIEF", "info", {"phase": "DEBRIEF"}, cooldown_s=0)]
             return self._enter(tel, now)
         for ev in self._monitors(tel, now):
@@ -366,23 +367,65 @@ class FamiliarizationEngine:
         return out
 
 
-    def _progress(self, tel: Telemetry) -> str:
-        p, e = self.phase, self._entry
+    def _readout(self, tel: Telemetry) -> list[dict]:
+        """Live "now / target" rows for the to-do list: how far through the
+        step the trainee is and how big an angle/height/speed to aim for.
+        Each row: label, now, target, and pct (0..1, progress bar) or ok
+        (in the band right now)."""
+        p, e, d = self.phase, self._entry, self._data
+        alt = tel.alt_msl
+        height = {"label": "Height", "now": f"{_r(alt, 10):,} ft",
+                  "target": f"{d['alt_lo']:,}\u2013{d['alt_hi']:,} ft",
+                  "ok": d["alt_lo"] <= alt <= d["alt_hi"]}
+        pitch = tel.pitch
         if p == "STRAIGHT_LEVEL":
-            return f"Held steady {self._held:.0f} of {self.hold_s:.0f} s"
+            return [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.hold_s:.0f} s",
+                     "pct": min(1.0, self._held / self.hold_s)},
+                    {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0", "target": "under 5\u00b0",
+                     "ok": abs(tel.bank) < 6},
+                    height]
         if p in ("TURN_LEFT", "TURN_RIGHT"):
-            return f"Turned about {_r(abs(self._turned), 5)}\u00b0 of a quarter circle"
+            want = -1.0 if p == "TURN_LEFT" else 1.0
+            turned = max(0.0, self._turned * want)
+            need = self.turn_deg - 20
+            return [{"label": "Turned", "now": f"{_r(turned, 5)}\u00b0",
+                     "target": f"{need:.0f}\u2013{self.turn_deg:.0f}\u00b0", "pct": min(1.0, turned / need)},
+                    {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0",
+                     "target": f"{d['bank_lo']}\u2013{d['bank_hi']}\u00b0",
+                     "ok": d["bank_lo"] - 2 <= abs(tel.bank) <= d["bank_hi"] + 2},
+                    height]
         if p == "CLIMB":
-            return f"Up {max(0, _r(tel.alt_msl - e['alt'], 50))} ft so far"
+            up = max(0.0, alt - e["alt"])
+            return [{"label": "Climbed", "now": f"{_r(up, 10)} ft",
+                     "target": f"{d['climb_lo']}\u2013{d['climb_hi']} ft",
+                     "pct": min(1.0, up / max(1.0, self.climb_ft - 100))},
+                    {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "5\u201310\u00b0 up",
+                     "ok": 4 <= pitch <= 11},
+                    {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                     "target": f"{d['spd_lo']}\u2013{d['spd_hi']} kt",
+                     "ok": d["spd_lo"] - 3 <= tel.ias <= d["spd_hi"] + 3}]
         if p == "DESCEND":
-            return f"Down {max(0, _r(e['alt'] - tel.alt_msl, 50))} ft so far"
+            down = max(0.0, e["alt"] - alt)
+            return [{"label": "Descended", "now": f"{_r(down, 10)} ft",
+                     "target": f"{d['descend_lo']}\u2013{d['descend_hi']} ft",
+                     "pct": min(1.0, down / max(1.0, self.descend_ft - 100))},
+                    {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "2\u20135\u00b0 down",
+                     "ok": -6 <= pitch <= -1}]
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
-            if abs(f["rel"]) <= self.point_deg and f["dist_m"] <= self.point_max_m:
-                left = max(1, math.ceil(self.point_s - self._pointing))
-                return f"On the nose \u2014 hold it {left} more second{'s' if left > 1 else ''}"
-            return f"Paya Lebar: your {f['clock']} o'clock, about {f['dist_nm']} nm"
-        return ""
+            rel = f["rel"]
+            on_nose = abs(rel) <= self.point_deg and f["dist_m"] <= self.point_max_m
+            rows = [{"label": "Paya Lebar",
+                     "now": ("on the nose" if on_nose else
+                             f"turn {'right' if rel > 0 else 'left'} {_r(abs(rel), 5)}\u00b0"),
+                     "target": f"within {self.point_deg:.0f}\u00b0", "ok": on_nose},
+                    {"label": "Distance", "now": f"~{f['dist_nm']} nm", "target": ""}]
+            if on_nose:
+                rows.append({"label": "Hold it", "now": f"{self._pointing:.0f} s",
+                             "target": f"{self.point_s:.0f} s",
+                             "pct": min(1.0, self._pointing / self.point_s)})
+            return rows
+        return []
 
     def todo(self) -> dict | None:
         """To-do list for the pilot view: every step with its status; the
@@ -406,7 +449,9 @@ class FamiliarizationEngine:
                     except (KeyError, IndexError, ValueError):
                         lines.append(ln)
                 row["lines"] = lines
-                row["progress"] = "Listen to MAVIS \u2014 aircraft held" if self.held else self._live
+                row["meters"] = self._meters
+                if self.held:
+                    row["progress"] = "Listen to MAVIS \u2014 aircraft held"
             steps.append(row)
         return {"steps": steps, "complete": self.phase == "DEBRIEF"}
 
