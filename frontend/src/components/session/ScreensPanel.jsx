@@ -75,7 +75,7 @@ function ScanTrail({ trail: raw, boxes, maxLen }) {
         );
       })}
       {nodes.map((nd) => (
-        <g key={nd.key} className={"scan-trail__dot" + (nd.isCurrent ? " scan-trail__now" : "") + (nd.isOtw ? " is-otw" : "")}
+        <g key={nd.key} className={"scan-trail__dot" + (nd.isCurrent ? " scan-trail__now" : "") + (nd.isOtw || nd.isPanel ? " is-free" : "")}
           style={{ opacity: nd.alpha }}>
           <circle cx={nd.x} cy={nd.y} r={radius(nd.dur)} fill={nd.color} fillOpacity="0.32" stroke={nd.color} />
           <text x={nd.x} y={nd.y} textAnchor="middle" dominantBaseline="central" className="scan-trail__num">{nd.label}</text>

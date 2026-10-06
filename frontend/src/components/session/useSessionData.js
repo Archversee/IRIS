@@ -6,12 +6,13 @@ import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
 const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW screens)
 
-// Mean OTW-screen gaze point (1920x1080 space) over one glance, or null.
-function meanOtwGaze(eye, eyeTimeline, start, end) {
+// Mean gaze point (1920x1080 space of that screen) over one glance, using
+// samples whose raw area is `rawAoi` ("OTW" or "Instruments"), or null.
+function meanGaze(eye, eyeTimeline, rawAoi, start, end) {
   let sx = 0, sy = 0, n = 0;
   for (let i = nearestIndexForTime(eyeTimeline, start); i < eye.length && eyeTimeline[i].t <= end; i++) {
     const e = eye[i];
-    if (!e.blink && e.aoi === "OTW" && e.gaze_point_x != null && e.gaze_point_y != null) {
+    if (!e.blink && e.aoi === rawAoi && e.gaze_point_x != null && e.gaze_point_y != null) {
       sx += e.gaze_point_x; sy += e.gaze_point_y; n++;
     }
   }
@@ -441,16 +442,16 @@ export function useSessionData({ id, live }) {
   const allAois = useMemo(() => [...scanLogColor.keys()], [scanLogColor]);
 
   // Gaze trail across the Instruments and OTW screens: the last few glances
-  // up to now, counting ONLY labelled areas -- the named AOI zones and OTW.
-  // Unlabelled samples and plain "Instruments" (on the panel but outside
-  // every zone) are skipped: they're not steps, and a return to the same
-  // area across one of them stays a single glance. Instrument glances sit at
-  // their zone's centre; OTW glances on the OTW screen where the eyes were
-  // (mean gaze point, else the screen centre). Coordinates are each screen's
-  // own 1920x1080 space; `screen` says which.
+  // up to now. Steps are the named AOI zones, OTW, and plain "Instruments"
+  // (on the panel but outside every zone). Unlabelled samples are skipped:
+  // not a step, and a return to the same area across one stays a single
+  // glance. Zone glances sit at their zone's centre; OTW and plain
+  // Instruments glances where the eyes were on that screen (mean gaze
+  // point, else the screen centre). Coordinates are each screen's own
+  // 1920x1080 space; `screen` says which.
   const scanTrail = useMemo(() => {
     const zoneByName = new Map(aoiZones.map((z) => [z.name, z]));
-    const labelled = (aoi) => aoi === "OTW" || zoneByName.has(aoi);
+    const labelled = (aoi) => aoi === "OTW" || aoi === "Instruments" || zoneByName.has(aoi);
     // Walk back from now, merging consecutive same-area runs, until enough steps.
     const steps = [];
     let latest = null; // the run the gaze is in right now (labelled or not)
@@ -472,10 +473,11 @@ export function useSessionData({ id, live }) {
       const z = zoneByName.get(st.aoi);
       return {
         id: st.id, // earliest run of the glance -- stable, so the trail animates instead of re-drawing
-        aoi: st.aoi, color: scanLogColor.get(st.aoi), isOtw, screen: isOtw ? "otw" : "instrument",
-        ...(isOtw
-          ? (meanOtwGaze(eye, eyeTimeline, st.start, st.end) || { x: 960, y: 540 })
-          : { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }),
+        aoi: st.aoi, color: scanLogColor.get(st.aoi), isOtw, isPanel: !isOtw && !z,
+        screen: isOtw ? "otw" : "instrument",
+        ...(z
+          ? { x: (z.x1 + z.x2) / 2, y: (z.y1 + z.y2) / 2 }
+          : (meanGaze(eye, eyeTimeline, st.aoi, st.start, st.end) || { x: 960, y: 540 })),
         dur: st.dur, isCurrent: st.isCurrent,
       };
     });
