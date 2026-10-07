@@ -268,7 +268,7 @@ class JobManager:
                  lesson_path: str | None = None, max_pdf_mb: float = MAX_PDF_MB,
                  handbook_num_ctx: int = HANDBOOK_NUM_CTX, handbook_chunk_chars: int = HANDBOOK_CHUNK_CHARS,
                  handbook_overlap_chars: int = HANDBOOK_OVERLAP_CHARS, poh_num_ctx: int = POH_NUM_CTX,
-                 coach_model: str | None = None):
+                 coach_model: str | None = None, shares_gpu: bool = True):
         self.drafts = drafts
         self.parser = parser
         self.pdf_dir = Path(pdf_dir)
@@ -283,6 +283,11 @@ class JobManager:
         self.handbook_overlap_chars = max(0, int(handbook_overlap_chars))
         self.poh_num_ctx = int(poh_num_ctx)
         self.coach_model = coach_model         # the model MAVIS keeps loaded for coaching
+        # True when rules are drafted on the same Ollama (= the same GPU) the coach
+        # uses: drafting then pauses during flights and swaps models in and out.
+        # False when the SOP LLM runs on a separate device (sop.ollama_url): that
+        # GPU is its own, so drafting runs straight through and nothing is unloaded.
+        self.shares_gpu = bool(shares_gpu)
         self._task: asyncio.Task | None = None
 
     def is_coach_model(self, name: str) -> bool:
@@ -582,7 +587,8 @@ class JobManager:
             manual = [r for r in d.get("rules", []) if r.get("origin") == "manual"]   # kept on re-run
 
             parser = self.parser.for_model(d.get("llm_choice"))
-            swapped = not self.is_coach_model(parser.model)     # drafting with another model than the coach's
+            # drafting with another model than the coach's, on the coach's GPU
+            swapped = self.shares_gpu and not self.is_coach_model(parser.model)
             if not await parser.available():
                 save(status="ready", stage="done", detail="LLM unavailable - add rules by hand", warnings=warnings + [
                      f"Local LLM '{parser.model}' is not available in Ollama - no rules were drafted. "
@@ -610,12 +616,15 @@ class JobManager:
                 gone = await parser.make_room()
                 if gone:
                     log.info("unloaded %s to make room for %s", ", ".join(gone), parser.model)
-                # a bigger model, and its first call loads it: a longer timeout, for this run only
+            if swapped or not self.shares_gpu:
+                # the first call may have to load the model (and a separate device's model
+                # may be cold): a longer timeout, for this run only
                 parser = OllamaParser(parser.url, parser.model, max(parser.timeout, 600.0), parser.num_ctx, parser.think)
             started, gpu_checked = time.monotonic(), False
             candidates: list[dict] = []
             for ch in chunks:
-                while self.is_flying():
+                # pause during a flight only when sharing the coach's GPU
+                while self.shares_gpu and self.is_flying():
                     if d["stage"] != "paused":
                         progress_only(stage="paused", detail="Paused while a lesson is being flown")
                         if swapped:                 # give the GPU back to the coach for the lesson
