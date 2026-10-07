@@ -2,6 +2,8 @@ name: "Lesson 10: Night Circuit"
 # Same circuit as Lesson 1, flown after dark. The geometry, phases, targets and
 # scoring are identical so the phase detector, mock aircraft and map are shared;
 # what changes is the clock and the teaching points spoken on each leg.
+# Fly against the same expert runs (Maverick / Iceman) as Lesson 1.
+references_from: lesson01_pattern
 airport:
   icao: WSAP
   name: Paya Lebar Air Base
