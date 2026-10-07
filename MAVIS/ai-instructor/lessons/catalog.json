@@ -63,15 +63,17 @@
         {
           "id": "lesson02_effects",
           "title": "Effects of Controls",
-          "subtitle": "Pitch, roll, yaw · coordinated flight",
-          "available": false,
+          "subtitle": "Pitch, roll, yaw, power · primary & secondary effects",
+          "available": true,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. See what the stick and pedals each do, then point the nose at Paya Lebar. No landing.",
           "duration_min": 22
         },
         {
           "id": "lesson03_straight",
           "title": "Straight & Level",
           "subtitle": "Trim · power settings · lookout",
-          "available": false,
+          "available": true,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. Hold your height, trim, and change speed, then point the nose at Paya Lebar. No landing.",
           "duration_min": 18
         },
         {
