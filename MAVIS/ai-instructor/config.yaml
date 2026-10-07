@@ -90,8 +90,13 @@ database:
 
 # SOP upload -> rules (sop/, docs/sop-rules.md). All local: Ollama + Tesseract.
 sop:
-  model: ""                # empty = same model as coach.model
-  ollama_url: ""           # empty = coach.ollama_url
+  model: ""                # empty = same model as coach.model (must be installed on the SOP device)
+  # Which Ollama drafts SOP rules -- like coach.ollama_url, it can be another
+  # device on the LAN. Empty = the coach's Ollama (same GPU: drafting pauses
+  # during flights). A different address = a separate device with its own GPU:
+  # drafting runs straight through flights and never unloads the coach's model.
+  ollama_url: ""
+  #ollama_url: http://192.168.0.112:11434   # e.g. the laptop's Ollama -- uncomment to use it
   llm_timeout_s: 300       # per section; a 14B model on a 5090 takes ~20-60 s
   num_ctx: 8192            # context window for parsing (Ollama default 2048 is too small)
   think: false             # reasoning models (Qwen3.x, Gemma 4): keep thinking OFF for JSON output.
