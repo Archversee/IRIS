@@ -1193,7 +1193,8 @@ async def amain(cfg):
 
     async def _make_fam_debrief(card, sc) -> str:
         names = {"exercises": "getting through every exercise", "altitude": "height holding",
-                 "bank": "turns", "climb_speed": "climb speed", "smoothness": "smooth hands"}
+                 "bank": "turns", "climb_speed": "climb speed", "speed": "speed control",
+                 "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
         if card.incomplete:
@@ -1203,9 +1204,10 @@ async def amain(cfg):
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's flight "
-                "familiarisation exercise (airborne start, straight and level, a turn each way, "
-                "a climb and a descent, then finding Paya Lebar; no take-off or landing) from "
+        about = (lesson.get("debrief_summary") or "flight familiarisation exercise (airborne "
+                 "start, straight and level, a turn each way, a climb and a descent, then "
+                 "finding Paya Lebar; no take-off or landing)")
+        sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {about} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
         reached = "yes" if not card.incomplete else "no"
