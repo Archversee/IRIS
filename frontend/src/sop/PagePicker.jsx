@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { sopApi } from "./sopApi.js";
 
 /** "1-5, 9" <-> [1,2,3,4,5,9] */
@@ -54,6 +54,11 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
   const [textErr, setTextErr] = useState(null);
   const [aircraft, setAircraft] = useState(d.aircraft_profile || "");
   const scanned = useMemo(() => new Set(d.scanned_pages || []), [d.scanned_pages]);
+  // which local model drafts the rules: the configured one, or any other installed in Ollama
+  const [llm, setLlm] = useState(null);            // {model, models}
+  const [model, setModel] = useState(d.llm_choice || "");
+  useEffect(() => { sopApi.status().then((s) => setLlm({ model: s.model, models: s.models || [] })).catch(() => setLlm(null)); }, []);
+  const models = llm ? [...new Set([llm.model, ...llm.models, ...(model ? [model] : [])])] : [];
 
   function apply(next) {
     setSel(next); setText(compressPages([...next])); setTextErr(null);
@@ -123,6 +128,14 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
             </select>
           </div>
         )}
+        {models.length > 1 && (
+          <div className="sop-field">
+            <label htmlFor="sop-pick-model">LLM model</label>
+            <select id="sop-pick-model" value={model || llm.model} onChange={(e) => setModel(e.target.value === llm.model ? "" : e.target.value)}>
+              {models.map((m) => <option key={m} value={m}>{m}{m === llm.model ? " (default)" : ""}</option>)}
+            </select>
+          </div>
+        )}
         <span className="muted sop-small sop-picker__typehint">
           {isHB
             ? "Rules from a training handbook apply to every aircraft, and are checked against a correctly flown circuit in each aircraft profile."
@@ -170,13 +183,14 @@ export default function PagePicker({ d, meta, busy, rerun, onRun, onCancel }) {
           {nSel} of {n} pages chosen{nScan ? ` · ${nScan} scanned page${nScan > 1 ? "s" : ""} will be read with OCR` : ""}
           {isHB && nSel > 60 ? " · a long selection can take an hour or more with a local LLM" : ""}
           {rerun ? " · LLM-drafted rules are replaced; rules you added by hand are kept" : ""}
+          {model && llm && model !== llm.model ? ` · drafting with ${model} instead of ${llm.model}` : ""}
         </span>
         <div className="sop-btnrow">
           <button type="button" className="secondary" onClick={() => apply(new Set(suggestion))}>Use suggestion</button>
           <button type="button" className="secondary" onClick={() => apply(new Set(Array.from({ length: n }, (_, k) => k + 1)))}>All pages</button>
           {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancel</button>}
           <button type="button" disabled={!nSel || !!textErr || busy || (isHB && !book)}
-            onClick={() => onRun({ pages: compressPages([...sel]), doc_type: docType,
+            onClick={() => onRun({ pages: compressPages([...sel]), doc_type: docType, model,
               ...(isHB ? { handbook: book } : { aircraft_profile: aircraft || null }) })}>
             {busy ? "Starting…" : `Draft rules from ${nSel} page${nSel === 1 ? "" : "s"}`}
           </button>

@@ -48,6 +48,8 @@ async function req(path, { method = "GET", body, form } = {}) {
 export const sopApi = {
   status: () => req("/status"),
   meta: () => req("/meta"),
+  // switch the local model that drafts rules (kept on the MAVIS machine); "" = the one in config.yaml
+  setModel: (model) => req("/model", { method: "PUT", body: { model } }),
   // drafts: local to MAVIS, nothing in the database until save()
   listDrafts: () => req("/drafts"),
   // docType: "poh" (aircraft POH/SOP) | "handbook" (training handbook); handbook: afh | ifh | phak | school | other | "" (detect)
@@ -56,10 +58,16 @@ export const sopApi = {
     if (handbook) f.append("handbook", handbook);
     return req("/drafts", { method: "POST", form: f });
   },
+  // a rules file made with Export > JSON -> a draft to review (no PDF, no LLM run)
+  importRules: (file) => {
+    const f = new FormData(); f.append("file", file);
+    return req("/drafts/import", { method: "POST", form: f });
+  },
   getDraft: (id) => req(`/drafts/${id}`),
   putDraft: (id, body) => req(`/drafts/${id}`, { method: "PUT", body }),
   reparse: (id) => req(`/drafts/${id}/reparse`, { method: "POST" }),
-  // run OCR + LLM over the chosen pages ('13-20, 34-63'); also used to re-run with different pages
+  // run OCR + LLM over the chosen pages ('13-20, 34-63'); also used to re-run with different pages.
+  // body.model: an installed Ollama model for this run ("" = the configured one)
   run: (id, body) => req(`/drafts/${id}/run`, { method: "POST", body: body || {} }),
   saveDraft: (id, body) => req(`/drafts/${id}/save`, { method: "POST", body }),
   discardDraft: (id) => req(`/drafts/${id}`, { method: "DELETE" }),

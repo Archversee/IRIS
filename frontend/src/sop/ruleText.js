@@ -3,7 +3,38 @@
 
 export const EDITABLE = ["kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
   "min_value", "max_value", "op", "value", "gate_phase", "capture_at", "conditions",
-  "severity", "source_quote", "source_page", "note", "enabled", "tags", "aoi", "gaze_measure"];
+  "severity", "source_quote", "source_page", "note", "enabled", "tags", "aoi", "gaze_measure",
+  "lesson_types", "ref_speed", "ref_factor"];
+
+/** The kinds of lesson that use a rule (never empty: a rule without any is a normal-circuit rule). */
+export const lessonTypes = (r) => (r.lesson_types?.length ? r.lesson_types : ["normal"]);
+export const lessonLabel = (meta, id) => meta?.lesson_types?.find((t) => t.id === id)?.label || id;
+const LESSON_WORDS = { normal: "normal circuit", emergency: "emergency", instrument: "instrument-flying" };
+/** In words, where a rule applies: "Instrument-flying lessons only" (same wording as the server's used_in). */
+export function usedInText(r) {
+  const lt = lessonTypes(r), w = lt.map((t) => LESSON_WORDS[t] || t);
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  if (w.length === 1) return `${cap(w[0])} lessons${lt[0] === "normal" ? "" : " only"}`;
+  return `${cap(w.slice(0, -1).join(", "))} and ${w[w.length - 1]} lessons`;
+}
+/** True when a normal circuit lesson never checks this rule. */
+export const notInNormal = (r) => !lessonTypes(r).includes("normal");
+/** Rules for airspeed can be measured from one of the aircraft's own speeds ("1.3 × VSO"). */
+export const canRef = (r) => r.metric === "ias" && ["band", "limit", "capture", "event"].includes(r.kind);
+/** "1.3 × VSO" / "the approach speed" */
+export function refTxt(meta, r) {
+  const s = meta?.ref_speeds?.find((x) => x.id === r.ref_speed);
+  if (!s) return null;
+  const f = r.ref_factor ?? 1;
+  return f === 1 ? s.short : `${fmt(f)} × ${s.short}`;
+}
+/** What factor × speed comes to in one aircraft (null: its profile doesn't give that speed). */
+export function refValue(meta, r, ac) {
+  const s = meta?.ref_speeds?.find((x) => x.id === r.ref_speed);
+  if (!s || !ac) return null;
+  const k = s.keys.find((key) => typeof ac.v_speeds?.[key] === "number");
+  return k ? Math.round(ac.v_speeds[k] * (r.ref_factor ?? 1) * 10) / 10 : null;
+}
 
 export const KIND_LABEL = {
   band: "Hold target ± tolerance",
@@ -51,7 +82,14 @@ export function unitLabel(meta, metric) {
   if (u === "frac") return "0–1";
   return UNIT_TXT[u] ?? u;
 }
-function val(meta, metric, v) {
+// a number of a rule that is measured from an aircraft speed: "1.3 × VSO", "the approach speed + 5 kt"
+function relVal(meta, r, v) {
+  const base = refTxt(meta, r);
+  if (v == null) return "?";
+  return v === 0 ? base : `${base} ${v > 0 ? "+" : "−"} ${fmt(Math.abs(v))} kt`;
+}
+function val(meta, metric, v, r) {
+  if (r?.ref_speed && refTxt(meta, r)) return relVal(meta, r, v);
   if (v == null) return "?";
   const u = metricInfo(meta, metric).unit;
   if (u === "frac") return Math.round(v * 100) + "%";
@@ -80,25 +118,25 @@ export function describe(meta, r) {
       const u = suffix(meta, r.metric);
       const tol = hi == null && lo == null ? " (no tolerance set)" :
         hi === lo ? ` ± ${fmt(hi)}${u}` : ` +${fmt(hi ?? 0)} / −${fmt(lo ?? 0)}${u}`;
-      return `Hold ${m} at ${val(meta, r.metric, r.target)}${tol}${phasesTxt(r)}${w}.`;
+      return `Hold ${m} at ${val(meta, r.metric, r.target ?? (r.ref_speed ? 0 : null), r)}${tol}${phasesTxt(r)}${w}.`;
     }
     case "limit": {
       const a = r.min_value, b = r.max_value;
       if (r.metric === "vs" && a != null && a < 0 && b == null)
         return `Keep the descent rate at or below ${fmt(-a)} ft/min${phasesTxt(r)}${w}.`;
-      if (a != null && b != null && a === -b && b > 0)
+      if (!r.ref_speed && a != null && b != null && a === -b && b > 0)
         return `Keep ${m} within ±${val(meta, r.metric, b)}${phasesTxt(r)}${w}.`;
-      const rng = a != null && b != null ? `between ${val(meta, r.metric, a)} and ${val(meta, r.metric, b)}` :
-        b != null ? `at or below ${val(meta, r.metric, b)}` : `at or above ${val(meta, r.metric, a)}`;
+      const rng = a != null && b != null ? `between ${val(meta, r.metric, a, r)} and ${val(meta, r.metric, b, r)}` :
+        b != null ? `at or below ${val(meta, r.metric, b, r)}` : `at or above ${val(meta, r.metric, a, r)}`;
       return `Keep ${m} ${rng}${phasesTxt(r)}${w}.`;
     }
     case "event":
-      return `${metricInfo(meta, r.metric).label} must be ${OP_TXT[r.op] || r.op || "?"} ${val(meta, r.metric, r.value)}` +
+      return `${metricInfo(meta, r.metric).label} must be ${OP_TXT[r.op] || r.op || "?"} ${val(meta, r.metric, r.value, r)}` +
         (r.gate_phase ? ` by the start of ${phaseTxt(r.gate_phase).toLowerCase()}` : "") + `${w}.`;
     case "capture": {
       const a = r.min_value, b = r.max_value;
-      const rng = a != null && b != null ? `between ${val(meta, r.metric, a)} and ${val(meta, r.metric, b)}` :
-        b != null ? `at most ${val(meta, r.metric, b)}` : `at least ${val(meta, r.metric, a)}`;
+      const rng = a != null && b != null ? `between ${val(meta, r.metric, a, r)} and ${val(meta, r.metric, b, r)}` :
+        b != null ? `at most ${val(meta, r.metric, b, r)}` : `at least ${val(meta, r.metric, a, r)}`;
       return `At ${String(r.capture_at || "?").replace(/_/g, " ")}, ${m} should be ${rng}.`;
     }
     case "gaze":

@@ -205,3 +205,58 @@ alter table flight_rules add constraint flight_rules_kind_fields check (
     (kind = 'gaze'    and aoi is not null and gaze_measure is not null and value is not null) or
     (kind = 'unobservable')
 );
+
+-- ---------------------------------------------------------------------
+-- v4: set-aside rules are kept. Additive; safe to re-run.
+--
+-- A rule the reviewer (or an automatic check) set aside in the draft used
+-- to be dropped at Save. It is now saved with its rule set, set_aside =
+-- true and the reason, so it can be edited and added back later on the
+-- SOP Rules page, and exported. A set-aside rule is NEVER used in a
+-- lesson (sop/store.py active_rules skips it) and may be incomplete -- a
+-- band without a tolerance, a gaze rule without a threshold -- so the
+-- per-kind completeness check only applies to rules that are in use.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists set_aside        boolean not null default false,
+    add column if not exists set_aside_reason text;
+alter table flight_rules drop constraint if exists flight_rules_kind_fields;
+alter table flight_rules add constraint flight_rules_kind_fields check (
+    set_aside or
+    (kind = 'band'    and metric is not null and target is not null
+                      and (tol_hi is not null or tol_lo is not null)) or
+    (kind = 'limit'   and metric is not null and (min_value is not null or max_value is not null)) or
+    (kind = 'event'   and metric is not null and op is not null and value is not null) or
+    (kind = 'capture' and metric is not null and capture_at is not null
+                      and (min_value is not null or max_value is not null)) or
+    (kind = 'gaze'    and aoi is not null and gaze_measure is not null and value is not null) or
+    (kind = 'unobservable')
+);
+
+-- ---------------------------------------------------------------------
+-- v5: lesson types + aircraft-relative speeds. Additive; safe to re-run.
+--
+--  * lesson_types: which KIND of lesson uses the rule -- 'normal' (an
+--    ordinary circuit, the default), 'emergency' (emergency / abnormal
+--    procedure lessons) and/or 'instrument' (flying by reference to the
+--    instruments). A lesson loads only the rules of its own type
+--    (sop/store.py active_rules), so an engine-failure glide speed is
+--    never checked in a normal circuit.
+--  * ref_speed / ref_factor: a speed that depends on the aircraft
+--    ("1.3 VSO", "the recommended approach speed"). ref_speed names it
+--    (MAVIS sop/schema.py REF_SPEEDS: approach, vs0, vs1, vr, vx, vy, vfe,
+--    va, vno, vne); the number comes from the aircraft profile's v_speeds
+--    when a lesson starts. With a reference, target / min_value /
+--    max_value / value are DIFFERENCES from  ref_factor x that speed
+--    (0 = exactly that speed), e.g. target 0, tol_hi 10, tol_lo 5.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists lesson_types text[] not null default '{normal}',
+    add column if not exists ref_speed    text,
+    add column if not exists ref_factor   double precision;
+alter table flight_rules drop constraint if exists flight_rules_lesson_types_check;
+alter table flight_rules add constraint flight_rules_lesson_types_check
+    check (lesson_types <@ array['normal', 'emergency', 'instrument'] and cardinality(lesson_types) >= 1);
+alter table flight_rules drop constraint if exists flight_rules_ref_check;
+alter table flight_rules add constraint flight_rules_ref_check
+    check (ref_speed is null or (metric = 'ias' and kind in ('band', 'limit', 'event', 'capture')));

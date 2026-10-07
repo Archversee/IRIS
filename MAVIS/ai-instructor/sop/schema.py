@@ -80,6 +80,103 @@ def gaze_unit_ok(unit: str, measure: str) -> bool:
     return UNITS.get(unit, ("?", 0))[0] == GAZE_MEASURES[measure][1]
 
 
+# ---------------------------------------------------------------- lesson types
+# Which KIND of lesson a rule is used in. A lesson loads only the rules of its
+# own type, so an emergency speed ("glide at 68 KIAS") is never checked in a
+# normal circuit and "eyes on the attitude indicator 80-90 % of the time" never
+# contradicts "look outside 90 % of the time". A rule can belong to several.
+LESSON_TYPES: dict[str, tuple[str, str]] = {
+    # id          (label shown in the UI,  what it means)
+    "normal":     ("Normal circuit",      "ordinary lessons flown by outside reference (the default)"),
+    "emergency":  ("Emergency",           "emergency and abnormal-procedure lessons: engine failure, fire, forced landing"),
+    "instrument": ("Instrument flying",   "lessons flown by reference to the instruments (attitude instrument flying)"),
+}
+DEFAULT_LESSON_TYPES = ["normal"]
+
+
+_LESSON_WORDS = {"normal": "normal circuit", "emergency": "emergency", "instrument": "instrument-flying"}
+
+
+def used_in_text(lesson_types) -> str:
+    """Plain words for where a rule applies, for anyone - or any model - that is
+    handed the rule: "Instrument-flying lessons only"."""
+    lt = clean_lesson_types(lesson_types)
+    words = [_LESSON_WORDS[t] for t in lt]
+    if len(words) == 1:
+        return f"{words[0].capitalize()} lessons" + ("" if lt == ["normal"] else " only")
+    return (", ".join(words[:-1]) + " and " + words[-1]).capitalize() + " lessons"
+
+
+def missing_ref_speeds(v_speeds: dict | None) -> list[str]:
+    """Reference speeds (REF_SPEEDS ids) an aircraft profile doesn't give."""
+    return [k for k in REF_SPEEDS if ref_base({"ref_speed": k}, v_speeds) is None]
+
+
+def clean_lesson_types(v) -> list[str]:
+    """Known lesson types in vocabulary order; never empty (-> normal)."""
+    got = [t for t in LESSON_TYPES if isinstance(v, (list, tuple, set)) and t in v]
+    return got or list(DEFAULT_LESSON_TYPES)
+
+
+# ---------------------------------------------------------------- aircraft-relative speeds
+# A handbook rule applies to every aircraft, so it cannot contain a number that
+# depends on the type ("fly final at 1.3 VSO", "+10/-5 knots of the recommended
+# landing speed"). Such a rule names one of these speeds instead; the number is
+# taken from each aircraft's profile (profiles/aircraft/<id>.yaml, v_speeds)
+# when a lesson starts. With a reference, the rule's target / min / max are
+# DIFFERENCES from  factor x speed  (0 = exactly that speed).
+# id -> (label, short text, profile v_speeds keys tried in order, meaning given to the LLM)
+REF_SPEEDS: dict[str, tuple[str, str, tuple[str, ...], str]] = {
+    "approach": ("Final approach speed", "the approach speed", ("vref", "approach", "final"),
+                 "the recommended final approach / landing speed from the POH/AFM (VREF)"),
+    "vs0":      ("Stall speed, landing configuration (VSO)", "VSO", ("vs0", "vso"),
+                 "stalling speed in the landing configuration"),
+    "vs1":      ("Stall speed, flaps up (VS1)", "VS1", ("vs1",), "stalling speed with flaps up"),
+    "vr":       ("Rotation speed (VR)", "VR", ("vr",), "rotation / lift-off speed"),
+    "vx":       ("Best angle-of-climb speed (VX)", "VX", ("vx",), "best angle-of-climb speed"),
+    "vy":       ("Best rate-of-climb speed (VY)", "VY", ("vy",), "best rate-of-climb speed"),
+    "vfe":      ("Max flap-extended speed (VFE)", "VFE", ("vfe",), "maximum flap-extended speed"),
+    "va":       ("Manoeuvring speed (VA)", "VA", ("va",), "manoeuvring speed"),
+    "vno":      ("Max structural cruising speed (VNO)", "VNO", ("vno",), "maximum structural cruising speed"),
+    "vne":      ("Never-exceed speed (VNE)", "VNE", ("vne",), "never-exceed speed"),
+}
+REF_FACTOR_RANGE = (0.5, 2.0)
+REF_OFFSET_MAX = 60.0          # kt: a difference from the reference speed larger than this is a mistake
+_REF_NUMS = ("target", "min_value", "max_value", "value")
+
+
+def ref_base(rule: dict, v_speeds: dict | None) -> float | None:
+    """factor x the aircraft's speed for a rule with a reference (None: the
+    rule has no reference, or this aircraft's profile doesn't give that speed)."""
+    key = rule.get("ref_speed")
+    if key not in REF_SPEEDS:
+        return None
+    for k in REF_SPEEDS[key][2]:
+        v = (v_speeds or {}).get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v) * float(rule.get("ref_factor") or 1.0)
+    return None
+
+
+def resolve_ref(rule: dict, v_speeds: dict | None) -> dict | None:
+    """The rule with real numbers for one aircraft: target / min / max / value
+    become absolute speeds. A rule without a reference is returned as it is;
+    None = this aircraft's profile lacks the speed (the rule can't be used)."""
+    if not rule.get("ref_speed"):
+        return rule
+    base = ref_base(rule, v_speeds)
+    if base is None:
+        return None
+    out = dict(rule)
+    for k in _REF_NUMS:
+        if out.get(k) is not None:
+            out[k] = round(float(out[k]) + base, 2)
+    if out.get("kind") == "band" and out.get("target") is None:
+        out["target"] = round(base, 2)
+    out["ref_resolved"] = round(base, 2)
+    return out
+
+
 # ---------------------------------------------------------------- source documents
 # poh:      an aircraft's POH / AFM / type SOP -> rules for THAT aircraft
 # handbook: a training handbook (FAA or the school's own) -> rules for EVERY aircraft
@@ -189,13 +286,18 @@ def aircraft_profiles() -> list[dict]:
 def llm_json_schema(phases: list[str], gaze: bool = False) -> dict:
     """JSON schema handed to Ollama's `format` -- decoding is constrained to it,
     so the model cannot emit an unknown metric, phase or kind. gaze=True (the
-    handbook prompt) adds the "gaze" kind and its aoi / gaze_measure fields."""
+    handbook prompt) adds the "gaze" kind and its aoi / gaze_measure fields, and
+    ref_speed / ref_factor for speeds that depend on the aircraft."""
     num = {"type": ["number", "null"]}
     phase_or_null = {"type": ["string", "null"], "enum": phases + [None]}
     kinds = list(KINDS) if gaze else [k for k in KINDS if k != "gaze"]
     gaze_props = {
         "aoi": {"type": ["string", "null"], "enum": list(AOI_ROLES) + [None]},
         "gaze_measure": {"type": ["string", "null"], "enum": list(GAZE_MEASURES) + [None]},
+        "note": {"type": "string"},          # what the surrounding text tells the reviewer
+        # a speed that depends on the aircraft ("1.3 VSO"): which speed, times what
+        "ref_speed": {"type": ["string", "null"], "enum": list(REF_SPEEDS) + [None]},
+        "ref_factor": {"type": ["number", "null"]},
     } if gaze else {}
     return {
         "type": "object",
@@ -236,8 +338,15 @@ def llm_json_schema(phases: list[str], gaze: bool = False) -> dict:
                         "source_quote": {"type": "string"},
                         "page": {"type": "integer"},
                     },
-                    "required": ["kind", "title", "phases", "metric", "unit", "severity", "tags",
-                                 "source_quote", "page"],
+                    # EVERY field is required (most may be null). With optional fields a
+                    # small model simply leaves out the ones that take thought -- in the
+                    # first handbook runs 57 of 77 scan rules came back without "aoi", and
+                    # numbers that were in the quote ("90 percent", "1,000 feet") were
+                    # missing from the rule. Having to write `"aoi": ...` makes it decide.
+                    "required": ["kind", "title", "phases", "metric", "unit", "target", "tol_plus", "tol_minus",
+                                 "min", "max", "op", "value", "gate_phase", "capture_at", "when",
+                                 "severity", "tags", "source_quote", "page"]
+                                + (["aoi", "gaze_measure", "note", "ref_speed", "ref_factor"] if gaze else []),
                 },
             }
         },

@@ -2,7 +2,8 @@
 handbook, whose rules apply to every aircraft), the local
 LLM drafts machine-checkable rules into a local draft, the instructor reviews
 and edits them and Saves them to Postgres as the aircraft's active rule set.
-Saved rules are edited in place with a full history. See docs/sop-rules.md.
+Saved rules are edited in place with a full history. A rule set exported as
+JSON can be imported again as a draft (importer.py). See docs/sop-rules.md.
 
 Runtime use (e.g. a future core/acs_eval.py):
 

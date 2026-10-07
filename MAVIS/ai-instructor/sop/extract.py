@@ -40,6 +40,15 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def open_pdf(pdf):
+    """pdf: the file's bytes, or its path (preferred for big files: nothing is
+    copied into memory)."""
+    import pymupdf
+    if isinstance(pdf, (bytes, bytearray, memoryview)):
+        return pymupdf.open(stream=bytes(pdf), filetype="pdf")
+    return pymupdf.open(str(pdf))
+
+
 def _clean(text: str) -> str:
     text = text.replace("­", "")                        # soft hyphen
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)              # de-hyphenate line breaks
@@ -176,9 +185,32 @@ def _split_long(text: str, max_chars: int) -> list[str]:
     return parts
 
 
-def make_chunks(pages: list[PageText], max_chars: int = 6000) -> list[Chunk]:
+CONTEXT_NOTE = "(end of the previous section, repeated for context only)"
+
+
+def _tail(text: str, max_chars: int) -> str:
+    """The last whole paragraphs (or, failing that, sentences) of text, up to max_chars."""
+    body = re.sub(r"\[\[PAGE \d+\]\]\n?", "", text).strip()
+    if len(body) <= max_chars:
+        return body
+    cut = body[-max_chars:]
+    for rx in (r"\n\s*\n", r"(?<=[.!?])\s+"):
+        m = re.search(rx, cut)
+        if m and len(cut) - m.end() >= max_chars * 0.4:
+            return cut[m.end():].strip()
+    return cut.strip()
+
+
+def make_chunks(pages: list[PageText], max_chars: int = 6000, overlap: int = 0) -> list[Chunk]:
     """Pack whole pages into chunks up to max_chars; a page larger than that is
-    split on paragraph boundaries. Every piece carries its page marker."""
+    split on paragraph boundaries. Every piece carries its page marker.
+
+    overlap > 0 (training handbooks): each chunk after the first starts with the
+    last ~overlap characters of the one before, under its page marker and
+    CONTEXT_NOTE, so a paragraph that runs across a chunk boundary is seen whole
+    and a requirement keeps the sentences that explain it. The overlap comes
+    out of max_chars."""
+    body_max = max(1000, max_chars - overlap) if overlap else max_chars
     chunks: list[Chunk] = []
     cur_txt, cur_pages = "", []
 
@@ -191,14 +223,20 @@ def make_chunks(pages: list[PageText], max_chars: int = 6000) -> list[Chunk]:
     for p in pages:
         if not p.text.strip():
             continue
-        for piece in _split_long(p.text, max_chars):
+        for piece in _split_long(p.text, body_max):
             block = f"[[PAGE {p.page_no}]]\n{piece}\n"
-            if len(cur_txt) + len(block) > max_chars:
+            if len(cur_txt) + len(block) > body_max:
                 flush()
             cur_txt += block
             if p.page_no not in cur_pages:
                 cur_pages.append(p.page_no)
     flush()
+    if overlap:
+        tails = [(c.pages[-1], _tail(c.text, overlap)) for c in chunks]
+        for i in range(1, len(chunks)):
+            page, tail = tails[i - 1]
+            if tail:
+                chunks[i].text = f"[[PAGE {page}]]\n{CONTEXT_NOTE}\n{tail}\n\n{chunks[i].text}"
     return chunks
 
 
@@ -238,19 +276,19 @@ def detect_section(text: str) -> int | None:
     return None
 
 
-def read_pages(pdf_bytes: bytes, progress=None, columns: bool = False) -> list[dict]:
+def read_pages(pdf, progress=None, columns: bool = False) -> list[dict]:
     """Step 1: text layer only (fast), plus whether each page will need OCR,
     which POH section and which handbook chapter it is in (both carried forward
     across pages with no header). columns=True (training handbooks) reads
     two-column pages column by column instead of line by line across the page."""
-    import pymupdf
     out: list[dict] = []
     current = None
     chapter, chapter_title = None, None
-    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+    with open_pdf(pdf) as doc:
         if doc.needs_pass:
             raise ValueError("PDF is password-protected")
         n = doc.page_count
+        doc_title = " ".join(str((doc.metadata or {}).get(k) or "") for k in ("title", "subject")).strip()
         for i, page in enumerate(doc):
             sorted_text = _clean(page.get_text("text", sort=True))
             text = _clean(column_text(page)) if columns else sorted_text
@@ -270,6 +308,8 @@ def read_pages(pdf_bytes: bytes, progress=None, columns: bool = False) -> list[d
                         "chapter": chapter, "chapter_title": chapter_title if ch is not None else None})
             if progress:
                 progress(i + 1, n)
+    if out and doc_title:
+        out[0]["doc_title"] = doc_title[:300]       # PDF metadata: the surest sign of which book this is
     return out
 
 
@@ -370,6 +410,31 @@ def chapter_outline(pages: list[dict]) -> list[dict]:
     return out
 
 
+def emergency_pages(pages: list[dict], handbook: bool) -> set[int]:
+    """Pages of the emergency / abnormal procedures part of a document: POH
+    Section 3, or a handbook chapter whose title says so. Rules from there get
+    the lesson type "emergency": they are used in emergency lessons only."""
+    if not handbook:
+        return {p["page_no"] for p in pages if p.get("section") == 3}
+    out: set[int] = set()
+    for o in chapter_outline(pages):
+        if re.search(r"emergenc|abnormal", o["title"] or "", re.I):
+            out.update(range(o["first"], o["last"] + 1))
+    return out
+
+
+def instrument_pages(pages: list[dict], handbook: bool) -> set[int]:
+    """Pages of a handbook chapter about flying by reference to the instruments
+    ("Basic Instrument Maneuvers", "Attitude Instrument Flying"). Rules from
+    there are for instrument-flying lessons, not for a visual circuit."""
+    out: set[int] = set()
+    if handbook:
+        for o in chapter_outline(pages):
+            if re.search(r"\binstrument\b", o["title"] or "", re.I):
+                out.update(range(o["first"], o["last"] + 1))
+    return out
+
+
 def suggest_chapter_pages(pages: list[dict]) -> list[int]:
     picks: list[int] = []
     for o in chapter_outline(pages):
@@ -378,28 +443,91 @@ def suggest_chapter_pages(pages: list[dict]) -> list[int]:
     return picks or [p["page_no"] for p in pages]
 
 
+COVER_MAX_WORDS = 150       # a cover / title page has few words; a page of body text does not
+HEADER_MAX_CHARS = 70       # a running header / footer line is short
+FOOTER_MIN_SHARE = 0.4      # ...and is on at least this share of the pages
+
+
 def detect_book(pages: list[dict]) -> tuple[str | None, str | None]:
-    """Which FAA handbook this is, from its document number (FAA-H-8083-3C...)
-    or title. -> (book id from schema.BOOKS, or None; id from
-    schema.NOT_RULE_BOOKS if it's a book with no circuit rules, or None)."""
+    """Which FAA handbook this PDF is -> (book id from schema.BOOKS or None,
+    id from schema.NOT_RULE_BOOKS if it's a book with no circuit rules, or None).
+
+    Only the book's OWN name counts, never a mention in the running text:
+    handbooks cite each other constantly (the Instrument Flying Handbook refers
+    to the Pilot's Handbook of Aeronautical Knowledge on many pages). So, in
+    order:
+      1. the PDF's metadata title;
+      2. a cover / title page: one of the first three pages, if it has few words;
+      3. a running header or footer: the SAME short line, mostly made up of the
+         book's name, on at least 40% of the pages.
+    Unsure -> (None, None): the reviewer's own choice stands, or they are asked."""
     from .schema import BOOKS, NOT_RULE_BOOKS
-    sample = "\n".join(p["text"] for p in pages[:12])
-    sample += "\n" + "\n".join("\n".join(p["text"].splitlines()[-3:]) for p in pages[12:400])
-    sample = sample.lower()
     cands = [(bid, rx) for bid, (_, _, rx) in BOOKS.items() if rx] + \
             [(bid, rx) for bid, (rx, _) in NOT_RULE_BOOKS.items()]
-    for which in (0, 1):                       # document numbers first, then titles
-        counts = {bid: len(re.findall(rx[which], sample)) for bid, rx in cands}
-        best = max(counts, key=counts.get)
-        if counts[best]:
-            return (best, None) if best in BOOKS else (None, best)
+
+    def answer(bid):
+        return (bid, None) if bid in BOOKS else (None, bid)
+
+    def first_named(text: str) -> str | None:
+        """The book named EARLIEST in text (document number or title)."""
+        text = text.lower()
+        best = None
+        for bid, rx in cands:
+            for r in rx:
+                m = re.search(r, text)
+                if m and (best is None or m.start() < best[0]):
+                    best = (m.start(), bid)
+        return best[1] if best else None
+
+    def name_share(line: str, bid: str) -> float:
+        """How much of a line the book's number + title take up."""
+        rx = dict(cands)[bid]
+        hit = sum(m.end() - m.start() for r in rx for m in [re.search(r, line.lower())] if m)
+        return hit / max(1, len(line))
+
+    if not pages:
+        return None, None
+    hit = first_named(pages[0].get("doc_title") or "")
+    if hit:
+        return answer(hit)
+    for p in pages[:3]:
+        if len(p["text"].split()) <= COVER_MAX_WORDS:
+            hit = first_named(p["text"])
+            if hit:
+                return answer(hit)
+    # running header / footer: the same short line, page after page (digits
+    # ignored, so "6-12" page labels don't matter). A citation at the bottom of
+    # a page is a different sentence every time, so it never adds up.
+    seen: dict[tuple[str, str], int] = {}
+    for p in pages[:600]:
+        lines = [ln.strip() for ln in p["text"].splitlines() if ln.strip()]
+        on_page = set()
+        for ln in lines[:2] + lines[-3:]:
+            if len(ln) > HEADER_MAX_CHARS:
+                continue
+            bid = first_named(ln)
+            if bid and name_share(ln, bid) >= 0.4:      # the line IS the name, not a sentence that mentions it
+                on_page.add((bid, re.sub(r"[\d\W_]+", " ", ln.lower()).strip()))
+        for key in on_page:
+            seen[key] = seen.get(key, 0) + 1
+    if seen:
+        per_book: dict[str, int] = {}
+        for (bid, _), n in seen.items():
+            per_book[bid] = max(per_book.get(bid, 0), n)
+        ranked = sorted(per_book.items(), key=lambda kv: -kv[1])
+        top, n = ranked[0]
+        runner = ranked[1][1] if len(ranked) > 1 else 0
+        # a real running header/footer is on (nearly) every page, or every other
+        # page in a book with different left and right pages
+        if n >= max(3, FOOTER_MIN_SHARE * min(len(pages), 600)) and n >= 2 * runner:
+            return answer(top)
     return None, None
 
 
-def ocr_selected(pdf_bytes: bytes, pages: list[dict], selected: set[int], tesseract_cmd: str | None = None,
+def ocr_selected(pdf, pages: list[dict], selected: set[int], tesseract_cmd: str | None = None,
                  ocr_lang: str = "eng", progress=None) -> list[str]:
-    """Step 2: OCR the chosen pages that need it (in place). Returns warnings."""
-    import pymupdf
+    """Step 2: OCR the chosen pages that need it (in place). Returns warnings.
+    pdf: bytes or a path."""
     todo = [p for p in pages if p["page_no"] in selected and p.get("needs_ocr") and p["source"] != "ocr"]
     if not todo:
         return []
@@ -410,7 +538,7 @@ def ocr_selected(pdf_bytes: bytes, pages: list[dict], selected: set[int], tesser
             warnings.append(f"{len(skipped)} chosen page(s) look scanned but OCR (Tesseract) isn't available - "
                             f"they were skipped: {compress_pages(skipped)}")
         return warnings
-    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+    with open_pdf(pdf) as doc:
         for k, p in enumerate(todo):
             try:
                 txt, conf = _ocr_page(doc[p["page_no"] - 1], tesseract_cmd, ocr_lang)

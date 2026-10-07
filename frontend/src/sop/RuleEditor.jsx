@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { KIND_LABEL, OP_TXT, metricInfo, phaseTxt, unitLabel, fmt, gazeIsShare, gazeShow } from "./ruleText.js";
+import { KIND_LABEL, OP_TXT, metricInfo, phaseTxt, unitLabel, fmt, gazeIsShare, gazeShow, lessonTypes, canRef, refTxt,
+  refValue, usedInText, notInNormal } from "./ruleText.js";
 
 // Number field that lets you type "-", "1." etc. without the value jumping;
 // reports null for an empty box.
@@ -48,6 +49,7 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
   const dis = readOnly;
   const k = rule.kind;
   const metrics = meta.metrics;
+  const rel = canRef(rule) && !!rule.ref_speed;      // numbers are differences from an aircraft speed
 
   function setKind(kind) {
     // keep what still makes sense; the server clears numbers for "not observable"
@@ -94,13 +96,13 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
       </Field>
 
       {k === "band" && <>
-        <Num meta={meta} rule={rule} k="target" label="Target" set={set} disabled={dis} />
+        <Num meta={meta} rule={rule} k="target" label={rel ? "Target (difference)" : "Target"} set={set} disabled={dis} />
         <Num meta={meta} rule={rule} k="tol_hi" label="Allowed above (+)" set={set} disabled={dis} />
         <Num meta={meta} rule={rule} k="tol_lo" label="Allowed below (−)" set={set} disabled={dis} />
       </>}
       {k === "limit" && <>
-        <Num meta={meta} rule={rule} k="min_value" label="Minimum" set={set} disabled={dis} />
-        <Num meta={meta} rule={rule} k="max_value" label="Maximum" set={set} disabled={dis} />
+        <Num meta={meta} rule={rule} k="min_value" label={rel ? "Minimum (difference)" : "Minimum"} set={set} disabled={dis} />
+        <Num meta={meta} rule={rule} k="max_value" label={rel ? "Maximum (difference)" : "Maximum"} set={set} disabled={dis} />
       </>}
       {k === "event" && <>
         <Field label="Must be" htmlFor="sop-op">
@@ -125,6 +127,49 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         <Num meta={meta} rule={rule} k="min_value" label="Minimum" set={set} disabled={dis} />
         <Num meta={meta} rule={rule} k="max_value" label="Maximum" set={set} disabled={dis} />
       </>}
+
+      {rule.suggestion && !dis && ((k === "band" && rule.tol_hi == null && rule.tol_lo == null) || (k === "gaze" && rule.value == null)) && (
+        <div className="sop-field sop-field--wide sop-suggest">
+          <div>
+            <b>FAA suggestion: {rule.suggestion.what.toLowerCase()} {rule.suggestion.shown}</b>
+            <div className="muted sop-small">{rule.suggestion.text}.</div>
+          </div>
+          <button type="button" className="secondary" id="sop-suggest-fill"
+            onClick={() => set({ ...rule.suggestion.fields, note: rule.suggestion.note })}>Fill in</button>
+        </div>
+      )}
+
+      {canRef(rule) && meta.ref_speeds && (
+        <Field label="Measured from" hint="(a speed that differs per aircraft, e.g. 1.3 × VSO)" wide htmlFor="sop-ref">
+          <div className="sop-cond sop-ref">
+            {rel && <>
+              <div className="sop-unit">
+                <NumInput id="sop-ref-factor" value={rule.ref_factor ?? 1} disabled={dis} onChange={(v) => set({ ref_factor: v ?? 1 })} />
+                <em>×</em>
+              </div>
+            </>}
+            <select id="sop-ref" value={rule.ref_speed || ""} disabled={dis}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                // switching it on: the numbers become differences from that speed
+                set({ ref_speed: v, ref_factor: v ? rule.ref_factor ?? 1 : null,
+                  ...(v && !rule.ref_speed && k === "band" ? { target: 0 } : {}) });
+              }}>
+              <option value="">A fixed number of knots</option>
+              {meta.ref_speeds.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+          {rel && (
+            <div className="muted sop-small sop-ref__note">
+              The numbers above are differences from {refTxt(meta, rule)} in knots (0 = exactly that speed).{" "}
+              {meta.aircraft.map((a) => {
+                const v = refValue(meta, rule, a);
+                return v == null ? `${a.name}: not in its profile, so the rule is skipped there.` : `${a.name}: ${refTxt(meta, rule)} = ${fmt(v)} kt.`;
+              }).join(" ")}
+            </div>
+          )}
+        </Field>
+      )}
 
       {k === "gaze" && <>
         <Field label="Look at" htmlFor="sop-aoi" hint="(AOI zone role)">
@@ -171,6 +216,28 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
         </Field>
       )}
 
+      {meta.lesson_types && (
+        <Field label="Used in" hint="(the kind of lesson that checks this rule)" wide>
+          <div className="sop-phases" role="group" aria-label="Lesson types">
+            {meta.lesson_types.map((t) => {
+              const cur = lessonTypes(rule), on = cur.includes(t.id);
+              return (
+                <button type="button" key={t.id} title={t.help} aria-pressed={on} disabled={dis || (on && cur.length === 1)}
+                  className={"sop-phase sop-phase--lesson" + (on ? " is-on" : "")}
+                  onClick={() => set({ lesson_types: on ? cur.filter((x) => x !== t.id) : [...cur, t.id] })}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className={"sop-small sop-usedin" + (notInNormal(rule) ? " sop-usedin--only" : " muted")}>
+            {notInNormal(rule)
+              ? `${usedInText(rule)}: this rule is never checked in a normal circuit lesson.`
+              : lessonTypes(rule).length > 1 ? `${usedInText(rule)}.` : "Checked in normal circuit lessons."}
+          </div>
+        </Field>
+      )}
+
       <Field label="Applies during" hint="(none selected = every phase)" wide>
         <div className="sop-phases">
           {meta.phases.map((p) => (
@@ -208,7 +275,7 @@ export default function RuleEditor({ meta, rule, onChange, readOnly = false, quo
       <Field label={`Source${rule.source_page ? ` — page ${rule.source_page}` : ""}${rule.quote_score != null && rule.quote_score < 1 ? ` (${Math.round(rule.quote_score * 100)}% match)` : ""}`} wide htmlFor="sop-quote">
         {quoteEditable && !dis ? (
           <div className="sop-quote-edit">
-            <textarea id="sop-quote" rows={3} value={rule.source_quote || ""}
+            <textarea id="sop-quote" rows={6} value={rule.source_quote || ""}
               placeholder="Paste the exact SOP sentence this rule comes from (optional for rules you add)"
               onChange={(e) => set({ source_quote: e.target.value || null })} />
             <input aria-label="Page" type="number" min={1} placeholder="Page" value={rule.source_page || ""}
