@@ -35,6 +35,9 @@ export const mavisApi = {
   // Restart button / Fly again: reset, aircraft back to the lesson's start
   // position (airborne for familiarization, runway start otherwise), go again
   relaunch: () => postJson("/demo/relaunch"),
+  // step demonstrations (MAVIS flying a step before the trainee does)
+  skipDemo: () => postJson("/demo/skip_demo"),
+  skipAllDemos: () => postJson("/demo/skip_all_demos"),
   chat: (text) => postJson("/chat", { text }),
   // Push-to-talk: WAV blob -> Whisper on MAVIS -> same handler as typed chat.
   // -> {ok, text} or {ok: false, reason}

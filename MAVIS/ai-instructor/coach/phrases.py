@@ -119,6 +119,8 @@ TEMPLATES = {
     "FAM_FIELD_HINT": ["Paya Lebar: {clock} o'clock, about {dist_nm} miles. Head {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["That's Paya Lebar on the nose. Well found. Runway start after your score."],
     "FAM_YOU_HAVE_CONTROL": ["You have control."],
+    "FAM_DEMO_START": ["I have control. Hands and feet off, just watch."],
+    "FAM_DEMO_END": ["Back where we started. Your turn now."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
@@ -171,6 +173,8 @@ PILOT_TEMPLATES = {
     "FAM_FIELD_HINT": ["Paya Lebar, {clock} o'clock, {dist_nm} miles. Heading {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["Field on the nose. Exercise complete. Runway start after the debrief."],
     "FAM_YOU_HAVE_CONTROL": ["You have control."],
+    "FAM_DEMO_START": ["I have control. Hands off, observe."],
+    "FAM_DEMO_END": ["Repositioned. Your turn."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],
     "TELEPORT_FAIL": ["Unable to reposition. We'll fly the circuit round and set up for another approach."],

@@ -388,6 +388,25 @@
 .mavis-todo__done { margin-top: 10px; font-size: 13px; color: #3ddc84; }
 @media (max-width: 720px) { .mavis-todo { position: static; width: auto; max-height: none; } }
 
+/* Step demonstration banner (DemoBanner.jsx), a strip above the map */
+.mavis-demo {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(10, 14, 22, 0.9); border: 1px solid var(--accent);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); color: #e8eef8;
+}
+.mavis-demo__dot {
+  width: 10px; height: 10px; border-radius: 50%; background: #ff5d5d;
+  animation: mavis-demo-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mavis-demo-pulse { 50% { opacity: 0.3; } }
+.mavis-demo__text { display: grid; line-height: 1.3; }
+.mavis-demo__text b { color: var(--accent); }
+.mavis-demo__text span { font-size: 13px; color: #9fb2cf; }
+.mavis-demo__text { flex: 1; min-width: 180px; }
+.mavis-demo__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .mavis-demo__dot { animation: none; } }
+
 /* Familiarization "where to look" card (LookCard.jsx), under the map */
 .mavis-look {
   display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 6px 16px;
