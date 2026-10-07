@@ -23,7 +23,7 @@ const SECTIONS = [
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls"] },
+      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls", "/sop"] },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
     ],
   },

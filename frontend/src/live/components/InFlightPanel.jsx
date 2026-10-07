@@ -18,6 +18,12 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
       </div>
 
       <div className="mavis-hud__right">
+        <div className="mavis-hud__top">
+          <span className="pill">{state?.phase || "—"}</span>
+          <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
+          <SopChip sop={state?.sop} />
+        </div>
+
         <MapCanvas state={state} />
         {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
         {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
@@ -26,4 +32,19 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
       {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} />}
     </div>
   );
+}
+
+// Which SOP rule set this flight uses -- chosen at lesson start from the
+// aircraft loaded in the sim (MAVIS sop/runtime.py).
+function SopChip({ sop }) {
+  if (!sop) return null;
+  const hb = sop.n_handbook_rules ? ` + ${sop.n_handbook_rules} handbook rules` : "";
+  const text = sop.status === "active" ? `SOP · ${sop.name}${hb}` :
+    sop.status === "none" ? `No SOP rules for ${sop.aircraft_name}${hb ? ` · ${sop.n_handbook_rules} handbook rules` : ""}` :
+    sop.status === "no_profile" ? `No SOP · unknown aircraft${hb ? ` · ${sop.n_handbook_rules} handbook rules` : ""}` : "SOP rules unavailable";
+  const books = sop.handbooks?.length ? `\nTraining handbooks (every aircraft): ${sop.handbooks.join(", ")}` : "";
+  const title = sop.status === "active"
+    ? `${sop.n_rules - (sop.n_handbook_rules || 0)} rules for ${sop.aircraft_name}` + (sop.detected ? ` (simulator: ${sop.detected})` : " (default aircraft)") + books
+    : (sop.detected ? `Simulator reported: ${sop.detected} — ${sop.why}` : sop.why || "");
+  return <span className={"pill" + (sop.status === "active" ? "" : " mavis-sop-chip--off")} title={title}>{text}</span>;
 }

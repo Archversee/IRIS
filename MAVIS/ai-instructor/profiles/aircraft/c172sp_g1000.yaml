@@ -1,11 +1,26 @@
 name: Cessna 172SP G1000
+# How the simulator names this aircraft (MSFS TITLE / ATC MODEL / ATC TYPE,
+# case-insensitive substring). Used at lesson start to pick the SOP bound to
+# this profile -- see docs/sop-rules.md. Longest match wins across profiles.
+sim_match: ["C172", "Cessna 172", "Skyhawk", "172SP"]
+# Every speed in one place (KIAS, from the POH). MAVIS's coach and scoring use vr, vy,
+# pattern_downwind, base, final, vs0 and vne. SOP rules that are measured from an
+# aircraft speed ("1.3 VSO", "the approach speed +10/-5") read: final (the approach
+# speed; vref / approach win if present), vs0, vs1, vr, vx, vy, vfe, va, vno, vne.
+# A rule that names a speed missing here cannot be checked in this aircraft.
 v_speeds:
   vr: 55
-  vy: 74
+  vx: 62            # best angle of climb, sea level
+  vy: 74            # best rate of climb, sea level
   pattern_downwind: 85
   base: 75
-  final: 65
-  vs0: 40
+  final: 65         # normal approach, flaps 30 (POH: 60-70)
+  vs0: 40           # stall, landing configuration
+  vs1: 48           # stall, flaps up
+  vfe: 85           # max with flaps 10-30 deg (the white arc). Flaps 10 only: vfe_10
+  vfe_10: 110
+  va: 105           # manoeuvring speed at 2550 lb (98 at 2200 lb, 90 at 1900 lb)
+  vno: 129          # max structural cruising
   vne: 163
 flaps:
   detents_deg: [0, 10, 20, 30]

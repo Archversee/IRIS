@@ -40,6 +40,9 @@ _HOP_BY_HOP = {
 }
 
 _client = httpx.AsyncClient()
+_STREAM_ABOVE_BYTES = 8 * 1024 * 1024      # request bodies larger than this are streamed to the backend
+_UPLOAD_TIMEOUT_S = 900.0                  # ...and given this long
+_SOP_TIMEOUT_S = 180.0                     # saving / re-checking SOP rules (everything else: 30 s)
 
 
 def _to_ws_url(http_url: str) -> str:
@@ -52,11 +55,28 @@ async def _proxy_http(request, target_base: str, strip_prefix: str) -> Response:
     if request.url.query:
         url += "?" + request.url.query
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
-    body = await request.body()
+    # Big uploads (a 300 MB handbook PDF for /mavis/sop/drafts) are passed
+    # through as a stream with a long timeout instead of being held in memory
+    # and cut off after 30 s. Everything else is buffered as before.
     try:
-        upstream = await _client.request(request.method, url, headers=headers, content=body, timeout=30.0)
+        size = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        size = 0
+    big = size > _STREAM_ABOVE_BYTES
+    try:
+        if big:
+            upstream = await _client.request(request.method, url, headers=headers, content=request.stream(),
+                                             timeout=httpx.Timeout(_UPLOAD_TIMEOUT_S, connect=10.0))
+        else:
+            # saving a rule set writes a whole document to the database: if the proxy gave up first, the
+            # page said "took too long" although MAVIS finished the save a moment later
+            slow = _SOP_TIMEOUT_S if path.startswith("/sop/") and request.method != "GET" else 30.0
+            upstream = await _client.request(request.method, url, headers=headers, content=await request.body(),
+                                             timeout=slow)
     except httpx.ConnectError:
         return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend unavailable"}, status_code=502)
+    except httpx.TimeoutException:
+        return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend took too long to answer"}, status_code=504)
     resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _HOP_BY_HOP}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=resp_headers)
 
