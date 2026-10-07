@@ -64,7 +64,8 @@ class InstructorPatch(BaseModel):
 
 
 def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
-              voice_store=None, stt=None, voice_cfg: dict | None = None) -> FastAPI:
+              voice_store=None, stt=None, voice_cfg: dict | None = None,
+              app_cfg: dict | None = None) -> FastAPI:
     """actions: dict of async callables: start, skip, night, restart, chat(text)
     voice_store / stt: optional local enrolment + Whisper pipeline (§16)."""
     app = FastAPI(title="AI Flight Instructor")
@@ -341,5 +342,20 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
             "similarity": sim,
             "verify": verify_reason,
         }
+
+    # SOP upload -> LLM-drafted rules -> instructor verification -> aircraft
+    # binding (sop/, docs/sop-rules.md). Optional: MAVIS runs without it if
+    # its extra deps (pymupdf, asyncpg) aren't installed.
+    try:
+        from sop.routes import build_sop_router
+        sop_router, sop_jobs, sop_store = build_sop_router(state, app_cfg, HERE.parent)
+        app.include_router(sop_router)
+        app.state.sop_store = sop_store
+
+        @app.on_event("shutdown")
+        async def _close_sop_store():
+            await sop_store.close()
+    except ImportError as e:
+        log.warning("SOP rules disabled (missing dependency: %s)", e)
 
     return app

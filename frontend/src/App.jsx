@@ -14,6 +14,8 @@ import Profile from "./pages/Profile.jsx";
 import Accounts from "./pages/Accounts.jsx";
 import SaveSession from "./pages/SaveSession.jsx";
 import { useAuth } from "./auth/AuthContext.jsx";
+import SopNew from "./sop/SopNew.jsx";
+import SopRules from "./sop/SopRules.jsx";
 
 export default function App() {
   const { user, checking } = useAuth();
@@ -44,6 +46,8 @@ export default function App() {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/scoring" element={<ScoringGuidePage />} />
           <Route path="/controls" element={<ControlsGuidePage />} />
+          <Route path="/sop/new" element={<SopNew />} />
+          <Route path="/sop/rules" element={<SopRules />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />

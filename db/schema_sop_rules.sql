@@ -1,0 +1,262 @@
+-- =====================================================================
+--  SOP -> flight rules
+--  Applies ON TOP of db/schema.sql (+ schema_mavis_integration.sql).
+--  Additive and idempotent -- safe to re-run.
+--
+--  WRITER: MAVIS (MAVIS/ai-instructor/sop/). A deliberate, scoped
+--  exception to INTEGRATION_PLAN.md's Option A: MAVIS writes only the
+--  tables in this file; IRIS only reads them.
+--
+--  Flow:
+--    1. Instructor uploads an SOP PDF. MAVIS reads it (OCR where needed) and
+--       the local LLM drafts rules. The draft lives in a local JSON file
+--       (MAVIS data/sop/drafts/) -- NOTHING is written here yet.
+--    2. Instructor reviews/edits the draft on /sop/new and presses Save:
+--       one transaction writes sop_documents + sop_pages + a flight_rule_sets
+--       row + its flight_rules, makes the set active for the chosen
+--       aircraft, and logs every rule in flight_rule_history.
+--    3. /sop/rules edits saved rules in place; every create / update /
+--       delete / (de)activation is logged in flight_rule_history.
+--
+--  All rule numbers are in MAVIS Telemetry units: kt, ft, ft/min, deg,
+--  rpm, throttle 0..1 (adapters/sim_base.py).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Superseded by flight_rule_sets / flight_rules / flight_rule_history
+-- below (earlier draft of this feature, never merged to main). Safe to
+-- drop: only ever held test data on dev machines.
+-- ---------------------------------------------------------------------
+drop table if exists sop_aircraft_bindings;
+drop table if exists sop_rules;
+drop table if exists sop_rulesets;
+
+-- ---------------------------------------------------------------------
+-- Source documents (written at Save time, never for an unsaved draft)
+-- ---------------------------------------------------------------------
+create table if not exists sop_documents (
+    id            uuid primary key default gen_random_uuid(),
+    filename      text not null,
+    sha256        text not null unique,
+    page_count    int  not null,
+    ocr_pages     int[] not null default '{}',     -- 1-based page numbers that were read with OCR
+    stored_path   text not null,                   -- MAVIS-local path of the original PDF
+    uploaded_by   text,
+    uploaded_at   timestamptz not null default now()
+);
+
+create table if not exists sop_pages (
+    document_id    uuid not null references sop_documents(id) on delete cascade,
+    page_no        int  not null,                  -- 1-based
+    text           text not null,
+    source         text not null check (source in ('text', 'ocr', 'empty')),
+    ocr_confidence double precision,               -- mean Tesseract confidence 0..100 (OCR pages only)
+    primary key (document_id, page_no)
+);
+
+-- ---------------------------------------------------------------------
+-- A saved set of rules for one aircraft. At most one ACTIVE set per
+-- aircraft profile -- that's the one a lesson in that aircraft uses.
+-- Saving a new SOP for an aircraft deactivates (keeps) the previous set.
+-- ---------------------------------------------------------------------
+create table if not exists flight_rule_sets (
+    id                uuid primary key default gen_random_uuid(),
+    aircraft_profile  text not null,               -- MAVIS profiles/aircraft/<id>.yaml
+    name              text not null,               -- e.g. 'C172 SOP rev 3'
+    document_id       uuid references sop_documents(id) on delete set null,  -- null = typed in by hand
+    llm_model         text,                        -- model that drafted it, e.g. 'qwen2.5:14b-instruct'
+    active            boolean not null default false,
+    created_by        text,
+    created_at        timestamptz not null default now(),
+    updated_by        text,
+    updated_at        timestamptz not null default now()
+);
+create unique index if not exists flight_rule_sets_one_active
+    on flight_rule_sets (aircraft_profile) where active;
+
+-- ---------------------------------------------------------------------
+-- One checkable rule. kind decides which value columns are used:
+--   band          target, tol_hi, tol_lo          hold target ± tolerance
+--   limit         min_value and/or max_value      stay within limits
+--   event         op, value, gate_phase           must be true by a phase
+--   capture       capture_at, min/max_value       checked at one moment
+--   unobservable  (none)                          instructor assesses it
+-- ---------------------------------------------------------------------
+create table if not exists flight_rules (
+    id              bigint generated always as identity primary key,
+    rule_set_id     uuid not null references flight_rule_sets(id) on delete cascade,
+    sort_order      int  not null default 0,
+    enabled         boolean not null default true,  -- switch a rule off without deleting it
+    origin          text not null default 'llm' check (origin in ('llm', 'manual')),
+    kind            text not null
+                    check (kind in ('band', 'limit', 'event', 'capture', 'unobservable')),
+    title           text not null,
+    phases          text[] not null default '{}',   -- MAVIS lesson phases; empty = every phase
+    metric          text,                           -- Telemetry field: ias, alt_agl, vs, bank, flaps_deg, ...
+    target          double precision,
+    tol_hi          double precision,
+    tol_lo          double precision,
+    min_value       double precision,
+    max_value       double precision,
+    op              text check (op in ('>=', '<=', '==', '>', '<')),
+    value           double precision,
+    gate_phase      text,
+    capture_at      text check (capture_at in ('liftoff', 'touchdown', 'phase_entry', 'phase_exit')),
+    conditions      jsonb not null default '[]',    -- [{metric, op, value}]: rule applies only while all hold
+    severity        text not null default 'caution'
+                    check (severity in ('advisory', 'caution', 'warning')),
+    -- provenance: where in the SOP this rule came from
+    source_quote    text,
+    source_page     int,
+    quote_score     double precision,               -- 0..1 match of source_quote against sop_pages
+    llm_draft       jsonb,                          -- the LLM's original proposal, before any human edit
+    note            text,
+    created_by      text,
+    created_at      timestamptz not null default now(),
+    updated_by      text,
+    updated_at      timestamptz not null default now(),
+    -- the kind's required values must be present
+    constraint flight_rules_kind_fields check (
+        (kind = 'band'    and metric is not null and target is not null
+                          and (tol_hi is not null or tol_lo is not null)) or
+        (kind = 'limit'   and metric is not null and (min_value is not null or max_value is not null)) or
+        (kind = 'event'   and metric is not null and op is not null and value is not null) or
+        (kind = 'capture' and metric is not null and capture_at is not null
+                          and (min_value is not null or max_value is not null)) or
+        (kind = 'unobservable')
+    )
+);
+create index if not exists flight_rules_set_idx on flight_rules (rule_set_id, sort_order);
+
+-- ---------------------------------------------------------------------
+-- Audit trail: every change to a saved rule or rule set.
+-- before/after are full JSON snapshots of the rule (null on create/delete).
+-- ---------------------------------------------------------------------
+create table if not exists flight_rule_history (
+    id            bigint generated always as identity primary key,
+    rule_set_id   uuid not null references flight_rule_sets(id) on delete cascade,
+    rule_id       bigint,                          -- no FK: history outlives a deleted rule
+    action        text not null
+                  check (action in ('create', 'update', 'delete', 'activate', 'deactivate', 'rename')),
+    changed_by    text,
+    changed_at    timestamptz not null default now(),
+    before        jsonb,
+    after         jsonb
+);
+create index if not exists flight_rule_history_set_idx on flight_rule_history (rule_set_id, changed_at desc);
+create index if not exists flight_rule_history_rule_idx on flight_rule_history (rule_id, changed_at desc);
+
+-- ---------------------------------------------------------------------
+-- v2 (prompt v2, rule tags, page selection). Additive; safe to re-run.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists tags text[] not null default '{}';
+    -- what the rule is about, 1-4 of: flight_telemetry, pilot_controls, engine,
+    -- aircraft_limit, procedure, configuration, communication, situational, emergency
+    -- (vocabulary: MAVIS/ai-instructor/sop/schema.py TAGS)
+create index if not exists flight_rules_tags_idx on flight_rules using gin (tags);
+
+alter table flight_rule_sets
+    add column if not exists prompt_version text,     -- LLM prompt version that drafted it ('2')
+    add column if not exists page_selection text;     -- SOP pages the LLM read, e.g. '13-20, 34-63'
+
+-- ---------------------------------------------------------------------
+-- v3: training handbooks + scan-path (gaze) rules. Additive; safe to re-run.
+--
+--  * A rule set comes either from an aircraft's POH (scope 'aircraft',
+--    bound to aircraft_profile -- one active per aircraft, as before) or
+--    from a training handbook (scope 'general', aircraft_profile null,
+--    handbook = 'afh' | 'ifh' | 'phak' | 'school' | 'other' -- one active
+--    per book). A lesson uses its aircraft's active set PLUS every active
+--    handbook set (sop/store.py active_rules).
+--  * kind 'gaze': where the pilot looks, from the eye tracker. aoi is an
+--    AOI ROLE (outside, airspeed, attitude...; MAVIS sop/schema.py
+--    AOI_ROLES), gaze_measure says what is checked, value is seconds
+--    (max_gap / max_dwell) or a 0..1 share (min_share / max_share).
+-- ---------------------------------------------------------------------
+alter table flight_rule_sets alter column aircraft_profile drop not null;
+alter table flight_rule_sets
+    add column if not exists scope    text not null default 'aircraft',
+    add column if not exists handbook text;
+alter table flight_rule_sets drop constraint if exists flight_rule_sets_scope_check;
+alter table flight_rule_sets add constraint flight_rule_sets_scope_check check (
+    (scope = 'aircraft' and aircraft_profile is not null) or
+    (scope = 'general'  and handbook is not null));
+create unique index if not exists flight_rule_sets_one_active_book
+    on flight_rule_sets (handbook) where active and scope = 'general';
+
+alter table flight_rules
+    add column if not exists aoi          text,
+    add column if not exists gaze_measure text;
+alter table flight_rules drop constraint if exists flight_rules_gaze_measure_check;
+alter table flight_rules add constraint flight_rules_gaze_measure_check
+    check (gaze_measure in ('max_gap', 'max_dwell', 'min_share', 'max_share'));
+alter table flight_rules drop constraint if exists flight_rules_kind_check;
+alter table flight_rules add constraint flight_rules_kind_check
+    check (kind in ('band', 'limit', 'event', 'capture', 'gaze', 'unobservable'));
+alter table flight_rules drop constraint if exists flight_rules_kind_fields;
+alter table flight_rules add constraint flight_rules_kind_fields check (
+    (kind = 'band'    and metric is not null and target is not null
+                      and (tol_hi is not null or tol_lo is not null)) or
+    (kind = 'limit'   and metric is not null and (min_value is not null or max_value is not null)) or
+    (kind = 'event'   and metric is not null and op is not null and value is not null) or
+    (kind = 'capture' and metric is not null and capture_at is not null
+                      and (min_value is not null or max_value is not null)) or
+    (kind = 'gaze'    and aoi is not null and gaze_measure is not null and value is not null) or
+    (kind = 'unobservable')
+);
+
+-- ---------------------------------------------------------------------
+-- v4: set-aside rules are kept. Additive; safe to re-run.
+--
+-- A rule the reviewer (or an automatic check) set aside in the draft used
+-- to be dropped at Save. It is now saved with its rule set, set_aside =
+-- true and the reason, so it can be edited and added back later on the
+-- SOP Rules page, and exported. A set-aside rule is NEVER used in a
+-- lesson (sop/store.py active_rules skips it) and may be incomplete -- a
+-- band without a tolerance, a gaze rule without a threshold -- so the
+-- per-kind completeness check only applies to rules that are in use.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists set_aside        boolean not null default false,
+    add column if not exists set_aside_reason text;
+alter table flight_rules drop constraint if exists flight_rules_kind_fields;
+alter table flight_rules add constraint flight_rules_kind_fields check (
+    set_aside or
+    (kind = 'band'    and metric is not null and target is not null
+                      and (tol_hi is not null or tol_lo is not null)) or
+    (kind = 'limit'   and metric is not null and (min_value is not null or max_value is not null)) or
+    (kind = 'event'   and metric is not null and op is not null and value is not null) or
+    (kind = 'capture' and metric is not null and capture_at is not null
+                      and (min_value is not null or max_value is not null)) or
+    (kind = 'gaze'    and aoi is not null and gaze_measure is not null and value is not null) or
+    (kind = 'unobservable')
+);
+
+-- ---------------------------------------------------------------------
+-- v5: lesson types + aircraft-relative speeds. Additive; safe to re-run.
+--
+--  * lesson_types: which KIND of lesson uses the rule -- 'normal' (an
+--    ordinary circuit, the default), 'emergency' (emergency / abnormal
+--    procedure lessons) and/or 'instrument' (flying by reference to the
+--    instruments). A lesson loads only the rules of its own type
+--    (sop/store.py active_rules), so an engine-failure glide speed is
+--    never checked in a normal circuit.
+--  * ref_speed / ref_factor: a speed that depends on the aircraft
+--    ("1.3 VSO", "the recommended approach speed"). ref_speed names it
+--    (MAVIS sop/schema.py REF_SPEEDS: approach, vs0, vs1, vr, vx, vy, vfe,
+--    va, vno, vne); the number comes from the aircraft profile's v_speeds
+--    when a lesson starts. With a reference, target / min_value /
+--    max_value / value are DIFFERENCES from  ref_factor x that speed
+--    (0 = exactly that speed), e.g. target 0, tol_hi 10, tol_lo 5.
+-- ---------------------------------------------------------------------
+alter table flight_rules
+    add column if not exists lesson_types text[] not null default '{normal}',
+    add column if not exists ref_speed    text,
+    add column if not exists ref_factor   double precision;
+alter table flight_rules drop constraint if exists flight_rules_lesson_types_check;
+alter table flight_rules add constraint flight_rules_lesson_types_check
+    check (lesson_types <@ array['normal', 'emergency', 'instrument'] and cardinality(lesson_types) >= 1);
+alter table flight_rules drop constraint if exists flight_rules_ref_check;
+alter table flight_rules add constraint flight_rules_ref_check
+    check (ref_speed is null or (metric = 'ias' and kind in ('band', 'limit', 'event', 'capture')));

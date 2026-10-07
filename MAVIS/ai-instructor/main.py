@@ -233,6 +233,28 @@ async def amain(cfg):
                    "lesson": lesson_state(lesson)}
     loop = asyncio.get_event_loop()
 
+    # SOP for the aircraft actually being flown (sop/runtime.py): resolved at
+    # every lesson start from the sim's aircraft; rules kept in sop_rt.active.
+    try:
+        from sop.runtime import SopRuntime
+        sop_rt = SopRuntime(cfg, cfg["aircraft_profile"])
+    except ImportError as e:
+        log.info("SOP rules disabled (%s)", e)
+        sop_rt = None
+    state["sop"] = None
+
+    async def _load_sop():
+        if sop_rt is None:
+            return
+        ident = None
+        if hasattr(sim, "aircraft_ident"):
+            try:
+                ident = await loop.run_in_executor(None, sim.aircraft_ident)
+            except Exception as e:
+                log.info("aircraft ident failed: %s", e)
+        state["sop"] = await sop_rt.load(ident)
+        log.info("SOP for this flight: %s", state["sop"])
+
     tts_dir = Path(tempfile.mkdtemp(prefix="ai_tts_"))
     tts_seq = {"n": 0}
     tts_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mavis-tts")
@@ -513,6 +535,7 @@ async def amain(cfg):
                 await _set_frozen(True)     # held through the briefing
         state["look_at"] = None
         started.set()
+        asyncio.create_task(_load_sop())     # never blocks the start of the lesson
         if not (keep_session and session.get("session_id")):
             session["session_id"] = str(uuid.uuid4())
         state["session_id"] = session["session_id"]
@@ -1343,6 +1366,8 @@ async def amain(cfg):
         last_tick_error = 0.0
         while True:
             t0 = time.time()
+            # a lesson is being flown (the phase alone stays mid-circuit after Quit)
+            state["flying"] = started.is_set() and not scored["done"]
             # One bad sim read must never take MAVIS down: an exception here
             # used to end the whole process (asyncio.gather), which the web
             # proxy then reports as 502. Log it (throttled) and keep ticking.
@@ -1467,7 +1492,7 @@ async def amain(cfg):
         initial_prompt=voice_cfg.get("stt_initial_prompt"),
     )
     app = build_app(state, actions, str(media_path), tts_dir=str(tts_dir),
-                    voice_store=voice_store, stt=stt, voice_cfg=voice_cfg)
+                    voice_store=voice_store, stt=stt, voice_cfg=voice_cfg, app_cfg=cfg)
     server = EmbeddedServer(uvicorn.Config(
         app, host=cfg["web"]["host"], port=cfg["web"]["port"], log_level="warning"))
     log.info("UI: http://<sim-pc-ip>:%s  (tablet on same LAN)", cfg["web"]["port"])
