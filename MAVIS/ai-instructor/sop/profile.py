@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import APP_ROOT, METRICS
+from .schema import APP_ROOT, METRICS, resolve_ref
 
 FLIGHT_PHASES = ["PRE_TAKEOFF", "TAKEOFF_ROLL", "CLIMB_OUT", "CROSSWIND", "DOWNWIND",
                  "BASE", "FINAL", "FLARE_TOUCHDOWN", "ROLLOUT"]
@@ -37,6 +37,17 @@ _GENERIC = {
     "FLARE_TOUCHDOWN": {"rpm": (700, 1100), "throttle": (0.0, 0.1), "vs": (-300, 0), "bank": (-5, 5)},
     "ROLLOUT":         {"rpm": (700, 1100), "throttle": (0.0, 0.1), "vs": (0, 0), "bank": (0, 0)},
 }
+
+# How far outside a rule a correctly flown value may be before the rule is called
+# "broken by a correct circuit". The circuit here is a sketch (climb at exactly
+# Vy 74 kt), a real one is not: "Normal climb 75-85 KIAS" is not contradicted by 74.
+_SLACK = {"ias": 5.0, "alt_agl": 100.0, "alt_msl": 100.0, "vs": 100.0, "bank": 5.0, "pitch": 3.0,
+          "rpm": 100.0, "throttle": 0.05, "hdg": 10.0}
+
+# A target the document gives without a tolerance can still be compared with the
+# circuit: with a generous tolerance like these, would a correct flight keep it?
+_PROVISIONAL_TOL = {"ias": 10.0, "alt_agl": 200.0, "alt_msl": 200.0, "vs": 300.0, "bank": 10.0, "pitch": 5.0,
+                    "rpm": 200.0, "throttle": 0.15, "hdg": 20.0, "flaps_deg": 0.0}
 
 _PHASE_LABEL = {p: p.replace("_", " ").lower().replace("flare touchdown", "flare/touchdown").capitalize()
                 for p in FLIGHT_PHASES}
@@ -110,6 +121,7 @@ def nominal_circuit(lesson: dict, aircraft: dict) -> dict[str, dict[str, tuple[f
         a, b = P[ph]["alt_agl"]
         P[ph]["alt_msl"] = (a + elev, b + elev)
     P["_capture"] = {"liftoff": {"ias": (vr, vr)}, "touchdown": {"ias": (vs0, min(fin, vs0 + 20))}}
+    P["_speeds"] = vs                   # for rules that name an aircraft speed ("1.3 VSO")
     return P
 
 
@@ -149,7 +161,11 @@ def conflicts(rule: dict, nominal: dict | None) -> list[str]:
     """Plain-English reasons a correctly flown circuit breaks this rule ([] = fine)."""
     if not nominal or rule.get("kind") in (None, "unobservable") or not rule.get("metric"):
         return []
+    rule = resolve_ref(rule, nominal.get("_speeds"))     # "1.3 VSO" -> this aircraft's number
+    if rule is None:
+        return []                       # this aircraft's profile doesn't give that speed: can't judge
     m = rule["metric"]
+    sl = _SLACK.get(m, 0.0)
     f = lambda k: None if rule.get(k) is None else float(rule[k])  # noqa: E731
     out: list[str] = []
     if rule["kind"] == "capture":
@@ -158,7 +174,7 @@ def conflicts(rule: dict, nominal: dict | None) -> list[str]:
         if rng:
             lo, hi = rng
             mn, mx = f("min_value"), f("max_value")
-            if (mn is not None and lo < mn) or (mx is not None and hi > mx):
+            if (mn is not None and lo < mn - sl) or (mx is not None and hi > mx + sl):
                 out.append(f"at {rule['capture_at']} a correct flight has {_rng(m, lo, hi)}")
         return out
     phases = [p for p in (rule.get("phases") or FLIGHT_PHASES) if p in nominal]
@@ -167,7 +183,8 @@ def conflicts(rule: dict, nominal: dict | None) -> list[str]:
         if g in nominal and m in nominal[g]:
             lo, hi = nominal[g][m]
             v, op = f("value"), rule.get("op")
-            ok = {">=": hi >= v, ">": hi > v, "<=": lo <= v, "<": lo < v, "==": lo <= v <= hi}.get(op, True)
+            ok = {">=": hi >= v - sl, ">": hi > v - sl, "<=": lo <= v + sl, "<": lo < v + sl,
+                  "==": lo - sl <= v <= hi + sl}.get(op, True)
             if not ok:
                 out.append(f"in {_PHASE_LABEL[g]} a correct flight has {_rng(m, lo, hi)}")
         return out
@@ -178,14 +195,42 @@ def conflicts(rule: dict, nominal: dict | None) -> list[str]:
         lo, hi = st[m]
         if rule["kind"] == "limit":
             mn, mx = f("min_value"), f("max_value")
-            if (mx is not None and hi > mx) or (mn is not None and lo < mn):
+            if (mx is not None and hi > mx + sl) or (mn is not None and lo < mn - sl):
                 out.append(f"in {_PHASE_LABEL[ph]} a correct flight has {_rng(m, lo, hi)}")
         elif rule["kind"] == "band":
             t, th, tl = f("target"), f("tol_hi"), f("tol_lo")
             if t is None or (th is None and tl is None):
                 continue                           # no tolerance yet -- blocked elsewhere
-            if hi > t + (th or 0) or lo < t - (tl or 0):
+            if hi > t + (th or 0) + sl or lo < t - (tl or 0) - sl:
                 out.append(f"in {_PHASE_LABEL[ph]} a correct flight has {_rng(m, lo, hi)}")
+    return out
+
+
+def with_provisional_tolerance(rule: dict) -> dict:
+    """A band without a tolerance, given a generous one for the circuit check only."""
+    if rule.get("kind") == "band" and rule.get("tol_hi") is None and rule.get("tol_lo") is None \
+            and rule.get("metric") in _PROVISIONAL_TOL:
+        t = _PROVISIONAL_TOL[rule["metric"]]
+        return {**rule, "tol_hi": t, "tol_lo": t}
+    return rule
+
+
+def phase_conflicts(rule: dict, nominal) -> dict[str, str]:
+    """{phase: why} for each of the rule's own phases that a correctly flown
+    circuit breaks (in any aircraft, for a list of circuits). A band without a
+    tolerance is judged with a generous provisional one."""
+    out: dict[str, str] = {}
+    phases = [p for p in (rule.get("phases") or []) if p in FLIGHT_PHASES]
+    if nominal is None or rule.get("kind") not in ("band", "limit") or not phases:
+        return out
+    r = with_provisional_tolerance(rule)
+    for name, n in ([(None, nominal)] if isinstance(nominal, dict) else nominal):
+        for ph in phases:
+            if ph in out:
+                continue
+            why = conflicts({**r, "phases": [ph]}, n)
+            if why:
+                out[ph] = why[0] + (f" ({name})" if name else "")
     return out
 
 

@@ -4,8 +4,7 @@ import { sopApi } from "./sopApi.js";
 import { editable, sameRule, describe, bookShort } from "./ruleText.js";
 import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
-import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch } from "./parts.jsx";
-import { exportRuleSet } from "./exportRules.js";
+import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch, LlmNote, ExportMenu, LessonFilter, lessonMatch } from "./parts.jsx";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
 import "../live/live.css";
 import "./sop.css";
@@ -13,6 +12,9 @@ import "./sop.css";
 // /sop/rules -- saved flight rules per aircraft, plus the training-handbook
 // rules (tab "_general") that apply to every aircraft. Rules are edited in
 // place; every change is recorded in flight_rule_history (History tab).
+// Rules that were set aside (in the draft, or here) are kept with the set:
+// never used in a lesson, editable even while incomplete, and can be added
+// back once they pass the full check.
 const GENERAL = "_general";
 export default function SopRules() {
   const [params, setParams] = useSearchParams();
@@ -96,41 +98,6 @@ export default function SopRules() {
   );
 }
 
-function ExportMenu({ s, meta, setErr }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (e) => { if (!e.target.closest?.(".sop-export")) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-  async function go(format) {
-    setOpen(false); setBusy(true);
-    try {
-      const full = await sopApi.getSet(s.id);       // latest saved rules, not unsaved edits
-      exportRuleSet(full, meta, format);
-    } catch (e) { setErr(`Export failed: ${e.message}`); }
-    setBusy(false);
-  }
-  return (
-    <div className="sop-export">
-      <button type="button" className="secondary" disabled={busy} aria-haspopup="menu" aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}>{busy ? "Exporting…" : "Export ▾"}</button>
-      {open && (
-        <div className="sop-export__menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => go("csv")}>
-            <b>CSV</b><span>Opens in Excel · one row per rule</span>
-          </button>
-          <button type="button" role="menuitem" onClick={() => go("json")}>
-            <b>JSON</b><span>Every field, for backup or other tools</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
   const [renaming, setRenaming] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -148,7 +115,7 @@ function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
       <div className="sop-setbar__meta">
         {s.active ? <span className="sop-chip sop-chip--ok">{s.scope === "general" ? "Active — used in every lesson" : "Active — used in lessons"}</span> : <span className="sop-chip">Inactive</span>}
         <span className="muted sop-small">
-          {s.filename ? `From ${s.filename}` : "Typed in by hand"} · {s.n_enabled}/{s.n_rules} rules on ·
+          {s.filename ? `From ${s.filename}` : s.llm_model ? "Imported from a rules file" : "Typed in by hand"} · {s.n_enabled}/{s.n_rules} rules on{s.n_set_aside ? ` · ${s.n_set_aside} set aside` : ""} ·
           last change {new Date(s.updated_at).toLocaleString()}{s.updated_by ? ` by ${s.updated_by}` : ""}
         </span>
       </div>
@@ -163,7 +130,7 @@ function SetBar({ s, meta, others, onPick, onChanged, setErr }) {
         {s.active
           ? <button type="button" className="secondary" onClick={() => setConfirm("deactivate")}>Deactivate</button>
           : <button type="button" onClick={() => act(() => sopApi.activateSet(s.id))}>Make active</button>}
-        <ExportMenu s={s} meta={meta} setErr={setErr} />
+        <ExportMenu meta={meta} setErr={setErr} load={() => sopApi.getSet(s.id)} />
         {!s.active && <button type="button" className="secondary sop-danger" onClick={() => setConfirm("delete")}>Delete</button>}
       </div>
       {confirm === "deactivate" && (
@@ -191,17 +158,19 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [tagSel, setTagSel] = useState([]);
+  const [lessonSel, setLessonSel] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [pendingSel, setPendingSel] = useState(null);
   const [warn, setWarn] = useState([]);           // warnings from the last save (not stored)
+  const [blocked, setBlocked] = useState(null);   // set-aside rule: what stops it being added back (from the last save)
 
   const load = useCallback(async (keepSel) => {
     try {
       const x = await sopApi.getSet(setInfo.id);
       setData(x);
-      const pick = x.rules.find((r) => r.id === keepSel) || x.rules[0] || null;
+      const pick = x.rules.find((r) => r.id === keepSel) || x.rules.find((r) => !r.set_aside) || x.rules[0] || null;
       setSel(pick?.id ?? null);
       setEdit(pick ? { ...pick } : null);
     } catch (e) { setErr(e.message); }
@@ -212,16 +181,21 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
   const saved = rules.find((r) => r.id === sel) || null;
   const dirty = !!(edit && saved && !sameRule(edit, saved));
   const q = search.trim().toLowerCase();
+  // "All" / "On" / "Switched off" are the rules that belong to the set; set-aside rules have their own list
   const visible = rules.filter((r) =>
-    (filter === "all" || (filter === "on" ? r.enabled : !r.enabled)) &&
-    (!q || `${r.title} ${describe(meta, r)} ${r.source_quote || ""}`.toLowerCase().includes(q)) && tagMatch(r, tagSel));
-  const counts = useMemo(() => ({ all: rules.length, on: rules.filter((r) => r.enabled).length, off: rules.filter((r) => !r.enabled).length }), [rules]);
+    (filter === "aside" ? r.set_aside : !r.set_aside && (filter === "all" || (filter === "on" ? r.enabled : !r.enabled))) &&
+    (!q || `${r.title} ${describe(meta, r)} ${r.source_quote || ""}`.toLowerCase().includes(q)) && tagMatch(r, tagSel) && lessonMatch(r, lessonSel));
+  const counts = useMemo(() => {
+    const used = rules.filter((r) => !r.set_aside);
+    return { all: used.length, on: used.filter((r) => r.enabled).length, off: used.filter((r) => !r.enabled).length,
+      aside: rules.length - used.length };
+  }, [rules]);
 
   function select(id) {
     if (id === sel) return;
     if (dirty) { setPendingSel(id); return; }
     const r = rules.find((x) => x.id === id);
-    setSel(id); setEdit(r ? { ...r } : null); setErr(null); setWarn([]);
+    setSel(id); setEdit(r ? { ...r } : null); setErr(null); setWarn([]); setBlocked(null);
   }
   const onKey = useKeyNav(visible, sel, (r) => r.id, select);
   useEffect(() => {
@@ -237,6 +211,10 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
       setData((d) => ({ ...d, rules: d.rules.map((r) => (r.id === out.id ? out : r)) }));
       setEdit({ ...out });
       setWarn(out.issues || []);
+      setBlocked(out.set_aside ? out.blocked || null : null);
+      // follow the rule to the list it now belongs to
+      if (out.set_aside && filter !== "aside") setFilter("aside");
+      if (!out.set_aside && filter === "aside") setFilter("all");
       onChanged();
     } catch (e) {
       setErr(e.detail?.message || e.message);
@@ -272,16 +250,20 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
         <div className="sop-list">
           <input className="sop-search" type="search" placeholder="Search rules…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search rules" />
           <div className="sop-filters">
-            {[["all", "All"], ["on", "On"], ["off", "Switched off"]].map(([k, t]) => (
-              <button type="button" key={k} className={filter === k ? "is-on" : ""} onClick={() => setFilter(k)}>{t} <span>{counts[k]}</span></button>
+            {[["all", "All"], ["on", "On"], ["off", "Switched off"], ["aside", "Set aside"]].map(([k, t]) => (
+              <button type="button" key={k} className={filter === k ? "is-on" : ""} onClick={() => setFilter(k)}
+                title={k === "aside" ? "Kept with this rule set but not used in lessons. Edit them and add them back when they're right." : ""}>
+                {t} <span>{counts[k]}</span></button>
             ))}
           </div>
+          <LessonFilter meta={meta} rules={rules} value={lessonSel} onChange={setLessonSel} />
           <TagFilter meta={meta} rules={rules} value={tagSel} onChange={setTagSel} />
           <div className="sop-list__rows">
-            {visible.length === 0 && <div className="muted sop-empty">No rules match.</div>}
+            {visible.length === 0 && <div className="muted sop-empty">{filter === "aside" ? "No rules are set aside." : "No rules match."}</div>}
             {visible.map((r) => (
               <RuleRow key={r.id} meta={meta} rule={r} selected={r.id === sel} onSelect={() => select(r.id)}
-                dim={!r.enabled} status={!r.enabled ? "Off" : (r.id === sel && dirty ? "Unsaved" : null)}
+                dim={!r.enabled || r.set_aside}
+                status={r.id === sel && dirty ? "Unsaved" : r.set_aside ? "Set aside" : !r.enabled ? "Off" : null}
                 statusClass={r.id === sel && dirty ? "is-warn" : ""} />
             ))}
           </div>
@@ -302,19 +284,34 @@ function RuleSet({ meta, setInfo, others, onPick, onChanged }) {
               <div className="card">
                 <div className="sop-detail__head">
                   <h2>{edit.title || "Untitled rule"}</h2>
-                  <label className="sop-toggle">
-                    <input type="checkbox" checked={!!saved?.enabled} disabled={busy || dirty}
-                      title={dirty ? "Save or revert your edits first" : ""}
-                      onChange={(e) => save({ enabled: e.target.checked })} />
-                    <span>{saved?.enabled ? "On" : "Off"}</span>
-                  </label>
+                  {saved?.set_aside ? <span className="sop-chip sop-chip--warn">Set aside · not used in lessons</span> : (
+                    <label className="sop-toggle">
+                      <input type="checkbox" checked={!!saved?.enabled} disabled={busy || dirty}
+                        title={dirty ? "Save or revert your edits first" : ""}
+                        onChange={(e) => save({ enabled: e.target.checked })} />
+                      <span>{saved?.enabled ? "On" : "Off"}</span>
+                    </label>
+                  )}
                 </div>
                 <p className="sop-plain">{describe(meta, edit)}</p>
-                {warn.map((w, i) => <div key={i} className="sop-warn">Saved, but check: {w}</div>)}
+                {saved?.set_aside && (
+                  <div className="sop-aside">
+                    <b>Why it was set aside:</b> {saved.set_aside_reason || "No reason recorded."}
+                    <div className="muted sop-small">You can edit and save it as it is. <b>Add back</b> puts it into the rule set once it passes every check.</div>
+                  </div>
+                )}
+                {saved?.set_aside && blocked && <div className="sop-error">Before it can be added back: {blocked}</div>}
+                {warn.map((w, i) => <div key={i} className="sop-warn">{saved?.set_aside ? "Check" : "Saved, but check"}: {w}</div>)}
+                <LlmNote note={saved?.note} />
                 <RuleEditor meta={meta} rule={edit} onChange={setEdit} quoteEditable />
                 <div className="sop-btnrow">
                   <button type="button" disabled={!dirty || busy} onClick={() => save()}>{busy ? "Saving…" : "Save changes"}</button>
                   <button type="button" className="secondary" disabled={!dirty || busy} onClick={() => setEdit({ ...saved })}>Revert</button>
+                  {saved?.set_aside
+                    ? <button type="button" disabled={busy} title="Checks the rule, then puts it into the rule set (your unsaved edits are saved with it)"
+                        onClick={() => save({ ...editable(edit), set_aside: false })}>Add back to the rule set</button>
+                    : <button type="button" className="secondary" disabled={busy} title="Keep the rule with this set but stop using it in lessons"
+                        onClick={() => save({ ...(dirty ? editable(edit) : {}), set_aside: true })}>Set aside</button>}
                   <div className="spacer" />
                   <button type="button" className="secondary sop-danger" onClick={() => setConfirm("delete")}>Delete rule</button>
                 </div>
@@ -352,14 +349,14 @@ const ACTION_TXT = { create: "Created", update: "Edited", delete: "Deleted", act
 const FIELD_TXT = { tags: "tags", title: "title", kind: "type", metric: "measured value", target: "target", tol_hi: "+ tolerance", tol_lo: "− tolerance",
   min_value: "minimum", max_value: "maximum", op: "comparison", value: "value", gate_phase: "deadline phase", capture_at: "moment",
   phases: "phases", conditions: "conditions", severity: "severity", source_quote: "source", source_page: "page", note: "note", enabled: "on/off", name: "name",
-  aoi: "look at", gaze_measure: "gaze check" };
+  aoi: "look at", gaze_measure: "gaze check", set_aside: "set aside", set_aside_reason: "set-aside reason" };
 
 function changedFields(b, a) {
   if (!b || !a) return [];
   return Object.keys(FIELD_TXT).filter((k) => k in a && JSON.stringify(b[k]) !== JSON.stringify(a[k]))
     .map((k) => ({ k, from: b[k], to: a[k] }));
 }
-const show = (v) => (v == null || v === "" ? "—" : Array.isArray(v) ? (v.length ? v.map((x) => (typeof x === "object" ? `${x.metric} ${x.op} ${x.value}` : x)).join(", ") : "—") : typeof v === "boolean" ? (v ? "on" : "off") : String(v));
+const show = (v, k) => (k === "set_aside" ? (v ? "yes" : "no") : v == null || v === "" ? "—" : Array.isArray(v) ? (v.length ? v.map((x) => (typeof x === "object" ? `${x.metric} ${x.op} ${x.value}` : x)).join(", ") : "—") : typeof v === "boolean" ? (v ? "on" : "off") : String(v));
 
 function History({ meta, setId, ruleId }) {
   const [rows, setRows] = useState(null);
@@ -386,7 +383,7 @@ function History({ meta, setId, ruleId }) {
             </div>
             {diffs.length > 0 && (
               <ul className="sop-hist__diff">
-                {diffs.map((x) => <li key={x.k}><span className="muted">{FIELD_TXT[x.k]}:</span> <s>{show(x.from)}</s> → <b>{show(x.to)}</b></li>)}
+                {diffs.map((x) => <li key={x.k}><span className="muted">{FIELD_TXT[x.k]}:</span> <s>{show(x.from, x.k)}</s> → <b>{show(x.to, x.k)}</b></li>)}
               </ul>
             )}
             {(h.action === "create" || h.action === "delete") && snap?.kind && <div className="muted sop-small">{describe(meta, snap)}</div>}

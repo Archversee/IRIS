@@ -16,6 +16,15 @@ using a C172 SOP on some other type would be worse than none.
 Training-handbook rules (FAA handbooks or the school's own, scope 'general')
 apply to every aircraft, so they are loaded on top of the aircraft's rules --
 and on their own when the aircraft has no rules or isn't recognised.
+
+Only the rules of the lesson's TYPE are loaded: 'normal' (the default),
+'emergency' or 'instrument'. A lesson says which it is with
+
+    rules_lesson_type: emergency        # in its lessons/<lesson>.yaml
+
+so an engine-failure glide speed is never checked in an ordinary circuit.
+Rules that name an aircraft speed ("1.3 VSO", "the approach speed +10/-5")
+get their numbers here, from the flown aircraft's profile (v_speeds).
 """
 from __future__ import annotations
 
@@ -23,7 +32,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from .schema import aircraft_profiles
+from .schema import APP_ROOT, LESSON_TYPES, aircraft_profiles, resolve_ref
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +60,21 @@ class SopRuntime:
         self.store = RuleStore((cfg.get("database") or {}).get("url"))
         self.default = Path(default_profile).stem
         self.override = ((cfg.get("sop") or {}).get("aircraft_override") or "").strip() or None
+        self.lesson_path = cfg.get("lesson")
         self.active: dict | None = None      # {"rules": [...], ...} for the evaluator
+
+    def lesson_type(self, lesson_type: str | None = None) -> str:
+        """The kind of lesson being flown: the argument, else `rules_lesson_type`
+        in the configured lesson file, else 'normal'."""
+        if lesson_type in LESSON_TYPES:
+            return lesson_type
+        try:
+            import yaml
+            path = APP_ROOT / str(self.lesson_path or "")
+            lt = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("rules_lesson_type") if path.is_file() else None
+        except Exception:
+            lt = None
+        return lt if lt in LESSON_TYPES else "normal"
 
     def resolve(self, ident: dict | None) -> dict:
         profiles = aircraft_profiles()
@@ -67,18 +90,38 @@ class SopRuntime:
         return {"aircraft_id": pid, "aircraft_name": names.get(pid, pid), "source": source,
                 "detected": detected, "why": why}
 
-    async def load(self, ident: dict | None) -> dict:
+    async def load(self, ident: dict | None, lesson_type: str | None = None) -> dict:
         """status: active (the aircraft has rules) | none (it has none) |
         no_profile (aircraft not recognised) | unavailable (DB down). Handbook
         rules ride along in every case but 'unavailable': n_rules counts all
-        loaded rules, n_handbook_rules / handbooks the handbook part."""
+        loaded rules, n_handbook_rules / handbooks the handbook part.
+        Only rules of this lesson's type are loaded; rules that name an
+        aircraft speed are given that aircraft's number (n_unresolved = rules
+        left out because its profile doesn't give the speed)."""
         info = self.resolve(ident)
+        lt = self.lesson_type(lesson_type)
+        info["lesson_type"] = lt
         self.active = None
         try:
-            act = await asyncio.wait_for(self.store.active_rules(info["aircraft_id"]), timeout=4)
+            act = await asyncio.wait_for(self.store.active_rules(info["aircraft_id"], lt), timeout=4)
         except Exception as e:
             log.warning("SOP load failed: %s", e)
             return {**info, "status": "unavailable", "error": str(e)}
+        if act:
+            speeds = next((a["profile"].get("v_speeds") or {} for a in aircraft_profiles()
+                           if a["id"] == info["aircraft_id"]), {})
+            resolved = [resolve_ref(r, speeds) for r in act["rules"]]
+            dropped = [r for r, x in zip(act["rules"], resolved) if x is None]
+            act["rules"] = [x for x in resolved if x is not None]
+            for layer in act.get("layers") or []:
+                layer["n_rules"] = sum(1 for r in act["rules"] if r["rule_set_id"] == layer["rule_set_id"])
+            info["n_unresolved"] = len(dropped)
+            # never silent: which rules were left out, and which speed the profile needs
+            info["unresolved"] = [{"title": r.get("title"), "ref_speed": r.get("ref_speed")} for r in dropped]
+            if dropped:
+                log.warning("%d rule(s) NOT loaded - profiles/aircraft/%s.yaml has no %s under v_speeds: %s", len(dropped),
+                            info["aircraft_id"], ", ".join(sorted({str(r.get("ref_speed")) for r in dropped})),
+                            "; ".join(str(r.get("title")) for r in dropped))
         self.active = act
         layers = (act or {}).get("layers") or []
         books = [x for x in layers if x["scope"] == "general"]

@@ -22,7 +22,10 @@ log = logging.getLogger(__name__)
 RULE_FIELDS = ("kind", "title", "phases", "metric", "target", "tol_hi", "tol_lo",
                "min_value", "max_value", "op", "value", "gate_phase", "capture_at",
                "conditions", "severity", "source_quote", "source_page", "quote_score",
-               "note", "enabled", "tags", "aoi", "gaze_measure")
+               "note", "enabled", "tags", "aoi", "gaze_measure", "set_aside", "set_aside_reason",
+               "lesson_types", "ref_speed", "ref_factor")
+SCHEMA_OUTDATED = ("The rules database is from an older version of MAVIS - run "
+                   "psql -U postgres -d postgres -f db/schema_sop_rules.sql (it is safe to re-run)")
 _JSONB = {"conditions", "llm_draft", "before", "after"}
 
 
@@ -67,11 +70,21 @@ class RuleStore:
             self._pool = None
 
     async def ping(self) -> bool:
+        return (await self.health())[0]
+
+    async def health(self) -> tuple[bool, str | None]:
+        """(usable, what is wrong). Usable = reachable AND the tables have the
+        columns this version writes (db/schema_sop_rules.sql has been run)."""
         try:
             async with self.acquire() as c:
-                return bool(await c.fetchval("select to_regclass('public.flight_rules') is not null"))
-        except Exception:
-            return False
+                if not await c.fetchval("select to_regclass('public.flight_rules') is not null"):
+                    return False, "The SOP tables don't exist yet - run db/schema_sop_rules.sql"
+                n = await c.fetchval("select count(*) from information_schema.columns where table_schema='public' "
+                                     "and table_name='flight_rules' and column_name = any($1::text[])",
+                                     ["lesson_types", "ref_speed", "ref_factor", "set_aside"])
+                return (True, None) if n == 4 else (False, SCHEMA_OUTDATED)
+        except Exception as e:
+            return False, f"Postgres not reachable ({e})"
 
     # ------------------------------------------------------------ save a reviewed draft
     async def save_draft(self, draft: dict, pages: list[dict], rules: list[dict],
@@ -81,11 +94,12 @@ class RuleStore:
         set is bound to that aircraft (aircraft=...); a training handbook's set
         (handbook='afh', ...) applies to every aircraft, one active per book."""
         scope = "general" if handbook else "aircraft"
+        sha = draft.get("sha256")       # None: imported from a rules file with no PDF on this machine
         async with self.acquire() as c, c.transaction():
-            doc_id = await c.fetchval("select id from sop_documents where sha256=$1", draft["sha256"])
-            if doc_id is not None:      # same PDF saved before: point at the copy that exists now
+            doc_id = await c.fetchval("select id from sop_documents where sha256=$1", sha) if sha else None
+            if doc_id is not None and draft.get("pdf_path"):   # same PDF saved before: point at the copy that exists now
                 await c.execute("update sop_documents set stored_path=$2 where id=$1", doc_id, draft["pdf_path"])
-            if doc_id is None:
+            if doc_id is None and sha and pages and draft.get("pdf_path"):
                 doc_id = await c.fetchval(
                     "insert into sop_documents (filename, sha256, page_count, ocr_pages, stored_path, uploaded_by) "
                     "values ($1,$2,$3,$4,$5,$6) returning id",
@@ -115,8 +129,9 @@ class RuleStore:
         async with self.acquire() as c:
             rows = await c.fetch("""
                 select s.*, d.filename, d.page_count,
-                       count(r.id) as n_rules,
-                       count(r.id) filter (where r.enabled) as n_enabled
+                       count(r.id) filter (where not r.set_aside) as n_rules,
+                       count(r.id) filter (where r.enabled and not r.set_aside) as n_enabled,
+                       count(r.id) filter (where r.set_aside) as n_set_aside
                   from flight_rule_sets s
                   left join sop_documents d on d.id = s.document_id
                   left join flight_rules r on r.rule_set_id = s.id
@@ -129,7 +144,7 @@ class RuleStore:
     async def get_set(self, rs: UUID) -> dict | None:
         async with self.acquire() as c:
             head = await c.fetchrow("""
-                select s.*, d.filename, d.page_count, d.ocr_pages
+                select s.*, d.filename, d.page_count, d.ocr_pages, d.sha256 as document_sha256
                   from flight_rule_sets s left join sop_documents d on d.id = s.document_id
                  where s.id = $1""", rs)
             if not head:
@@ -243,6 +258,22 @@ class RuleStore:
             rows = await c.fetch("select page_no, text, source from sop_pages where document_id=$1", UUID(str(doc_id)))
         return ({r["page_no"]: r["text"] for r in rows}, {r["page_no"] for r in rows if r["source"] == "ocr"})
 
+    async def find_document(self, sha: str | None, filename: str | None) -> dict | None:
+        """A saved document by the PDF's SHA-256, else by file name (only when
+        exactly one saved document has that name)."""
+        async with self.acquire() as c:
+            if sha:
+                row = await c.fetchrow("select * from sop_documents where sha256=$1", sha)
+                return _clean(row) if row else None
+            rows = await c.fetch("select * from sop_documents where filename=$1 limit 2", filename) if filename else []
+        return _clean(rows[0]) if len(rows) == 1 else None
+
+    async def document_pages(self, doc_id) -> list[dict]:
+        async with self.acquire() as c:
+            rows = await c.fetch("select page_no, text, source, ocr_confidence from sop_pages "
+                                 "where document_id=$1 order by page_no", UUID(str(doc_id)))
+        return [dict(r) for r in rows]
+
     async def get_page(self, doc_id: UUID, page_no: int) -> dict | None:
         async with self.acquire() as c:
             row = await c.fetchrow("select * from sop_pages where document_id=$1 and page_no=$2", doc_id, page_no)
@@ -253,10 +284,15 @@ class RuleStore:
             row = await c.fetchrow("select * from sop_documents where id=$1", doc_id)
         return dict(row) if row else None
 
-    async def active_rules(self, profile: str | None) -> dict | None:
+    async def active_rules(self, profile: str | None, lesson_type: str | None = None) -> dict | None:
         """What a lesson loads: the enabled rules of the aircraft's active set
         (profile None = aircraft unknown: none) PLUS every active training-
-        handbook set, which applies to all aircraft. Each rule says which
+        handbook set, which applies to all aircraft. Rules that are switched
+        off or set aside are never included. lesson_type ('normal',
+        'emergency', 'instrument'): only the rules used in that kind of
+        lesson; None = every lesson type (each rule lists its own). A rule
+        with ref_speed still holds DIFFERENCES from an aircraft speed here --
+        sop/runtime.py turns them into numbers for the aircraft. Each rule says which
         layer it came from ("aircraft" / "general") and, for handbook rules,
         which book. Top-level rule_set_id/name/filename describe the aircraft
         set (None when only handbook rules are active)."""
@@ -271,10 +307,15 @@ class RuleStore:
             rules = await c.fetch("""
                 select r.*, s.scope as layer, s.handbook from flight_rules r
                   join flight_rule_sets s on s.id = r.rule_set_id
-                 where r.rule_set_id = any($1::uuid[]) and r.enabled
-                 order by (s.scope = 'aircraft') desc, s.handbook, r.sort_order, r.id""", [s["id"] for s in sets])
+                 where r.rule_set_id = any($1::uuid[]) and r.enabled and not r.set_aside
+                   and ($2::text is null or $2 = any(r.lesson_types))
+                 order by (s.scope = 'aircraft') desc, s.handbook, r.sort_order, r.id""",
+                                 [s["id"] for s in sets], lesson_type)
         ac = next((s for s in sets if s["scope"] == "aircraft"), None)
+        from .schema import used_in_text
         rules = [_clean(r) for r in rules]
+        for r in rules:                 # said in words on every rule: "Instrument-flying lessons only"
+            r["used_in"] = used_in_text(r.get("lesson_types"))
         layers = [{"rule_set_id": str(s["id"]), "name": s["name"], "scope": s["scope"], "handbook": s["handbook"],
                    "filename": s["filename"], "n_rules": sum(1 for r in rules if r["rule_set_id"] == str(s["id"]))}
                   for s in sets]
@@ -305,10 +346,14 @@ class RuleStore:
 def _db_val(k: str, v):
     if k in ("phases", "tags"):
         return list(v or [])
+    if k == "lesson_types":
+        return list(v or ["normal"])
     if k == "conditions":
         return list(v or [])
     if k == "enabled":
         return True if v is None else bool(v)
+    if k == "set_aside":
+        return bool(v)
     return v
 
 

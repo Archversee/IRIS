@@ -47,6 +47,7 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
 .sop-drop h2 { margin: 6px 0 4px; font-size: 18px; }
 .sop-drop p { margin: 0 0 16px; font-size: 13px; }
 .sop-drop__icon { font-size: 28px; color: var(--accent); }
+.sop-drop .sop-drop__alt { margin: 14px 0 0; }
 .sop-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; list-style: none; padding: 0; margin: 0; counter-reset: s; }
 .sop-steps li { counter-increment: s; font-size: 12.5px; color: var(--muted); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
 .sop-steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px;
@@ -239,3 +240,36 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
 .sop-actabs__gen { border-style: dashed !important; }
 .sop-actabs__gen.is-on { border-style: solid !important; }
 .sop-gen-note { margin: -4px 0 10px; }
+.sop-llmnote { font-size: 13px; line-height: 1.5; padding: 8px 12px; margin: 8px 0; border-radius: 0 6px 6px 0;
+  border-left: 3px solid var(--accent); background: rgba(74, 168, 255, 0.07); }
+.sop-aside { font-size: 13px; line-height: 1.5; padding: 8px 12px; margin: 8px 0; border-radius: 0 6px 6px 0;
+  border-left: 3px solid var(--muted); background: var(--panel-2); }
+.sop-export__note { font-size: 11.5px; color: var(--muted); padding: 6px 10px 4px; border-top: 1px solid var(--border); margin-top: 2px; }
+
+/* lesson types (normal / emergency / instrument) and aircraft-relative speeds */
+.sop-tagfilter__label { font-size: 11px; color: var(--muted, #8b98a8); align-self: center; margin-right: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.sop-tag--lesson { border-style: solid; }
+.sop-tag--mini.sop-tag--emergency { color: #ffb4a8; border-color: rgba(255, 120, 100, 0.55); background: rgba(255, 120, 100, 0.1); }
+.sop-tag--mini.sop-tag--instrument { color: #b9c8ff; border-color: rgba(130, 150, 255, 0.55); background: rgba(130, 150, 255, 0.1); }
+.sop-tag--mini.sop-tag--normal { color: var(--text); }
+.sop-ref { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
+.sop-ref .sop-unit { flex: 0 0 110px; max-width: 110px; }
+.sop-ref select { flex: 0 1 340px; min-width: 0; }
+.sop-phase--lesson.is-on:disabled { opacity: 1; cursor: default; }
+.sop-ref__note { margin-top: 6px; }
+.sop-usedin { margin-top: 6px; }
+.sop-usedin--only { color: #ffd28a; font-weight: 600; }
+
+/* FAA suggestions and the model switch */
+.sop-suggest { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border: 1px solid rgba(120, 200, 140, 0.45);
+  background: rgba(120, 200, 140, 0.08); border-radius: 8px; }
+.sop-suggest--bar { margin: 0 0 12px; }
+.sop-suggest button { flex: 0 0 auto; }
+.sop-chip--faa { border-color: rgba(120, 200, 140, 0.6); color: #a9e3b8; }
+.sop-llmnote--faa { border-color: rgba(120, 200, 140, 0.45); }
+.sop-models { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.sop-models__head { display: flex; flex-direction: column; gap: 2px; }
+.sop-models__list { flex-wrap: wrap; align-self: flex-start; }
+.sop-models__list button:disabled { opacity: 0.5; cursor: not-allowed; }
+.sop-models__refresh { min-width: 34px; }
+.sop-models code { background: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 4px; }
