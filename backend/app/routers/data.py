@@ -74,6 +74,16 @@ async def get_eye(
     return await _query_timeseries("eye_tracking_data", session_id, start, end, max_points)
 
 
+@router.get("/events")
+async def get_events(session_id: UUID):
+    """Start/end of each graded event (to-do step / phase) in order, as logged
+    by MAVIS. end_ts is null for an event still in progress (live session)."""
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            "select * from flight_events where session_id = $1 order by seq", session_id)
+    return [dict(r) for r in rows]
+
+
 @router.get("/summary")
 async def get_summary(session_id: UUID):
     """Counts + time bounds, used to bootstrap the review page."""

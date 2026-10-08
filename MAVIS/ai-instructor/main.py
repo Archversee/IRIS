@@ -33,8 +33,9 @@ from core.scoring import Scorer
 from core.leaderboard import Leaderboard
 from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
+from core.event_log import EventLog
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
-from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer,
+from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, runway_start,
                                   start_position)
 from lessons import lesson00_preflight, lesson00_cockpit
@@ -123,6 +124,16 @@ def make_scorer(lesson, aircraft):
     return (FamiliarizationScorer if is_familiarization(lesson) else Scorer)(lesson, aircraft)
 
 
+def event_log_setup(lesson, engine) -> tuple[dict, str]:
+    """(labels, kind) for the flight event log: the familiarization to-do
+    steps under the names the to-do list shows, or the circuit's phases."""
+    if is_familiarization(lesson):
+        notes = lesson.get("step_notes") or {}
+        return ({sid: (notes.get(sid) or {}).get("title") or STEP_TITLES.get(sid, sid)
+                 for sid in engine.detector.ORDER}, "exercise")
+    return {}, "phase"
+
+
 def lesson_state(lesson) -> dict:
     """state["lesson"]: what the web map needs to draw this lesson."""
     out = {"runway": lesson["runway"], "pattern": lesson["pattern"],
@@ -186,6 +197,12 @@ async def amain(cfg):
     engine = make_engine(cfg, lesson, aircraft)
     scorer = make_scorer(lesson, aircraft)
     recorder = FlightRecorder()          # §15: capture each run (groundwork for reference re-score)
+    def _sim_now() -> float:
+        """Telemetry clock (== flight_data.ts in IRIS; differs from wall time in replay)."""
+        return (state.get("tel") or {}).get("t") or time.time()
+
+    event_log = EventLog()               # start/end time of each to-do step / phase, for IRIS to grade
+    event_log.configure(*event_log_setup(lesson, engine))
     board = Leaderboard(HERE / "data" / "leaderboard.json")
     board.seed_demo_if_empty()
     lesson_id = Path(cfg["lesson"]).stem
@@ -207,6 +224,7 @@ async def amain(cfg):
                    # True from Start until quit/restart -- lets the web UI
                    # reattach to a running session after navigating away.
                    "lesson_running": False,
+                   "flight_events": [],
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "theme": cfg["web"].get("theme", {}),
@@ -731,6 +749,8 @@ async def amain(cfg):
         engine.restart()
         scorer.reset()
         recorder.reset()
+        event_log.reset()
+        state["flight_events"] = []
         scored["done"] = False
         coach.resume()
         session.pop("reference_recording", None)
@@ -814,6 +834,7 @@ async def amain(cfg):
                                                on_ground=gnd))
         if ok:
             scorer.note_retry()
+            event_log.retried(_sim_now())     # the abandoned attempt ends here; the re-fly is a new attempt
             engine.load_phase(want, ckpt["circuit"])
             state["track"].append([])          # new attempt = new track segment (all attempts kept)
         else:
@@ -884,6 +905,8 @@ async def amain(cfg):
         scorer = make_scorer(lesson, aircraft)
         refs = ReferenceRegistry(lesson, lesson_id)
         recorder.reset()
+        event_log.configure(*event_log_setup(lesson, engine))
+        state["flight_events"] = []
         attempts.clear()
         checkpoints.clear()
         scored["done"] = False
@@ -1265,7 +1288,8 @@ async def amain(cfg):
         pending["recording"] = recorder.to_dict(meta={
             "lesson": lesson_id, "aircraft": Path(cfg["aircraft_profile"]).stem,
             "mode": session["mode"], "reference": session.get("reference", "planned"),
-            "practice": practice, "name": session.get("name", "")})
+            "practice": practice, "name": session.get("name", ""),
+            "events": event_log.to_list()})
         try:
             recorder.save(HERE / "data" / "recordings" / "last_run.json")
         except Exception as e:
@@ -1295,6 +1319,8 @@ async def amain(cfg):
         if scored["done"]:
             return
         scored["done"] = True
+        event_log.close(_sim_now(), "abandoned")
+        state["flight_events"] = event_log.to_list()
         stop_speech()
         coach.pause()
         started.clear()
@@ -1430,6 +1456,11 @@ async def amain(cfg):
                     if not getattr(engine, "held", False):   # frozen for an explanation: not flying
                         scorer.sample(tel.as_dict(), geom_d, ctrl.as_dict(), engine.phase)
                     recorder.sample(tel.as_dict(), ctrl.as_dict(), geom_d, engine.phase)
+                    # the to-do list / phase tracker decides event boundaries: when it
+                    # moves on, the previous event ends and the next starts, at this tick
+                    if event_log.observe(engine.phase, tel.t, engine.circuit,
+                                         getattr(engine, "skipped", ())):
+                        state["flight_events"] = event_log.to_list()
                     if prev_on_ground is False and tel.on_ground \
                             and engine.phase in ("FLARE_TOUCHDOWN", "FINAL", "ROLLOUT"):
                         scorer.on_landing(tel.as_dict(), geom_d)
