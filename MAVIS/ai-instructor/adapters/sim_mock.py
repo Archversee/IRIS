@@ -181,6 +181,22 @@ class MockAdapter:
         self.frozen = bool(on)
         return True
 
+    def demo_control(self, cmd: dict) -> bool:
+        """Instructor demonstration (core/demo.py): the mock just flies to
+        the command's heading / altitude / speed; it has no autopilot, throttle
+        or rudder of its own, so `ap`, `throttle`, `vs` and `rudder` are moot
+        (a rudder demo carries the heading the nose swings to)."""
+        if not self._free:
+            return False
+        if cmd.get("hdg") is not None:
+            self._tgt["hdg"] = wrap(float(cmd["hdg"]))
+        if cmd.get("alt") is not None:
+            self._tgt["alt"] = max(0.0, (float(cmd["alt"]) - self.elev) * FT2M)
+        if cmd.get("spd") is not None:
+            self._tgt["spd"] = float(cmd["spd"])
+        self._tgt["home"] = False
+        return True
+
     def comply(self, code: str, data: dict):
         if self._free:
             m = data.get("mock") if code.startswith("PHASE_ENTER_") else None
