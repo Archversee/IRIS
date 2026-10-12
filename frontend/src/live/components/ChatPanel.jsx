@@ -44,7 +44,7 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     }
   }
 
-  const disabled = chatEnabled === false;
+  const disabled = false;   // questions are never blocked, in any mode
 
   // status line: "Listening…"/"Transcribing…" stay up; results fade after a few seconds
   function showStatus(msg, sticky = false) {
@@ -68,6 +68,7 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     let rec;
     try {
       rec = await recordMicWav({
+        maxMs: 60000,
         stopSignal: stop,
         onReady: () => showStatus("Speak now… release when done", true),
       });
@@ -79,10 +80,10 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
       return;
     }
     setTalking(false);
-    if (rec.durationMs < 350 || rec.maxAbs < 0.0005) {
+    if (rec.durationMs < 200 || rec.maxAbs < 0.0005) {
       busyRef.current = false;
       const heard = `${(rec.durationMs / 1000).toFixed(1)} s, peak ${rec.maxAbs.toFixed(4)}, audio ${rec.engine}; input: ${rec.device}`;
-      showStatus(`${rec.durationMs < 350 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
+      showStatus(`${rec.durationMs < 200 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
       return;
     }
     showStatus("Transcribing…", true);

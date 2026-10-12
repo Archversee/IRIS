@@ -221,7 +221,7 @@ class Coach:
         # (the trainee's question is already logged to the transcript by the caller)
         out = None
         try:
-            out = await self._ollama(sys, question, timeout=12.0)
+            out = await self._ollama(sys, question, timeout=40.0)
             out = (out or "").strip()
         except Exception as e:
             log.warning("Q&A LLM failed: %s", e)

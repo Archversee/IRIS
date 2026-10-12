@@ -121,10 +121,7 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
     @app.post("/chat")
     async def chat(msg: ChatMsg):
         # Exam (and any policy with chat:false) rejects typed Q&A server-side too
-        pol = (state.get("session") or {}).get("policy") or {}
-        if pol.get("chat") is False:
-            return {"ok": False, "reason": "chat_disabled"}
-        asyncio.create_task(actions["chat"](msg.text.strip()[:400]))
+        asyncio.create_task(actions["chat"](msg.text.strip()[:2000]))
         return {"ok": True}
 
     @app.post("/session")
@@ -298,14 +295,11 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
 
     @app.post("/voice/ptt")
     async def voice_ptt(audio: UploadFile = File(...), name: str = Form("")):
-        pol = (state.get("session") or {}).get("policy") or {}
-        if pol.get("chat") is False:
-            return {"ok": False, "reason": "chat_disabled"}
         if not stt:
             return {"ok": False, "reason": "stt_unavailable"}
         from voice.audio_util import prepare_utterance
         data = await audio.read()
-        pcm, reason = prepare_utterance(data, min_s=0.35, min_voiced=0.08, min_rms=0.006)
+        pcm, reason = prepare_utterance(data, min_s=0.2, min_voiced=0.02, min_rms=0.002)
         if pcm is None:
             return {"ok": False, "reason": reason or "bad_audio"}
 
@@ -334,7 +328,7 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
                  (text or "").strip()[:120])
         if not text:
             return {"ok": False, "reason": "empty", "similarity": sim}
-        text = text.strip()[:400]
+        text = text.strip()[:2000]
         asyncio.create_task(actions["chat"](text))
         return {
             "ok": True,
