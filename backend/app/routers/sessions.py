@@ -81,6 +81,10 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         # state push from MAVIS (which otherwise keeps polling/broadcasting
         # telemetry regardless of whether a lesson was quit).
         mavis_bridge.mark_ended(session_id)
+    elif "ended_at" in fields:
+        # cleared (null): "Fly again" after a lesson ended on its own --
+        # flying again under the same session, LiveAdapter.py records again
+        mavis_bridge.mark_reopened(session_id)
     return dict(row)
 
 

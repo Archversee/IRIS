@@ -8,7 +8,7 @@ import DemoBanner from "./DemoBanner.jsx";
 
 // Two columns: avatar + chat on the left, and the ground track (planned
 // vs. flown path) filling the whole right side top to bottom.
-export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard }) {
+export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, onFlyAgain }) {
   return (
     <div className="mavis-hud">
       <div className="mavis-hud__left">
@@ -36,7 +36,7 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
         {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
       </div>
 
-      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} />}
+      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} onFlyAgain={onFlyAgain} />}
     </div>
   );
 }

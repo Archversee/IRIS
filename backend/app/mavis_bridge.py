@@ -401,3 +401,13 @@ def mark_ended(session_id) -> None:
         cur = _bridge._sessions.get(str(session_id))
         if cur is not None:
             cur.ended = True
+
+
+def mark_reopened(session_id) -> None:
+    """The opposite of mark_ended(): ended_at was cleared again because the
+    trainee pressed "Fly again" after a lesson finished on its own -- relay
+    and store this session's telemetry again."""
+    if _bridge is not None:
+        cur = _bridge._sessions.get(str(session_id))
+        if cur is not None:
+            cur.ended = False

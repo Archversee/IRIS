@@ -33,10 +33,12 @@ class SessionUpdate(BaseModel):
     aircraft: str | None = None
     sim_source: str | None = None
     notes: str | None = None
-    # Set by MAVIS's own End Session/Main-menu flow the moment the trainee
-    # actually quits (not on every scorecard -- "Fly again" keeps the same
-    # session_id going for another circuit). This is what Live Monitor's
-    # /sessions/running filters on to know a session is still in progress.
+    # Set by MAVIS's End Session flow the moment the trainee quits, and when a
+    # lesson finishes on its own (its scorecard appears) -- so OBS stops
+    # either way. "Fly again" keeps the same session_id going and sends null
+    # to clear it (LiveAdapter.py then starts recording again). This is what
+    # Live Monitor's /sessions/running filters on to know a session is in
+    # progress.
     ended_at: datetime | None = None
 
 

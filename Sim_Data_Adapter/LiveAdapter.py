@@ -100,8 +100,8 @@ MAVIS_WS_URL = "ws://localhost:6945/ws"  # MAVIS -- source of the session_id thi
 # to; main() also reads it right after pulling a fresh id off _session_queue.
 SESSION_ID: str | None = None
 
-# One ("start", session_id), ("end", session_id) or ("deleted", session_id)
-# event per session lifecycle change, from session_watcher/session_end_watcher,
+# One ("start" | "end" | "resume" | "deleted", session_id) event per session
+# lifecycle change, from session_watcher/session_end_watcher,
 # in order -- main() consumes these to know when to start a new OBS
 # recording, stop the current one, or both. The session_id travels with
 # every event (rather than a bare sentinel) so an "end" that was queued
@@ -200,6 +200,11 @@ def session_end_watcher() -> None:
             elif status == "ended" and s == sid and s != signaled_end:
                 signaled_end = s
                 _session_queue.put(("end", s))
+            elif status == "running" and s == sid and s == signaled_end:
+                # ended_at cleared again: "Fly again" after a lesson that
+                # finished on its own -- same session, record the new flight
+                signaled_end = None
+                _session_queue.put(("resume", s))
         time.sleep(2)
 
 
@@ -646,7 +651,7 @@ def main():
         paths = stop_obs_recordings(obs_clients)
         if paths:
             register_recordings(sid, paths)
-            saved[sid] = paths
+            saved[sid] = saved.get(sid, []) + paths   # Fly again: one session, several recordings
             with _recent_lock:
                 if sid not in _recent_sids:
                     _recent_sids.append(sid)
@@ -670,6 +675,25 @@ def main():
                 with _recent_lock:
                     if sid in _recent_sids:
                         _recent_sids.remove(sid)
+                continue
+
+            if kind == "resume":
+                if sid != SESSION_ID or recording:
+                    continue
+                if ENABLE_OBS_RECORDING and not obs_clients:
+                    try:
+                        obs_clients = connect_obs_clients()
+                    except Exception as e:
+                        print(f"[obs] couldn't connect ({e}); continuing without video recording.")
+                        obs_clients = []
+                if obs_clients:
+                    try:
+                        start_obs_recordings(obs_clients)
+                        recording = True
+                        print(f"Session {sid} flying again -- recording again.")
+                    except Exception as e:
+                        print(f"[obs] couldn't start recording ({e}); continuing without video recording.")
+                        obs_clients = []
                 continue
 
             if kind == "end":

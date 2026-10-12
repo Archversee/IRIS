@@ -8,14 +8,15 @@ const METRIC_LABEL = { altitude: "height hold", bank: "turns", climb_speed: "cli
 // Ported to match the original app's #scoreView styling (grade-pill
 // gradients, metric bars, debrief text). The scoring guide lives in the
 // sidebar (Scoring Guide page) rather than as a button here.
-export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard }) {
+export default function ScorecardOverlay({ scorecard, onMainMenu, onDiscard, onFlyAgain }) {
   const scores = scorecard.scores || {};
 
-  // No parent callback needed here -- MAVIS clears state.scorecard on
-  // restart, so this overlay just disappears once the new attempt begins.
-  // restart alone only reset MAVIS and left the HUD idle; relaunch also puts
-  // the aircraft back at the start and begins the lesson again
+  // MAVIS clears state.scorecard on relaunch, so this overlay just
+  // disappears once the new attempt begins. relaunch (not restart) also puts
+  // the aircraft back at the start and begins the lesson again. LiveCoach's
+  // onFlyAgain also re-opens the session so OBS records the new flight.
   async function flyAgain() {
+    if (onFlyAgain) return onFlyAgain();
     try {
       await mavisApi.relaunch();
     } catch {
