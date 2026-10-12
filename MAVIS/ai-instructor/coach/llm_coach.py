@@ -220,13 +220,20 @@ class Coach:
                "e.g. 10.0 = 1000 HRS), never invent a clock time.")
         # (the trainee's question is already logged to the transcript by the caller)
         out = None
+        why = ""
         try:
             out = await self._ollama(sys, question, timeout=40.0)
             out = (out or "").strip()
+            if not out:
+                why = f"The model {self.model} returned an empty reply."
         except Exception as e:
-            log.warning("Q&A LLM failed: %s", e)
+            why = self._llm_failure(e)
+            log.warning("Q&A LLM failed: %s -- %s", type(e).__name__, why)
         if not out:
             out = self._offline_answer(question)
+        if not out and why:
+            # say what is actually wrong instead of pretending it is a teaching call
+            out = why
         if not out:
             out = ("I'll cover that on the ground. For now, "
                    "eyes up and keep flying, you're doing great.")
@@ -258,6 +265,21 @@ class Coach:
         except Exception as e:
             log.debug("extract_time failed: %s", e)
             return None
+
+    def _llm_failure(self, e: Exception) -> str:
+        """A one-sentence reason a question got no answer from the model."""
+        if isinstance(e, httpx.HTTPStatusError):
+            code = e.response.status_code
+            if code == 404:
+                return (f"Ollama doesn't have the model {self.model}. "
+                        f"On the Ollama PC run: ollama pull {self.model}")
+            return f"Ollama at {self.url} returned an error ({code})."
+        if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)):
+            return (f"I can't reach the language model at {self.url}. "
+                    "Check Ollama is running and the address in config.yaml is right.")
+        if isinstance(e, httpx.TimeoutException):
+            return f"The language model at {self.url} took too long to answer."
+        return f"The language model failed ({type(e).__name__})."
 
     async def _ollama(self, system: str, user: str, timeout: float) -> str:
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as cli:
