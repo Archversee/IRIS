@@ -303,7 +303,18 @@ class Coach:
                 r = await cli.post(f"{self.url}/api/chat", json=body)
             r.raise_for_status()
             self.llm_ok = True
-            msg = r.json().get("message") or {}
+            j = r.json()
+            msg = j.get("message") or {}
+            # Ollama's own timings say where the time went: load_duration is the model
+            # (re)loading into memory, eval_duration is generating, prompt_eval the input
+            ns = 1e9
+            gen_s = (j.get("eval_duration") or 0) / ns
+            log.info("LLM %s: total %.1fs (load %.1fs, prompt %s tok %.1fs, generate %s tok %.1fs = %.0f tok/s, "
+                     "thinking %s chars)",
+                     self.model, (j.get("total_duration") or 0) / ns, (j.get("load_duration") or 0) / ns,
+                     j.get("prompt_eval_count"), (j.get("prompt_eval_duration") or 0) / ns,
+                     j.get("eval_count"), gen_s, (j.get("eval_count") or 0) / gen_s if gen_s else 0,
+                     len(msg.get("thinking") or ""))
             out = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
             if not out:
                 log.warning("Ollama returned no answer text (model %s, thinking field %s chars, "
