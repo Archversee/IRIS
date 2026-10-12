@@ -38,6 +38,6 @@ exam:
   force_repeat: false
   coaching: silent         # safety-only
   guidance: direct
-  chat: false
+  chat: true               # questions are never blocked, in any mode
   score_caps: false
   auto_practice_summary: true

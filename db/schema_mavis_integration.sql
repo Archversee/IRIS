@@ -109,3 +109,34 @@ create table if not exists leaderboard_entries (
     capped          boolean
 );
 create index if not exists leaderboard_entries_lesson on leaderboard_entries (lesson_id, total desc);
+
+-- ---------------------------------------------------------------------
+-- flight_events: start/end time of each graded event in a session -- one
+-- row per to-do step (familiarization: straight & level, left turn, ...) or
+-- circuit phase (take-off roll ... rollout). Written by the MAVIS bridge
+-- from MAVIS's EventLog (core/event_log.py); the boundaries are decided by
+-- MAVIS's lesson engine, so event n ends at the instant event n+1 starts.
+-- start_ts/end_ts are on the same clock as flight_data.ts. end_ts is null
+-- while the event is still in progress.
+-- score/grade/detail are for the SOP scoring pass (nothing writes them yet):
+-- the dashboard colours an event by grade when set.
+-- A step re-flown after a retry is a new row (attempt 2, ...); the abandoned
+-- attempt keeps outcome 'retried'.
+-- ---------------------------------------------------------------------
+create table if not exists flight_events (
+    session_id  uuid not null references sessions(id) on delete cascade,
+    seq         integer not null,        -- order within the session, from 0
+    event_id    text not null,           -- lesson step/phase id, e.g. 'TURN_LEFT', 'DOWNWIND'
+    label       text not null,           -- display name, e.g. 'Gentle left turn'
+    kind        text,                    -- 'exercise' (to-do step) | 'phase' (circuit phase)
+    phase       text,
+    circuit     integer,
+    attempt     integer not null default 1,
+    start_ts    timestamptz not null,
+    end_ts      timestamptz,
+    outcome     text,                    -- completed | skipped (timed out) | retried | abandoned
+    score       integer,
+    grade       text,
+    detail      jsonb,
+    primary key (session_id, seq)
+);

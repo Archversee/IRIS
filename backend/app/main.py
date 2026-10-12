@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     await db.connect()
     await auth.ensure_schema()  # users/auth_tokens tables + first admin account
     await videos.ensure_schema()  # sessions.recording_paths (OBS files to delete with a session)
+    await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)
     # Background WS client into MAVIS -- reconnects on its own if MAVIS
     # isn't up yet/goes away, so this never blocks IRIS's own startup or
     # crashes the app when MAVIS is offline. See docs/INTEGRATION_PLAN.md §1b.

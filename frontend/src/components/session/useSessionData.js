@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
-import { aoiColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
+import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
@@ -50,6 +50,7 @@ export function useSessionData({ id, live }) {
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const [openPhases, setOpenPhases] = useState([]);
+  const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
   const zCounter = useRef(10);
   const [hiddenAois, setHiddenAois] = useState(new Set());
   const [aoiFilterOpen, setAoiFilterOpen] = useState(false);
@@ -80,6 +81,17 @@ export function useSessionData({ id, live }) {
     api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
+
+  // MAVIS event log: one fetch for a finished session; a live one is polled
+  // since the newest event is still open and its end arrives when the next starts
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const load = () => api.events(id).then((ev) => { if (!cancelled) setFlightEvents(ev); }).catch(() => {});
+    load();
+    const timer = live ? setInterval(load, 3000) : null;
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [id, live]);
 
   // flight (+ eye) data: Review fetches once over REST; Live streams both
   // over a WebSocket instead, since per-sample REST/DB round trips can't
@@ -378,7 +390,7 @@ export function useSessionData({ id, live }) {
   }, [groundTrack, groundFlownIdx]);
   const groundCurPoint = groundFlownIdx >= 0 ? groundTrack[groundFlownIdx] : null;
 
-  const flightPhases = useMemo(() => {
+  const heuristicPhases = useMemo(() => {
     const alts = flight.map((r) => r.altitude_ft).filter((v) => v != null);
     if (alts.length < 2) return [];
     if (Math.max(...alts) - Math.min(...alts) < 200) return [];
@@ -419,6 +431,22 @@ export function useSessionData({ id, live }) {
 
     return phases;
   }, [flight]);
+
+  // Events logged by MAVIS replace the altitude-based takeoff/landing guess: their
+  // boundaries come from the lesson's to-do list, so each ends exactly where the
+  // next starts. An event still open runs to the newest sample.
+  const flightPhases = useMemo(() => {
+    if (!flightEvents.length || !flight.length) return heuristicPhases;
+    return flightEvents.map((e, i) => {
+      const start = +elapsed(e.start_ts).toFixed(1);
+      const end = +(e.end_ts ? elapsed(e.end_ts) : totalT).toFixed(1);
+      return {
+        key: `ev${e.seq}`, event: true, label: e.attempt > 1 ? `${e.label} (try ${e.attempt})` : e.label,
+        start, end, color: eventColor(e, i), eventId: e.event_id, outcome: e.outcome,
+        score: e.score, grade: e.grade, detail: e.detail,
+      };
+    }).filter((p) => p.end > p.start);
+  }, [flightEvents, heuristicPhases, flight, totalT]);
 
   const scanLog = useMemo(() => {
     const out = [];
