@@ -405,6 +405,10 @@
 .mavis-demo__text span { font-size: 13px; color: #9fb2cf; }
 .mavis-demo__text { flex: 1; min-width: 180px; }
 .mavis-demo__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mavis-demo__skip {
+  opacity: 1; cursor: pointer; font-weight: 700;
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+}
 @media (prefers-reduced-motion: reduce) { .mavis-demo__dot { animation: none; } }
 
 /* Familiarization "where to look" card (LookCard.jsx), under the map */

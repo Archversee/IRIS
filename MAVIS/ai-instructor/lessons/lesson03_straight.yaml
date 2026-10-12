@@ -1,11 +1,12 @@
 name: "Lesson 3: Straight & Level"
 # Airborne lesson built on the familiarization engine (core/familiarization.py):
-# same airborne start, to-do list, "look here" card, freeze-while-explaining
-# and scorecard. `steps` picks this lesson's exercises.
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one
+# (finding Paya Lebar is Flight Familiarization's job, not this lesson's).
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map, and as the target the
-# trainee navigates back to at the end.
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
 airport:
   icao: WSAP
   name: Paya Lebar
@@ -33,30 +34,23 @@ airborne_start:
   ias_kt: 95
   throttle_pct: 70
 
-# Attitude + power = performance: hold level at cruise, trim, then change
-# speed without changing height.
+# Attitude + power = performance: wings level at cruise, trim it out, then
+# change speed. Each step is judged on its own skill only -- height is scored
+# on straight & level, never required to pass a step.
 steps:
   - STRAIGHT_LEVEL
   - TRIM
   - SLOW_CRUISE
   - FAST_CRUISE
-  - FIND_AIRFIELD
 
 exercises:
-  straight_level_hold_s: 10
-  altitude_band_ft: 150     # tighter than familiarization: this lesson is about holding it
-  trim_hold_s: 10           # level, steady, stick near neutral
+  straight_level_hold_s: 10 # seconds wings level
+  altitude_band_ft: 150
+  trim_hold_s: 10           # hands off the stick and steady (no big climb or dive)
   slow_kt: 80
   fast_kt: 105
-  speed_hold_s: 10          # seconds inside +/- 5 kt and the height band
+  speed_hold_s: 10          # seconds inside +/- 5 kt
   step_timeout_s: 150
-  hint_every_s: 35
-
-finish:
-  pointing_within_deg: 15
-  pointing_hold_s: 5
-  pointing_max_nm: 10
-  radius_nm: 2.0
 
 freeze_during_instructions: true
 
@@ -64,19 +58,18 @@ end_reposition:
   along_m: 60
 
 debrief_summary: >-
-  straight and level exercise (airborne start; holding height wings level,
-  trimming, then flying slower and faster at the same height, then finding
-  Paya Lebar; no take-off or landing)
+  straight and level exercise (airborne start; wings level, trimming hands
+  off, then flying slower and faster; no take-off or landing)
 
 briefing:
   layman: >-
-    Straight and level. We're up at about {alt} feet, south of Paya Lebar. The
-    whole lesson is about keeping the height still while everything else
-    changes. Follow the to-do list, top right.
+    Straight and level. We're up at about {alt} feet, south of Paya Lebar.
+    First I'll fly it for you: wings level, trimming, then slowing down and
+    speeding up. Then it's your turn, following the to-do list, top right.
   pilot: >-
     Straight and level, airborne at {alt} feet south of Paya Lebar. Attitude
-    plus power equals performance. Trim, then speed changes at constant
-    altitude.
+    plus power equals performance. Demonstration first: trim, then speed
+    changes.
 
 # See lesson00_familiarization.yaml for the step_notes format.
 step_notes:
@@ -84,67 +77,46 @@ step_notes:
     title: Straight & level
     todo:
       - "Wings level, nose on the horizon"
-      - "Look out, then check the height"
-    look: [attitude, altitude]
+    look: [attitude]
     layman: >-
-      I'm holding us still. Keep the yellow plane level on the horizon line.
-      Look outside mostly, and glance at the height now and then. Keep it
-      between {alt_lo:,} and {alt_hi:,} feet for {hold_s} seconds.
+      Straight and level. Keep the yellow plane level on the horizon line,
+      wings flat, for {hold_s} seconds. Look outside mostly.
     pilot: >-
-      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Lookout, attitude,
-      instruments. Hold it {hold_s} seconds.
+      Straight and level. Wings level, nose on the horizon, lookout. Hold it
+      {hold_s} seconds.
   TRIM:
     title: Trim it out
     todo:
-      - "Hold the nose where it is"
       - "Roll the trim wheel until the stick feels light"
-      - "Let go: it should stay level"
+      - "Let go of the stick"
     look: [attitude, vsi]
     layman: >-
       Now let's make it easy. If you're pushing or pulling the stick, roll the
-      trim wheel the same way until there's no pressure. Then let go. It should
-      fly level on its own for {trim_s} seconds.
+      trim wheel the same way until there's no pressure. Then let go, and it
+      flies steady on its own for {trim_s} seconds.
     pilot: >-
-      Trim out the control pressure. Hold the attitude, trim, then hands off.
-      Steady, no climb or descent, {trim_s} seconds.
+      Trim out the control pressure, then hands off. Steady for {trim_s}
+      seconds.
   SLOW_CRUISE:
-    title: Slow down, hold height
+    title: Slow down
     todo:
       - "Throttle back a little"
-      - "Raise the nose slowly as the speed drops"
-      - "Re-trim at the new speed"
-    look: [airspeed, altitude]
+      - "Settle on the new speed"
+    look: [airspeed]
     layman: >-
-      Now slower, but same height. Pull the throttle back a little. As we slow,
-      the nose wants to drop, so raise it slowly to stay at the same height.
-      Settle at {slow_lo} to {slow_hi} knots, then trim.
+      Now slower. Pull the throttle back a little and let the speed come down
+      to {slow_lo} to {slow_hi} knots on the left tape. Hold it there.
     pilot: >-
-      Reduce power, maintain altitude, raise the attitude as the speed decays.
-      {slow_lo} to {slow_hi} knots, re-trim.
+      Reduce power. {slow_lo} to {slow_hi} knots, hold it, re-trim.
   FAST_CRUISE:
-    title: Speed up, hold height
+    title: Speed up
     todo:
       - "Throttle forward"
-      - "Lower the nose slowly as the speed builds"
-      - "Re-trim at the new speed"
-    look: [airspeed, altitude]
+      - "Settle on the new speed"
+    look: [airspeed]
     freeze: false
     layman: >-
-      Now faster, same height. Throttle forward, and ease the nose down a touch
-      so we don't climb. Settle at {fast_lo} to {fast_hi} knots, then trim.
+      Now faster. Push the throttle forward and let the speed build to
+      {fast_lo} to {fast_hi} knots. Hold it there.
     pilot: >-
-      Increase power, lower the attitude, hold altitude. {fast_lo} to
-      {fast_hi} knots, re-trim.
-  FIND_AIRFIELD:
-    title: Find Paya Lebar & point at it
-    todo:
-      - "Look outside, not at the screen"
-      - "Not Changi: that's the big one on the coast"
-      - "Point the nose at it and hold"
-    look: [outside]
-    freeze: false
-    layman: >-
-      Last job: find Paya Lebar, around your {clock} o'clock, about {dist_nm}
-      miles. Not Changi on the coast. Point the nose at it.
-    pilot: >-
-      Locate Paya Lebar, {clock} o'clock, {dist_nm} miles. Put it on the nose.
+      Increase power. {fast_lo} to {fast_hi} knots, hold it, re-trim.

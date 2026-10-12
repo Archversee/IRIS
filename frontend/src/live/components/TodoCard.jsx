@@ -56,7 +56,7 @@ export default function TodoCard({ todo }) {
         ))}
       </ol>
       {todo.complete && (
-        <div className="mavis-todo__done">You found Paya Lebar. After your score you're put back at the start of the runway.</div>
+        <div className="mavis-todo__done">{todo.done_text || "All done. After your score you're put back at the start of the runway."}</div>
       )}
     </div>
   );

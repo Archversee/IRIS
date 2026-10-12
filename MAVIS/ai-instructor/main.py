@@ -25,6 +25,7 @@ APP_VERSION = "0.2.0"
 import uvicorn
 
 from adapters.input_hid import HIDInput, ControlSample
+from adapters.sim_base import Telemetry
 from coach.llm_coach import Coach, clip_spoken
 from coach import phrases
 from core.events import CoachEvent
@@ -34,7 +35,7 @@ from core.leaderboard import Leaderboard
 from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
-from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer,
+from core.familiarization import (STEP_TITLES, FamiliarizationEngine, FamiliarizationScorer,
                                   field_center, is_familiarization, runway_start,
                                   start_position)
 from core.demo import NO_DEMO, DemoPilot
@@ -195,9 +196,9 @@ async def amain(cfg):
     instructors = InstructorRegistry(instructor_pin)
     score_seq = {"n": 0}
     run_gen = {"n": 0}          # bumped on restart, stale finish_lesson tasks ignore
-    # step demonstrations (core/demo.py): Skip ends the current one, Skip all
-    # turns them off for the rest of this run
-    demo_ctl = {"skip": asyncio.Event(), "all_off": False}
+    # up-front demonstration of an airborne lesson (core/demo.py): Skip ends
+    # it; `shown` = steps the trainee watched (they then get a short cue, no hold)
+    demo_ctl = {"skip": asyncio.Event(), "shown": set()}
     pending: dict = {"card": None, "posted": False}
     scored = {"done": False}
     tts: TTS | None = None
@@ -461,26 +462,22 @@ async def amain(cfg):
         if fn and not await loop.run_in_executor(None, fn, on):
             log.warning("sim did not confirm freeze=%s", on)
 
-    def _demo_wanted(ev) -> bool:
-        """Demonstrate this step first? Lessons opt out with `demos: false`,
-        a step with `demo: false`; the trainee with Skip all demos."""
-        return (bool(lesson.get("demos", True)) and not demo_ctl["all_off"]
-                and ev.data.get("phase") not in NO_DEMO and ev.data.get("demo", True)
+    def _demos_wanted() -> bool:
+        """Fly the whole airborne lesson once as a demonstration before the
+        trainee's turn? Not in Exam (silent) coaching, not when the lesson
+        says `demos: false`, not on a sim that can't be flown remotely."""
+        pol = session.get("policy") or {}
+        return (bool(lesson.get("demos", True)) and pol.get("coaching") != "silent"
                 and hasattr(sim, "demo_control"))
 
     async def _fam_instruct(ev):
-        """Speak one familiarization step with the aircraft frozen (or fly it
-        as a demonstration while speaking), then hand over: "You have control",
-        unfreeze, and start the step's clock."""
+        """Speak one familiarization step with the aircraft frozen, then hand
+        over: "You have control", unfreeze, and start the step's clock."""
         gen, eng = run_gen["n"], engine
         phase = ev.data.get("phase")
         try:
             await _set_frozen(True)
-            note = phrases.render("LESSON_NOTE", ev.data)
-            if _demo_wanted(ev):
-                await _fam_demo(ev, note, gen)
-            else:
-                await coach.say(note, phase=phase)
+            await coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
             if gen == run_gen["n"] and started.is_set():
                 await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}), phase=phase)
         finally:
@@ -501,54 +498,86 @@ async def amain(cfg):
                 await loop.run_in_executor(None, sim.demo_control, cmd)
             await asyncio.sleep(0.2)
 
-    async def _fam_demo(ev, note: str, gen: int):
-        """"I have control": the sim flies the step while MAVIS explains it,
-        then the aircraft goes back to where the demo began, frozen, for the
-        hand-over. Skip (state.demo, /demo/skip_demo) cuts it short and the
-        explanation is given again in full, held still."""
-        phase = ev.data.get("phase")
-        tel0 = dict(state.get("tel") or {})
-        if not tel0 or tel0.get("on_ground", True):
-            await coach.say(note, phase=phase)
+    async def _fam_opening(briefing: bool):
+        """Start of an airborne lesson: the briefing (turn-by-turn modes), the
+        whole lesson flown once as a demonstration, then the hand-over, so the
+        trainee then flies every step in one go."""
+        gen = run_gen["n"]
+        if briefing:
+            alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
+            await coach.say(_lesson_text(lesson.get("briefing")).replace("{alt}", f"{alt:,}"))
+        if gen != run_gen["n"]:
             return
-        pilot = DemoPilot(phase, engine, tel0, mock=cfg["sim"]["adapter"] == "mock")
+        await _fam_demo_all(gen)
+        if gen != run_gen["n"]:
+            return
+        if demo_ctl["shown"]:
+            await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}))
+            if gen != run_gen["n"]:
+                return
+            await _set_frozen(False)
+        engine.start_flying()
+
+    async def _fam_demo_all(gen: int):
+        """"I have control": the sim flies every step in order while MAVIS
+        explains each, then the aircraft goes back to the start, frozen.
+        Skip (state.demo, /demo/skip_demo) ends it there; steps not shown in
+        full are explained the usual way (held still) when the trainee gets
+        to them."""
+        # fresh from the sim: right after the airborne start, state["tel"] can
+        # still be the parked aircraft from before it
+        tel0 = (await loop.run_in_executor(None, sim.get_telemetry)).as_dict()
+        steps = [s for s in engine.detector.ORDER[1:-1]
+                 if s not in NO_DEMO and (engine.notes.get(s) or {}).get("demo", True)]
+        if not steps or not tel0 or tel0.get("on_ground", True):
+            return
+        mock = cfg["sim"]["adapter"] == "mock"
+        base_th = tel0.get("throttle", 0.7)
         demo_ctl["skip"].clear()
-        state["demo"] = {"phase": phase, "title": ev.data.get("title") or phase}
-        skipped = False
+        state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
+        flew = skipped = False
         try:
-            await coach.say(phrases.render("FAM_DEMO_START", {}), phase=phase)
-            skipped = demo_ctl["skip"].is_set()
-            if not skipped and gen == run_gen["n"]:
-                await _set_frozen(False)
-                speak = asyncio.create_task(coach.say(note, phase=phase))
+            await coach.say(phrases.render("FAM_DEMO_START", {}))
+            if demo_ctl["skip"].is_set() or gen != run_gen["n"]:
+                return
+            await _set_frozen(False)
+            flew = True
+            for i, step in enumerate(steps):
+                tel = dict(state.get("tel") or tel0)
+                data = engine.preview(step, Telemetry(**tel))
+                state["demo"] = {"n": i + 1, "of": len(steps),
+                                 "title": data.get("title") or STEP_TITLES.get(step, step)}
+                state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
+                pilot = DemoPilot(step, engine, tel, mock=mock, base_throttle=base_th)
+                speak = asyncio.create_task(coach.say(phrases.render("LESSON_NOTE", data), phase=step))
                 fly = asyncio.create_task(_fly_demo(pilot, gen))
                 skip_w = asyncio.create_task(demo_ctl["skip"].wait())
                 await asyncio.wait({fly, skip_w}, return_when=asyncio.FIRST_COMPLETED)
                 if not demo_ctl["skip"].is_set():
                     # flown: let the explanation finish (the autopilot holds it)
                     await asyncio.wait({speak, skip_w}, return_when=asyncio.FIRST_COMPLETED)
-                skipped = demo_ctl["skip"].is_set()
+                skipped = demo_ctl["skip"].is_set() or gen != run_gen["n"]
                 for t in (fly, skip_w) + ((speak,) if skipped else ()):
                     t.cancel()
                 if skipped:
                     stop_speech()
+                    break
+                demo_ctl["shown"].add(step)
+            skipped = skipped or demo_ctl["skip"].is_set()
         finally:
-            await loop.run_in_executor(None, sim.demo_control, pilot.end_command())
+            await loop.run_in_executor(None, sim.demo_control, {"ap": False, "rudder": 0.0})
             state["demo"] = None
-            if gen == run_gen["n"]:
+            state["look_at"] = None
+            if flew and gen == run_gen["n"]:
                 await _set_frozen(True)
                 ok = await loop.run_in_executor(None, lambda: sim.set_position(
                     tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
-                    throttle_pct=tel0.get("throttle", 0.7) * 100.0))
+                    throttle_pct=base_th * 100.0))
                 if not ok:
-                    log.warning("demo: couldn't put the aircraft back where the demo began")
-                state["track"].append([])      # the trainee's own attempt starts a fresh line
-        if gen != run_gen["n"]:
-            return
-        if skipped:
-            await coach.say(note, phase=phase)    # cut short: say it in full, held still
-        else:
-            await coach.say(phrases.render("FAM_DEMO_END", {}), phase=phase)
+                    log.warning("demo: couldn't put the aircraft back at the start")
+                state["track"].append([])      # the trainee's own flight starts a fresh line
+        if gen == run_gen["n"] and demo_ctl["shown"]:
+            await coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))
 
     async def _fam_finish():
         """End of the exercise: hold the aircraft while it's scored, then put
@@ -613,7 +642,7 @@ async def amain(cfg):
             if _fam_freezes():
                 await _set_frozen(True)     # held through the briefing
         state["look_at"] = None
-        demo_ctl["all_off"] = False
+        demo_ctl["shown"] = set()
         started.set()
         asyncio.create_task(_load_sop())     # never blocks the start of the lesson
         if not (keep_session and session.get("session_id")):
@@ -627,7 +656,10 @@ async def amain(cfg):
         if hasattr(sim, "release"):        # mock: start the autopilot immediately
             sim.release()
         pol = session.get("policy") or {}
-        if pol.get("coaching") == "turn_by_turn":
+        if is_familiarization(lesson) and _demos_wanted():
+            # briefing, the whole lesson flown once as a demo, then hand over
+            asyncio.create_task(_fam_opening(pol.get("coaching") == "turn_by_turn"))
+        elif pol.get("coaching") == "turn_by_turn":
             asyncio.create_task(_briefing_lines())
         else:
             engine.start_flying()
@@ -1278,7 +1310,9 @@ async def amain(cfg):
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
         if card.incomplete:
-            fallback = f"Good effort. Your {names[best]} stood out. We didn't reach Paya Lebar this time."
+            fallback = (f"Good effort. Your {names[best]} stood out. "
+                        + ("We didn't reach Paya Lebar this time." if engine.finds_field
+                           else "We didn't get through every step this time."))
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
@@ -1290,10 +1324,10 @@ async def amain(cfg):
         sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {about} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
-        reached = "yes" if not card.incomplete else "no"
+        reached = "yes" if not card.incomplete else "no"   # finished the lesson
         try:
             out = await coach._ollama(
-                sysp, f"scores={sc} reached_airfield={reached} total={card.total} grade={card.grade}", 10.0)
+                sysp, f"scores={sc} finished_lesson={reached} total={card.total} grade={card.grade}", 10.0)
             out = (out or "").strip()
             if 10 < len(out) < 400:
                 return _sanitize_debrief(out, who)
@@ -1322,7 +1356,8 @@ async def amain(cfg):
             break
         # Phase 2, spoken close (single owner; not submitted from the ticker)
         if not _debrief_spoken():
-            code = "FAM_DEBRIEF" if is_familiarization(lesson) else "PHASE_ENTER_DEBRIEF"
+            code = (("FAM_DEBRIEF" if engine.finds_field else "FAM_DEBRIEF_DONE")
+                    if is_familiarization(lesson) else "PHASE_ENTER_DEBRIEF")
             await coach.say(phrases.render(code, {
                 "phase": "DEBRIEF", "circuit": engine.circuit}), phase="DEBRIEF")
         # Phase 3, wait until TTS actually finishes
@@ -1418,16 +1453,12 @@ async def amain(cfg):
     async def skip_demo():
         demo_ctl["skip"].set()
 
-    async def skip_all_demos():
-        demo_ctl["all_off"] = True
-        demo_ctl["skip"].set()
-
     async def score_submit(name: str, given: str = "", family: str = ""):
         _post_card(name, given, family)
 
     actions = {"start": start, "night": night_sequence,
                "skip": _wrap(lambda: engine.skip_phase()), "restart": restart,
-               "skip_demo": skip_demo, "skip_all_demos": skip_all_demos,
+               "skip_demo": skip_demo,
                "relaunch": relaunch,
                "chat": chat, "mute": mute, "intro": intro, "retry": retry,
                "configure_session": configure_session,
@@ -1499,7 +1530,15 @@ async def amain(cfg):
                     if ev.code == "LESSON_NOTE" and is_familiarization(lesson):
                         state["look_at"] = {"items": ev.data.get("look") or [],
                                             "phase": ev.data.get("phase"), "seq": time.time()}
-                        if _fam_freezes() and ev.data.get("freeze", True):
+                        if ev.data.get("phase") in demo_ctl["shown"]:
+                            # watched in the demo: a short cue, no hold -- keep the momentum
+                            title = ev.data.get("title") or ev.data.get("phase")
+                            cue = phrases.render("FAM_STEP_CUE", {
+                                "title": title, "title_lc": title[:1].lower() + title[1:],
+                                "action": ((ev.data.get("todo") or [""])[0]).rstrip(".")})
+                            ev = CoachEvent("LESSON_NOTE", ev.severity,
+                                            {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
+                        elif _fam_freezes() and ev.data.get("freeze", True):
                             engine.hold()       # judge nothing until "you have control"
                             asyncio.create_task(_fam_instruct(ev))
                             continue

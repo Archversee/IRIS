@@ -65,7 +65,7 @@
           "title": "Effects of Controls",
           "subtitle": "Pitch, roll, yaw, power · primary & secondary effects",
           "available": true,
-          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. See what the stick and pedals each do, then point the nose at Paya Lebar. No landing.",
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you try the stick, pedals and throttle. No landing.",
           "duration_min": 22
         },
         {
@@ -73,7 +73,7 @@
           "title": "Straight & Level",
           "subtitle": "Trim · power settings · lookout",
           "available": true,
-          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. Hold your height, trim, and change speed, then point the nose at Paya Lebar. No landing.",
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you fly level, trim, and change speed. No landing.",
           "duration_min": 18
         },
         {
