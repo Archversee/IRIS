@@ -27,8 +27,12 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
         </div>
 
         <DemoBanner demo={state?.demo} />
-        <MapCanvas state={state} />
-        {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
+        {/* the to-do list sits beside the map, in the layout -- never floating
+            over the map or the toolbar */}
+        <div className="mavis-hud__mapwrap">
+          <MapCanvas state={state} />
+          {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
+        </div>
         {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
       </div>
 
