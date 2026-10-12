@@ -6,6 +6,8 @@ import ScreensPanel from "../components/session/ScreensPanel.jsx";
 import SessionTimeline from "../components/session/SessionTimeline.jsx";
 import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import LiveSessionPicker from "../components/session/LiveSessionPicker.jsx";
+import RuleAlerts from "../live/components/RuleAlerts.jsx";
+import { useMavisState } from "../live/hooks/useMavisSocket.js";
 import "./review.css";
 
 // Pure viewer now -- MAVIS is the only thing that ever starts, stops, or
@@ -32,6 +34,9 @@ export default function LiveSession() {
   const [otwStream, setOtwStream] = useState(null);
   const [instrumentStream, setInstrumentStream] = useState(null);
   const pollRef = useRef(null);
+  // SOP rule checks come straight from MAVIS's live state (not through the
+  // IRIS bridge); only shown when MAVIS is flying the session being watched.
+  const mavis = useMavisState();
 
   const { err, summary, flight, flightLoaded, screens, timeline, liveState, followingLive } =
     useSessionData({ id: sessionId, live: true });
@@ -107,6 +112,7 @@ export default function LiveSession() {
             {summary ? `${summary.session.aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "loading…"}
           </span>
           <span className="spacer" />
+          {mavis?.session_id === sessionId && <RuleAlerts live={mavis?.sop_live} flying={!!mavis?.lesson_running} />}
           <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
         </div>
 

@@ -245,6 +245,7 @@ async def amain(cfg):
 
     async def _load_sop():
         if sop_rt is None:
+            state["sop_live"] = _rules_off("SOP rules are disabled in MAVIS (see the startup log).")
             return
         ident = None
         if hasattr(sim, "aircraft_ident"):
@@ -254,7 +255,12 @@ async def amain(cfg):
                 log.info("aircraft ident failed: %s", e)
         state["sop"] = await sop_rt.load(ident)
         log.info("SOP for this flight: %s", state["sop"])
-        await _start_rule_checks()
+        try:
+            await _start_rule_checks()
+        except Exception as e:          # runs as a background task: never fail silently
+            log.exception("starting live rule checks failed")
+            live_rules["ev"] = None
+            state["sop_live"] = _rules_off(f"Rule checks failed to start: {e}")
 
     # SOP / handbook rules checked live (sop/evaluate.py) -- the same engine
     # IRIS's Review re-runs post-flight, so the two never disagree. Cautions
@@ -271,11 +277,36 @@ async def amain(cfg):
         log.info("live rule checks disabled (%s)", e)
         rule_results = None
 
+    def _rules_off(reason: str) -> dict:
+        """state["sop_live"] when nothing is being checked: the live views say why."""
+        log.warning("live rule checks off: %s", reason)
+        return {"status": "off", "reason": reason, "n_rules": 0, "active": [], "recent": [],
+                "n_findings": 0, "summary": None}
+
+    def _why_no_rules() -> str:
+        sop = state.get("sop") or {}
+        st, plane = sop.get("status"), sop.get("aircraft_name") or sop.get("aircraft_id") or "this aircraft"
+        if st == "unavailable":
+            return f"Rules database unavailable: {sop.get('error') or 'Postgres not reachable'}"
+        if st == "no_profile":
+            return (f"Aircraft not recognised ({sop.get('detected') or 'nothing reported'}) and no training "
+                    "handbook rule set is active.")
+        lt = sop.get("lesson_type") or "normal"
+        if st == "none":
+            return (f"No active rule set for {plane} and no active training handbook. "
+                    "Activate one on the SOP Rules page.")
+        return (f"The active rule sets have no enabled rules for {lt} lessons "
+                f"({sop.get('n_unresolved') or 0} left out for a missing aircraft speed).")
+
     async def _start_rule_checks():
         live_rules.update(ev=None, ctx=None, spoken={})
         state["sop_live"] = None
+        if rule_results is None:
+            state["sop_live"] = _rules_off("Rule checks are disabled in MAVIS (needs asyncpg; see the startup log).")
+            return
         act = sop_rt.active if sop_rt is not None else None
-        if rule_results is None or not act or not act.get("rules"):
+        if not act or not act.get("rules"):
+            state["sop_live"] = _rules_off(_why_no_rules())
             return
         strictness, why = await rule_results.strictness_for(
             session.get("name"), session.get("mode"), session.get("strictness"))
@@ -287,7 +318,8 @@ async def amain(cfg):
             "rule_set_ids": [x["rule_set_id"] for x in act.get("layers") or []], "rules": snapshot(rules),
             "strictness": strictness, "why": why}
         live_rules["ev"] = RuleEvaluator(rules, strictness)
-        state["sop_live"] = {"strictness": strictness, "strictness_why": why, "n_rules": len(rules),
+        state["sop_live"] = {"status": "checking", "strictness": strictness, "strictness_why": why,
+                             "n_rules": len(rules),
                              "active": [], "recent": [], "n_findings": 0, "summary": None}
         log.info("checking %d rule(s) live, %s (%s)", len(rules), strictness, why)
 

@@ -646,6 +646,11 @@
 }
 .rc-chip:hover { border-color: var(--border-strong); }
 .rc-chip.has-fail { border-color: #ff5c5c; }
+.rc-chip.has-warn { border-color: var(--rev-amber); color: var(--rev-amber); }
+.rc-why {
+  border: 1px solid var(--rev-amber); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; color: var(--rev-text);
+}
+.rc-why a { color: var(--rev-cyan); }
 .rc-chip .ok { color: var(--rev-green); }
 .rc-chip .bad { color: #ff5c5c; }
 .rc-chip .todo { color: var(--rev-violet); }

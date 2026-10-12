@@ -82,6 +82,22 @@ The evaluation records which preset it used and why.
 
 A session flown without MAVIS (CSV upload) has no lesson phases. Its rules that apply in every phase are still checked; rules for a particular phase show *No data*. The aircraft comes from `sessions.aircraft`, matched like the simulator's aircraft name.
 
+## When nothing shows up
+
+The live views (MAVIS `/live` and IRIS's **Live Monitor**) always show a rules line once a lesson starts. If no rules are being checked, it says why:
+
+| Message | Fix |
+|---|---|
+| *No active rule set for <aircraft> and no active training handbook* | SOP Rules page: **Make active** on a rule set for that aircraft, or on a handbook set |
+| *Aircraft not recognised (…)* | Add the simulator's name for the aircraft to `sim_match` in `profiles/aircraft/<id>.yaml`, or set `sop.aircraft_override` |
+| *Rules database unavailable* | Start Postgres; check `database.url` / `DATABASE_URL` |
+| *The active rule sets have no enabled rules for … lessons* | Enable rules, or tick the lesson type on them |
+| *Rule checks are disabled in MAVIS* | `pip install asyncpg`, restart MAVIS |
+
+On Review, the chip reads **SOP: no rules checked** when the flight was checked while no rule set was active. Activate one and press **Re-check**: a check with no rules never pins the flight to that empty set. **SOP checks: not run** means the flight was never checked. That happens with flights flown before this feature, or when IRIS wasn't running during the flight. An instructor can press **Check now**.
+
+After updating: restart MAVIS **and** the IRIS backend (it creates the tables), and restart or rebuild the frontend.
+
 ## Tests
 
 ```

@@ -43,6 +43,13 @@ export function RuleChecksChip({ evaluation, missing, onClick }) {
   if (missing) return <button className="rc-chip" onClick={onClick}>SOP checks: not run</button>;
   if (!evaluation) return null;
   const b = evaluation.summary?.by_verdict || {};
+  if (!evaluation.summary?.total || !(b.pass || b.fail || b.instructor)) {
+    return (
+      <button className="rc-chip has-warn" onClick={onClick} title="Open to see why">
+        SOP: {evaluation.summary?.total ? "nothing could be judged" : "no rules checked"}
+      </button>
+    );
+  }
   return (
     <button className={"rc-chip" + (b.fail ? " has-fail" : "")} onClick={onClick}
       title="SOP / handbook rule checks of this flight">
@@ -128,6 +135,21 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
               {isInstructor ? "Not signed off yet." : "Provisional: your instructor hasn't reviewed these results yet."}
             </div>
           )}
+        </div>
+      )}
+
+      {evaluation && results.length === 0 && (
+        <div className="rc-why">
+          <b>No rules were checked.</b> When this flight was checked, {evaluation.aircraft_profile || "the aircraft"} had
+          no active rule set with rules for {evaluation.lesson_type || "normal"} lessons, and no training handbook
+          was active. Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page, then {isInstructor
+            ? "press Re-check." : "ask your instructor to re-check this flight."}
+        </div>
+      )}
+      {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length || grouped.instructor.length) && (
+        <div className="rc-why">
+          <b>None of the rules could be judged for this flight.</b> Each rule below says why: usually its phase was
+          never flown, its condition never held, or the value it needs wasn't recorded.
         </div>
       )}
 

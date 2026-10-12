@@ -143,7 +143,9 @@ class ResultStore:
             trainee = await self._trainee_strictness(c, sess.get("pilot_name") or sess.get("name"))
             rows, has_phase = await self._samples(c, session_id)
         if context is None:
-            if prev is not None and not use_current_rules:
+            # reuse the flight's own rule snapshot -- unless it is empty (checked while no
+            # rule set was active): then take the rules as they are now
+            if prev is not None and not use_current_rules and prev["rules"]:
                 context = {k: prev[k] for k in ("aircraft_profile", "lesson_id", "lesson_type", "elevation_ft",
                                                 "rule_set_ids", "rules")}
             else:
