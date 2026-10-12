@@ -31,13 +31,23 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
     }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-      });
+      // Raw mic with the browser's automatic gain: echo cancellation and noise
+      // suppression can flatten some Windows/headset inputs to pure silence (and
+      // there is no speaker echo to cancel here). Fall back to the plain default.
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 },
+        });
+      } catch (e) {
+        if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
     } catch (e) {
       reject(Object.assign(new Error("mic"), { code: e?.name === "NotAllowedError" ? "mic_denied" : "mic_error" }));
       return;
     }
+    const track = stream.getAudioTracks()[0];
+    const device = track ? `${track.label || "unnamed input"}${track.muted ? " (muted by system)" : ""}` : "no input";
     // Ask for 16 kHz (Whisper's rate) but fall back to the device rate:
     // Firefox refuses to connect a mic stream to a context at another rate.
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -60,10 +70,12 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
     const sr = ctx.sampleRate || 16000;
     const chunks = [];
     let peak = 0;
+    let maxAbs = 0;
     const proc = ctx.createScriptProcessor(4096, 1, 1);
     proc.onaudioprocess = (ev) => {
       const input = ev.inputBuffer.getChannelData(0);
       chunks.push(new Float32Array(input));
+      for (let i = 0; i < input.length; i++) { const a = Math.abs(input[i]); if (a > maxAbs) maxAbs = a; }
       let s = 0;
       for (let i = 0; i < input.length; i++) s += input[i] * input[i];
       peak = Math.max(peak, Math.sqrt(s / Math.max(1, input.length)));
@@ -87,6 +99,13 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
       let out = new Float32Array(total);
       let o = 0;
       for (const c of chunks) { out.set(c, o); o += c.length; }
+      // A quiet mic: bring the loudest sample up to ~0.5 (at most 30x) so the gate and
+      // Whisper get a usable signal. A truly silent input stays silent.
+      if (maxAbs > 0.002 && maxAbs < 0.3) {
+        const g = Math.min(30, 0.5 / maxAbs);
+        for (let i = 0; i < out.length; i++) out[i] *= g;
+        peak *= g;
+      }
       let outSr = sr;
       if (Math.abs(sr - 16000) > 50) {          // resample toward 16 kHz
         const nOut = Math.max(1, Math.round(out.length * 16000 / sr));
@@ -101,7 +120,7 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
       }
       const engine = `${ctx.state}, ${chunks.length} blocks`;
       ctx.close().catch(() => {});
-      resolve({ blob: encodeWav(out, outSr), peak, durationMs: (out.length / outSr) * 1000, engine });
+      resolve({ blob: encodeWav(out, outSr), peak, durationMs: (out.length / outSr) * 1000, engine, device, maxAbs });
     };
     const timer = setTimeout(finish, maxMs);
     stopSignal?.then(() => { clearTimeout(timer); finish(); }).catch(() => {});
@@ -110,7 +129,7 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
 
 export const VOICE_REASONS = {
   too_short: "That was too short. Wait for \"Speak now\", then hold the button while you talk.",
-  low_level: "The microphone signal is very weak. Check the input device and volume in Windows sound settings.",
+  low_level: "The microphone is giving no signal. It may be muted or the wrong input is selected: check Windows Settings > Sound > Input, and the site's microphone choice in the browser (padlock icon).",
   silence: "Couldn't hear you. Speak a little louder and try again.",
   bad_audio: "Couldn't read the recording. Check the microphone and try again.",
   speaker_reject: "Voice not recognised. Only the enrolled trainee can ask by voice.",
