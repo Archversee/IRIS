@@ -49,7 +49,7 @@ READING_LESSONS = {
 from core.reference_profiles import ReferenceRegistry
 from core.modes import policy_for, normalize_mode, allow_coach_event
 from agent.tools import Tool, ToolRegistry
-from agent.router import IntentRouter
+from agent.router import Decision, IntentRouter
 from voice.tts import TTS
 from voice.speaker import VoiceStore
 from voice.stt import WhisperSTT
@@ -611,6 +611,10 @@ async def amain(cfg):
     TIME_HINT = (r"(time|clock|hrs|o'?clock|[ap]\.?m\b|\d{1,2}[:.]\d{2}|night|day(time)?|dusk|"
                  r"dawn|sunset|sunrise|morning|noon|midnight|midday|evening|afternoon)")
 
+    # words that could make a free-text request a tool call (retry a leg, show/hide the guide, lighting)
+    ROUTE_HINT = (r"(again|redo|retry|rewind|checkpoint|another go|go back|guide|diagram|"
+                  r"controls?|show|hide|close|open|dark|bright|light|weather)")
+
     def parse_clock(t: str):
         """Deterministic parse of explicit times: 12:45pm, 0630, 1400 hrs, 7 pm."""
         import re
@@ -724,9 +728,17 @@ async def amain(cfg):
             return
         # --- agentic fallback: let the local LLM pick ONE safe tool for a fuzzy
         #     request the rules above didn't catch (deterministic path already ran) ---
-        decision = await router.decide(
-            text, {"phase": engine.phase, "time": state.get("tel", {}).get("local_time_h")},
-            allow_regex=False)
+        # A plain question ("what's ...", "why ...") is never a command, so skip the
+        # tool-picking call: it is a whole extra model round trip before the answer.
+        # Likewise anything with no time/weather/retry/guide flavour ("count from 10 to 1",
+        # "3 - 2") can't map to a tool, so it needs no router call either.
+        if re.search(QUESTION_RE, t) or not re.search(
+                TIME_HINT + "|" + WEATHER_HINT + "|" + ROUTE_HINT, t):
+            decision = Decision("answer", source="no-tool")
+        else:
+            decision = await router.decide(
+                text, {"phase": engine.phase, "time": state.get("tel", {}).get("local_time_h")},
+                allow_regex=False)
         if (decision.kind == "tool" and decision.tool in ("set_weather", "set_time_of_day")
                 and re.search(QUESTION_RE, t)):
             decision.kind = "answer"     # "is it going to rain?" asks, it doesn't order
