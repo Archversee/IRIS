@@ -645,8 +645,6 @@ async def amain(cfg):
     async def chat(text: str):
         if not text:
             return
-        if not session.get("policy", {}).get("chat", True):
-            return
         import re
         await coach.say(text, who="trainee")
         t = text.lower()
