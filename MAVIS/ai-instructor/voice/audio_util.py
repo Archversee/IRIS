@@ -80,19 +80,39 @@ def trim_silence(pcm: np.ndarray, sr: int = TARGET_SR, thr: float = 0.012,
     return pcm[start:end].astype(np.float32, copy=False)
 
 
+def _speech_threshold(pcm: np.ndarray, sr: int = TARGET_SR) -> float:
+    """Energy threshold that follows the mic: a quiet microphone must not have
+    all of its speech trimmed away by a fixed level. A quarter of the loud
+    frames' energy, kept between 0.002 and the usual 0.012."""
+    frame = max(1, int(sr * 0.02))
+    n = pcm.size // frame
+    if n == 0:
+        return 0.012
+    e = np.sqrt(np.mean(np.square(pcm[: n * frame].reshape(n, frame)), axis=1))
+    return float(min(0.012, max(0.002, 0.25 * np.percentile(e, 90))))
+
+
 def prepare_utterance(data: bytes, min_s: float = 0.6, min_voiced: float = 0.12,
                       min_rms: float = 0.008) -> tuple[np.ndarray | None, str]:
-    """Decode WAV → 16 kHz mono → trim. Returns (pcm, error_reason)."""
+    """Decode WAV → 16 kHz mono → trim. Returns (pcm, error_reason).
+    Silence thresholds scale down for a quiet mic (see _speech_threshold)."""
     try:
         pcm, sr = load_wav_bytes(data)
     except Exception as e:
         log.info("wav decode failed: %s", e)
         return None, "bad_audio"
     pcm = resample_mono(pcm, sr, TARGET_SR)
-    pcm = trim_silence(pcm, TARGET_SR)
+    raw_s, raw_rms = pcm.size / TARGET_SR, rms(pcm)
+    thr = _speech_threshold(pcm)
+    scale = thr / 0.012
+    pcm = trim_silence(pcm, TARGET_SR, thr=thr)
+    log.info("utterance: %.2fs recorded, rms %.4f, speech threshold %.4f, %.2fs after trim",
+             raw_s, raw_rms, thr, pcm.size / TARGET_SR)
+    if pcm.size == 0:                       # nothing above the threshold: no speech, not "short"
+        return None, "silence"
     if pcm.size < int(min_s * TARGET_SR):
         return None, "too_short"
-    if rms(pcm) < min_rms or voiced_fraction(pcm, TARGET_SR) < min_voiced:
+    if rms(pcm) < min_rms * scale or voiced_fraction(pcm, TARGET_SR, thr=thr) < min_voiced:
         return None, "silence"
     return pcm, ""
 

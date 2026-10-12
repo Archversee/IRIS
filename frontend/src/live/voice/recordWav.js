@@ -23,7 +23,7 @@ function encodeWav(samples, sampleRate) {
  * Resolves {blob, peak, durationMs}; rejects with err.code mic_denied |
  * mic_error | mic_insecure (browsers only allow the mic on https/localhost).
  */
-export function recordMicWav({ maxMs = 20000, stopSignal = null } = {}) {
+export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null } = {}) {
   return new Promise(async (resolve, reject) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       reject(Object.assign(new Error("mic"), { code: "mic_insecure" }));
@@ -71,11 +71,16 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null } = {}) {
     const mute = ctx.createGain();
     mute.gain.value = 0;
     src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+    try { onReady?.(); } catch { /* UI cue only */ }
+    // An audio engine the browser left suspended delivers no samples at all, however
+    // long the button is held: nudge it awake if nothing has arrived shortly after start
+    const wake = setTimeout(() => { if (!chunks.length) ctx.resume().catch(() => {}); }, 300);
 
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
+      clearTimeout(wake);
       try { proc.disconnect(); src.disconnect(); } catch { /* fine */ }
       stream.getTracks().forEach((t) => t.stop());
       const total = chunks.reduce((n, c) => n + c.length, 0);
@@ -94,8 +99,9 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null } = {}) {
         out = res;
         outSr = 16000;
       }
+      const engine = `${ctx.state}, ${chunks.length} blocks`;
       ctx.close().catch(() => {});
-      resolve({ blob: encodeWav(out, outSr), peak, durationMs: (out.length / outSr) * 1000 });
+      resolve({ blob: encodeWav(out, outSr), peak, durationMs: (out.length / outSr) * 1000, engine });
     };
     const timer = setTimeout(finish, maxMs);
     stopSignal?.then(() => { clearTimeout(timer); finish(); }).catch(() => {});
@@ -103,7 +109,8 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null } = {}) {
 }
 
 export const VOICE_REASONS = {
-  too_short: "That was too short. Hold the button while you speak.",
+  too_short: "That was too short. Wait for \"Speak now\", then hold the button while you talk.",
+  low_level: "The microphone signal is very weak. Check the input device and volume in Windows sound settings.",
   silence: "Couldn't hear you. Speak a little louder and try again.",
   bad_audio: "Couldn't read the recording. Check the microphone and try again.",
   speaker_reject: "Voice not recognised. Only the enrolled trainee can ask by voice.",
