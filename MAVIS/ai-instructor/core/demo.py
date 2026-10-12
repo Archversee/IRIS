@@ -1,10 +1,11 @@
-"""Instructor demonstrations for the airborne exercise lessons.
+"""Instructor demonstration for the airborne exercise lessons.
 
-Before the trainee flies a new step, MAVIS says "I have control", the sim
-flies the step while the explanation is spoken, then the aircraft is put back
-where the demo began and handed over: "Your turn. You have control."
+After the briefing MAVIS says "I have control" and the sim flies the whole
+lesson, step after step, while each step is explained. Then the aircraft goes
+back to the start and is handed over -- "Your turn. You have control." -- and
+the trainee flies every step in one go, with a short cue per step.
 
-DemoPilot is a small script per step: a list of segments, each a control
+DemoPilot is a small script per step (main.py chains one per step): a list of segments, each a control
 command for the adapter (`sim.demo_control(cmd)`) and a condition that ends
 it. main.py feeds it telemetry and sends the commands; nothing here talks to
 the sim directly. Command keys (all optional):
@@ -27,12 +28,15 @@ NO_DEMO = {"FIND_AIRFIELD"}
 
 
 class DemoPilot:
-    def __init__(self, step: str, eng, tel0: dict, mock: bool = False):
+    def __init__(self, step: str, eng, tel0: dict, mock: bool = False,
+                 base_throttle: float | None = None):
         self.step = step
         self.mock = mock
         self.a0 = float(tel0.get("alt_msl", 0.0))
         self.h0 = float(tel0.get("hdg", 0.0))
-        self.th0 = float(tel0.get("throttle", 0.7))
+        # cruise power the demo returns to: the lesson start's, not wherever
+        # the previous step left the lever
+        self.th0 = float(base_throttle if base_throttle is not None else tel0.get("throttle", 0.7))
         self.segs = self._script(step, eng)
         self.i = -1
         self.t_seg = 0.0
@@ -53,7 +57,7 @@ class DemoPilot:
     # ---- the scripts ----
     def _script(self, p: str, eng) -> list[dict]:
         a0, h0, th0 = self.a0, self.h0, self.th0
-        level = {"ap": True, "hdg": h0, "alt": a0, "spd": 95}
+        level = {"ap": True, "hdg": h0, "alt": a0, "spd": 95, "throttle": th0}
         if p in ("STRAIGHT_LEVEL", "TRIM"):
             return [{"cmd": level, "min_s": 8, "max_s": 8}]
         if p in ("PITCH_UP", "PITCH_DOWN"):
@@ -164,4 +168,7 @@ class DemoPilot:
         self._turned = 0.0
         if self.done:
             return None
-        return self._resolve(self.segs[self.i]["cmd"], tel)
+        cmd = self._resolve(self.segs[self.i]["cmd"], tel)
+        if self.i == 0:
+            cmd.setdefault("throttle", self.th0)    # each step starts from cruise power
+        return cmd

@@ -92,8 +92,7 @@ STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left t
                "ROLL_LEFT": "Roll left, roll level", "ROLL_RIGHT": "Roll right, roll level",
                "POWER": "Power up, power back",
                "YAW_LEFT": "Left rudder", "YAW_RIGHT": "Right rudder",
-               "TRIM": "Trim it out", "SLOW_CRUISE": "Slow down, hold height",
-               "FAST_CRUISE": "Speed up, hold height",
+               "TRIM": "Trim it out", "SLOW_CRUISE": "Slow down", "FAST_CRUISE": "Speed up",
                "FIND_AIRFIELD": "Find Paya Lebar & point at it"}
 
 DEFAULT_STEPS = ["STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND", "FIND_AIRFIELD"]
@@ -103,11 +102,13 @@ LEVEL_STEPS = ("STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, "YAW_LE
 
 
 def lesson_steps(lesson: dict) -> list[str]:
-    """The lesson's exercises in order; always ends by finding the field."""
+    """The lesson's exercises in order. Finding the field, when a lesson
+    lists it (Flight Familiarization), is always the last one."""
     steps = [s for s in (lesson.get("steps") or DEFAULT_STEPS) if s in STEP_TITLES]
     if "FIND_AIRFIELD" in steps:
         steps.remove("FIND_AIRFIELD")
-    return steps + ["FIND_AIRFIELD"]
+        steps.append("FIND_AIRFIELD")
+    return steps
 
 
 def clock_position(rel_deg: float) -> int:
@@ -282,31 +283,10 @@ class FamiliarizationEngine:
         self._last_hint = now
         p = self.phase
         f = self._field(tel)
-        # every number spoken or listed is a range or an "about" -- the trainee
-        # flies to a band, not a needle
-        a = tel.alt_msl
-        band = {"CLIMB": (a + self.climb_ft - 100, a + self.climb_ft + 100),
-                "DESCEND": (a - self.descend_ft - 100, a - self.descend_ft + 100),
-                "PITCH_UP": (a + self.pitch_ft - 50, a + self.pitch_ft + 100),
-                "PITCH_DOWN": (a - self.pitch_ft - 100, a - self.pitch_ft + 50)}.get(
-                    p, (a - self.alt_band, a + self.alt_band))
-        slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
-        data = {"phase": p, "circuit": 1, "total_circuits": 1,
-                "bank_lo": _r(self.bank - 5, 5), "bank_hi": _r(self.bank + 5, 5),
-                "climb_lo": _r(self.climb_ft - 100, 100), "climb_hi": _r(self.climb_ft + 100, 100),
-                "descend_lo": _r(self.descend_ft - 100, 100),
-                "descend_hi": _r(self.descend_ft + 100, 100),
-                "alt_lo": _r(band[0], 100), "alt_hi": _r(band[1], 100),
-                "spd_lo": _r(self.vy - 5, 5), "spd_hi": _r(self.vy + 5, 5),
-                "hold_s": round(self.hold_s),
-                "pitch_lo": _r(self.pitch_ft - 50, 50), "pitch_hi": _r(self.pitch_ft + 100, 50),
-                "yaw_deg": round(self.yaw_deg), "trim_s": round(self.trim_s),
-                "speed_s": round(self.speed_s),
-                "slow_lo": _r(slow - 5, 5), "slow_hi": _r(slow + 5, 5),
-                "fast_lo": _r(fast - 5, 5), "fast_hi": _r(fast + 5, 5),
-                **{k: f[k] for k in ("brg_lo", "brg_hi", "dist_nm", "clock", "field")}}
+        data = self.step_data(p, tel)
         self._data = data
         self._meters = self._readout(tel)        # targets visible while it's explained
+        slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
         # what the mock autopilot should fly for this step
         mock = {"STRAIGHT_LEVEL": {"hdg_delta": 0},
                 "TURN_LEFT": {"hdg_delta": -self.turn_deg},
@@ -334,6 +314,37 @@ class FamiliarizationEngine:
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
         return out
 
+    def preview(self, phase: str, tel: Telemetry) -> dict:
+        """A step's LESSON_NOTE data as if it began now -- what the up-front
+        demonstration narrates -- without touching the lesson's progress."""
+        return {**self.step_data(phase, tel), **(self.notes.get(phase) or {})}
+
+    def step_data(self, p: str, tel: Telemetry) -> dict:
+        """Numbers a step's lines and to-do use. Every number spoken or listed
+        is a range or an "about" -- the trainee flies to a band, not a needle."""
+        f = self._field(tel)
+        a = tel.alt_msl
+        band = {"CLIMB": (a + self.climb_ft - 100, a + self.climb_ft + 100),
+                "DESCEND": (a - self.descend_ft - 100, a - self.descend_ft + 100),
+                "PITCH_UP": (a + self.pitch_ft - 50, a + self.pitch_ft + 100),
+                "PITCH_DOWN": (a - self.pitch_ft - 100, a - self.pitch_ft + 50)}.get(
+                    p, (a - self.alt_band, a + self.alt_band))
+        slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
+        return {"phase": p, "circuit": 1, "total_circuits": 1,
+                "bank_lo": _r(self.bank - 5, 5), "bank_hi": _r(self.bank + 5, 5),
+                "climb_lo": _r(self.climb_ft - 100, 100), "climb_hi": _r(self.climb_ft + 100, 100),
+                "descend_lo": _r(self.descend_ft - 100, 100),
+                "descend_hi": _r(self.descend_ft + 100, 100),
+                "alt_lo": _r(band[0], 100), "alt_hi": _r(band[1], 100),
+                "spd_lo": _r(self.vy - 5, 5), "spd_hi": _r(self.vy + 5, 5),
+                "hold_s": round(self.hold_s),
+                "pitch_lo": _r(self.pitch_ft - 50, 50), "pitch_hi": _r(self.pitch_ft + 100, 50),
+                "yaw_deg": round(self.yaw_deg), "trim_s": round(self.trim_s),
+                "speed_s": round(self.speed_s),
+                "slow_lo": _r(slow - 5, 5), "slow_hi": _r(slow + 5, 5),
+                "fast_lo": _r(fast - 5, 5), "fast_hi": _r(fast + 5, 5),
+                **{k: f[k] for k in ("brg_lo", "brg_hi", "dist_nm", "clock", "field")}}
+
     def _achieved(self, tel: Telemetry, dt: float) -> bool:
         """Has the trainee done what the current step asks?"""
         p, e = self.phase, self._entry
@@ -345,7 +356,7 @@ class FamiliarizationEngine:
                 self._pointing = 0.0
             return f["dist_m"] <= self.finish_m or self._pointing >= self.point_s
         if p == "STRAIGHT_LEVEL":
-            if abs(tel.bank) < 6 and abs(tel.alt_msl - e["alt"]) < self.alt_band:
+            if abs(tel.bank) < 6:                # wings level only; height is scored, not required
                 self._held += dt
             return self._held >= self.hold_s
         if p in ("TURN_LEFT", "TURN_RIGHT"):
@@ -387,15 +398,14 @@ class FamiliarizationEngine:
             self._rudder = max(self._rudder, abs(tel.rudder))
             return self._turned * want >= self.yaw_deg and (self.mock or self._rudder >= 0.2)
         if p == "TRIM":
-            # level, steady, hands (nearly) off the stick
-            if (abs(tel.alt_msl - e["alt"]) < self.alt_band and abs(tel.vs) < 150
-                    and (self.mock or abs(tel.elevator) < 0.1)):
+            # hands (nearly) off the stick and it stays steady -- no height target
+            if abs(tel.vs) < 300 and (self.mock or abs(tel.elevator) < 0.1):
                 self._held += dt
             else:
                 self._held = 0.0
             return self._held >= self.trim_s
         if p in self.speeds:
-            if abs(tel.ias - self.speeds[p]) <= 5 and abs(tel.alt_msl - e["alt"]) < self.alt_band:
+            if abs(tel.ias - self.speeds[p]) <= 5:     # the speed only
                 self._held += dt
             else:
                 self._held = 0.0
@@ -476,17 +486,15 @@ class FamiliarizationEngine:
         Each row: label, now, target, and pct (0..1, progress bar) or ok
         (in the band right now)."""
         p, e, d = self.phase, self._entry, self._data
+        # only what the step asks for -- no height row on steps that don't
+        # change height (it's scored on straight & level, never required)
         alt = tel.alt_msl
-        height = {"label": "Height", "now": f"{_r(alt, 10):,} ft",
-                  "target": f"{d['alt_lo']:,}\u2013{d['alt_hi']:,} ft",
-                  "ok": d["alt_lo"] <= alt <= d["alt_hi"]}
         pitch = tel.pitch
         if p == "STRAIGHT_LEVEL":
             return [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.hold_s:.0f} s",
                      "pct": min(1.0, self._held / self.hold_s)},
                     {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0", "target": "under 5\u00b0",
-                     "ok": abs(tel.bank) < 6},
-                    height]
+                     "ok": abs(tel.bank) < 6}]
         if p in ("TURN_LEFT", "TURN_RIGHT"):
             want = -1.0 if p == "TURN_LEFT" else 1.0
             turned = max(0.0, self._turned * want)
@@ -495,8 +503,7 @@ class FamiliarizationEngine:
                      "target": f"{need:.0f}\u2013{self.turn_deg:.0f}\u00b0", "pct": min(1.0, turned / need)},
                     {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0",
                      "target": f"{d['bank_lo']}\u2013{d['bank_hi']}\u00b0",
-                     "ok": d["bank_lo"] - 2 <= abs(tel.bank) <= d["bank_hi"] + 2},
-                    height]
+                     "ok": d["bank_lo"] - 2 <= abs(tel.bank) <= d["bank_hi"] + 2}]
         if p == "CLIMB":
             up = max(0.0, alt - e["alt"])
             return [{"label": "Climbed", "now": f"{_r(up, 10)} ft",
@@ -532,11 +539,9 @@ class FamiliarizationEngine:
                          "target": f"{d['bank_lo']}\u2013{d['bank_hi']}\u00b0", "ok": bank_ok},
                         {"label": "Hold it", "now": f"{self._held:.0f} s",
                          "target": f"{self.roll_hold_s:.0f} s",
-                         "pct": min(1.0, self._held / self.roll_hold_s)},
-                        height]
+                         "pct": min(1.0, self._held / self.roll_hold_s)}]
             return [{"label": "Wings level", "now": f"{abs(tel.bank):.0f}\u00b0",
-                     "target": "under 5\u00b0", "ok": abs(tel.bank) < 5},
-                    height]
+                     "target": "under 5\u00b0", "ok": abs(tel.bank) < 5}]
         if p == "POWER":
             if self.mock:
                 up = max(0.0, alt - e["alt"])
@@ -557,24 +562,22 @@ class FamiliarizationEngine:
             swung = max(0.0, self._turned * want)
             return [{"label": "Nose swung", "now": f"{_r(swung, 1)}\u00b0",
                      "target": f"{self.yaw_deg:.0f}\u00b0", "pct": min(1.0, swung / self.yaw_deg)},
-                    {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0", "target": "watch it roll"},
-                    height]
+                    {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0", "target": "watch it roll"}]
         if p == "TRIM":
             rows = [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.trim_s:.0f} s",
                      "pct": min(1.0, self._held / self.trim_s)},
-                    {"label": "Climb/descent", "now": f"{_r(tel.vs, 50):+} fpm", "target": "near 0",
-                     "ok": abs(tel.vs) < 150}]
+                    {"label": "Climb/descent", "now": f"{_r(tel.vs, 50):+} fpm", "target": "under 300",
+                     "ok": abs(tel.vs) < 300}]
             if not self.mock:
                 rows.append({"label": "Stick", "now": f"{abs(tel.elevator) * 100:.0f}%",
                              "target": "hands off", "ok": abs(tel.elevator) < 0.1})
-            return rows + [height]
+            return rows
         if p in self.speeds:
             lo, hi = (d["slow_lo"], d["slow_hi"]) if p == "SLOW_CRUISE" else (d["fast_lo"], d["fast_hi"])
             return [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.speed_s:.0f} s",
                      "pct": min(1.0, self._held / self.speed_s)},
                     {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{lo}\u2013{hi} kt",
-                     "ok": lo <= tel.ias <= hi},
-                    height]
+                     "ok": lo <= tel.ias <= hi}]
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
             rel = f["rel"]
@@ -620,13 +623,21 @@ class FamiliarizationEngine:
                 if self.held:
                     row["progress"] = "Listen to MAVIS \u2014 aircraft held"
             steps.append(row)
-        return {"steps": steps, "complete": self.phase == "DEBRIEF"}
+        return {"steps": steps, "complete": self.phase == "DEBRIEF",
+                "done_text": ("You found Paya Lebar. After your score you're put back at "
+                              "the start of the runway." if self.finds_field else
+                              "All done. After your score you're put back at the start of the runway.")}
+
+    @property
+    def finds_field(self) -> bool:
+        """Does this lesson end by finding Paya Lebar (Flight Familiarization)?"""
+        return "FIND_AIRFIELD" in self.detector.ORDER
 
 
 class FamiliarizationScorer:
     """Practice score for the familiarization flight -- never posted to the
     leaderboard. Metrics (0-100): exercises (share of the lesson's exercises
-    flown rather than timed out), altitude hold (level exercises), bank control
+    flown rather than timed out), altitude hold (straight & level), bank control
     (turns), climb speed, speed hold (speed changes), smoothness -- each only
     when the lesson has an exercise for it. 'Incomplete' until the trainee reaches
     the airfield. main.py hands over the engine's skipped steps before
@@ -644,7 +655,7 @@ class FamiliarizationScorer:
         # only the metrics this lesson's exercises can produce go on the card
         ex_set = set(self.EXERCISES)
         self.metrics = {"smoothness"}
-        if ex_set & {"STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, "TRIM", *self.speeds}:
+        if "STRAIGHT_LEVEL" in ex_set:
             self.metrics.add("altitude")
         if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS}:
             self.metrics.add("bank")
@@ -693,7 +704,7 @@ class FamiliarizationScorer:
         # speed changes: judged once the new speed has had time to settle
         if phase in self.speeds and time.time() - self._phase_t > 15:
             self._add("speed", abs(tel.get("ias", 0.0) - self.speeds[phase]))
-        if phase in ("STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, "TRIM", *self.speeds):
+        if phase == "STRAIGHT_LEVEL":
             self._add("altitude", abs(tel.get("alt_msl", 0.0) - self._ref_alt))
         # bank accuracy once established in the turn -- rolling in and out
         # passes through small angles on the way and isn't an error

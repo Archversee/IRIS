@@ -1,36 +1,34 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { mavisApi } from "../api/mavisApi.js";
 
-// Shown while MAVIS is flying a step as a demonstration (state.demo, set by
-// MAVIS main.py _fam_demo). Skip demo ends this one -- the aircraft goes back
-// to where it began and the explanation is given held still; Skip all demos
-// does that and turns them off for the rest of the run.
+// Shown while MAVIS flies the whole lesson as a demonstration before the
+// trainee's turn (state.demo = {n, of, title}, set by MAVIS main.py
+// _fam_demo_all). Skip demo ends it: the aircraft goes back to the start and
+// the trainee takes over. The button never locks: a slow or failed request
+// just lets you press it again.
 export default function DemoBanner({ demo }) {
-  const [busy, setBusy] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+  const active = !!demo;
+  useEffect(() => {
+    if (!active) setSkipping(false);    // next demo starts fresh
+  }, [active]);
   if (!demo) return null;
 
-  async function send(fn) {
-    setBusy(true);
-    try {
-      await fn();
-    } catch {
-      // best-effort: the demo simply runs to its end
-    } finally {
-      setBusy(false);
-    }
+  function skip() {
+    setSkipping(true);
+    mavisApi.skipDemo().catch(() => setSkipping(false));
   }
 
+  const step = demo.n ? `Step ${demo.n} of ${demo.of}: ${demo.title}` : demo.title;
   return (
     <div className="mavis-demo" role="status">
       <i className="mavis-demo__dot" aria-hidden="true" />
       <div className="mavis-demo__text">
-        <b>MAVIS has control: demo</b>
-        <span>{demo.title}. Hands off, watch. Your turn next.</span>
+        <b>{skipping ? "Skipping the demo…" : "MAVIS is flying: demo"}</b>
+        <span>{step}. Hands off and watch, then it's your turn.</span>
       </div>
       <div className="mavis-demo__actions">
-        <button type="button" disabled={busy} onClick={() => send(mavisApi.skipDemo)}>Skip demo</button>
-        <button type="button" className="secondary" disabled={busy}
-          onClick={() => send(mavisApi.skipAllDemos)}>Skip all demos</button>
+        <button type="button" className="mavis-demo__skip" onClick={skip}>Skip demo</button>
       </div>
     </div>
   );
