@@ -37,7 +37,7 @@ airborne_start:
   throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
 
 exercises:
-  straight_level_hold_s: 20 # seconds wings-level, inside the altitude band, to pass
+  straight_level_hold_s: 10 # seconds wings-level, inside the altitude band, to pass
   altitude_band_ft: 200     # "hold height" means within +/- this
   turn_deg: 90              # heading change for each turn
   turn_bank_deg: 20         # spoken as a range: 15-25 degrees

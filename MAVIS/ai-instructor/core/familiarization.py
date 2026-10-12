@@ -139,7 +139,7 @@ class FamiliarizationEngine:
         self.monitors = Monitors(aircraft, lesson, sim_adapter=sim_adapter)  # reference profiles only
         self.vy = float(aircraft["v_speeds"]["vy"])
         ex = lesson.get("exercises") or {}
-        self.hold_s = float(ex.get("straight_level_hold_s", 20))
+        self.hold_s = float(ex.get("straight_level_hold_s", 10))
         self.turn_deg = float(ex.get("turn_deg", 90))
         self.bank = float(ex.get("turn_bank_deg", 20))
         self.climb_ft = float(ex.get("climb_ft", 500))

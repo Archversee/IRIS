@@ -43,7 +43,7 @@ steps:
   - FIND_AIRFIELD
 
 exercises:
-  straight_level_hold_s: 20
+  straight_level_hold_s: 10
   altitude_band_ft: 150     # tighter than familiarization: this lesson is about holding it
   trim_hold_s: 10           # level, steady, stick near neutral
   slow_kt: 80
