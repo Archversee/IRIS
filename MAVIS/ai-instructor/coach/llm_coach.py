@@ -49,6 +49,7 @@ class Coach:
     def __init__(self, cfg: dict, aircraft: dict, speak_fn, transcript):
         self.url = cfg["ollama_url"].rstrip("/")
         self.model = cfg["model"]
+        self._think: bool | None = False   # see _ollama
         self.timeout = cfg.get("timeout_s", 1.5)
         self.min_gap = cfg.get("min_speak_interval_s", 8)
         self.aircraft = aircraft
@@ -282,17 +283,33 @@ class Coach:
         return f"The language model failed ({type(e).__name__})."
 
     async def _ollama(self, system: str, user: str, timeout: float) -> str:
+        # Reasoning models (Qwen3.x, Gemma 4, DeepSeek-R1...) spend the token budget
+        # on a hidden "thinking" channel and leave message.content empty, so thinking
+        # is switched off (builds too old to know the flag get it left out).
+        body = {
+            "model": self.model, "stream": False,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+            "keep_alive": -1,   # pin the model in VRAM, no mid-lesson reloads
+            "options": {"temperature": 0.7, "num_predict": 200},
+        }
+        if self._think is not None:
+            body["think"] = self._think
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as cli:
-            r = await cli.post(f"{self.url}/api/chat", json={
-                "model": self.model, "stream": False,
-                "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": user}],
-                "keep_alive": -1,   # pin the model in VRAM, no mid-lesson reloads
-                "options": {"temperature": 0.7, "num_predict": 80},
-            })
+            r = await cli.post(f"{self.url}/api/chat", json=body)
+            if r.status_code == 400 and "think" in body and "think" in r.text.lower():
+                self._think = None
+                body.pop("think")
+                r = await cli.post(f"{self.url}/api/chat", json=body)
             r.raise_for_status()
             self.llm_ok = True
-            return r.json()["message"]["content"]
+            msg = r.json().get("message") or {}
+            out = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
+            if not out:
+                log.warning("Ollama returned no answer text (model %s, thinking field %s chars, "
+                            "done_reason %s)", self.model, len(msg.get("thinking") or ""),
+                            r.json().get("done_reason"))
+            return out
 
     async def check_llm(self):
         try:
