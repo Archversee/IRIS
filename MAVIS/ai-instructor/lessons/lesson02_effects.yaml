@@ -1,0 +1,184 @@
+name: "Lesson 2: Effects of Controls"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one
+# (finding Paya Lebar is Flight Familiarization's job, not this lesson's).
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+# Pitch (elevator), roll (ailerons), yaw (rudder), power (throttle).
+# Full 90-degree turns are left to Flight Familiarization (preview) and the
+# later turning lessons; here the ailerons are only rolled in and out.
+steps:
+  - STRAIGHT_LEVEL
+  - PITCH_UP
+  - PITCH_DOWN
+  - ROLL_LEFT
+  - ROLL_RIGHT
+  - YAW_LEFT
+  - YAW_RIGHT
+  - POWER
+
+exercises:
+  straight_level_hold_s: 10 # short: just the reference attitude, not the topic
+  altitude_band_ft: 200
+  pitch_change_ft: 200      # nose up / nose down: height gained or lost to pass
+  turn_bank_deg: 20         # roll in to 15-25 degrees
+  roll_hold_s: 2            # hold the bank this long, then roll level
+  yaw_deg: 10               # nose swing with rudder alone
+  power_throttle_change: 0.2  # throttle lever travel forward (0..1) before bringing it back
+  step_timeout_s: 120
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  effects of controls exercise (airborne start; the stick forward and back for
+  pitch, left and right for roll, the rudder pedals for yaw, the throttle for
+  power; no take-off or landing)
+
+briefing:
+  layman: >-
+    Effects of controls. We're up at about {alt} feet, south of Paya Lebar.
+    First I'll show you what the stick, the pedals and the throttle each do,
+    then you try them, following the to-do list, top right.
+  pilot: >-
+    Effects of controls, airborne at {alt} feet south of Paya Lebar. Elevator,
+    ailerons, rudder, power, primary and secondary effects. Demonstration
+    first, then work the task list.
+
+# See lesson00_familiarization.yaml for the step_notes format.
+step_notes:
+  STRAIGHT_LEVEL:
+    title: Straight & level
+    todo:
+      - "Wings level, nose on the horizon"
+    look: [attitude]
+    layman: >-
+      First, just fly straight. Keep the yellow plane level on the horizon
+      line, wings flat. This is where every control starts from.
+    pilot: >-
+      Straight and level, wings level, nose on the horizon. This is our
+      reference attitude.
+  PITCH_UP:
+    title: Nose up (elevator)
+    todo:
+      - "Ease the stick back a little"
+      - "Watch the speed fall, the height rise"
+    look: [attitude, airspeed, altitude]
+    layman: >-
+      The stick back and forward moves the nose up and down. Ease it back a
+      little. The nose rises, the speed on the left drops, and we climb. Go up
+      {pitch_lo} to {pitch_hi} feet.
+    pilot: >-
+      Elevator controls pitch. Raise the nose about five degrees. Note IAS
+      decreasing, altitude increasing. Climb {pitch_lo} to {pitch_hi} feet.
+  PITCH_DOWN:
+    title: Nose down (elevator)
+    todo:
+      - "Ease the stick forward a little"
+      - "Watch the speed rise, the height fall"
+    look: [attitude, airspeed, altitude]
+    freeze: false
+    layman: >-
+      Now the other way. Ease the stick forward. Nose down, speed up, and we
+      come down {pitch_lo} to {pitch_hi} feet.
+    pilot: >-
+      Lower the nose about five degrees. IAS increasing, descend {pitch_lo} to
+      {pitch_hi} feet.
+  ROLL_LEFT:
+    title: Roll left, roll level (ailerons)
+    todo:
+      - "Stick left until the wings tilt"
+      - "Hold it a moment, watch the nose start to swing"
+      - "Stick right to roll the wings level"
+    look: [attitude, heading]
+    layman: >-
+      Stick left and right tilts the wings. Ease it left until the triangle at
+      the top shows {bank_lo} to {bank_hi} degrees. See the nose start to swing
+      left? That's the turn beginning. Now roll the wings level again.
+    pilot: >-
+      Ailerons control roll. Roll left to {bank_lo} to {bank_hi} degrees, note
+      the further effect, yaw into the turn, then roll wings level.
+  ROLL_RIGHT:
+    title: Roll right, roll level (ailerons)
+    todo:
+      - "Stick right until the wings tilt"
+      - "Stick left to roll the wings level"
+    look: [attitude]
+    freeze: false
+    layman: >-
+      Same to the right, {bank_lo} to {bank_hi} degrees, then roll level.
+    pilot: >-
+      Roll right, {bank_lo} to {bank_hi} degrees, then wings level.
+  YAW_LEFT:
+    title: Left rudder (yaw)
+    todo:
+      - "Press the left pedal gently"
+      - "Watch the nose swing, then the wing drop"
+      - "Feet level again"
+    look: [heading, attitude]
+    layman: >-
+      The pedals swing the nose left and right. Keep the stick still and gently
+      press the left pedal. The nose swings left, then the left wing starts to
+      drop. That roll is the side effect. Feet level again after about {yaw_deg}
+      degrees.
+    pilot: >-
+      Rudder controls yaw. Hands still, left rudder. Note the yaw, then the
+      further effect, roll. Centre the pedals after about {yaw_deg} degrees.
+  YAW_RIGHT:
+    title: Right rudder (yaw)
+    todo:
+      - "Press the right pedal gently"
+      - "Feet level again"
+    look: [heading, attitude]
+    freeze: false
+    layman: >-
+      Now the right pedal. Nose swings right, then the right wing drops. Feet
+      level again.
+    pilot: >-
+      Right rudder, yaw then roll. Centralise after {yaw_deg} degrees.
+  POWER:
+    title: Power up, power back (throttle)
+    todo:
+      - "Push the throttle forward a little"
+      - "Watch the nose rise and swing left"
+      - "Bring the throttle back to where it was"
+    look: [attitude, airspeed, vsi]
+    layman: >-
+      Last control, the throttle. Leave the stick and pedals alone and push the
+      throttle forward a bit. The nose rises and swings a little left, and we
+      start climbing. Then bring it back to where it was.
+    pilot: >-
+      Effect of power. Hands and feet neutral, increase power. Note pitch up,
+      yaw left, climb. Then return to cruise power.

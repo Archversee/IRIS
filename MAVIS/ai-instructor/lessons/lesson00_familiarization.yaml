@@ -37,7 +37,7 @@ airborne_start:
   throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
 
 exercises:
-  straight_level_hold_s: 20 # seconds wings-level, inside the altitude band, to pass
+  straight_level_hold_s: 10 # seconds wings-level, inside the altitude band, to pass
   altitude_band_ft: 200     # "hold height" means within +/- this
   turn_deg: 90              # heading change for each turn
   turn_bank_deg: 20         # spoken as a range: 15-25 degrees
@@ -90,13 +90,12 @@ step_notes:
     title: Straight & level
     todo:
       - "Wings level, nose on the horizon"
-    look: [attitude, altitude]
+    look: [attitude]
     layman: >-
-      I'm holding us still. In the middle screen, keep the yellow plane level
-      on the horizon line, and your height between {alt_lo:,} and {alt_hi:,} feet.
+      Straight and level. In the middle screen, keep the yellow plane level on
+      the horizon line, wings flat, for {hold_s} seconds.
     pilot: >-
-      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Wings level, nose on
-      the horizon, trim.
+      Straight and level. Wings level, nose on the horizon, {hold_s} seconds.
   TURN_LEFT:
     title: Gentle left turn
     todo:
@@ -108,7 +107,6 @@ step_notes:
       shows {bank_lo} to {bank_hi} degrees. Level out after a quarter circle.
     pilot: >-
       Left turn, {bank_lo} to {bank_hi} degrees of bank, about ninety degrees.
-      Hold altitude.
   TURN_RIGHT:
     title: Gentle right turn
     todo:

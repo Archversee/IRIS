@@ -369,6 +369,45 @@ class MSFSAdapter:
                  lat, lon, alt_msl, hdg, ias)
         return True
 
+    def demo_control(self, cmd: dict) -> bool:
+        """Fly an instructor demonstration (core/demo.py command): the
+        aircraft's own autopilot for heading / altitude / vertical speed, the
+        throttle lever, and the rudder axis. Only the keys present change.
+        A hardware control the trainee moves overrides it, so it's hands off
+        while MAVIS has control. Returns False if any write failed."""
+        if self._sm is None:
+            return False
+
+        def ev(name: str, value: int = 0) -> None:
+            self._sm.send_event(name, int(value) & 0xFFFFFFFF)   # negatives as DWORD
+
+        try:
+            with self._lock:
+                if "throttle" in cmd:
+                    self._sm.set_simdatum("GENERAL ENG THROTTLE LEVER POSITION:1",
+                                          max(0.0, min(100.0, float(cmd["throttle"]) * 100.0)),
+                                          "percent")
+                if "rudder" in cmd:
+                    ev("AXIS_RUDDER_SET", round(max(-1.0, min(1.0, float(cmd["rudder"]))) * 16383))
+                if cmd.get("ap") is False:
+                    ev("AUTOPILOT_OFF")
+                elif cmd.get("ap") is True:
+                    ev("AUTOPILOT_ON")
+                    if cmd.get("hdg") is not None:
+                        ev("HEADING_BUG_SET", round(float(cmd["hdg"])) % 360)
+                        ev("AP_HDG_HOLD_ON")
+                    if cmd.get("alt") is not None:
+                        ev("AP_ALT_VAR_SET_ENGLISH", round(float(cmd["alt"])))
+                        if cmd.get("vs"):
+                            ev("AP_VS_VAR_SET_ENGLISH", round(float(cmd["vs"])))
+                            ev("AP_VS_ON")
+                        else:
+                            ev("AP_ALT_HOLD_ON")
+        except Exception as e:
+            log.error("SimConnect demo_control(%s) failed: %s", cmd, e)
+            return False
+        return True
+
     def set_frozen(self, on: bool) -> bool:
         """Hold the aircraft still (position, altitude and attitude) while the
         instructor explains, like MSFS's own lessons; on=False hands it back.

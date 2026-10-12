@@ -1,0 +1,122 @@
+name: "Lesson 3: Straight & Level"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one
+# (finding Paya Lebar is Flight Familiarization's job, not this lesson's).
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+# Attitude + power = performance: wings level at cruise, trim it out, then
+# change speed. Each step is judged on its own skill only -- height is scored
+# on straight & level, never required to pass a step.
+steps:
+  - STRAIGHT_LEVEL
+  - TRIM
+  - SLOW_CRUISE
+  - FAST_CRUISE
+
+exercises:
+  straight_level_hold_s: 10 # seconds wings level
+  altitude_band_ft: 150
+  trim_hold_s: 10           # hands off the stick and steady (no big climb or dive)
+  slow_kt: 80
+  fast_kt: 105
+  speed_hold_s: 10          # seconds inside +/- 5 kt
+  step_timeout_s: 150
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  straight and level exercise (airborne start; wings level, trimming hands
+  off, then flying slower and faster; no take-off or landing)
+
+briefing:
+  layman: >-
+    Straight and level. We're up at about {alt} feet, south of Paya Lebar.
+    First I'll fly it for you: wings level, trimming, then slowing down and
+    speeding up. Then it's your turn, following the to-do list, top right.
+  pilot: >-
+    Straight and level, airborne at {alt} feet south of Paya Lebar. Attitude
+    plus power equals performance. Demonstration first: trim, then speed
+    changes.
+
+# See lesson00_familiarization.yaml for the step_notes format.
+step_notes:
+  STRAIGHT_LEVEL:
+    title: Straight & level
+    todo:
+      - "Wings level, nose on the horizon"
+    look: [attitude]
+    layman: >-
+      Straight and level. Keep the yellow plane level on the horizon line,
+      wings flat, for {hold_s} seconds. Look outside mostly.
+    pilot: >-
+      Straight and level. Wings level, nose on the horizon, lookout. Hold it
+      {hold_s} seconds.
+  TRIM:
+    title: Trim it out
+    todo:
+      - "Roll the trim wheel until the stick feels light"
+      - "Let go of the stick"
+    look: [attitude, vsi]
+    layman: >-
+      Now let's make it easy. If you're pushing or pulling the stick, roll the
+      trim wheel the same way until there's no pressure. Then let go, and it
+      flies steady on its own for {trim_s} seconds.
+    pilot: >-
+      Trim out the control pressure, then hands off. Steady for {trim_s}
+      seconds.
+  SLOW_CRUISE:
+    title: Slow down
+    todo:
+      - "Throttle back a little"
+      - "Settle on the new speed"
+    look: [airspeed]
+    layman: >-
+      Now slower. Pull the throttle back a little and let the speed come down
+      to {slow_lo} to {slow_hi} knots on the left tape. Hold it there.
+    pilot: >-
+      Reduce power. {slow_lo} to {slow_hi} knots, hold it, re-trim.
+  FAST_CRUISE:
+    title: Speed up
+    todo:
+      - "Throttle forward"
+      - "Settle on the new speed"
+    look: [airspeed]
+    freeze: false
+    layman: >-
+      Now faster. Push the throttle forward and let the speed build to
+      {fast_lo} to {fast_hi} knots. Hold it there.
+    pilot: >-
+      Increase power. {fast_lo} to {fast_hi} knots, hold it, re-trim.
