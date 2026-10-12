@@ -79,9 +79,9 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
       return;
     }
     setTalking(false);
-    if (rec.durationMs < 350 || rec.peak < 0.002) {
+    if (rec.durationMs < 350 || rec.maxAbs < 0.0005) {
       busyRef.current = false;
-      const heard = `${(rec.durationMs / 1000).toFixed(1)} s, level ${rec.peak.toFixed(3)}, audio ${rec.engine}`;
+      const heard = `${(rec.durationMs / 1000).toFixed(1)} s, peak ${rec.maxAbs.toFixed(4)}, audio ${rec.engine}; input: ${rec.device}`;
       showStatus(`${rec.durationMs < 350 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
       return;
     }
