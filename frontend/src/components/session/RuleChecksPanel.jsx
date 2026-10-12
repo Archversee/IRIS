@@ -138,6 +138,7 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
         </div>
       )}
 
+      {evaluation?.aircraft_note && <div className="rc-why">{evaluation.aircraft_note}</div>}
       {evaluation && results.length === 0 && (
         <div className="rc-why">
           <b>No rules were checked.</b> When this flight was checked, {evaluation.aircraft_profile || "the aircraft"} had
@@ -146,10 +147,16 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
             ? "press Re-check." : "ask your instructor to re-check this flight."}
         </div>
       )}
-      {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length || grouped.instructor.length) && (
+      {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length) && (
         <div className="rc-why">
-          <b>None of the rules could be judged for this flight.</b> Each rule below says why: usually its phase was
-          never flown, its condition never held, or the value it needs wasn't recorded.
+          <b>No rule could be marked met or not met from the flight data.</b>{" "}
+          Of {results.length} rules, {grouped.instructor.length} can't be measured from flight data (the instructor
+          judges them below) and {grouped.other.length} didn't apply or had no data: each says why, e.g. its phase
+          was never flown in this lesson.{" "}
+          {grouped.instructor.length > 0 && (
+            <>Rules about heights, speeds, bank or descent rate can be made measurable on the{" "}
+              <a href="/sop/rules">SOP Rules</a> page (as a band, limit, event or capture rule).</>
+          )}
         </div>
       )}
 

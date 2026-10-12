@@ -215,6 +215,7 @@ class _RuleState:
     in_scope_s: float = 0.0
     out_s: float = 0.0
     seen_scope: bool = False
+    seen_phase: bool = False                       # one of the rule's phases was flown (conditions aside)
     seen_value: bool = False
     phase_entered_t: float | None = None
     cur: _Excursion | None = None
@@ -238,6 +239,7 @@ class RuleEvaluator:
         self.n_samples = 0
         self.t_first: float | None = None
         self.t_last: float | None = None
+        self.phases_flown: list[str] = []            # in order, for "DOWNWIND was never flown" messages
 
     # ---------------------------------------------------------- applicability
     def _applies(self, r: dict, s: dict) -> bool:
@@ -270,9 +272,14 @@ class RuleEvaluator:
             self.t_first = t
         self.t_last = t
         self.n_samples += 1
+        ph = s.get("phase")
+        if ph and ph not in self.phases_flown:
+            self.phases_flown.append(ph)
         out: list[dict] = []
         for st in self.states:
             k = st.rule.get("kind")
+            if not st.seen_phase and ph in (st.rule.get("phases") or []):
+                st.seen_phase = True
             if k == "band":
                 f = self._band(st, s, dt, t)
             elif k == "limit":
@@ -494,11 +501,34 @@ class RuleEvaluator:
                         "source_quote": r.get("source_quote"), "source_page": r.get("source_page")})
         return res
 
+    def _why_not_applied(self, st: _RuleState) -> str:
+        """Say WHY a rule never applied: its phase was never flown (and which
+        were), its condition never held, or there was no data at all."""
+        r = st.rule
+        phases = list(r.get("phases") or [])
+        gate = r.get("gate_phase")
+        flown = [p for p in self.phases_flown if p not in NOT_FLYING_PHASES]
+        nice = lambda ps: ", ".join(p.replace("_", " ").lower() for p in ps)
+        if not self.n_samples:
+            return "No flight data was recorded."
+        if not flown and (phases or gate):
+            return "This flight has no lesson phases, so a rule for a phase can't be placed."
+        if gate and gate not in self.phases_flown:
+            return f"{nice([gate]).capitalize()} was never flown (this flight: {nice(flown) or 'none'})."
+        if phases and not st.seen_phase:
+            return (f"{nice(phases).capitalize()} {'was' if len(phases) == 1 else 'were'} never flown "
+                    f"(this flight: {nice(flown) or 'none'}).")
+        conds = r.get("conditions") or []
+        if conds:
+            txt = " and ".join(f"{METRICS.get(c.get('metric'), ('', '', 0, c.get('metric')))[3].lower()} "
+                               f"{c.get('op')} {_fmt(c.get('metric'), c.get('value'))}" for c in conds)
+            return f"Its condition ({txt}) never held{(' during ' + nice(phases)) if phases else ''}."
+        return "Didn't apply in this flight."
+
     def _verdict(self, st: _RuleState, k: str, viol: list, metrics: dict) -> tuple[str, str]:
         r = st.rule
         if not st.seen_scope:
-            where = ", ".join(r.get("phases") or []) or "the flight"
-            return "not_applicable", f"Didn't apply in this flight ({where})."
+            return "not_applicable", self._why_not_applied(st)
         if not st.seen_value:
             return "insufficient_data", f"{METRICS.get(r.get('metric'), ('', '', 0, r.get('metric')))[3]} wasn't recorded."
         if k in ("band", "limit"):

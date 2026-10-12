@@ -45,6 +45,10 @@ create table if not exists flight_evaluations (
     signed_off_at    timestamptz,
     instructor_comment text
 );
+-- which aircraft rules were used and why ("Simulator reported 'X', which matches no
+-- aircraft profile: no aircraft rules"). Added after the first version; safe to re-run.
+alter table flight_evaluations add column if not exists aircraft_note text;
+
 create index if not exists flight_evaluations_session on flight_evaluations (session_id, created_at desc);
 
 create table if not exists rule_results (

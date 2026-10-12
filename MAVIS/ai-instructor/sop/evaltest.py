@@ -87,6 +87,13 @@ def part1():
     check("event: 5 s late -> fail", evaluate([ev_gate], late)[0]["verdict"] == "fail")
     never = series([(0, "DOWNWIND", {"flaps_deg": 0}), (20, "DOWNWIND", {"flaps_deg": 0})])
     check("event: gate phase never flown -> not_applicable", evaluate([ev_gate], never)[0]["verdict"] == "not_applicable")
+    r = evaluate([ev_gate], never)[0]
+    check("not_applicable says which phase wasn't flown", "Base was never flown (this flight: downwind)" in r["summary"],
+          r["summary"])
+    r = evaluate([band], never)[0]
+    check("phase-scoped band: names the missing phase", r["summary"].startswith("Climb out was never flown"), r["summary"])
+    r = evaluate([lim], series([(0, "FINAL", {"ias": 90, "flaps_deg": 0}), (10, "FINAL", {"ias": 90, "flaps_deg": 0})]))[0]
+    check("condition never held is said so", r["verdict"] == "not_applicable" and "condition" in r["summary"], r["summary"])
 
     cap = {"id": 5, "kind": "capture", "title": "Gentle touchdown", "metric": "vs", "capture_at": "touchdown",
            "min_value": -300}

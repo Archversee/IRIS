@@ -26,6 +26,11 @@ export default function RuleAlerts({ live, flying = true }) {
       <span className="mavis-rules__label" title={`Strictness: ${live.strictness} (${live.strictness_why})`}>
         Rules · {live.n_rules} checked{live.n_findings ? ` · ${live.n_findings} flagged` : " · all OK so far"}
       </span>
+      {live.aircraft_note && (
+        <span className="mavis-rules__item mavis-rules__item--off" title={live.aircraft_note}>
+          {live.aircraft_note.split(":")[0]}
+        </span>
+      )}
       {b && (
         <span className="mavis-rules__item mavis-rules__item--sum">
           {b.pass || 0} met · {b.fail || 0} not met{b.instructor ? ` · ${b.instructor} for the instructor` : ""}

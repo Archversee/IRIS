@@ -48,6 +48,26 @@ _SNAP = ("id", "rule_set_id", "layer", "handbook", "kind", "title", "phases", "m
          "lesson_types")
 
 
+def aircraft_note(sop: dict | None) -> str | None:
+    """Which aircraft's rules a check used, in words -- from sop/runtime.py's
+    load() result. None when an aircraft rule set was used normally."""
+    sop = sop or {}
+    st, plane = sop.get("status"), sop.get("aircraft_name") or sop.get("aircraft_id")
+    books = sop.get("n_handbook_rules") or 0
+    hb = f"only the {books} training-handbook rule(s) were checked" if books else "no rules were checked"
+    if st == "active":
+        return None
+    if st == "no_profile":
+        return (f"No aircraft rules: the simulator reported “{sop.get('detected') or 'nothing'}”, which matches no "
+                f"aircraft profile, so {hb}. Add that name to sim_match in profiles/aircraft/<id>.yaml "
+                f"(or set sop.aircraft_override in config.yaml).")
+    if st == "none":
+        return f"No aircraft rules: {plane} has no active rule set, so {hb}. Activate one on the SOP Rules page."
+    if st == "unavailable":
+        return f"Rules database unavailable when the flight started: {sop.get('error') or ''}".strip()
+    return None
+
+
 def snapshot(rules: list[dict]) -> list[dict]:
     return [{k: r.get(k) for k in _SNAP if r.get(k) is not None} for r in rules]
 
@@ -118,12 +138,18 @@ class ResultStore:
         lesson_id, lesson = load_lesson(sess.get("lesson_id"), self.cfg.get("lesson"))
         lt = lesson.get("rules_lesson_type") if lesson.get("rules_lesson_type") in LESSON_TYPES else "normal"
         act = await self.store.active_rules(pid, lt) or {"rules": [], "layers": []}
+        names = {a["id"]: a["name"] for a in profiles}
+        has_aircraft = any(x["scope"] == "aircraft" for x in act.get("layers") or [])
+        note = aircraft_note({
+            "status": "no_profile" if not pid else ("active" if has_aircraft else "none"),
+            "aircraft_id": pid, "aircraft_name": names.get(pid, pid), "detected": aircraft_text or None,
+            "n_handbook_rules": sum(x["n_rules"] for x in act.get("layers") or [] if x["scope"] == "general")})
         speeds = next((a["profile"].get("v_speeds") or {} for a in profiles if a["id"] == pid), {})
         rules = [x for x in (resolve_ref(r, speeds) for r in act["rules"]) if x is not None]
         return {"aircraft_profile": pid, "lesson_id": lesson_id, "lesson_type": lt,
                 "elevation_ft": (lesson.get("airport") or {}).get("elevation_ft"),
                 "rule_set_ids": [x["rule_set_id"] for x in act.get("layers") or []],
-                "rules": snapshot(rules)}
+                "rules": snapshot(rules), "aircraft_note": note}
 
     # ------------------------------------------------------------ evaluate + store
     async def evaluate_session(self, session_id: UUID, *, strictness: str | None = None,
@@ -146,8 +172,8 @@ class ResultStore:
             # reuse the flight's own rule snapshot -- unless it is empty (checked while no
             # rule set was active): then take the rules as they are now
             if prev is not None and not use_current_rules and prev["rules"]:
-                context = {k: prev[k] for k in ("aircraft_profile", "lesson_id", "lesson_type", "elevation_ft",
-                                                "rule_set_ids", "rules")}
+                context = {k: prev.get(k) for k in ("aircraft_profile", "lesson_id", "lesson_type", "elevation_ft",
+                                                "rule_set_ids", "rules", "aircraft_note")}
             else:
                 context = await self._resolve_rules(sess)
         if strictness:
@@ -212,12 +238,12 @@ class ResultStore:
                 ev = await c.fetchrow("""
                     insert into flight_evaluations (session_id, source, strictness, strictness_why, aircraft_profile,
                         lesson_id, lesson_type, elevation_ft, rule_set_ids, rules, summary, n_samples, t_first, t_last,
-                        requested_by)
-                    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning *""",
+                        requested_by, aircraft_note)
+                    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning *""",
                     session_id, source, strictness, why, context.get("aircraft_profile"), context.get("lesson_id"),
                     context.get("lesson_type"), context.get("elevation_ft"),
                     [str(x) for x in context.get("rule_set_ids") or []], context.get("rules") or [], summary,
-                    n_samples, t_first, t_last, requested_by)
+                    n_samples, t_first, t_last, requested_by, context.get("aircraft_note"))
                 for i, res in enumerate(results):
                     keep = carried.get((res["rule_id"], res["title"]))
                     await c.execute("""

@@ -271,7 +271,7 @@ async def amain(cfg):
     state["sop_live"] = None
     try:
         from sop.evaluate import RuleEvaluator, sample_from_telemetry, summarize
-        from sop.results import ResultStore, snapshot
+        from sop.results import ResultStore, aircraft_note, snapshot
         rule_results = ResultStore(sop_rt.store, cfg) if sop_rt is not None else None
     except ImportError as e:
         log.info("live rule checks disabled (%s)", e)
@@ -316,9 +316,10 @@ async def amain(cfg):
             "lesson_type": (state.get("sop") or {}).get("lesson_type"),
             "elevation_ft": (lesson.get("airport") or {}).get("elevation_ft"),
             "rule_set_ids": [x["rule_set_id"] for x in act.get("layers") or []], "rules": snapshot(rules),
-            "strictness": strictness, "why": why}
+            "aircraft_note": aircraft_note(state.get("sop")), "strictness": strictness, "why": why}
         live_rules["ev"] = RuleEvaluator(rules, strictness)
         state["sop_live"] = {"status": "checking", "strictness": strictness, "strictness_why": why,
+                             "aircraft_note": live_rules["ctx"]["aircraft_note"],
                              "n_rules": len(rules),
                              "active": [], "recent": [], "n_findings": 0, "summary": None}
         log.info("checking %d rule(s) live, %s (%s)", len(rules), strictness, why)
