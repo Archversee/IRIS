@@ -64,10 +64,13 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     busyRef.current = true;
     const stop = new Promise((r) => { stopRef.current = r; });
     setTalking(true);
-    showStatus("Listening… release when done", true);
+    showStatus("Opening microphone…", true);
     let rec;
     try {
-      rec = await recordMicWav({ stopSignal: stop });
+      rec = await recordMicWav({
+        stopSignal: stop,
+        onReady: () => showStatus("Speak now… release when done", true),
+      });
     } catch (e) {
       stopRef.current = null;
       busyRef.current = false;
@@ -76,9 +79,10 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
       return;
     }
     setTalking(false);
-    if (rec.durationMs < 350 || rec.peak < 0.008) {
+    if (rec.durationMs < 350 || rec.peak < 0.002) {
       busyRef.current = false;
-      showStatus(VOICE_REASONS.too_short);
+      const heard = `${(rec.durationMs / 1000).toFixed(1)} s, level ${rec.peak.toFixed(3)}, audio ${rec.engine}`;
+      showStatus(`${rec.durationMs < 350 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
       return;
     }
     showStatus("Transcribing…", true);
