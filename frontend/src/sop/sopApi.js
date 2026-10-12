@@ -86,4 +86,8 @@ export const sopApi = {
   history: (setId, ruleId) => req(`/rulesets/${setId}/history${ruleId ? `?rule_id=${ruleId}` : ""}`),
   docPage: (doc, n) => req(`/documents/${doc}/pages/${n}`),
   docPageImage: (doc, n, q = "") => `${BASE}/documents/${doc}/pages/${n}/image?q=${encodeURIComponent(q.slice(0, 200))}`,
+  // checking flights against their rules (sop/eval_routes.py)
+  strictness: () => req("/strictness"),
+  // strictness: lenient | standard | strict, or omitted (keep the session's / trainee's / mode's)
+  evaluate: (sessionId, body) => req(`/evaluate/${sessionId}`, { method: "POST", body: body || {} }),
 };

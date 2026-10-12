@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { api } from "../api/client.js";
 import { useSessionData } from "../components/session/useSessionData.js";
 import LoadingBar from "../components/session/LoadingBar.jsx";
 import ScreensPanel from "../components/session/ScreensPanel.jsx";
@@ -7,6 +9,7 @@ import ScanPathCard from "../components/session/ScanPathCard.jsx";
 import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
+import RuleChecksPanel, { RuleChecksChip, ruleMarks } from "../components/session/RuleChecksPanel.jsx";
 import "./review.css";
 
 export default function Review() {
@@ -14,6 +17,17 @@ export default function Review() {
   const nav = useNavigate();
   const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie, phases } =
     useSessionData({ id, live: false });
+  // SOP rule checks: chip in the title bar, drawer with the details, bands on the timeline
+  const [rules, setRules] = useState({ evaluation: null, missing: false });
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const loadRules = useCallback(async () => {
+    try {
+      setRules({ evaluation: await api.ruleResults(id), missing: false });
+    } catch (e) {
+      setRules({ evaluation: null, missing: e.status === 404 });
+    }
+  }, [id]);
+  useEffect(() => { loadRules(); }, [loadRules]);
 
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
   if (!summary || !flightLoaded)
@@ -41,10 +55,11 @@ export default function Review() {
           <h1>{summary.session.name}</h1>
           <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
           <span className="spacer" />
+          <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing} onClick={() => setRulesOpen(true)} />
         </div>
 
         <ScreensPanel {...screens} />
-        <SessionTimeline {...timeline} />
+        <SessionTimeline {...timeline} ruleMarks={ruleMarks(rules.evaluation, timeline.flightStartMs)} />
 
         <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />
@@ -52,6 +67,11 @@ export default function Review() {
           <FlightTelemetryCard {...liveState} altMax={altMax} />
         </div>
       </div>
+
+      {rulesOpen && (
+        <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
+          onClose={() => setRulesOpen(false)} seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
+      )}
 
       {phases.openPhases.map((w) => (
         <PhaseModal key={w.winId} w={w}

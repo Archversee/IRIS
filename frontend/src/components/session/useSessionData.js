@@ -652,6 +652,7 @@ export function useSessionData({ id, live }) {
     timeline: {
       chartSeries, timelineTicks, filters, setFilters, hasEye,
       flightPhases, chartMinT, chartMaxT, totalT, curT,
+      flightStartMs: t0,     // rule-check violations carry epoch times; t = (epoch_ms - this) / 1000
       onChartMouseDown: (e) => { setScrubbing(true); seekToChartEvent(e); },
       onChartMouseMove: (e) => { if (scrubbing) seekToChartEvent(e); },
       onChartMouseUp: () => setScrubbing(false),

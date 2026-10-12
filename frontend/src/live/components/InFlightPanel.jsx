@@ -23,6 +23,7 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
           <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
           <SopChip sop={state?.sop} />
         </div>
+        <RuleAlerts live={state?.sop_live} />
 
         <MapCanvas state={state} />
         {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
@@ -30,6 +31,37 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
       </div>
 
       {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} />}
+    </div>
+  );
+}
+
+// SOP / handbook rules checked live (MAVIS sop/evaluate.py via main.py):
+// what's being broken right now, else the last thing that was, and at the end
+// of the run how the flight did. Warning rules are also spoken.
+function RuleAlerts({ live }) {
+  if (!live) return null;
+  const b = live.summary?.by_verdict;
+  const last = !live.active?.length && live.recent?.[0];
+  return (
+    <div className="mavis-rules" aria-live="polite">
+      <span className="mavis-rules__label" title={`Strictness: ${live.strictness} (${live.strictness_why})`}>
+        Rules · {live.n_rules} checked{live.n_findings ? ` · ${live.n_findings} flagged` : ""}
+      </span>
+      {b && (
+        <span className="mavis-rules__item mavis-rules__item--sum">
+          {b.pass || 0} met · {b.fail || 0} not met{b.instructor ? ` · ${b.instructor} for the instructor` : ""}
+        </span>
+      )}
+      {(live.active || []).map((f) => (
+        <span key={f.rule_id} className={`mavis-rules__item mavis-rules__item--${f.severity}`}>
+          {f.severity === "warning" ? "⚠ " : ""}{f.title}: {f.value_text} · should be {f.requirement}
+        </span>
+      ))}
+      {last && !b && (
+        <span className="mavis-rules__item mavis-rules__item--past">
+          Last: {last.title} ({last.value_text}{last.phase ? `, ${last.phase.toLowerCase().replace(/_/g, " ")}` : ""})
+        </span>
+      )}
     </div>
   );
 }

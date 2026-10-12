@@ -21,6 +21,7 @@ VERBATIM = frozenset({
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_FIELD_HINT", "FAM_DEBRIEF",
+    "SOP_RULE",           # quotes the SOP's own numbers: never let the LLM rephrase them
 })
 
 
@@ -98,6 +99,10 @@ class Coach:
             return abs(tel.get("ias", 0) - ev.data["tgt"]) <= 6
         if ev.code in ("ALT_HIGH", "ALT_LOW") and ev.data.get("tgt"):
             return abs(tel.get("alt_msl", 0) - ev.data["tgt"]) <= 60
+        if ev.code == "SOP_RULE" and ev.data.get("metric") and tel.get(ev.data["metric"]) is not None:
+            v = float(tel[ev.data["metric"]])      # back inside the rule's range already
+            lo, hi = ev.data.get("lo"), ev.data.get("hi")
+            return (lo is not None or hi is not None) and (lo is None or v >= lo) and (hi is None or v <= hi)
         return False
 
     def _freshen(self, ev: CoachEvent) -> None:

@@ -38,6 +38,7 @@ export default function SessionTimeline({
   playing, onTogglePlay, seek, onRestart,
   speed, setSpeed,
   live, followingLive, goLive,
+  ruleMarks = [],
 }) {
   return (
     <div className="rev-timeline">
@@ -87,6 +88,13 @@ export default function SessionTimeline({
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
+          {/* SOP rules broken (RuleChecksPanel.ruleMarks): thin red / amber bands */}
+          {ruleMarks.map((r, i) => (
+            <ReferenceArea key={`rule-${i}`} x1={r.x1} x2={Math.max(r.x2, r.x1 + Math.max(0.5, totalT * 0.003))}
+              fill={r.severity === "warning" ? "#ff5c5c" : "#f5a623"} fillOpacity={0.28} stroke="none"
+              ifOverflow="hidden"
+              onClick={readOnly ? undefined : () => seekTo(r.x1)} style={{ cursor: readOnly ? "default" : "pointer" }} />
+          ))}
           {METRICS.map((m) =>
             filters[m.key] && !(m.key === "workload" && !hasEye) ? (
               <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
