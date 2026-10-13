@@ -57,8 +57,8 @@ export default function LiveCoach({ freeFlight = false }) {
   // Marks this session as no longer in progress -- Live Monitor's picker
   // (GET /sessions/running, under IRIS now) filters on ended_at is null, and
   // LiveAdapter.py polls it to stop the OBS recording. Set on End Session,
-  // and also when a lesson finishes on its own (effect below); "Fly again"
-  // clears it again (flyAgain) since it keeps flying under the same session_id.
+  // and also when a lesson finishes on its own (effect below). Fly again does not
+  // reopen it: that is a new session.
   async function markEnded() {
     const sid = state?.session_id;
     if (!sid) return;
@@ -88,20 +88,17 @@ export default function LiveCoach({ freeFlight = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasScorecard, inLesson, sid]);
 
-  // Scorecard "Fly again": same session, flying again -- clear ended_at so
-  // the session counts as running and LiveAdapter.py starts recording again.
+  // Scorecard "Fly again": a whole new cycle. The finished session stays ended (its
+  // OBS recording stops) and MAVIS starts a NEW session, which gets its own recording.
+  // (Restart, by contrast, stays in the same session.)
   async function flyAgain() {
     flyingAgainRef.current = true;
-    endedRef.current = null;
-    if (sid) {
-      try {
-        await api.updateSession(sid, { ended_at: null });
-      } catch {
-        // best-effort -- the flight still runs, just without a new recording
-      }
+    if (sid && endedRef.current !== sid) {     // normally already marked when the scorecard appeared
+      endedRef.current = sid;
+      await markEnded();
     }
     try {
-      await mavisApi.relaunch();
+      await mavisApi.relaunchNew();
     } catch {
       // best-effort -- the HUD's own Restart button shows errors
     }
@@ -130,8 +127,8 @@ export default function LiveCoach({ freeFlight = false }) {
     }
   }
 
-  // Topbar "Restart": back to the lesson's start position and fly it again,
-  // same session (MAVIS keeps the session_id, so recording/IRIS carry on).
+  // Topbar "Restart": back to the lesson's start position and fly it again, in the
+  // same session and flight (MAVIS keeps the session_id, so recording/IRIS carry on).
   async function confirmRestart() {
     setConfirmingRestart(false);
     setRestarting(true);

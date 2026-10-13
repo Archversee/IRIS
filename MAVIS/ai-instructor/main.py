@@ -720,11 +720,12 @@ async def amain(cfg):
         # not a lesson, whatever lesson MAVIS happens to have loaded underneath)
         meta = lesson_meta(catalog, lesson_id) or {}
         free = bool(session.get("free_flight"))
-        event_log.begin_flight(
-            _sim_now(), lesson_id,
-            "Free Flight" if free else (meta.get("title") or lesson.get("name") or lesson_id),
-            "free_flight" if free else "lesson",
-            "" if free else meta.get("module_title", ""), session.get("mode", ""))
+        if not event_log.in_flight:            # a Restart carries on the flight it interrupted
+            event_log.begin_flight(
+                _sim_now(), lesson_id,
+                "Free Flight" if free else (meta.get("title") or lesson.get("name") or lesson_id),
+                "free_flight" if free else "lesson",
+                "" if free else meta.get("module_title", ""), session.get("mode", ""))
         _publish_events()
         state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
@@ -931,9 +932,9 @@ async def amain(cfg):
         engine.restart()
         scorer.reset()
         recorder.reset()
-        # the flight in progress ends here; its events stay (a restarted attempt is
-        # still data) and the next Start adds a new flight to the same session
-        event_log.end_flight(_sim_now(), "restarted")
+        # Restart: same session, same flight. The attempt in progress ends as
+        # "restarted" (still data); the next attempt's events count as try 2.
+        event_log.restart_attempt(_sim_now())
         _publish_events()
         scored["done"] = False
         coach.resume()
@@ -957,11 +958,11 @@ async def amain(cfg):
 
     relaunching = asyncio.Lock()
 
-    async def relaunch():
-        """Restart button (and the scorecard's Fly again): reset the run, put
-        the aircraft back where the lesson starts -- the airborne start for
-        familiarization (start() does that), the start of the runway for the
-        circuit lessons -- and begin again under the same session."""
+    async def relaunch(new_session: bool = False):
+        """Reset the run, put the aircraft back where the lesson starts -- the
+        airborne start for familiarization (start() does that), the start of the
+        runway for the circuit lessons -- and begin again. The Restart button keeps
+        the same session; the scorecard's Fly again (new_session) starts a new one."""
         if relaunching.locked():
             return                      # a double-click shouldn't restart twice
         async with relaunching:
@@ -971,7 +972,11 @@ async def amain(cfg):
                 if not await _to_runway_start():
                     raise RuntimeError("Couldn't move the aircraft back to the start of the "
                                        "runway -- check MAVIS's log.")
-            await start(keep_session=True)
+            await start(keep_session=not new_session)
+
+    async def relaunch_new():
+        """Scorecard "Fly again": a whole new cycle -- new session, new recording."""
+        await relaunch(new_session=True)
 
     async def mute():
         state["muted"] = not state.get("muted", False)
@@ -1570,7 +1575,7 @@ async def amain(cfg):
     actions = {"start": start, "night": night_sequence,
                "skip": _wrap(lambda: engine.skip_phase()), "restart": restart,
                "skip_demo": skip_demo,
-               "relaunch": relaunch,
+               "relaunch": relaunch, "relaunch_new": relaunch_new,
                "chat": chat, "mute": mute, "intro": intro, "retry": retry,
                "configure_session": configure_session,
                "select_lesson": select_lesson,

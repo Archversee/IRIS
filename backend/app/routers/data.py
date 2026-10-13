@@ -111,6 +111,13 @@ async def get_summary(session_id: UUID):
             "select count(*) from flight_data where session_id = $1", session_id)
         eye_n = await conn.fetchval(
             "select count(*) from eye_tracking_data where session_id = $1", session_id)
+        # which curriculum each flight of the session came from (MAVIS sessions only)
+        try:
+            flights = await conn.fetch(
+                "select flight, title, curriculum, module, mode, outcome from session_flights "
+                "where session_id = $1 order by flight", session_id)
+        except Exception:      # table not created yet (backend not restarted since the upgrade)
+            flights = []
     session = dict(s)
     for screen in ("instrument", "otw"):
         filename = session.get(f"{screen}_video_filename")
@@ -121,4 +128,5 @@ async def get_summary(session_id: UUID):
         "session": session,
         "flight_rows": flight_n,
         "eye_rows": eye_n,
+        "flights": [dict(f) for f in flights],
     }

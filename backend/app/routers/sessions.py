@@ -14,10 +14,9 @@ async def list_running_sessions():
     """MAVIS-sourced sessions still in progress -- Live Monitor's picker
     lists these instead of owning any start/end lifecycle itself (MAVIS is
     the only thing that logs anything; IRIS only views). A session counts
-    as "still running" until its End Session/Main-menu flow in MAVIS's own
-    UI explicitly PATCHes ended_at (see LiveCoach.jsx) -- not merely
-    because a scorecard appeared, since "Fly again" keeps flying under the
-    same session_id."""
+    as "still running" until it is ended: End Session / Main menu, or a
+    lesson finishing on its own, PATCHes ended_at (see LiveCoach.jsx). Fly
+    again then starts a new session; Restart stays in the same one."""
     async with db.acquire() as conn:
         rows = await conn.fetch(
             "select * from sessions where source = 'mavis' and ended_at is null "

@@ -150,12 +150,13 @@ create table if not exists flight_events (
 alter table flight_events add column if not exists flight integer not null default 1;
 
 -- ---------------------------------------------------------------------
--- session_flights: one row per flight in a session. "Fly again" and Restart keep the
--- same session_id, so a session can hold several flights, each from its own
--- curriculum. curriculum = 'lesson' (a catalog lesson: lesson_id/title/module say
+-- session_flights: one row per flight in a session, saying which curriculum it came
+-- from. Restart stays in the same session AND the same flight (the interrupted attempt's
+-- events are marked 'restarted' and the re-fly's are try 2); Fly again is a new session.
+-- So a session normally has one flight; the table allows more. curriculum = 'lesson' (a catalog lesson: lesson_id/title/module say
 -- which) or 'free_flight' (Free Flight menu; lesson_id is then only whatever lesson
 -- MAVIS had loaded underneath, not what was flown). flight_events.flight points here.
--- outcome: completed | abandoned (ended early) | restarted.
+-- outcome: completed | abandoned (ended early).
 -- ---------------------------------------------------------------------
 create table if not exists session_flights (
     session_id  uuid not null references sessions(id) on delete cascade,

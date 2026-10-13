@@ -11,10 +11,10 @@ The log only records. Scoring each event against the SOP rules, and the
 analysis of why it scored as it did, happens downstream (IRIS): `score`,
 `grade` and `detail` are left empty here for that purpose.
 
-A session can hold several flights ("Fly again", Restart): each is a numbered
-flight that records which curriculum it came from (a lesson, or free flight),
-and every event carries its flight number. Events and flights accumulate
-across a session; only a new session wipes them.
+Each flight records which curriculum it came from (a lesson, or free flight), and
+every event carries its flight number. Restart keeps the same session AND the same
+flight: the attempt in progress ends as "restarted" and the next attempt's events
+are try 2, 3... Fly again is a new session, which wipes the log (reset()).
 
 Times are epoch seconds (the same clock as Telemetry.t, hence the same as
 flight_data.ts in IRIS), so an event's [start_t, end_t] slices the flight
@@ -59,6 +59,15 @@ class EventLog:
         }
         self._flights.append(self._flight)
         return self._flight["flight"]
+
+    @property
+    def in_flight(self) -> bool:
+        return self._flight is not None
+
+    def restart_attempt(self, t: float) -> None:
+        """Restart mid-flight: the attempt in progress ends as "restarted"; the flight
+        (and its session) carry on, and the next attempt's events count as try 2, 3..."""
+        self.close(t, "restarted")
 
     def end_flight(self, t: float, outcome: str) -> None:
         """The flight ends (completed / abandoned / restarted); closes any open

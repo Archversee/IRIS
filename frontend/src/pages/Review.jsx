@@ -9,6 +9,26 @@ import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
 
+// Which curriculum this session's flight(s) came from, labelled at the top of the page.
+// "Fly again" / Restart add flights to the same session, so each gets its own chip.
+function Curriculum({ flights }) {
+  if (!flights?.length) return null;
+  return (
+    <div className="rev-curriculum">
+      <span className="label">Curriculum</span>
+      {flights.map((f) => (
+        <span key={f.flight}
+          className={"chip" + (f.curriculum === "free_flight" ? " chip--free" : "")}
+          title={[f.module, f.mode && `${f.mode} mode`, f.outcome].filter(Boolean).join(" · ")}>
+          {flights.length > 1 && <b>Flight {f.flight}</b>}
+          {f.title}
+          {f.outcome && f.outcome !== "completed" && <i> · {f.outcome}</i>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -42,6 +62,7 @@ export default function Review() {
           <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
           <span className="spacer" />
         </div>
+        <Curriculum flights={summary.flights} />
 
         <ScreensPanel {...screens} />
         <SessionTimeline {...timeline} />
