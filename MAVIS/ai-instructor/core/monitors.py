@@ -9,11 +9,32 @@ from .phase_detector import Geometry
 from .reference_profiles import ReferenceProfile
 
 
+def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
+    """Final approach speed band for a lesson with final_speed_band_kt
+    (e.g. the Landing lesson): (lo, hi, aim) kt, or None. The aim is the
+    approach speed, sliding down to touchdown_speed_kt over the last
+    slow_down_below_agl_ft; the band is aim +/- final_speed_band_kt, never
+    below min_speed_kt (kept clear of the stall)."""
+    band = lesson.get("final_speed_band_kt")
+    if not band:
+        return None
+    fin = float(v_speeds["final"])
+    td = float(lesson.get("touchdown_speed_kt", fin))
+    below = float(lesson.get("slow_down_below_agl_ft", 100))
+    f = max(0.0, min(1.0, agl / below)) if below > 0 else 1.0
+    aim = td + (fin - td) * f
+    return max(float(lesson.get("min_speed_kt", 0)), aim - band), aim + band, aim
+
+
 class Monitors:
     def __init__(self, aircraft: dict, lesson: dict, sim_adapter: str = "mock"):
         v = aircraft["v_speeds"]
         f = aircraft["flaps"]
-        self.vr = v["vr"]
+        self._lesson, self._v = lesson, v
+        # how far off the centreline on final before a "drifting" nudge (m)
+        self.centreline_nudge_m = float(lesson.get("centreline_nudge_m", 60))
+        # rotate call speed: the aircraft's Vr, or the lesson's own rotate_kt
+        self.vr = float(lesson.get("rotate_kt") or v["vr"])
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
                           "FINAL": v["final"]}
@@ -197,12 +218,17 @@ class Monitors:
 
         spd = self.tgt_speed.get(phase)
         band = self.speed_band.get(phase)
+        slack = 5.0                          # climb band: nudge once well outside it
+        if phase == "FINAL" and band is None:
+            fb = final_speed_band(self._lesson, self._v, tel.alt_agl)
+            band = fb[:2] if fb else None
+            slack = 0.0                      # final: the band's already wide; its floor guards the stall
         if band and not tel.on_ground and not settling:
             lo, hi = band                    # e.g. 70-90 kt: "toward 90" / "toward 70"
-            if tel.ias > hi + 5:
+            if tel.ias > hi + slack:
                 E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": round(hi)}))
-            elif tel.ias < lo - 5:
-                sev = "correction" if tel.ias < lo - 10 else "nudge"
+            elif tel.ias < lo - slack:
+                sev = "correction" if tel.ias < lo - slack - 5 else "nudge"
                 E(CoachEvent("SPEED_SLOW", sev, {"ias": round(tel.ias), "tgt": round(lo)}))
         elif spd and not tel.on_ground and not settling:
             if tel.ias > spd + 10:
@@ -232,7 +258,7 @@ class Monitors:
             E(CoachEvent("BANK_STEEP", sev, {"bank": round(abs(tel.bank))}, cooldown_s=12))
 
         if phase == "FINAL":
-            if abs(g.cross) > 60 and tel.alt_agl > 100:
+            if abs(g.cross) > self.centreline_nudge_m and tel.alt_agl > 100:
                 E(CoachEvent("CENTERLINE_DRIFT", "nudge",
                              {"side": "left" if g.cross > 0 else "right"}, cooldown_s=15))
             if tel.vs < -900:

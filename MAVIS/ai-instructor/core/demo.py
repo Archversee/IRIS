@@ -29,13 +29,28 @@ NO_DEMO = {"FIND_AIRFIELD"}
 # can't be made to stall -- so the demo holds the aircraft level while MAVIS
 # explains them (the lesson's demo_layman / demo_pilot lines, if it has them).
 DESCRIBE_ONLY = {"STALL", "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
+# Steps that change height: they get a bigger share of the demo's minute.
+DEMO_LONG_STEPS = {"CLIMB", "DESCEND", "CLIMB_TO", "DESCEND_TO", "GLIDE",
+                   "PITCH_UP", "PITCH_DOWN", "SLOW_FLIGHT", "MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT"}
 
 
 class DemoPilot:
     def __init__(self, step: str, eng, tel0: dict, mock: bool = False,
-                 base_throttle: float | None = None):
+                 base_throttle: float | None = None, max_s: float | None = None):
         self.step = step
         self.mock = mock
+        # this step's share of the demo's time budget: past it the demo just
+        # moves on (a climb shows its start, not all 500 ft)
+        self.max_s = max_s
+        self.t_total = 0.0
+        self._cur: dict | None = None            # the command in force (resent every few s)
+        self._resent = 0.0
+        # stall guard: below this speed the step is abandoned and the
+        # aircraft recovered (full power, hold the height). Slow flight is
+        # flown slow on purpose, so its floor is the stall speed itself.
+        stall = float(getattr(eng, "stall_kt", 50.0))
+        self.min_ias = stall if step == "SLOW_FLIGHT" else stall + 5.0
+        self.rescued = False
         self.a0 = float(tel0.get("alt_msl", 0.0))
         self.h0 = float(tel0.get("hdg", 0.0))
         # cruise power the demo returns to: the lesson start's, not wherever
@@ -108,17 +123,19 @@ class DemoPilot:
         if p in DESCRIBE_ONLY:
             return [{"cmd": level, "min_s": 6, "max_s": 6}]
         if p in ("CLIMB_TO", "DESCEND_TO"):
+            # the demo climbs/descends a short way (demo_level_ft) so the
+            # level-off -- the point of the step -- fits in its share of the minute
             up = p == "CLIMB_TO"
-            tgt = eng.level_target(p, a0)
-            return [{"cmd": {"ap": True, "hdg": h0, "alt": tgt, "vs": 700 if up else -500,
+            tgt = eng.level_target(p, a0, demo=True)
+            return [{"cmd": {"ap": True, "hdg": h0, "alt": tgt, "vs": 700 if up else -700,
                              "throttle": 1.0 if up else max(0.2, th0 - 0.2),
                              "spd": eng.vy if up else 95},
                      "until": "alt", "tgt": tgt, "max_s": 90},
                     # levelled off: cruise power back, hold it there a moment
                     {"cmd": {"ap": True, "hdg": h0, "alt": tgt, "throttle": th0, "spd": 95},
-                     "min_s": 5, "max_s": 5}]
+                     "min_s": 3, "max_s": 3}]
         if p == "GLIDE":
-            tgt = a0 - eng.glide_ft
+            tgt = a0 - eng.demo_glide_ft            # a short glide in the demo
             return [{"cmd": {"ap": True, "hdg": h0, "alt": tgt - 200, "vs": -700,
                              "throttle": 0.0, "spd": eng.glide_kt},
                      "until": "alt", "tgt": tgt, "max_s": 60},
@@ -180,12 +197,24 @@ class DemoPilot:
         """One step of the demo. Returns a command to send now, or None."""
         if self.done:
             return None
+        if self.i >= 0:
+            self.t_total += dt
+            if self.max_s and self.t_total >= self.max_s:
+                self.i = len(self.segs)          # out of time for this step: next one
+                return None
         hdg = tel.get("hdg", 0.0)
         if self._prev_hdg is not None:
             self._turned += hdg_diff(hdg, self._prev_hdg)
         self._prev_hdg = hdg
         if self.i < 0:
             return self._next(tel)
+        ias = tel.get("ias")
+        if ias is not None and not tel.get("on_ground") and ias < self.min_ias:
+            # getting close to the stall: stop this step and recover now
+            self.rescued = True
+            self.i = len(self.segs)
+            return {"ap": True, "hdg": tel.get("hdg", self.h0), "alt": tel.get("alt_msl", self.a0),
+                    "throttle": 1.0, "rudder": 0.0}
         seg = self.segs[self.i]
         self.t_seg += dt
         # the rudder axis's sign isn't documented the same way everywhere:
@@ -198,6 +227,11 @@ class DemoPilot:
                 return self._resolve(seg["cmd"], tel)
         if self._finished(seg, tel, dt):
             return self._next(tel)
+        # resend the command in force every few seconds: a mode the autopilot
+        # didn't take, or dropped, gets set again (all of these are idempotent)
+        if self._cur and self.t_seg - self._resent >= 3.0:
+            self._resent = self.t_seg
+            return dict(self._cur)
         return None
 
     def _next(self, tel: dict) -> dict | None:
@@ -210,4 +244,5 @@ class DemoPilot:
         cmd = self._resolve(self.segs[self.i]["cmd"], tel)
         if self.i == 0:
             cmd.setdefault("throttle", self.th0)    # each step starts from cruise power
+        self._cur, self._resent = cmd, 0.0
         return cmd

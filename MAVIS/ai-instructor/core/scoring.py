@@ -16,6 +16,8 @@ import math
 import time
 from dataclasses import dataclass
 
+from .monitors import final_speed_band
+
 M_PER_NM = 1852.0
 
 DEFAULTS = {
@@ -101,6 +103,7 @@ class Scorer:
             self.poly = [(-final_m, 0.0), (rw["length_m"], 0.0)]
         self.pattern_alt = p["altitude_msl_ft"]
         v = aircraft["v_speeds"]
+        self._lesson, self._v = lesson, v
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"], "FINAL": v["final"]}
         b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band
@@ -131,6 +134,9 @@ class Scorer:
                 self._add("altitude", aerr)
         spd = self.tgt_speed.get(phase)
         band = self.speed_band.get(phase)
+        if phase == "FINAL" and band is None:
+            fb = final_speed_band(self._lesson, self._v, tel.get("alt_agl", 0.0))
+            band = fb[:2] if fb else None
         if band:
             ias = tel.get("ias", 0.0)
             self._add("speed", max(0.0, band[0] - ias, ias - band[1]))
@@ -145,10 +151,14 @@ class Scorer:
     def on_landing(self, tel: dict, geom: dict | None) -> None:
         """Capture a touchdown (on_ground transition). The last one is graded
         (L1 has a single full-stop landing)."""
+        ias = tel.get("ias", 0.0)
+        fb = final_speed_band(self._lesson, self._v, 0.0)        # the touchdown end of the band
+        err = (max(0.0, fb[0] - ias, ias - fb[1]) if fb
+               else abs(ias - self.tgt_speed.get("FINAL", 65)))
         self._landings.append({
             "sink": abs(tel.get("vs", 0.0)),
             "center": abs(geom["cross"]) if geom else 0.0,
-            "speed_err": abs(tel.get("ias", 0.0) - self.tgt_speed.get("FINAL", 65)),
+            "speed_err": err,
         })
 
     def _add(self, key: str, err: float) -> None:

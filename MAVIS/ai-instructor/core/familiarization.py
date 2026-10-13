@@ -218,6 +218,11 @@ class FamiliarizationEngine:
         self.level_hold_s = float(ex.get("level_hold_s", 5))
         self.glide_kt = float(ex.get("glide_kt", 68))
         self.glide_ft = float(ex.get("glide_ft", 300))
+        # the up-front demo climbs / descends / glides only this far, so the
+        # level-off fits in a short demo; the trainee's turn uses the full amount
+        self.demo_level_ft = {"CLIMB_TO": float(ex.get("demo_climb_to_ft", 100)),
+                              "DESCEND_TO": float(ex.get("demo_descend_to_ft", 100))}
+        self.demo_glide_ft = float(ex.get("demo_glide_ft", 100))
         # slow flight & stalls
         vs1 = float(aircraft["v_speeds"].get("vs1", 48))
         self.sf_kt = float(ex.get("slow_flight_kt", 55))
@@ -339,8 +344,8 @@ class FamiliarizationEngine:
             return a
         return None
 
-    def level_target(self, step: str, alt: float) -> float:
-        return level_target(step, alt, self.level_ft)
+    def level_target(self, step: str, alt: float, demo: bool = False) -> float:
+        return level_target(step, alt, self.demo_level_ft if demo else self.level_ft)
 
     def turn_target(self, step: str) -> tuple[float, float]:
         """(bank, degrees of turn) for a medium or steep turn."""
@@ -413,12 +418,12 @@ class FamiliarizationEngine:
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
         return out
 
-    def preview(self, phase: str, tel: Telemetry) -> dict:
+    def preview(self, phase: str, tel: Telemetry, demo: bool = False) -> dict:
         """A step's LESSON_NOTE data as if it began now -- what the up-front
         demonstration narrates -- without touching the lesson's progress."""
-        return {**self.step_data(phase, tel), **(self.notes.get(phase) or {})}
+        return {**self.step_data(phase, tel, demo), **(self.notes.get(phase) or {})}
 
-    def step_data(self, p: str, tel: Telemetry) -> dict:
+    def step_data(self, p: str, tel: Telemetry, demo: bool = False) -> dict:
         """Numbers a step's lines and to-do use. Every number spoken or listed
         is a range or an "about" -- the trainee flies to a band, not a needle."""
         f = self._field(tel)
@@ -432,7 +437,8 @@ class FamiliarizationEngine:
         mb, mdeg = self.turn_spec["MEDIUM"]
         sb, sdeg = self.turn_spec["STEEP"]
         return {"phase": p, "circuit": 1, "total_circuits": 1,
-                "tgt_alt": round(self.level_target(p, a)) if p in LEVEL_OFF_STEPS else round(a),
+                "tgt_alt": (round(self.level_target(p, a, demo)) if p in LEVEL_OFF_STEPS
+                            else round(a)),
                 "level_band": round(self.level_band), "level_hold_s": round(self.level_hold_s),
                 "glide_lo": round(self.speed_band["GLIDE"][0]),
                 "glide_hi": round(self.speed_band["GLIDE"][1]),

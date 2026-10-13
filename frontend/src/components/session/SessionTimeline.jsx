@@ -81,10 +81,13 @@ export default function SessionTimeline({
                 else if (x2 === chartMaxT) x1 = Math.max(chartMinT, x2 - minSpan);
               }
             }
+            // display only: the shaded event boxes let clicks and drags through
+            // to the chart underneath, so scrubbing works across them (the
+            // event buttons below the chart are what you click to open one)
             return (
-              <ReferenceArea key={p.key} x1={x1} x2={x2}
+              <ReferenceArea key={p.key} x1={x1} x2={x2} className="tl-event-area"
                 fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
-                onClick={readOnly ? undefined : () => seekTo(p.start)} style={{ cursor: readOnly ? "default" : "pointer" }}
+                style={{ pointerEvents: "none" }}
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}

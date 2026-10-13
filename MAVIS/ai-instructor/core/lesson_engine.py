@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
-from .monitors import Monitors
+from .monitors import Monitors, final_speed_band
 from .phase_detector import PhaseDetector
 
 
@@ -166,14 +166,22 @@ class LessonEngine:
         if kind == "speed":
             return {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": ""}
         if kind == "centreline":
-            lim = 10.0 if tel.on_ground else 30.0
-            now = "on the line" if abs(g.cross) < 3 else f"{abs(g.cross):.0f} m {side}"
+            # how far off still counts as fine (m): the lesson's centreline_ok_m
+            # in the air (default 30), a third of that on the ground (min 10)
+            air = float(self.lesson.get("centreline_ok_m", 30))
+            lim = max(10.0, air / 3) if tel.on_ground else air
+            now = "on the line" if abs(g.cross) < 10 else f"{abs(g.cross):.0f} m {side}"
             return {"label": "Centreline", "now": now, "target": "middle", "ok": abs(g.cross) < lim}
         if kind == "height_to":
             tgt = self.end_agl or 1000.0
             return {"label": "Height", "now": f"{agl:,.0f} ft", "target": f"{tgt:,.0f} ft",
                     "pct": min(1.0, agl / tgt)}
         if kind == "speed_band":
+            fb = final_speed_band(self.lesson, self.monitors._v, agl) if self.detector.phase == "FINAL" else None
+            if fb:
+                lo, hi, aim = fb       # aim slides lower over the last stretch to the runway
+                return {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                        "target": f"aim {aim:.0f} ({lo:.0f}\u2013{hi:.0f})", "ok": lo <= tel.ias <= hi}
             spd = self.monitors.tgt_speed.get(self.detector.phase)
             if not spd:
                 return None

@@ -80,12 +80,9 @@ step_notes:
       - "Roll level after a half circle"
     look: [attitude, altitude]
     layman: >-
-      Medium turn to the left. Bank to {med_bank_lo} to {med_bank_hi} degrees,
-      a bit steeper than before, and ease the stick back a little so the nose
-      doesn't drop. Half a circle, height within {band_ft} feet, then roll level.
+      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, a little back pressure, half a circle.
     pilot: >-
-      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, through 180,
-      altitude within {band_ft} feet. Back pressure as required.
+      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, through 180.
   MEDIUM_TURN_RIGHT:
     title: Medium turn right
     todo:
@@ -94,9 +91,9 @@ step_notes:
     look: [attitude, altitude]
     freeze: false
     layman: >-
-      Same to the right, {med_bank_lo} to {med_bank_hi} degrees, half a circle.
+      Same to the right.
     pilot: >-
-      Medium turn right, {med_bank_lo} to {med_bank_hi} degrees, through 180.
+      Medium turn right, through 180.
   STEEP_TURN_LEFT:
     title: Steep turn left
     todo:
@@ -105,24 +102,13 @@ step_notes:
       - "Roll level after a full circle"
     look: [attitude, altitude]
     layman: >-
-      Now the steep turn. Bank left to {steep_bank_lo} to {steep_bank_hi}
-      degrees and push the throttle forward a little. You'll need to pull back
-      quite firmly to stop the nose dropping. A full circle, height within
-      {band_ft} feet, then roll level.
+      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees: a bit of power, pull back firmly, full circle.
     pilot: >-
-      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360,
-      altitude within {band_ft} feet. Add power, increased back pressure, roll
-      out on the entry heading.
+      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360, add power, back pressure.
     demo_layman: >-
-      The autopilot can't bank this steeply, so for the steep turns just
-      listen. You'll bank to {steep_bank_lo} to {steep_bank_hi} degrees, push
-      the throttle forward a little, and pull back quite firmly to stop the
-      nose dropping. A full circle, height within {band_ft} feet, then roll
-      level.
+      The autopilot can't bank this steeply, so listen: {steep_bank_lo} to {steep_bank_hi} degrees, a bit of power, pull back firmly.
     demo_pilot: >-
-      No autopilot demonstration for steep turns. {steep_bank_lo} to
-      {steep_bank_hi} degrees through 360, add power, increased back pressure,
-      altitude within {band_ft} feet.
+      No autopilot demo: {steep_bank_lo} to {steep_bank_hi} degrees, power, back pressure.
   STEEP_TURN_RIGHT:
     title: Steep turn right
     todo:
@@ -131,13 +117,10 @@ step_notes:
     look: [attitude, altitude]
     freeze: false
     layman: >-
-      Same to the right, {steep_bank_lo} to {steep_bank_hi} degrees, a full
-      circle.
+      Same to the right, full circle.
     pilot: >-
-      Steep turn right, {steep_bank_lo} to {steep_bank_hi} degrees through 360.
+      Steep turn right, through 360.
     demo_layman: >-
-      And the same to the right on your turn: a full circle at
-      {steep_bank_lo} to {steep_bank_hi} degrees.
+      Then the same to the right.
     demo_pilot: >-
-      Then a steep turn right, {steep_bank_lo} to {steep_bank_hi} degrees
-      through 360.
+      Then right, through 360.

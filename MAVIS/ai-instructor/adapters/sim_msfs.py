@@ -436,8 +436,11 @@ class MSFSAdapter:
                     if cmd.get("alt") is not None:
                         ev("AP_ALT_VAR_SET_ENGLISH", round(float(cmd["alt"])))
                         if cmd.get("vs"):
-                            ev("AP_VS_VAR_SET_ENGLISH", round(float(cmd["vs"])))
+                            # mode first, then the rate: the G1000 autopilot
+                            # engages VS at the CURRENT vertical speed (0 when
+                            # level), which would overwrite a rate set before
                             ev("AP_VS_ON")
+                            ev("AP_VS_VAR_SET_ENGLISH", round(float(cmd["vs"])))
                         else:
                             ev("AP_ALT_HOLD_ON")
         except Exception as e:

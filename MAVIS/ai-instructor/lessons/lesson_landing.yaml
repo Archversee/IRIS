@@ -44,6 +44,20 @@ phases:
 targets:
   FINAL:         { speed: "{final}", flaps: 30 }
 
+# Final approach speed: aim for 65 kt (the C172's approach speed), anything
+# within +/- final_speed_band_kt counts. Over the last slow_down_below_agl_ft
+# the aim slides down to touchdown_speed_kt, so slowing over the runway is
+# right, not "too slow". Never below min_speed_kt (stall with full flaps: 40).
+final_speed_band_kt: 20
+touchdown_speed_kt: 55
+slow_down_below_agl_ft: 100
+min_speed_kt: 45
+
+# Centreline: within this many metres counts as fine in the air (a third of
+# it on the runway); "drifting" nudge only past centreline_nudge_m.
+centreline_ok_m: 60
+centreline_nudge_m: 100
+
 # To-do list in the pilot view: one row per stage, with live readouts.
 todo_steps:
   - phases: [FINAL]
@@ -116,8 +130,8 @@ debrief_summary: >-
 # Scored on the final approach and the touchdown.
 scoring:
   weights:    { track: 25, speed: 20, altitude: 20, landing: 35, smoothness: 0 }
-  scales:     { track: 60, speed: 8, altitude: 100, smoothness: 0.22,
-                land_sink: 300, land_center: 40, land_speed: 10 }
+  scales:     { track: 150, speed: 8, altitude: 100, smoothness: 0.22,
+                land_sink: 300, land_center: 60, land_speed: 10 }
   grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
   retry_caps:  { "1": 85, "2": 78, "3": 70 }
   retry_cap_floor: 60

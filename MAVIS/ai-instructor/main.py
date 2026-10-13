@@ -39,7 +39,7 @@ from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, lesson_steps, runway_start,
                                   start_position)
-from core.demo import DESCRIBE_ONLY, NO_DEMO, DemoPilot
+from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
 from lessons import lesson00_preflight, lesson00_cockpit
 
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
@@ -594,6 +594,12 @@ async def amain(cfg):
             return
         mock = cfg["sim"]["adapter"] == "mock"
         base_th = tel0.get("throttle", 0.7)
+        # the whole demo in about two minutes (lesson demo_max_s): each step gets
+        # an equal share of the flying time, less a little for the opening and
+        # closing lines
+        # steps that change height need longer to show than the steady ones
+        weight = {s: (3.0 if s in DEMO_LONG_STEPS else 1.0) for s in steps}
+        unit = (float(lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
         demo_ctl["skip"].clear()
         state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
         flew = skipped = False
@@ -610,7 +616,7 @@ async def amain(cfg):
             _publish_events()
             for i, step in enumerate(steps):
                 tel = dict(state.get("tel") or tel0)
-                data = engine.preview(step, Telemetry(**tel))
+                data = engine.preview(step, Telemetry(**tel), demo=True)
                 if data.get("demo_layman"):
                     # a step the autopilot can't fly: its explain-only lines
                     data = {**data, "layman": data["demo_layman"],
@@ -619,7 +625,8 @@ async def amain(cfg):
                                  "title": data.get("title") or STEP_TITLES.get(step, step),
                                  "describe": step in DESCRIBE_ONLY}
                 state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
-                pilot = DemoPilot(step, engine, tel, mock=mock, base_throttle=base_th)
+                pilot = DemoPilot(step, engine, tel, mock=mock, base_throttle=base_th,
+                                  max_s=max(4.0, unit * weight[step]))
                 speak = asyncio.create_task(coach.say(phrases.render("LESSON_NOTE", data), phase=step))
                 fly = asyncio.create_task(_fly_demo(pilot, gen))
                 skip_w = asyncio.create_task(demo_ctl["skip"].wait())
@@ -633,6 +640,9 @@ async def amain(cfg):
                 if skipped:
                     stop_speech()
                     break
+                if pilot.rescued:
+                    log.warning("demo: %s abandoned near the stall (%.0f kt) -- recovered",
+                                step, (state.get("tel") or {}).get("ias", 0))
                 demo_ctl["shown"].add(step)
             skipped = skipped or demo_ctl["skip"].is_set()
         finally:
@@ -1659,7 +1669,8 @@ async def amain(cfg):
                         continue   # don't announce the new leg; we're reverting
                     if ev.code == "PHASE_ENTER_DEBRIEF":
                         continue   # finish_lesson/_await_spoken_close owns this line
-                    if not allow_coach_event(pol, ev.code, ev.severity):
+                    if (not allow_coach_event(pol, ev.code, ev.severity)
+                            and ev.code not in (lesson.get("always_say") or [])):
                         continue
                     if ev.code == "LESSON_NOTE" and is_familiarization(lesson):
                         state["look_at"] = {"items": ev.data.get("look") or [],

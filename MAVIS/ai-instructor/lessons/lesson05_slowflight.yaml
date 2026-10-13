@@ -80,14 +80,9 @@ step_notes:
       - "Settle at {sf_lo}-{sf_hi} kt, add a little power to stay there"
     look: [airspeed, altitude]
     layman: >-
-      Slow flight. Pull the power back and keep raising the nose so we don't
-      come down. The speed drops to {sf_lo} to {sf_hi} knots and the controls
-      go soft and mushy. Add a bit of power to stay there, height within
-      {band_ft} feet, for {sf_hold_s} seconds.
+      Slow flight: power back, raise the nose, and hold {sf_lo} to {sf_hi} knots without losing height.
     pilot: >-
-      Slow flight, {sf_lo} to {sf_hi} knots, altitude within {band_ft} feet.
-      Reduce power, increase attitude, then power to hold it. Note the soft
-      controls.
+      Slow flight, {sf_lo} to {sf_hi} knots, hold altitude.
   STALL:
     title: Stall and recover
     todo:
@@ -96,22 +91,10 @@ step_notes:
       - "Level off once the speed is back"
     look: [airspeed, attitude]
     layman: >-
-      Now the stall. Throttle all the way back and keep easing the stick back,
-      slowly. The speed keeps falling, the stall horn sounds, and then the nose
-      drops on its own. That's the stall. Straight away: stick forward a
-      little, full power, and once the speed is back above {recover_kt} knots,
-      level off.
+      The stall: idle, ease the stick back until the nose drops. Then nose down, full power.
     pilot: >-
-      Power-off stall. Idle, increase the attitude progressively until the
-      stall. Recover: reduce the angle of attack, full power, level off above
-      {recover_kt} knots, minimum height loss.
+      Power-off stall, then recover: lower the nose, full power.
     demo_layman: >-
-      The autopilot can't stall the aeroplane, so for this one just listen.
-      You'll pull the throttle all the way back and keep easing the stick back,
-      slowly. The speed falls, the stall horn sounds, and the nose drops on its
-      own. That's the stall. Then straight away: stick forward a little, full
-      power, and level off once you're back above {recover_kt} knots.
+      The autopilot can't stall, so just listen: idle, stick back until the nose drops, then nose down, full power.
     demo_pilot: >-
-      No autopilot demonstration for the stall. Idle power, increase the
-      attitude progressively to the stall, then recover: reduce the angle of
-      attack, full power, level off above {recover_kt} knots.
+      No autopilot demo: power-off stall, recover with nose down and full power.

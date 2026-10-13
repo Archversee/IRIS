@@ -40,8 +40,17 @@ targets:
 # nudged on these legs.
 no_speed_target: [CLIMB_OUT, CROSSWIND]
 
+# MAVIS calls "lift off" at this speed -- and says it in every mode
+# (Trainee/Pilot otherwise leave out most spoken callouts).
+rotate_kt: 60
+always_say: [ROTATE_NOW, ROTATE_LATE]
+
 # This lesson's own wording for callouts that otherwise quote a speed.
 say:
+  # short: nothing should still be talking when the lift-off call comes
+  PHASE_ENTER_TAKEOFF_ROLL:
+    layman: "Full power. Keep it straight."
+    pilot: "Full power, keep straight."
   ROTATE_NOW:
     layman: "That's flying speed. Gently ease the stick back and let her lift off."
     pilot: "Rotate."
@@ -55,15 +64,15 @@ todo_steps:
     title: Take-off roll
     todo:
       - "Throttle all the way forward, smoothly"
-      - "Keep straight down the middle with your feet"
+      - "Keep it straight with your feet"
       - "Ease the stick back when MAVIS says"
-    meters: [speed, centreline]
+    meters: [speed]
   - phases: [CLIMB_OUT, CROSSWIND]
     title: Climb out
     todo:
       - "Wings level, straight ahead"
       - "Keep climbing to 1,000 ft"
-    meters: [height_to, centreline]
+    meters: [height_to]
 todo_done: "Take-off done. After your score you're put back on the runway."
 
 # Once scored (in the air at end_at_agl_ft): back on the runway centreline
@@ -73,24 +82,18 @@ end_reposition:
 
 briefing:
   layman: >-
-    Take-off. We're lined up in the middle of the runway at Paya Lebar. Push
-    the throttle all the way forward, keep the nose straight down the middle
-    with your feet, and when I tell you, gently lift the nose. Then climb
-    straight ahead to about a thousand feet. That's the whole lesson.
+    Take-off. We're lined up on the runway at Paya Lebar. Push the throttle
+    all the way forward and keep the nose straight with your feet; it likes
+    to swing left, so a little right pedal. When I tell you, gently lift the
+    nose, then climb straight ahead to about a thousand feet.
   pilot: >-
     Take-off, runway 02. Full power, centreline with rudder, rotate on my
     call, climb out on the runway heading to one thousand feet AGL.
 
 # Teaching point for each leg, spoken after the standard phase call (or on its
 # own in Trainee/Pilot modes).
+# (No tip during the take-off roll: the lift-off call must not wait behind one.)
 phase_notes:
-  TAKEOFF_ROLL:
-    layman: >-
-      As we speed up, the nose wants to swing left. Keep it straight with a
-      little right pedal, eyes at the far end of the runway.
-    pilot: >-
-      Expect a left swing with power. Right rudder to hold the centreline,
-      eyes on the far end.
   CLIMB_OUT:
     layman: >-
       We're flying. Keep the wings level and the nose just above the horizon.
@@ -111,10 +114,11 @@ debrief_summary: >-
   instructor said, then climbing straight ahead to one thousand feet; no
   landing; there was no speed to fly, so don't mention one)
 
-# Scored on keeping straight and smooth only -- there's no speed to fly.
+# Scored on climbing out roughly straight and smooth -- there's no speed to
+# fly, and "straight" is generous (track scale 150 m).
 scoring:
   weights:    { track: 50, speed: 0, altitude: 0, landing: 0, smoothness: 50 }
-  scales:     { track: 60, speed: 8, altitude: 120, smoothness: 0.22,
+  scales:     { track: 150, speed: 8, altitude: 120, smoothness: 0.22,
                 land_sink: 300, land_center: 40, land_speed: 10 }
   grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
   retry_caps:  { "1": 85, "2": 78, "3": 70 }

@@ -26,7 +26,7 @@ class MockAdapter:
         rw = lesson["runway"]
         pat = lesson["pattern"]
         vs = (aircraft or {}).get("v_speeds") or {}
-        self.vr = float(vs.get("vr", 55))
+        self.vr = float(lesson.get("rotate_kt") or vs.get("vr", 55))   # the lesson's rotate call speed
         self.vy = float(vs.get("vy", 74))
         self.rotate_speech_lag_s = 4.0
         self.lat0 = rw["threshold"]["lat"]

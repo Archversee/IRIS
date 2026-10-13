@@ -364,6 +364,10 @@
 }
 .phase-btn:hover { filter: brightness(1.25); }
 .phase-btn.ev { overflow: hidden; text-overflow: ellipsis; text-align: center; padding: 3px 4px; }
+/* Session timeline: the shaded event areas over the chart are display only --
+   clicks and drags pass straight through to the chart (scrubbing). */
+.rev-timeline .recharts-reference-area,
+.rev-timeline .recharts-reference-area * { pointer-events: none; }
 
 /* ---- flight-phase detail popup: draggable floating windows, not a
    backdrop-blocked modal, so playback/the rest of the page stay usable

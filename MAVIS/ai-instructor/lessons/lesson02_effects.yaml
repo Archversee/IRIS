@@ -85,11 +85,9 @@ step_notes:
       - "Wings level, nose on the horizon"
     look: [attitude]
     layman: >-
-      First, just fly straight. Keep the yellow plane level on the horizon
-      line, wings flat. This is where every control starts from.
+      First, straight and level: wings flat, nose on the horizon.
     pilot: >-
-      Straight and level, wings level, nose on the horizon. This is our
-      reference attitude.
+      Straight and level, our reference attitude.
   PITCH_UP:
     title: Nose up (elevator)
     todo:
@@ -97,12 +95,9 @@ step_notes:
       - "Watch the speed fall, the height rise"
     look: [attitude, airspeed, altitude]
     layman: >-
-      The stick back and forward moves the nose up and down. Ease it back a
-      little. The nose rises, the speed on the left drops, and we climb. Go up
-      {pitch_lo} to {pitch_hi} feet.
+      Stick back: the nose rises, the speed drops, and we climb.
     pilot: >-
-      Elevator controls pitch. Raise the nose about five degrees. Note IAS
-      decreasing, altitude increasing. Climb {pitch_lo} to {pitch_hi} feet.
+      Elevator: raise the nose, speed falls, altitude rises.
   PITCH_DOWN:
     title: Nose down (elevator)
     todo:
@@ -111,11 +106,9 @@ step_notes:
     look: [attitude, airspeed, altitude]
     freeze: false
     layman: >-
-      Now the other way. Ease the stick forward. Nose down, speed up, and we
-      come down {pitch_lo} to {pitch_hi} feet.
+      Stick forward: nose down, speed up, and we descend.
     pilot: >-
-      Lower the nose about five degrees. IAS increasing, descend {pitch_lo} to
-      {pitch_hi} feet.
+      Lower the nose: speed rises, we descend.
   ROLL_LEFT:
     title: Roll left, roll level (ailerons)
     todo:
@@ -124,12 +117,9 @@ step_notes:
       - "Stick right to roll the wings level"
     look: [attitude, heading]
     layman: >-
-      Stick left and right tilts the wings. Ease it left until the triangle at
-      the top shows {bank_lo} to {bank_hi} degrees. See the nose start to swing
-      left? That's the turn beginning. Now roll the wings level again.
+      Stick left tilts the wings. Then roll them level again.
     pilot: >-
-      Ailerons control roll. Roll left to {bank_lo} to {bank_hi} degrees, note
-      the further effect, yaw into the turn, then roll wings level.
+      Ailerons: roll left {bank_lo} to {bank_hi} degrees, then wings level.
   ROLL_RIGHT:
     title: Roll right, roll level (ailerons)
     todo:
@@ -138,9 +128,9 @@ step_notes:
     look: [attitude]
     freeze: false
     layman: >-
-      Same to the right, {bank_lo} to {bank_hi} degrees, then roll level.
+      Same to the right, then level.
     pilot: >-
-      Roll right, {bank_lo} to {bank_hi} degrees, then wings level.
+      Roll right, then wings level.
   YAW_LEFT:
     title: Left rudder (yaw)
     todo:
@@ -149,13 +139,9 @@ step_notes:
       - "Feet level again"
     look: [heading, attitude]
     layman: >-
-      The pedals swing the nose left and right. Keep the stick still and gently
-      press the left pedal. The nose swings left, then the left wing starts to
-      drop. That roll is the side effect. Feet level again after about {yaw_deg}
-      degrees.
+      Left pedal: the nose swings left, then the wing drops.
     pilot: >-
-      Rudder controls yaw. Hands still, left rudder. Note the yaw, then the
-      further effect, roll. Centre the pedals after about {yaw_deg} degrees.
+      Left rudder: yaw, then roll as the further effect.
   YAW_RIGHT:
     title: Right rudder (yaw)
     todo:
@@ -164,10 +150,9 @@ step_notes:
     look: [heading, attitude]
     freeze: false
     layman: >-
-      Now the right pedal. Nose swings right, then the right wing drops. Feet
-      level again.
+      Right pedal: the nose swings right, then the wing drops.
     pilot: >-
-      Right rudder, yaw then roll. Centralise after {yaw_deg} degrees.
+      Right rudder: yaw, then roll.
   POWER:
     title: Power up, power back (throttle)
     todo:
@@ -176,9 +161,6 @@ step_notes:
       - "Bring the throttle back to where it was"
     look: [attitude, airspeed, vsi]
     layman: >-
-      Last control, the throttle. Leave the stick and pedals alone and push the
-      throttle forward a bit. The nose rises and swings a little left, and we
-      start climbing. Then bring it back to where it was.
+      Throttle forward: the nose rises and swings left. Then back again.
     pilot: >-
-      Effect of power. Hands and feet neutral, increase power. Note pitch up,
-      yaw left, climb. Then return to cruise power.
+      Power up: pitch up, yaw left. Then back to cruise.
