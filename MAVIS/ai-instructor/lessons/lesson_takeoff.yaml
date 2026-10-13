@@ -1,0 +1,89 @@
+name: "Take-off"
+# The first piece of a circuit on its own: line up, full power, rotate, climb
+# out straight ahead. Runs on the circuit engine (core/lesson_engine.py,
+# phase_detector.py) with `segment: takeoff` -- the lesson ends on the climb-out
+# at end_at_agl_ft, is scored on that alone, and the aircraft is then put back
+# on the runway (end_reposition). Comes before Landing and Your First Circuit.
+segment: takeoff
+end_at_agl_ft: 1000
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  # above end_at_agl_ft on purpose: no "turn crosswind" call before the lesson ends
+  crosswind_turn_agl_ft: 2000
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+phases:
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - DEBRIEF
+targets:
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+
+# Once scored (in the air at end_at_agl_ft): back on the runway centreline
+# this far past the threshold, stopped, ready to go again.
+end_reposition:
+  along_m: 60
+
+briefing:
+  layman: >-
+    Take-off. We're lined up on the runway at Paya Lebar. Push the throttle all
+    the way forward, keep the nose straight down the middle with your feet, and
+    when I say rotate, gently lift the nose. Then climb straight ahead to about
+    a thousand feet. That's the whole lesson.
+  pilot: >-
+    Take-off, runway 02. Full power, centreline with rudder, rotate at Vr, climb
+    out at Vy on the runway heading to one thousand feet AGL.
+
+# Teaching point for each leg, spoken after the standard phase call (or on its
+# own in Trainee/Pilot modes). {speed} comes from the targets above.
+phase_notes:
+  TAKEOFF_ROLL:
+    layman: >-
+      As we speed up, the nose wants to swing left. Keep it straight with a
+      little right pedal, eyes at the far end of the runway.
+    pilot: >-
+      Expect a left swing with power. Right rudder to hold the centreline,
+      eyes on the far end.
+  CLIMB_OUT:
+    layman: >-
+      We're flying. Keep the wings level and the nose up just enough to hold
+      {speed} knots. Straight ahead, nice and steady.
+    pilot: >-
+      Positive climb. Vy, {speed} knots, wings level, runway heading.
+
+closing:
+  layman: >-
+    And that's a take-off, flown by you. I'll put us back on the runway after
+    your score.
+  pilot: >-
+    One thousand feet, take-off complete. Repositioning to the runway after the
+    debrief.
+
+debrief_summary: >-
+  take-off (full power, keeping straight on the runway, rotating at Vr, then
+  climbing straight ahead at Vy to one thousand feet; no landing)
+
+# Scored on the climb-out only: centreline track, climb speed, smoothness.
+scoring:
+  weights:    { track: 30, speed: 40, altitude: 0, landing: 0, smoothness: 30 }
+  scales:     { track: 60, speed: 8, altitude: 120, smoothness: 0.22,
+                land_sink: 300, land_center: 40, land_speed: 10 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60

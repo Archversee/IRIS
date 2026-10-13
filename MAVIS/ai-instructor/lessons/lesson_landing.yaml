@@ -1,0 +1,100 @@
+name: "Landing"
+# The last piece of a circuit on its own: starts in the air, lined up on a
+# 1.5 nm final for runway 02, then final approach, flare, touchdown and rollout
+# to a stop. Runs on the circuit engine (core/lesson_engine.py,
+# phase_detector.py) with `segment: landing` and `start_phase: FINAL`; the
+# airborne start uses final_m (distance before the threshold, on the extended
+# centreline) instead of a bearing from the field. Scored on the approach and
+# the touchdown.
+segment: landing
+start_phase: FINAL
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# 2,800 m (1.5 nm) out on a 3-degree glidepath: ~480 ft above the runway.
+airborne_start:
+  final_m: 2800
+  alt_msl_ft: 550
+  heading_true: 23
+  ias_kt: 70
+  throttle_pct: 35
+
+phases:
+  - BRIEFING
+  - FINAL
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:
+  FINAL:         { speed: "{final}", flaps: 30 }
+
+briefing:
+  layman: >-
+    Landing. We're already lined up with the runway at Paya Lebar, about a mile
+    and a half out and coming down gently. Keep the runway in the same place on
+    the windscreen, hold your speed, and just above the ground, ease the nose
+    up and let it settle. I'll talk you down.
+  pilot: >-
+    Landing, runway 02. Established on a mile-and-a-half final, three-degree
+    path. Full flaps, stabilised approach, flare, touchdown on the centreline,
+    roll out to a stop.
+
+# Teaching point for each leg, spoken after the standard phase call (or on its
+# own in Trainee/Pilot modes). {speed} comes from the targets above.
+phase_notes:
+  FINAL:
+    layman: >-
+      Put the flaps all the way down. Then the nose controls your speed, keep
+      it at {speed} knots, and the throttle controls your height: a little
+      more if you're getting low, a little less if you're high.
+    pilot: >-
+      Full flaps, {speed} knots. Pitch for speed, power for the glidepath, hold
+      the centreline.
+  FLARE_TOUCHDOWN:
+    layman: >-
+      Throttle all the way back. Look at the far end of the runway and slowly
+      raise the nose to stop it sinking. Let it settle on.
+    pilot: >-
+      Power idle, flare, hold it off, main wheels first.
+  ROLLOUT:
+    layman: >-
+      We're down. Keep it straight with your feet and use the brakes gently
+      to stop.
+    pilot: >-
+      Centreline with rudder, brakes as required, roll out to a stop.
+
+closing:
+  layman: >-
+    And that's a landing, flown by you. That's the hardest part of flying.
+    Well done.
+  pilot: >-
+    Full stop. Landing complete. Let's look at the approach and the touchdown.
+
+debrief_summary: >-
+  landing (from a mile-and-a-half final: holding the approach speed and the
+  glidepath on the centreline, then the flare, touchdown and rollout)
+
+# Scored on the final approach and the touchdown.
+scoring:
+  weights:    { track: 25, speed: 20, altitude: 20, landing: 35, smoothness: 0 }
+  scales:     { track: 60, speed: 8, altitude: 100, smoothness: 0.22,
+                land_sink: 300, land_center: 40, land_speed: 10 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60

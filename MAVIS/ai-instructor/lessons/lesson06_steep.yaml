@@ -1,4 +1,4 @@
-name: "Lesson 6: Steep Turns"
+name: "Steep Turns"
 # Airborne lesson built on the familiarization engine (core/familiarization.py):
 # same airborne start, up-front demo, to-do list, "look here" card and
 # scorecard. `steps` picks this lesson's exercises; it ends after the last one.

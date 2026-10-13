@@ -1,4 +1,4 @@
-name: "Lesson 2: Effects of Controls"
+name: "Effects of Controls"
 # Airborne lesson built on the familiarization engine (core/familiarization.py):
 # same airborne start, up-front demo, to-do list, "look here" card and
 # scorecard. `steps` picks this lesson's exercises; it ends after the last one

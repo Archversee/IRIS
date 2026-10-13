@@ -141,6 +141,10 @@ def lesson_state(lesson) -> dict:
     """state["lesson"]: what the web map needs to draw this lesson."""
     out = {"runway": lesson["runway"], "pattern": lesson["pattern"],
            "airport": lesson["airport"], "scoring": lesson.get("scoring", {})}
+    if lesson.get("segment"):
+        # Take-off / Landing: the map draws that piece of the circuit only
+        out["segment"] = lesson["segment"]
+        out["final_m"] = float((lesson.get("airborne_start") or {}).get("final_m", 0))
     if is_familiarization(lesson):
         out.update(type="familiarization")
         if "FIND_AIRFIELD" in lesson_steps(lesson):
@@ -405,7 +409,10 @@ async def amain(cfg):
             await coach.say(own)
         else:
             await coach.say(phrases.render("BRIEFING_1", {}))
-        await coach.say(phrases.render("BRIEFING_2", {}))
+        if not lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own
+            await coach.say(phrases.render("BRIEFING_2", {}))
+        if lesson.get("airborne_start"):
+            await _set_frozen(False)          # held on final through the briefing
         engine.start_flying()
 
     def _lesson_clock() -> tuple[int, int]:
@@ -701,12 +708,15 @@ async def amain(cfg):
             return
         if cfg["sim"]["adapter"] == "msfs":
             await _connect_msfs_with_retries()
-            if not is_familiarization(lesson):
+            if not is_familiarization(lesson) and not lesson.get("airborne_start"):
                 _orient_lesson_to_aircraft(await loop.run_in_executor(None, sim.get_telemetry))
-        if is_familiarization(lesson):
+        if lesson.get("airborne_start"):
             await _airborne_start()
             if _fam_freezes():
                 await _set_frozen(True)     # held through the briefing
+            elif (not is_familiarization(lesson)
+                    and (session.get("policy") or {}).get("coaching") == "turn_by_turn"):
+                await _set_frozen(True)     # landing: held on final while it's briefed
         state["look_at"] = None
         demo_ctl["shown"] = set()
         started.set()
@@ -967,7 +977,7 @@ async def amain(cfg):
             return                      # a double-click shouldn't restart twice
         async with relaunching:
             await restart()
-            if not is_familiarization(lesson) and cfg["sim"]["adapter"] == "msfs":
+            if not lesson.get("airborne_start") and cfg["sim"]["adapter"] == "msfs":
                 await _connect_msfs_with_retries()
                 if not await _to_runway_start():
                     raise RuntimeError("Couldn't move the aircraft back to the start of the "
@@ -1383,15 +1393,20 @@ async def amain(cfg):
         if is_familiarization(lesson):
             return await _make_fam_debrief(card, sc)
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
-        fallback = f"Nice circuit. Best was your {best}; work on {worst} next time."
-        if card.scores.get("landing") is None:
+        fallback = (f"Nicely flown. Best was your {best}; work on {worst} next time."
+                    if lesson.get("segment") else
+                    f"Nice circuit. Best was your {best}; work on {worst} next time.")
+        if card.incomplete and lesson.get("segment"):
+            fallback = f"Good effort. Your {best} stood out. We didn't finish it this time."
+        elif card.scores.get("landing") is None and not lesson.get("segment"):
             fallback = f"Good effort. Your {best} stood out. No landing yet, so that's unscored."
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's circuit from "
+        what = lesson.get("debrief_summary") or "circuit"
+        sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {what} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
         try:
@@ -1465,7 +1480,8 @@ async def amain(cfg):
         if not _debrief_spoken():
             code = (("FAM_DEBRIEF" if engine.finds_field else "FAM_DEBRIEF_DONE")
                     if is_familiarization(lesson) else "PHASE_ENTER_DEBRIEF")
-            await coach.say(phrases.render(code, {
+            own = _lesson_text(lesson.get("closing"))    # e.g. Take-off / Landing's own close
+            await coach.say(own or phrases.render(code, {
                 "phase": "DEBRIEF", "circuit": engine.circuit}), phase="DEBRIEF")
         # Phase 3, wait until TTS actually finishes
         while time.time() < deadline and _coach_active():
@@ -1699,8 +1715,9 @@ async def amain(cfg):
                     prev_on_ground = tel.on_ground
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         scored["done"] = True
-                        if is_familiarization(lesson):
+                        if is_familiarization(lesson) or lesson.get("end_reposition"):
                             # practice over: freeze, score, then back to the runway
+                            # (airborne lessons, and the take-off lesson)
                             asyncio.create_task(_fam_finish())
                         else:
                             asyncio.create_task(finish_lesson(False))

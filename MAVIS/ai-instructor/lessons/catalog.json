@@ -46,18 +46,11 @@
       "subtitle": "C172 · Paya Lebar",
       "lessons": [
         {
-          "id": "lesson00_familiarization",
-          "title": "Flight Familiarization",
-          "subtitle": "Airborne start · get a feel for the aircraft",
+          "id": "lesson03_straight",
+          "title": "Straight & Level, Climbs & Descents",
+          "subtitle": "Trim · speed changes · level-offs · glide",
           "available": true,
-          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. Follow the to-do list, then point the nose at Paya Lebar. No landing.",
-          "duration_min": 15
-        },
-        {
-          "id": "lesson01_pattern",
-          "title": "Your First Circuit",
-          "subtitle": "One lap · take-off and land",
-          "available": true,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you fly level, trim, change speed, climb and descend to set heights, and glide. No landing.",
           "duration_min": 25
         },
         {
@@ -67,22 +60,6 @@
           "available": true,
           "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you try the stick, pedals and throttle. No landing.",
           "duration_min": 22
-        },
-        {
-          "id": "lesson03_straight",
-          "title": "Straight & Level",
-          "subtitle": "Trim · power settings · lookout",
-          "available": true,
-          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you fly level, trim, and change speed. No landing.",
-          "duration_min": 18
-        },
-        {
-          "id": "lesson04_climbdesc",
-          "title": "Climbs & Descents",
-          "subtitle": "Level-offs · Vy climb · glide",
-          "available": true,
-          "duration_min": 20,
-          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you climb and descend to set heights and glide. No landing."
         },
         {
           "id": "lesson05_slowflight",
@@ -99,6 +76,37 @@
           "available": true,
           "duration_min": 18,
           "start_note": "Starts in the air at about 3,000 ft, 3 nm south of Paya Lebar. MAVIS flies the 30° turns and talks you through the 45° ones, then it's your turn. No landing."
+        },
+        {
+          "id": "lesson00_familiarization",
+          "title": "Flight Familiarization",
+          "subtitle": "Airborne start · get a feel for the aircraft",
+          "available": true,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. Follow the to-do list, then point the nose at Paya Lebar. No landing.",
+          "duration_min": 15
+        },
+        {
+          "id": "lesson_takeoff",
+          "title": "Take-off",
+          "subtitle": "Full power · rotate · climb out",
+          "available": true,
+          "duration_min": 10,
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Take off and climb straight ahead to 1,000 ft, then you're put back on the runway."
+        },
+        {
+          "id": "lesson_landing",
+          "title": "Landing",
+          "subtitle": "Final approach · flare · touchdown",
+          "available": true,
+          "duration_min": 10,
+          "start_note": "Starts in the air on a 1.5 nm final for runway 02 at Paya Lebar. Fly the approach and land, rolling out to a stop."
+        },
+        {
+          "id": "lesson01_pattern",
+          "title": "Your First Circuit",
+          "subtitle": "One lap · take-off and land",
+          "available": true,
+          "duration_min": 25
         }
       ]
     },

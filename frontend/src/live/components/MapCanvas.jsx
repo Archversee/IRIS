@@ -109,6 +109,20 @@ export default function MapCanvas({ state }) {
       ctx.stroke();
       ctx.setLineDash([]);
       }
+    } else if (L.segment) {
+      // Take-off / Landing: one piece of the circuit -- the climb-out straight
+      // ahead off the runway, or the final approach down the extended centreline
+      const [a0, a1] = L.segment === "landing" ? [-(L.final_m || 2800), 0] : [rw.length_m, upA + 1200];
+      const [x0, y0] = px(a0, 0);
+      const [x1, y1] = px(a1, 0);
+      ctx.strokeStyle = ACC + "88";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
     } else {
       // Planned circuit (dashed rounded rectangle)
       ctx.strokeStyle = ACC + "55";

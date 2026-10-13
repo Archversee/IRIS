@@ -25,6 +25,10 @@ class LessonEngine:
         self.briefing_done = False
         self._last_fire: dict[str, float] = {}
         self.geom = None
+        # where flying starts: the runway (PRE_TAKEOFF), or e.g. FINAL for the
+        # landing lesson, which starts airborne on final approach
+        self.start_phase = lesson.get("start_phase", "PRE_TAKEOFF")
+        self._announce_start = False
 
     @property
     def phase(self) -> str: return self.detector.phase
@@ -35,7 +39,10 @@ class LessonEngine:
     def start_flying(self):
         """Called once the briefing has been spoken (or presenter skips)."""
         self.briefing_done = True
-        self.detector.advance("PRE_TAKEOFF")
+        self.detector.advance(self.start_phase)
+        # a lesson starting mid-circuit announces that leg (and its teaching
+        # point) on the first tick, as if it had just been entered
+        self._announce_start = self.start_phase != "PRE_TAKEOFF"
 
     def skip_phase(self):
         order = self.detector.ORDER
@@ -48,6 +55,7 @@ class LessonEngine:
         self.detector.circuit = 1
         self.night_done = False
         self.briefing_done = False
+        self._announce_start = False
         self._last_fire.clear()
         self.monitors.reset_turn_cues()
 
@@ -85,6 +93,9 @@ class LessonEngine:
         if not self.briefing_done:
             return out
         new_phase = self.detector.tick(tel, g)
+        if not new_phase and self._announce_start:
+            new_phase = self.detector.phase
+        self._announce_start = False
         if new_phase:
             log.info("phase -> %s (circuit %s, agl %.0f, ias %.0f, cross %.0f)",
                      new_phase, self.detector.circuit, tel.alt_agl, tel.ias, g.cross)

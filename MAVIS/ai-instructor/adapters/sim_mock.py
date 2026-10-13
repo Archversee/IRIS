@@ -66,6 +66,9 @@ class MockAdapter:
         ]
         self._leg_flaps = [0.0, 0.0, 0.0, 30.0, 30.0]
         self.stop_after = int(lesson.get("total_circuits", 1))
+        # landing lesson: placed in the air on final -> fly the circuit's final
+        # leg down to the runway, not free flight
+        self._final_start = "final_m" in (lesson.get("airborne_start") or {})
         self.reset()
 
     def _pt(self, along: float, left: float) -> tuple[float, float]:
@@ -174,6 +177,10 @@ class MockAdapter:
             self._rotate_at = None
         self.stopping = False
         self._tgt = {"hdg": self.hdg, "alt": self.alt, "spd": self.spd or 95.0, "home": False}
+        if not on_ground and self._final_start:
+            self._free = False
+            self._airborne = True
+            self._seg = 4
         self._t = time.time()
         return True
 

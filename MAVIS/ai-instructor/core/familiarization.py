@@ -47,6 +47,17 @@ def start_position(lesson: dict) -> tuple[float, float]:
     a = lesson["airborne_start"]
     if "lat" in a and "lon" in a:
         return a["lat"], a["lon"]
+    if "final_m" in a:
+        # on the extended centreline, this far before the threshold (landing lesson)
+        rw = lesson["runway"]
+        lat0, lon0 = rw["threshold"]["lat"], rw["threshold"]["lon"]
+        h = math.radians(rw["heading_true"])
+        along = -float(a["final_m"])
+        left = float(lesson["pattern"].get("centerline_offset_m", 0.0))
+        n = along * math.cos(h) + left * math.sin(h)
+        e = along * math.sin(h) - left * math.cos(h)
+        return (lat0 + n / 111320.0,
+                lon0 + e / (111320.0 * math.cos(math.radians(lat0))))
     lat0, lon0 = field_center(lesson)
     b = math.radians(a["bearing_from_field_deg"])
     d = float(a["distance_nm"]) * M_PER_NM
