@@ -79,23 +79,26 @@
         {
           "id": "lesson04_climbdesc",
           "title": "Climbs & Descents",
-          "subtitle": "Vy · cruise climb · glide",
-          "available": false,
-          "duration_min": 20
+          "subtitle": "Level-offs · Vy climb · glide",
+          "available": true,
+          "duration_min": 20,
+          "start_note": "Starts in the air at about 2,500 ft, 3 nm south of Paya Lebar. MAVIS flies it first, then you climb and descend to set heights and glide. No landing."
         },
         {
           "id": "lesson05_slowflight",
           "title": "Slow Flight & Stalls",
-          "subtitle": "Recognition and recovery",
-          "available": false,
-          "duration_min": 22
+          "subtitle": "Slow flight · stall recognition and recovery",
+          "available": true,
+          "duration_min": 22,
+          "start_note": "Starts in the air at about 3,500 ft, 3 nm south of Paya Lebar. MAVIS flies the slow flight and talks you through the stall, then it's your turn. No landing."
         },
         {
           "id": "lesson06_steep",
           "title": "Steep Turns",
-          "subtitle": "45° · altitude hold · coordination",
-          "available": false,
-          "duration_min": 18
+          "subtitle": "30° warm-up · 45° turns · height hold",
+          "available": true,
+          "duration_min": 18,
+          "start_note": "Starts in the air at about 3,000 ft, 3 nm south of Paya Lebar. MAVIS flies the 30° turns and talks you through the 45° ones, then it's your turn. No landing."
         }
       ]
     },

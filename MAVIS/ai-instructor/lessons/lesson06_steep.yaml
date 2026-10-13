@@ -1,0 +1,143 @@
+name: "Lesson 6: Steep Turns"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one.
+# Flight Familiarization's turns were gentle (20 degrees); this lesson warms up
+# at 30 degrees, then 45 degrees holding height all the way round.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 3000
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+steps:
+  - MEDIUM_TURN_LEFT
+  - MEDIUM_TURN_RIGHT
+  - STEEP_TURN_LEFT
+  - STEEP_TURN_RIGHT
+
+exercises:
+  medium_bank_deg: 30
+  medium_turn_deg: 180      # a half circle
+  steep_bank_deg: 45
+  steep_turn_deg: 360       # a full circle
+  height_band_ft: 200       # the turn only counts while height is within +/- this
+  step_timeout_s: 150
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  steep turns exercise (airborne start; a half circle each way at 30 degrees
+  of bank, then a full circle each way at 45 degrees, holding height with back
+  pressure and power; no take-off or landing)
+
+briefing:
+  layman: >-
+    Steep turns. We're up at about {alt} feet, south of Paya Lebar. A warm-up
+    half circle each way at 30 degrees, then a full circle each way at 45. The
+    steeper you bank, the more you pull back to stop the nose dropping.
+  pilot: >-
+    Steep turns, airborne at {alt} feet south of Paya Lebar. Medium turns at 30
+    degrees, then 360s at 45 degrees, altitude within 200 feet.
+
+# See lesson00_familiarization.yaml for the step_notes format. demo_layman /
+# demo_pilot: what MAVIS says instead in the up-front demo, for a step the
+# autopilot can't fly (core/demo.py DESCRIBE_ONLY).
+step_notes:
+  MEDIUM_TURN_LEFT:
+    title: Medium turn left
+    todo:
+      - "Bank left {med_bank_lo}-{med_bank_hi}°"
+      - "A little back pressure to hold height"
+      - "Roll level after a half circle"
+    look: [attitude, altitude]
+    layman: >-
+      Medium turn to the left. Bank to {med_bank_lo} to {med_bank_hi} degrees,
+      a bit steeper than before, and ease the stick back a little so the nose
+      doesn't drop. Half a circle, height within {band_ft} feet, then roll level.
+    pilot: >-
+      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, through 180,
+      altitude within {band_ft} feet. Back pressure as required.
+  MEDIUM_TURN_RIGHT:
+    title: Medium turn right
+    todo:
+      - "Bank right {med_bank_lo}-{med_bank_hi}°"
+      - "Roll level after a half circle"
+    look: [attitude, altitude]
+    freeze: false
+    layman: >-
+      Same to the right, {med_bank_lo} to {med_bank_hi} degrees, half a circle.
+    pilot: >-
+      Medium turn right, {med_bank_lo} to {med_bank_hi} degrees, through 180.
+  STEEP_TURN_LEFT:
+    title: Steep turn left
+    todo:
+      - "Bank left {steep_bank_lo}-{steep_bank_hi}°, add some power"
+      - "Pull back firmly to hold height"
+      - "Roll level after a full circle"
+    look: [attitude, altitude]
+    layman: >-
+      Now the steep turn. Bank left to {steep_bank_lo} to {steep_bank_hi}
+      degrees and push the throttle forward a little. You'll need to pull back
+      quite firmly to stop the nose dropping. A full circle, height within
+      {band_ft} feet, then roll level.
+    pilot: >-
+      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360,
+      altitude within {band_ft} feet. Add power, increased back pressure, roll
+      out on the entry heading.
+    demo_layman: >-
+      The autopilot can't bank this steeply, so for the steep turns just
+      listen. You'll bank to {steep_bank_lo} to {steep_bank_hi} degrees, push
+      the throttle forward a little, and pull back quite firmly to stop the
+      nose dropping. A full circle, height within {band_ft} feet, then roll
+      level.
+    demo_pilot: >-
+      No autopilot demonstration for steep turns. {steep_bank_lo} to
+      {steep_bank_hi} degrees through 360, add power, increased back pressure,
+      altitude within {band_ft} feet.
+  STEEP_TURN_RIGHT:
+    title: Steep turn right
+    todo:
+      - "Bank right {steep_bank_lo}-{steep_bank_hi}°, add some power"
+      - "Roll level after a full circle"
+    look: [attitude, altitude]
+    freeze: false
+    layman: >-
+      Same to the right, {steep_bank_lo} to {steep_bank_hi} degrees, a full
+      circle.
+    pilot: >-
+      Steep turn right, {steep_bank_lo} to {steep_bank_hi} degrees through 360.
+    demo_layman: >-
+      And the same to the right on your turn: a full circle at
+      {steep_bank_lo} to {steep_bank_hi} degrees.
+    demo_pilot: >-
+      Then a steep turn right, {steep_bank_lo} to {steep_bank_hi} degrees
+      through 360.

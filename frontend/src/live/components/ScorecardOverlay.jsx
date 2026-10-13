@@ -3,7 +3,7 @@ import { mavisApi } from "../api/mavisApi.js";
 const GRADE_LABEL = { S: "S", A: "A", B: "B", C: "C", D: "D", F: "F" };
 // Scorer keys -> what the bar is about (the familiarization lesson's keys
 // aren't self-explanatory; circuit keys read fine as they are)
-const METRIC_LABEL = { altitude: "height hold", bank: "turns", climb_speed: "climb speed", speed: "speed hold" };
+const METRIC_LABEL = { altitude: "height hold", bank: "turns", climb_speed: "climb speed", speed: "speed hold", level_off: "level-off" };
 
 // Ported to match the original app's #scoreView styling (grade-pill
 // gradients, metric bars, debrief text). The scoring guide lives in the

@@ -24,8 +24,10 @@ export default function DemoBanner({ demo }) {
     <div className="mavis-demo" role="status">
       <i className="mavis-demo__dot" aria-hidden="true" />
       <div className="mavis-demo__text">
-        <b>{skipping ? "Skipping the demo…" : "MAVIS is flying: demo"}</b>
-        <span>{step}. Hands off and watch, then it's your turn.</span>
+        <b>{skipping ? "Skipping the demo…" : demo.describe ? "MAVIS explains: demo" : "MAVIS is flying: demo"}</b>
+        <span>{step}. {demo.describe
+          ? "The autopilot can't fly this one, so listen. You'll fly it on your turn."
+          : "Hands off and watch, then it's your turn."}</span>
       </div>
       <div className="mavis-demo__actions">
         <button type="button" className="mavis-demo__skip" onClick={skip}>Skip demo</button>

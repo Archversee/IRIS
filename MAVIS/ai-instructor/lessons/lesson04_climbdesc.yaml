@@ -1,0 +1,118 @@
+name: "Lesson 4: Climbs & Descents"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one.
+# Flight Familiarization's climb and descent were a taster; this lesson is
+# about arriving at a set height and levelling off there, and the glide.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+# Up to a set height and level off, back down to one and level off, then a
+# power-off glide.
+steps:
+  - CLIMB_TO
+  - DESCEND_TO
+  - GLIDE
+
+exercises:
+  climb_to_ft: 500          # target = start height + this, a round hundred
+  descend_to_ft: 500
+  level_band_ft: 100        # "levelled at the target" = within this
+  level_hold_s: 5           # ...and steady there this long
+  glide_kt: 68              # C172 best glide
+  glide_ft: 300             # glide down this far
+  step_timeout_s: 150
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  climbs and descents exercise (airborne start; climbing at Vy to a set height
+  and levelling off, descending to a set height and levelling off, then a
+  power-off glide at best glide speed; no take-off or landing)
+
+briefing:
+  layman: >-
+    Climbs and descents. We're up at about {alt} feet, south of Paya Lebar.
+    This time it's about stopping at the right height: climb to a number, level
+    off on it, come back down to a number, then a glide with the engine at idle.
+    I'll fly it first.
+  pilot: >-
+    Climbs and descents, airborne at {alt} feet south of Paya Lebar. Climb at
+    Vy and level off at an assigned altitude, descend and level off, then a
+    power-off glide at best glide. Demonstration first.
+
+# See lesson00_familiarization.yaml for the step_notes format.
+step_notes:
+  CLIMB_TO:
+    title: Climb and level off
+    todo:
+      - "Full power, nose up, {spd_lo}-{spd_hi} kt"
+      - "About 50 ft before {tgt_alt:,}, ease the nose down"
+      - "Power back to cruise, hold {tgt_alt:,} ft"
+    look: [airspeed, altitude]
+    layman: >-
+      Climb to {tgt_alt:,} feet. Full power, raise the nose, and keep the speed
+      at {spd_lo} to {spd_hi} knots. About fifty feet before {tgt_alt:,}, ease
+      the nose down to level, then bring the power back. Stay on {tgt_alt:,}.
+    pilot: >-
+      Climb to {tgt_alt:,} feet at Vy. Lead the level-off by about fifty feet,
+      attitude, power, trim. Hold {tgt_alt:,}.
+  DESCEND_TO:
+    title: Descend and level off
+    todo:
+      - "Power back a little, nose down gently"
+      - "About 50 ft before {tgt_alt:,}, raise the nose to level"
+      - "Power back to cruise, hold {tgt_alt:,} ft"
+    look: [altitude, vsi]
+    layman: >-
+      Now down to {tgt_alt:,} feet. Pull the power back a little and let the
+      nose come down gently. About fifty feet before {tgt_alt:,}, raise the nose
+      to level and put the power back. Stay on {tgt_alt:,}.
+    pilot: >-
+      Descend to {tgt_alt:,} feet, around five hundred feet per minute. Lead
+      the level-off by fifty feet, power, attitude, trim. Hold {tgt_alt:,}.
+  GLIDE:
+    title: Glide
+    todo:
+      - "Throttle to idle"
+      - "Hold {glide_lo}-{glide_hi} kt with the nose"
+    look: [airspeed, vsi]
+    layman: >-
+      Last one, the glide, as if the engine had stopped. Pull the throttle all
+      the way back. Now the nose controls the speed: lower it to keep
+      {glide_lo} to {glide_hi} knots. That's how far this aeroplane glides.
+      Down about {glide_ft} feet.
+    pilot: >-
+      Power-off glide. Throttle idle, pitch for best glide, {glide_lo} to
+      {glide_hi} knots. Note the rate of descent. Down {glide_ft} feet.

@@ -39,7 +39,7 @@ from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, lesson_steps, runway_start,
                                   start_position)
-from core.demo import NO_DEMO, DemoPilot
+from core.demo import DESCRIBE_ONLY, NO_DEMO, DemoPilot
 from lessons import lesson00_preflight, lesson00_cockpit
 
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
@@ -492,6 +492,15 @@ async def amain(cfg):
         if fn and not await loop.run_in_executor(None, fn, on):
             log.warning("sim did not confirm freeze=%s", on)
 
+    def _speakable(text: str) -> str:
+        """A to-do line (written for the screen) as MAVIS should say it:
+        "25-35°" -> "25 to 35 degrees", "70-80 kt" -> "70 to 80 knots"."""
+        t = re.sub(r"(\d)\s*[-\u2013]\s*(\d)", r"\1 to \2", text)
+        t = re.sub(r"\s*\u00b0", " degrees", t)
+        t = re.sub(r"(\d)\s*kt\b", r"\1 knots", t)
+        t = re.sub(r"(\d)\s*ft\b", r"\1 feet", t)
+        return t
+
     def _demos_wanted() -> bool:
         """Fly the whole airborne lesson once as a demonstration before the
         trainee's turn? Not in Exam (silent) coaching, not when the lesson
@@ -594,8 +603,13 @@ async def amain(cfg):
             for i, step in enumerate(steps):
                 tel = dict(state.get("tel") or tel0)
                 data = engine.preview(step, Telemetry(**tel))
+                if data.get("demo_layman"):
+                    # a step the autopilot can't fly: its explain-only lines
+                    data = {**data, "layman": data["demo_layman"],
+                            "pilot": data.get("demo_pilot") or data["demo_layman"]}
                 state["demo"] = {"n": i + 1, "of": len(steps),
-                                 "title": data.get("title") or STEP_TITLES.get(step, step)}
+                                 "title": data.get("title") or STEP_TITLES.get(step, step),
+                                 "describe": step in DESCRIBE_ONLY}
                 state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
                 pilot = DemoPilot(step, engine, tel, mock=mock, base_throttle=base_th)
                 speak = asyncio.create_task(coach.say(phrases.render("LESSON_NOTE", data), phase=step))
@@ -1388,6 +1402,7 @@ async def amain(cfg):
     async def _make_fam_debrief(card, sc) -> str:
         names = {"exercises": "getting through every exercise", "altitude": "height holding",
                  "bank": "turns", "climb_speed": "climb speed", "speed": "speed control",
+                 "level_off": "levelling off",
                  "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
@@ -1629,9 +1644,14 @@ async def amain(cfg):
                         if ev.data.get("phase") in demo_ctl["shown"]:
                             # watched in the demo: a short cue, no hold -- keep the momentum
                             title = ev.data.get("title") or ev.data.get("phase")
+                            action = (ev.data.get("todo") or [""])[0]
+                            try:
+                                action = action.format(**ev.data)    # "Bank left {med_bank_lo}-..."
+                            except (KeyError, IndexError, ValueError):
+                                pass
                             cue = phrases.render("FAM_STEP_CUE", {
                                 "title": title, "title_lc": title[:1].lower() + title[1:],
-                                "action": ((ev.data.get("todo") or [""])[0]).rstrip(".")})
+                                "action": _speakable(action).rstrip(".")})
                             ev = CoachEvent("LESSON_NOTE", ev.severity,
                                             {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
                         elif _fam_freezes() and ev.data.get("freeze", True):

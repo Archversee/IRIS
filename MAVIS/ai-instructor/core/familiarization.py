@@ -93,12 +93,23 @@ STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left t
                "POWER": "Power up, power back",
                "YAW_LEFT": "Left rudder", "YAW_RIGHT": "Right rudder",
                "TRIM": "Trim it out", "SLOW_CRUISE": "Slow down", "FAST_CRUISE": "Speed up",
+               "CLIMB_TO": "Climb and level off", "DESCEND_TO": "Descend and level off",
+               "GLIDE": "Glide", "SLOW_FLIGHT": "Slow flight", "STALL": "Stall and recover",
+               "MEDIUM_TURN_LEFT": "Medium turn left", "MEDIUM_TURN_RIGHT": "Medium turn right",
+               "STEEP_TURN_LEFT": "Steep turn left", "STEEP_TURN_RIGHT": "Steep turn right",
                "FIND_AIRFIELD": "Find Paya Lebar & point at it"}
 
 DEFAULT_STEPS = ["STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND", "FIND_AIRFIELD"]
 ROLL_STEPS = ("ROLL_LEFT", "ROLL_RIGHT")
+LEVEL_OFF_STEPS = ("CLIMB_TO", "DESCEND_TO")            # to a set height, then level off there
+MEDIUM_TURNS = ("MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT")
+STEEP_TURNS = ("STEEP_TURN_LEFT", "STEEP_TURN_RIGHT")
+BANKED_TURNS = (*MEDIUM_TURNS, *STEEP_TURNS)
+# Height is part of pass/fail only where holding it IS the skill (slow
+# flight, medium and steep turns) -- within a generous band.
+HOLD_HEIGHT_STEPS = ("SLOW_FLIGHT", *BANKED_TURNS)
 LEVEL_STEPS = ("STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, "YAW_LEFT", "YAW_RIGHT",
-               "TRIM", "SLOW_CRUISE", "FAST_CRUISE")     # height held at the entry altitude
+               "TRIM", "SLOW_CRUISE", "FAST_CRUISE", *HOLD_HEIGHT_STEPS)  # height held at the entry altitude
 
 
 def lesson_steps(lesson: dict) -> list[str]:
@@ -109,6 +120,18 @@ def lesson_steps(lesson: dict) -> list[str]:
         steps.remove("FIND_AIRFIELD")
         steps.append("FIND_AIRFIELD")
     return steps
+
+
+def level_target(step: str, alt: float, level_ft: dict) -> float:
+    """Climb/descend-and-level-off target from the step's start height: a
+    round hundred feet (level_ft = the lesson's climb_to_ft / descend_to_ft)."""
+    sign = 1.0 if step == "CLIMB_TO" else -1.0
+    return round((alt + sign * level_ft[step]) / 100.0) * 100.0
+
+
+def turn_dir(step: str) -> float:
+    """-1 for a step that turns/rolls/yaws left, +1 for right."""
+    return -1.0 if step.endswith("_LEFT") else 1.0
 
 
 def clock_position(rel_deg: float) -> int:
@@ -156,6 +179,23 @@ class FamiliarizationEngine:
         self.speed_s = float(ex.get("speed_hold_s", 10))
         self.speeds = {"SLOW_CRUISE": float(ex.get("slow_kt", 80)),
                        "FAST_CRUISE": float(ex.get("fast_kt", 105))}
+        # climbs & descents
+        self.level_ft = {"CLIMB_TO": float(ex.get("climb_to_ft", 500)),
+                         "DESCEND_TO": float(ex.get("descend_to_ft", 500))}
+        self.level_band = float(ex.get("level_band_ft", 100))     # "level at the target" means within this
+        self.level_hold_s = float(ex.get("level_hold_s", 5))
+        self.glide_kt = float(ex.get("glide_kt", 68))
+        self.glide_ft = float(ex.get("glide_ft", 300))
+        # slow flight & stalls
+        vs1 = float(aircraft["v_speeds"].get("vs1", 48))
+        self.sf_kt = float(ex.get("slow_flight_kt", 55))
+        self.sf_hold_s = float(ex.get("slow_flight_hold_s", 10))
+        self.stall_kt = float(ex.get("stall_kt", vs1 + 2))
+        self.recover_kt = float(ex.get("recover_kt", 65))
+        # medium & steep turns: (bank, degrees of turn)
+        self.turn_spec = {"MEDIUM": (float(ex.get("medium_bank_deg", 30)), float(ex.get("medium_turn_deg", 180))),
+                          "STEEP": (float(ex.get("steep_bank_deg", 45)), float(ex.get("steep_turn_deg", 360)))}
+        self.height_band = float(ex.get("height_band_ft", 200))  # where height counts: within this
         fin = lesson.get("finish") or {}
         self.finish_m = float(fin.get("radius_nm", 2.0)) * M_PER_NM
         self.point_deg = float(fin.get("pointing_within_deg", 15))
@@ -181,7 +221,7 @@ class FamiliarizationEngine:
 
     def start_flying(self):
         self.briefing_done = True
-        self.detector.advance("STRAIGHT_LEVEL")
+        self.detector.advance(self.detector.ORDER[1])     # the lesson's first exercise
 
     def skip_phase(self):
         order = self.detector.ORDER
@@ -224,7 +264,8 @@ class FamiliarizationEngine:
 
     def targets(self) -> dict:
         alt = self._target_alt()
-        spd = self.vy if self.phase == "CLIMB" else self.speeds.get(self.phase)
+        spd = {"CLIMB": self.vy, "CLIMB_TO": self.vy, "GLIDE": self.glide_kt,
+               "SLOW_FLIGHT": self.sf_kt}.get(self.phase, self.speeds.get(self.phase))
         return {"speed": spd,
                 "alt": round(alt) if alt is not None else None, "flaps": None}
 
@@ -239,7 +280,10 @@ class FamiliarizationEngine:
         self._last_hint = 0.0
         self._pointing = 0.0
         self._rudder = 0.0                       # largest rudder deflection this step
-        self._stage = 0                          # roll / power: 0 = going in, 1 = coming back
+        self._stage = 0                          # two-part steps: 0 = first part, 1 = second
+        self._progress = 0.0                     # banked turns: degrees turned that count
+        self._prev_turned = 0.0
+        self._events: list[CoachEvent] = []      # said mid-step (the stall callout)
         self._data: dict = {}
         self._meters: list[dict] = []
 
@@ -255,9 +299,20 @@ class FamiliarizationEngine:
             return a + self.pitch_ft
         if self.phase == "PITCH_DOWN":
             return a - self.pitch_ft
+        if self.phase in LEVEL_OFF_STEPS:
+            return self._entry.get("tgt")
+        if self.phase == "GLIDE":
+            return a - self.glide_ft
         if self.phase in LEVEL_STEPS:
             return a
         return None
+
+    def level_target(self, step: str, alt: float) -> float:
+        return level_target(step, alt, self.level_ft)
+
+    def turn_target(self, step: str) -> tuple[float, float]:
+        """(bank, degrees of turn) for a medium or steep turn."""
+        return self.turn_spec["MEDIUM" if step in MEDIUM_TURNS else "STEEP"]
 
     def _cooled(self, ev: CoachEvent) -> bool:
         last = self._last_fire.get(ev.code, 0.0)
@@ -277,9 +332,13 @@ class FamiliarizationEngine:
     def _enter(self, tel: Telemetry, now: float) -> list[CoachEvent]:
         """First tick of a step: snapshot entry state, announce it."""
         self._announced = self.phase
-        self._entry = {"alt": tel.alt_msl, "hdg": tel.hdg, "t": now, "throttle": tel.throttle}
-        self._held = self._turned = 0.0
+        self._entry = {"alt": tel.alt_msl, "hdg": tel.hdg, "t": now, "throttle": tel.throttle,
+                       "ias": tel.ias}
+        if self.phase in LEVEL_OFF_STEPS:
+            self._entry["tgt"] = self.level_target(self.phase, tel.alt_msl)
+        self._held = self._turned = self._progress = self._prev_turned = 0.0
         self._stage = 0
+        self._events = []
         self._last_hint = now
         p = self.phase
         f = self._field(tel)
@@ -303,7 +362,15 @@ class FamiliarizationEngine:
                 "TRIM": {"hdg_delta": 0, "spd": 95},
                 "SLOW_CRUISE": {"hdg_delta": 0, "spd": slow},
                 "FAST_CRUISE": {"hdg_delta": 0, "spd": fast},
+                "CLIMB_TO": {"alt_delta_ft": data["tgt_alt"] - tel.alt_msl, "spd": self.vy},
+                "DESCEND_TO": {"alt_delta_ft": data["tgt_alt"] - tel.alt_msl, "spd": 95},
+                "GLIDE": {"alt_delta_ft": -(self.glide_ft + 80), "spd": self.glide_kt},
+                "SLOW_FLIGHT": {"hdg_delta": 0, "spd": self.sf_kt},
+                "STALL": {"hdg_delta": 0, "spd": self.stall_kt - 5},
                 "FIND_AIRFIELD": {"home": True, "spd": 95}}.get(p)
+        if p in BANKED_TURNS:
+            bank, deg = self.turn_target(p)
+            mock = {"turn_deg": turn_dir(p) * (deg + 5), "bank": bank, "spd": 95}
         if mock is not None:
             data["mock"] = mock
         out = [CoachEvent(f"PHASE_ENTER_{p}", "info", data, cooldown_s=0)]
@@ -330,7 +397,19 @@ class FamiliarizationEngine:
                 "PITCH_DOWN": (a - self.pitch_ft - 100, a - self.pitch_ft + 50)}.get(
                     p, (a - self.alt_band, a + self.alt_band))
         slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
+        mb, mdeg = self.turn_spec["MEDIUM"]
+        sb, sdeg = self.turn_spec["STEEP"]
         return {"phase": p, "circuit": 1, "total_circuits": 1,
+                "tgt_alt": round(self.level_target(p, a)) if p in LEVEL_OFF_STEPS else round(a),
+                "level_band": round(self.level_band), "level_hold_s": round(self.level_hold_s),
+                "glide_lo": _r(self.glide_kt - 5, 1), "glide_hi": _r(self.glide_kt + 5, 1),
+                "glide_ft": round(self.glide_ft),
+                "sf_lo": _r(self.sf_kt - 5, 5), "sf_hi": _r(self.sf_kt + 5, 5),
+                "sf_hold_s": round(self.sf_hold_s), "band_ft": round(self.height_band),
+                "stall_kt": round(self.stall_kt), "recover_kt": round(self.recover_kt),
+                "med_bank_lo": _r(mb - 5, 5), "med_bank_hi": _r(mb + 5, 5), "med_turn_deg": round(mdeg),
+                "steep_bank_lo": _r(sb - 5, 5), "steep_bank_hi": _r(sb + 5, 5),
+                "steep_turn_deg": round(sdeg),
                 "bank_lo": _r(self.bank - 5, 5), "bank_hi": _r(self.bank + 5, 5),
                 "climb_lo": _r(self.climb_ft - 100, 100), "climb_hi": _r(self.climb_ft + 100, 100),
                 "descend_lo": _r(self.descend_ft - 100, 100),
@@ -410,6 +489,47 @@ class FamiliarizationEngine:
             else:
                 self._held = 0.0
             return self._held >= self.speed_s
+        if p in LEVEL_OFF_STEPS:
+            # get to the set height, then stay level on it a few seconds
+            tgt = e["tgt"]
+            if self._stage == 0:
+                if abs(tel.alt_msl - tgt) < self.level_band:
+                    self._stage = 1
+                return False
+            if abs(tel.alt_msl - tgt) < self.level_band and abs(tel.vs) < 200:
+                self._held += dt
+            return self._held >= self.level_hold_s
+        if p == "GLIDE":
+            return tel.alt_msl <= e["alt"] - self.glide_ft
+        if p == "SLOW_FLIGHT":
+            if abs(tel.ias - self.sf_kt) <= 5 and abs(tel.alt_msl - e["alt"]) < self.height_band:
+                self._held += dt
+            return self._held >= self.sf_hold_s
+        if p == "STALL":
+            if self._stage == 0:
+                # stalled: down at the stall speed, or nose up and sinking anyway
+                if tel.ias <= self.stall_kt or (tel.pitch > 10 and tel.vs < -300):
+                    self._stage = 1
+                    self._events.append(CoachEvent(
+                        "FAM_STALL", "safety",
+                        {"phase": p, "mock": {"spd": self.recover_kt + 10, "alt_delta_ft": 0}},
+                        cooldown_s=0))
+                return False
+            return tel.ias >= self.recover_kt and tel.vs >= -200
+        if p in BANKED_TURNS:
+            # the turn only counts while banked enough and holding height
+            bank, deg = self.turn_target(p)
+            want = turn_dir(p)
+            step_turn = self._turned - self._prev_turned
+            self._prev_turned = self._turned
+            if self._stage == 0:
+                if (tel.bank * want >= bank - 8
+                        and abs(tel.alt_msl - e["alt"]) < self.height_band):
+                    self._progress += max(0.0, step_turn * want)
+                if self._progress >= deg - 20:
+                    self._stage = 1
+                return False
+            return abs(tel.bank) < 8
         return False
 
     def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
@@ -429,24 +549,27 @@ class FamiliarizationEngine:
             return out
         if tel.alt_agl < 700:
             out.append(CoachEvent("FAM_LOW", "safety", {"agl": round(tel.alt_agl)}, cooldown_s=15))
-        if tel.ias < 58:
+        if tel.ias < 58 and self.phase not in ("SLOW_FLIGHT", "STALL"):   # slow on purpose there
             out.append(CoachEvent("FAM_SLOW", "correction", {"ias": round(tel.ias)}, cooldown_s=15))
         elif tel.ias > 140:
             out.append(CoachEvent("FAM_FAST", "correction", {"ias": round(tel.ias)}, cooldown_s=15))
-        if abs(tel.bank) > 40:
+        if abs(tel.bank) > (58 if self.phase in STEEP_TURNS else 40):
             out.append(CoachEvent("FAM_STEEP", "correction", {"bank": round(abs(tel.bank))}, cooldown_s=15))
         if self.phase in ("YAW_LEFT", "YAW_RIGHT") and now - self._entry["t"] > 20:
             want = -1.0 if self.phase == "YAW_LEFT" else 1.0
             if self._turned * want < self.yaw_deg / 2:
                 out.append(CoachEvent("FAM_YAW_REMIND", "nudge",
                                       {"dir": "left" if want < 0 else "right"}, cooldown_s=25))
-        if self.phase in ("TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS) and now - self._entry["t"] > 20:
-            want = -1.0 if self.phase in ("TURN_LEFT", "ROLL_LEFT") else 1.0
+        if (self.phase in ("TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS)
+                and now - self._entry["t"] > 20):
+            want = turn_dir(self.phase)
             if self._turned * want < 15 and abs(tel.bank) < 5 and self._stage == 0:
+                key = ("med_" if self.phase in MEDIUM_TURNS else
+                       "steep_" if self.phase in STEEP_TURNS else "")
                 out.append(CoachEvent("FAM_TURN_REMIND", "nudge",
                                       {"dir": "left" if want < 0 else "right",
-                                       "bank_lo": self._data.get("bank_lo"),
-                                       "bank_hi": self._data.get("bank_hi")}, cooldown_s=25))
+                                       "bank_lo": self._data.get(key + "bank_lo"),
+                                       "bank_hi": self._data.get(key + "bank_hi")}, cooldown_s=25))
         if self.phase == "FIND_AIRFIELD":
             f = self._field(tel)
             if now - self._last_hint >= self.hint_s and abs(f["rel"]) > self.point_deg:
@@ -468,12 +591,15 @@ class FamiliarizationEngine:
             return self._enter(tel, now)
         self._meters = self._readout(tel)
         if self._step_done(tel, dt, now):
+            self._events = []
             order = self.detector.ORDER
             self.detector.advance(order[order.index(self.phase) + 1])
             if self.phase == "DEBRIEF":
                 self._meters = []
                 return [CoachEvent("PHASE_ENTER_DEBRIEF", "info", {"phase": "DEBRIEF"}, cooldown_s=0)]
             return self._enter(tel, now)
+        out.extend(self._events)                 # e.g. the stall callout
+        self._events = []
         for ev in self._monitors(tel, now):
             if ev.cooldown_s == 0 or self._cooled(ev):
                 out.append(ev)
@@ -578,6 +704,65 @@ class FamiliarizationEngine:
                      "pct": min(1.0, self._held / self.speed_s)},
                     {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{lo}\u2013{hi} kt",
                      "ok": lo <= tel.ias <= hi}]
+        height_row = {"label": "Height", "now": f"{_r(alt, 10):,} ft",
+                      "target": f"\u00b1{self.height_band:.0f} ft",
+                      "ok": abs(alt - e.get("alt", alt)) < self.height_band}
+        if p in LEVEL_OFF_STEPS:
+            tgt = e.get("tgt", alt)
+            if self._stage == 0:
+                span = max(1.0, abs(tgt - e.get("alt", alt)))
+                rows = [{"label": "Height", "now": f"{_r(alt, 10):,} ft", "target": f"{tgt:,.0f} ft",
+                         "pct": min(1.0, max(0.0, 1.0 - abs(tgt - alt) / span))}]
+                if p == "CLIMB_TO":
+                    rows.append({"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                                 "target": f"{d['spd_lo']}\u2013{d['spd_hi']} kt",
+                                 "ok": d["spd_lo"] - 3 <= tel.ias <= d["spd_hi"] + 3})
+                return rows
+            return [{"label": "Level at", "now": f"{_r(alt, 10):,} ft",
+                     "target": f"{tgt:,.0f} \u00b1{self.level_band:.0f} ft",
+                     "ok": abs(alt - tgt) < self.level_band},
+                    {"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.level_hold_s:.0f} s",
+                     "pct": min(1.0, self._held / self.level_hold_s)}]
+        if p == "GLIDE":
+            down = max(0.0, e.get("alt", alt) - alt)
+            rows = [{"label": "Glided down", "now": f"{_r(down, 10)} ft", "target": f"{self.glide_ft:.0f} ft",
+                     "pct": min(1.0, down / self.glide_ft)},
+                    {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                     "target": f"{d['glide_lo']}\u2013{d['glide_hi']} kt",
+                     "ok": d["glide_lo"] <= tel.ias <= d["glide_hi"]}]
+            if not self.mock:
+                rows.append({"label": "Throttle", "now": f"{tel.throttle * 100:.0f}%", "target": "idle",
+                             "ok": tel.throttle <= 0.15})
+            return rows
+        if p == "SLOW_FLIGHT":
+            return [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.sf_hold_s:.0f} s",
+                     "pct": min(1.0, self._held / self.sf_hold_s)},
+                    {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{d['sf_lo']}\u2013{d['sf_hi']} kt",
+                     "ok": d["sf_lo"] <= tel.ias <= d["sf_hi"]},
+                    height_row]
+        if p == "STALL":
+            if self._stage == 0:
+                start = e.get("ias", tel.ias)
+                return [{"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"down to {self.stall_kt:.0f}",
+                         "pct": min(1.0, max(0.0, (start - tel.ias) / max(1.0, start - self.stall_kt)))},
+                        {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "slowly up"}]
+            return [{"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{self.recover_kt:.0f}+ kt",
+                     "ok": tel.ias >= self.recover_kt},
+                    {"label": "Climb/descent", "now": f"{_r(tel.vs, 50):+} fpm", "target": "stop the sink",
+                     "ok": tel.vs >= -200}]
+        if p in BANKED_TURNS:
+            bank, deg = self.turn_target(p)
+            k = "med_" if p in MEDIUM_TURNS else "steep_"
+            if self._stage == 1:
+                return [{"label": "Wings level", "now": f"{abs(tel.bank):.0f}\u00b0",
+                         "target": "under 8\u00b0", "ok": abs(tel.bank) < 8}, height_row]
+            return [{"label": "Turned", "now": f"{_r(self._progress, 5)}\u00b0",
+                     "target": f"{deg - 20:.0f}\u2013{deg:.0f}\u00b0",
+                     "pct": min(1.0, self._progress / max(1.0, deg - 20))},
+                    {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0",
+                     "target": f"{d[k + 'bank_lo']}\u2013{d[k + 'bank_hi']}\u00b0",
+                     "ok": abs(tel.bank) >= bank - 8},
+                    height_row]
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
             rel = f["rel"]
@@ -617,9 +802,15 @@ class FamiliarizationEngine:
                         lines.append(ln)
                 row["lines"] = lines
                 row["meters"] = self._meters
-                if self.phase in (*ROLL_STEPS, "POWER") and self._stage == 1:
-                    row["progress"] = ("Now roll the wings level" if self.phase in ROLL_STEPS
-                                       else "Now bring the throttle back")
+                if self._stage == 1:
+                    msg = {"POWER": "Now bring the throttle back",
+                           "STALL": "Stall! Nose down, full power, then level off"}.get(self.phase)
+                    if self.phase in (*ROLL_STEPS, *BANKED_TURNS):
+                        msg = "Now roll the wings level"
+                    elif self.phase in LEVEL_OFF_STEPS:
+                        msg = "Now level off and hold it there"
+                    if msg:
+                        row["progress"] = msg
                 if self.held:
                     row["progress"] = "Listen to MAVIS \u2014 aircraft held"
             steps.append(row)
@@ -643,7 +834,7 @@ class FamiliarizationScorer:
     the airfield. main.py hands over the engine's skipped steps before
     finalize()."""
     WEIGHTS = {"exercises": 25, "altitude": 25, "bank": 20, "climb_speed": 10,
-               "speed": 15, "smoothness": 20}
+               "speed": 15, "level_off": 20, "smoothness": 20}
 
     def __init__(self, lesson: dict, aircraft: dict):
         ex = lesson.get("exercises") or {}
@@ -652,17 +843,26 @@ class FamiliarizationScorer:
         self.speeds = {"SLOW_CRUISE": float(ex.get("slow_kt", 80)),
                        "FAST_CRUISE": float(ex.get("fast_kt", 105))}
         self.vy = float(aircraft["v_speeds"]["vy"])
+        # the same lesson keys the engine reads, so score and to-do agree
+        self.level_ft = {"CLIMB_TO": float(ex.get("climb_to_ft", 500)),
+                         "DESCEND_TO": float(ex.get("descend_to_ft", 500))}
+        self.speeds.update({"SLOW_FLIGHT": float(ex.get("slow_flight_kt", 55)),
+                            "GLIDE": float(ex.get("glide_kt", 68))})
+        self.turn_bank = {**{s: float(ex.get("medium_bank_deg", 30)) for s in MEDIUM_TURNS},
+                          **{s: float(ex.get("steep_bank_deg", 45)) for s in STEEP_TURNS}}
         # only the metrics this lesson's exercises can produce go on the card
         ex_set = set(self.EXERCISES)
         self.metrics = {"smoothness"}
-        if "STRAIGHT_LEVEL" in ex_set:
+        if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS}:
             self.metrics.add("altitude")
-        if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS}:
+        if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS}:
             self.metrics.add("bank")
-        if "CLIMB" in ex_set:
+        if ex_set & {"CLIMB", "CLIMB_TO"}:
             self.metrics.add("climb_speed")
         if ex_set & set(self.speeds):
             self.metrics.add("speed")
+        if ex_set & set(LEVEL_OFF_STEPS):
+            self.metrics.add("level_off")
         cfg = lesson.get("scoring", {}) or {}
         self.s = {**DEFAULTS["scales"], "bank": 8.0, **cfg.get("scales", {})}
         self.grade_bands = cfg.get("grade_bands", DEFAULTS["grade_bands"])
@@ -701,19 +901,29 @@ class FamiliarizationScorer:
         if phase != self._phase:
             self._phase, self._ref_alt = phase, tel.get("alt_msl", 0.0)
             self._phase_t = time.time()
+        settled = time.time() - self._phase_t
+        alt, vs = tel.get("alt_msl", 0.0), tel.get("vs", 0.0)
         # speed changes: judged once the new speed has had time to settle
-        if phase in self.speeds and time.time() - self._phase_t > 15:
+        # (the glide once it's actually gliding)
+        if phase in self.speeds and settled > 15 and (phase != "GLIDE" or vs < -200):
             self._add("speed", abs(tel.get("ias", 0.0) - self.speeds[phase]))
-        if phase == "STRAIGHT_LEVEL":
-            self._add("altitude", abs(tel.get("alt_msl", 0.0) - self._ref_alt))
+        if phase in ("STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS):
+            self._add("altitude", abs(alt - self._ref_alt))
         # bank accuracy once established in the turn -- rolling in and out
         # passes through small angles on the way and isn't an error
-        if phase in ("TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS) and abs(tel.get("bank", 0.0)) >= self.bank / 2:
-            self._add("bank", abs(abs(tel.get("bank", 0.0)) - self.bank))
+        want_bank = self.turn_bank.get(phase, self.bank)
+        if (phase in ("TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS)
+                and abs(tel.get("bank", 0.0)) >= want_bank / 2):
+            self._add("bank", abs(abs(tel.get("bank", 0.0)) - want_bank))
         # climb speed once actually climbing and settled (cruise speed bleeds
         # off for the first several seconds of a correct climb)
-        if phase == "CLIMB" and tel.get("vs", 0.0) > 200 and time.time() - self._phase_t > 10:
+        if phase in ("CLIMB", "CLIMB_TO") and vs > 200 and settled > 10:
             self._add("climb_speed", abs(tel.get("ias", 0.0) - self.vy))
+        # level-off: how close to the set height once it's levelled
+        if phase in LEVEL_OFF_STEPS and abs(vs) < 200:
+            err = abs(alt - level_target(phase, self._ref_alt, self.level_ft))
+            if err < 300:
+                self._add("level_off", err)
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)
         pitch = ctrl["pitch"] if ctrl and ctrl.get("available") else -tel.get("elevator", 0.0)
         if self._prev_ctrl is not None:
@@ -723,7 +933,8 @@ class FamiliarizationScorer:
     def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
                  score_caps: bool | None = None) -> ScoreCard:
         scale = {"altitude": self.s["altitude"], "bank": self.s["bank"],
-                 "climb_speed": self.s["speed"], "speed": self.s["speed"], "smoothness": self.s["smoothness"]}
+                 "climb_speed": self.s["speed"], "speed": self.s["speed"],
+                 "level_off": self.s["altitude"], "smoothness": self.s["smoothness"]}
         scores = {}
         attempted = self._seen | (self.skipped & set(self.EXERCISES))
         scores["exercises"] = (round(100 * len(attempted - self.skipped) / len(attempted))

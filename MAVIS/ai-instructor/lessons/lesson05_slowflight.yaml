@@ -1,0 +1,117 @@
+name: "Lesson 5: Slow Flight & Stalls"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one.
+# Straight & Level's "slow down" was ordinary slow cruise; this is flying near
+# the stall, then the stall itself and the recovery.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 23.0
+  threshold: { lat: 1.34470, lon: 103.90264 }
+  length_m: 3780
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 18
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# Higher than the other lessons: a stall loses height.
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 3500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+steps:
+  - SLOW_FLIGHT
+  - STALL
+
+exercises:
+  slow_flight_kt: 55        # +/- 5 kt
+  slow_flight_hold_s: 10
+  height_band_ft: 200       # slow flight: height within +/- this counts
+  stall_kt: 50              # stalled at or below this (or nose high and sinking)
+  recover_kt: 65            # recovered: back above this, sink stopped
+  step_timeout_s: 150
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  slow flight and stalls exercise (airborne start; flying slowly near the
+  stall at a steady height, then a stall with power off and the recovery:
+  nose down, full power, level off; no take-off or landing)
+
+briefing:
+  layman: >-
+    Slow flight and stalls. We're up at about {alt} feet, south of Paya Lebar,
+    higher than usual because a stall loses some height. First flying very
+    slowly without losing height, then the stall itself, and how to get out of
+    it. It sounds scary but it's very gentle in this aeroplane.
+  pilot: >-
+    Slow flight and stalls, airborne at {alt} feet south of Paya Lebar. Slow
+    flight at 50 to 60 knots holding altitude, then a power-off stall and
+    recovery.
+
+# See lesson00_familiarization.yaml for the step_notes format. demo_layman /
+# demo_pilot: what MAVIS says instead in the up-front demo, for a step the
+# autopilot can't fly (core/demo.py DESCRIBE_ONLY).
+step_notes:
+  SLOW_FLIGHT:
+    title: Slow flight
+    todo:
+      - "Power back, keep raising the nose to hold height"
+      - "Settle at {sf_lo}-{sf_hi} kt, add a little power to stay there"
+    look: [airspeed, altitude]
+    layman: >-
+      Slow flight. Pull the power back and keep raising the nose so we don't
+      come down. The speed drops to {sf_lo} to {sf_hi} knots and the controls
+      go soft and mushy. Add a bit of power to stay there, height within
+      {band_ft} feet, for {sf_hold_s} seconds.
+    pilot: >-
+      Slow flight, {sf_lo} to {sf_hi} knots, altitude within {band_ft} feet.
+      Reduce power, increase attitude, then power to hold it. Note the soft
+      controls.
+  STALL:
+    title: Stall and recover
+    todo:
+      - "Throttle to idle, keep raising the nose slowly"
+      - "When it stalls: nose down, full power"
+      - "Level off once the speed is back"
+    look: [airspeed, attitude]
+    layman: >-
+      Now the stall. Throttle all the way back and keep easing the stick back,
+      slowly. The speed keeps falling, the stall horn sounds, and then the nose
+      drops on its own. That's the stall. Straight away: stick forward a
+      little, full power, and once the speed is back above {recover_kt} knots,
+      level off.
+    pilot: >-
+      Power-off stall. Idle, increase the attitude progressively until the
+      stall. Recover: reduce the angle of attack, full power, level off above
+      {recover_kt} knots, minimum height loss.
+    demo_layman: >-
+      The autopilot can't stall the aeroplane, so for this one just listen.
+      You'll pull the throttle all the way back and keep easing the stick back,
+      slowly. The speed falls, the stall horn sounds, and the nose drops on its
+      own. That's the stall. Then straight away: stick forward a little, full
+      power, and level off once you're back above {recover_kt} knots.
+    demo_pilot: >-
+      No autopilot demonstration for the stall. Idle power, increase the
+      attitude progressively to the stall, then recover: reduce the angle of
+      attack, full power, level off above {recover_kt} knots.

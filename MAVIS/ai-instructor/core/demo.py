@@ -25,6 +25,10 @@ from .phase_detector import hdg_diff
 
 # Steps that aren't demonstrated: finding the field is the lesson's own test.
 NO_DEMO = {"FIND_AIRFIELD"}
+# Steps the autopilot can't fly -- it won't bank past about 25 degrees and
+# can't be made to stall -- so the demo holds the aircraft level while MAVIS
+# explains them (the lesson's demo_layman / demo_pilot lines, if it has them).
+DESCRIBE_ONLY = {"STALL", "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
 
 
 class DemoPilot:
@@ -101,6 +105,39 @@ class DemoPilot:
             return [{"cmd": {"ap": True, "hdg": h0, "alt": a0, "spd": spd,
                              "throttle": max(0.2, th0 - 0.25) if slow else 1.0},
                      "until": "speed", "tgt": spd, "min_s": 3, "max_s": 60}]
+        if p in DESCRIBE_ONLY:
+            return [{"cmd": level, "min_s": 6, "max_s": 6}]
+        if p in ("CLIMB_TO", "DESCEND_TO"):
+            up = p == "CLIMB_TO"
+            tgt = eng.level_target(p, a0)
+            return [{"cmd": {"ap": True, "hdg": h0, "alt": tgt, "vs": 700 if up else -500,
+                             "throttle": 1.0 if up else max(0.2, th0 - 0.2),
+                             "spd": eng.vy if up else 95},
+                     "until": "alt", "tgt": tgt, "max_s": 90},
+                    # levelled off: cruise power back, hold it there a moment
+                    {"cmd": {"ap": True, "hdg": h0, "alt": tgt, "throttle": th0, "spd": 95},
+                     "min_s": 5, "max_s": 5}]
+        if p == "GLIDE":
+            tgt = a0 - eng.glide_ft
+            return [{"cmd": {"ap": True, "hdg": h0, "alt": tgt - 200, "vs": -700,
+                             "throttle": 0.0, "spd": eng.glide_kt},
+                     "until": "alt", "tgt": tgt, "max_s": 60},
+                    {"cmd": {"ap": True, "hdg": h0, "alt": "current", "throttle": th0, "spd": 95},
+                     "min_s": 3, "max_s": 3}]
+        if p == "SLOW_FLIGHT":
+            # power back with the height held: the autopilot raises the nose
+            # as the speed bleeds off; then enough power to stay there
+            return [{"cmd": {"ap": True, "hdg": h0, "alt": a0, "throttle": 0.3, "spd": eng.sf_kt},
+                     "until": "speed", "tgt": eng.sf_kt, "max_s": 60},
+                    {"cmd": {"throttle": 0.55, "spd": eng.sf_kt}, "min_s": 6, "max_s": 6}]
+        if p in ("MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT"):
+            # the autopilot turns the short way, so a half circle goes in two quarters
+            want = -1 if p.endswith("_LEFT") else 1
+            _, deg = eng.turn_target(p)
+            return [{"cmd": {"ap": True, "hdg": (h0 + want * deg / 2) % 360, "alt": a0, "spd": 95},
+                     "until": "heading", "tgt": (h0 + want * deg / 2) % 360, "min_s": 3, "max_s": 40},
+                    {"cmd": {"ap": True, "hdg": (h0 + want * deg) % 360, "alt": a0, "spd": 95},
+                     "until": "heading", "tgt": (h0 + want * deg) % 360, "min_s": 3, "max_s": 40}]
         return []
 
     # ---- running ----
@@ -108,6 +145,8 @@ class DemoPilot:
         out = dict(cmd)
         if out.get("hdg") == "current":
             out["hdg"] = tel.get("hdg", self.h0)
+        if out.get("alt") == "current":
+            out["alt"] = tel.get("alt_msl", self.a0)
         if "rudder" in out:
             out["rudder"] = out["rudder"] * self._rudder_sign
         return out

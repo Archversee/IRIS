@@ -195,6 +195,7 @@ class MockAdapter:
         if cmd.get("spd") is not None:
             self._tgt["spd"] = float(cmd["spd"])
         self._tgt["home"] = False
+        self._tgt["turn_rem"] = 0.0
         return True
 
     def lock_controls(self, on: bool) -> bool:
@@ -203,12 +204,16 @@ class MockAdapter:
 
     def comply(self, code: str, data: dict):
         if self._free:
-            m = data.get("mock") if code.startswith("PHASE_ENTER_") else None
+            # step plans ride on PHASE_ENTER; the stall callout carries the recovery
+            m = data.get("mock") if (code.startswith("PHASE_ENTER_") or code == "FAM_STALL") else None
             if m:
                 self._tgt["hdg"] = wrap(self.hdg + m.get("hdg_delta", 0.0))
                 self._tgt["alt"] = self.alt + m.get("alt_delta_ft", 0.0) * FT2M
                 self._tgt["spd"] = float(m.get("spd", self._tgt["spd"]))
                 self._tgt["home"] = bool(m.get("home"))
+                # banked turn: this many degrees (+ right) at this bank, then roll out
+                self._tgt["turn_rem"] = float(m.get("turn_deg", 0.0))
+                self._tgt["bank"] = float(m.get("bank", 25.0))
             return
         if code in ("ROTATE_NOW", "ROTATE_LATE"):
             if not self._airborne:
@@ -241,12 +246,35 @@ class MockAdapter:
         self.n += v * dt * math.cos(math.radians(self.hdg))
         self._vs = climb / FT2M * 60.0
 
+    def _fly_turn(self, t: dict, dt: float):
+        """Hold a set bank until t["turn_rem"] degrees are turned (+ right),
+        at the rate a real turn has at that bank and speed, then wings level."""
+        sgn = 1.0 if t["turn_rem"] > 0 else -1.0
+        self.bank += (sgn * t.get("bank", 25.0) - self.bank) * min(1.0, 2.0 * dt)
+        rate = 1091.0 * math.tan(math.radians(abs(self.bank))) / max(40.0, self.spd)   # deg/s
+        d = sgn * rate * dt
+        self.hdg = wrap(self.hdg + d)
+        t["turn_rem"] -= d
+        if t["turn_rem"] * sgn <= 0:
+            t["turn_rem"] = 0.0
+            t["hdg"] = self.hdg
+        self.spd += max(-4.0, min(2.5, t["spd"] - self.spd)) * dt
+        climb = max(-4.3, min(6.5, (t["alt"] - self.alt) * 0.06))
+        self.alt = max(0.0, self.alt + climb * dt)
+        v = self.spd * KT2MS
+        self.e += v * dt * math.sin(math.radians(self.hdg))
+        self.n += v * dt * math.cos(math.radians(self.hdg))
+        self._vs = climb / FT2M * 60.0
+
     def _step(self, dt: float):
         if not self.released or self.frozen:
             return
         if self._free:
             t = self._tgt
             hdg = t["hdg"]
+            if t.get("turn_rem"):  # banked turn of a set size (medium / steep turns)
+                self._fly_turn(t, dt)
+                return
             if t.get("home"):     # head for the runway midpoint
                 mid = self._runway_length_m / 2.0
                 e_m, n_m = self._pt(mid, 0.0)
