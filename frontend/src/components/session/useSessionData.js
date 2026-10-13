@@ -87,7 +87,8 @@ export function useSessionData({ id, live }) {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    const load = () => api.events(id).then((ev) => { if (!cancelled) setFlightEvents(ev); }).catch(() => {});
+    const load = () => api.events(id).then((ev) => { if (!cancelled) setFlightEvents(ev); })
+      .catch((e) => console.warn("flight events unavailable:", e?.message || e));
     load();
     const timer = live ? setInterval(load, 3000) : null;
     return () => { cancelled = true; if (timer) clearInterval(timer); };

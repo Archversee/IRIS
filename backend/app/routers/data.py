@@ -2,6 +2,7 @@
 Read endpoints powering the review/playback UI.
 
 """
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -9,6 +10,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .. import db
 from ..config import settings
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["data"])
 
@@ -79,14 +82,21 @@ async def get_events(session_id: UUID):
     """Start/end of each graded event (to-do step / phase) in order, as logged
     by MAVIS. end_ts is null for an event still in progress (live session)."""
     async with db.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            select e.*, f.title as flight_title, f.curriculum, f.lesson_id
-              from flight_events e
-              left join session_flights f on f.session_id = e.session_id and f.flight = e.flight
-             where e.session_id = $1
-             order by e.seq
-            """, session_id)
+        try:
+            rows = await conn.fetch(
+                """
+                select e.*, f.title as flight_title, f.curriculum, f.lesson_id
+                  from flight_events e
+                  left join session_flights f on f.session_id = e.session_id and f.flight = e.flight
+                 where e.session_id = $1
+                 order by e.seq
+                """, session_id)
+        except Exception:
+            # An older database layout (session_flights / flight_events.flight not created yet --
+            # they are made when the backend starts): the events themselves must still show.
+            log.exception("events: curriculum join failed, returning the plain events")
+            rows = await conn.fetch(
+                "select * from flight_events where session_id = $1 order by seq", session_id)
     return [dict(r) for r in rows]
 
 

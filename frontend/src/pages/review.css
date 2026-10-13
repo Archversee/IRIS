@@ -79,17 +79,12 @@
 .rev-titlebar .sub { color: var(--rev-muted); font-size: 13px; }
 .rev-titlebar .spacer { flex: 1; }
 
-/* curriculum of the session's flight(s), right under the title */
-.rev-curriculum { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 10px; }
-.rev-curriculum .label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rev-muted); }
-.rev-curriculum .chip {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
-  padding: 3px 12px; border-radius: 999px; background: var(--rev-panel-2);
-  border: 1px solid #38bdf8; color: #38bdf8;
+/* which curriculum the session came from: plain text, top right of the title bar */
+.rev-curriculum { font-size: 15px; font-weight: 700; color: var(--rev-text); white-space: nowrap; }
+.rev-curriculum small {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--rev-muted); margin-right: 4px;
 }
-.rev-curriculum .chip--free { border-color: #a78bfa; color: #a78bfa; }
-.rev-curriculum .chip b { font-weight: 700; opacity: 0.75; }
-.rev-curriculum .chip i { font-style: normal; font-weight: 500; opacity: 0.7; }
 .live-badge {
   font-size: 12px; font-weight: 700; letter-spacing: .04em;
   padding: 3px 10px; border-radius: 999px;

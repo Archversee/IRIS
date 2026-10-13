@@ -9,26 +9,6 @@ import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import "./review.css";
 
-// Which curriculum this session's flight(s) came from, labelled at the top of the page.
-// "Fly again" / Restart add flights to the same session, so each gets its own chip.
-function Curriculum({ flights }) {
-  if (!flights?.length) return null;
-  return (
-    <div className="rev-curriculum">
-      <span className="label">Curriculum</span>
-      {flights.map((f) => (
-        <span key={f.flight}
-          className={"chip" + (f.curriculum === "free_flight" ? " chip--free" : "")}
-          title={[f.module, f.mode && `${f.mode} mode`, f.outcome].filter(Boolean).join(" · ")}>
-          {flights.length > 1 && <b>Flight {f.flight}</b>}
-          {f.title}
-          {f.outcome && f.outcome !== "completed" && <i> · {f.outcome}</i>}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -50,6 +30,7 @@ export default function Review() {
       </div>
     );
 
+  const curriculum = [...new Set((summary.flights || []).map((f) => f.title).filter(Boolean))].join(" · ");
   const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
@@ -61,8 +42,10 @@ export default function Review() {
           <h1>{summary.session.name}</h1>
           <span className="sub">{summary.session.aircraft || "aircraft n/a"} · {summary.session.sim_source || "sim n/a"}</span>
           <span className="spacer" />
+          {/* which curriculum the session came from: top right, inside the title bar so the
+              page grid keeps its four rows (an extra row squeezes the video screens) */}
+          {curriculum && <span className="rev-curriculum" title="Curriculum"><small>Curriculum</small> {curriculum}</span>}
         </div>
-        <Curriculum flights={summary.flights} />
 
         <ScreensPanel {...screens} />
         <SessionTimeline {...timeline} />
