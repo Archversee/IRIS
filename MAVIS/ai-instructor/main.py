@@ -37,7 +37,7 @@ from core.recorder import FlightRecorder
 from core.event_log import EventLog
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
-                                  field_center, is_familiarization, runway_start,
+                                  field_center, is_familiarization, lesson_steps, runway_start,
                                   start_position)
 from core.demo import NO_DEMO, DemoPilot
 from lessons import lesson00_preflight, lesson00_cockpit
@@ -141,9 +141,13 @@ def lesson_state(lesson) -> dict:
     out = {"runway": lesson["runway"], "pattern": lesson["pattern"],
            "airport": lesson["airport"], "scoring": lesson.get("scoring", {})}
     if is_familiarization(lesson):
-        lat, lon = field_center(lesson)
-        out.update(type="familiarization", field={"lat": lat, "lon": lon},
-                   finish_radius_nm=float((lesson.get("finish") or {}).get("radius_nm", 2.0)))
+        out.update(type="familiarization")
+        if "FIND_AIRFIELD" in lesson_steps(lesson):
+            # the "fly back to here" ring -- only for a lesson that ends by
+            # finding Paya Lebar (Flight Familiarization), not the others
+            lat, lon = field_center(lesson)
+            out.update(field={"lat": lat, "lon": lon},
+                       finish_radius_nm=float((lesson.get("finish") or {}).get("radius_nm", 2.0)))
     return out
 
 
@@ -505,6 +509,14 @@ async def amain(cfg):
                 if hasattr(sim, "comply"):     # mock student flies the step from here
                     sim.comply(f"PHASE_ENTER_{phase}", ev.data)
 
+    async def _lock_controls(on: bool) -> None:
+        """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
+        the demo, handed back after."""
+        fn = getattr(sim, "lock_controls", None)
+        if fn and not await loop.run_in_executor(None, fn, on):
+            log.warning("sim did not take lock_controls(%s): the trainee's controls "
+                        "may still move the aircraft during the demo", on)
+
     async def _fly_demo(pilot: DemoPilot, gen: int):
         """Feed the demo pilot live telemetry and send its commands to the sim."""
         last = time.time()
@@ -521,20 +533,26 @@ async def amain(cfg):
         whole lesson flown once as a demonstration, then the hand-over, so the
         trainee then flies every step in one go."""
         gen = run_gen["n"]
-        if briefing:
-            alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
-            await coach.say(_lesson_text(lesson.get("briefing")).replace("{alt}", f"{alt:,}"))
-        if gen != run_gen["n"]:
-            return
-        await _fam_demo_all(gen)
-        if gen != run_gen["n"]:
-            return
-        if demo_ctl["shown"]:
-            await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}))
+        try:
+            if briefing:
+                alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
+                await coach.say(_lesson_text(lesson.get("briefing")).replace("{alt}", f"{alt:,}"))
             if gen != run_gen["n"]:
                 return
-            await _set_frozen(False)
-        engine.start_flying()
+            await _fam_demo_all(gen)
+            if gen != run_gen["n"]:
+                return
+            if demo_ctl["shown"]:
+                await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}))
+                if gen != run_gen["n"]:
+                    return
+            # controls stay locked from the demo's start until "You have control"
+            await _lock_controls(False)
+            if demo_ctl["shown"]:
+                await _set_frozen(False)
+            engine.start_flying()
+        finally:
+            await _lock_controls(False)     # whatever happened: never leave them locked
 
     async def _fam_demo_all(gen: int):
         """"I have control": the sim flies every step in order while MAVIS
@@ -558,6 +576,7 @@ async def amain(cfg):
             await coach.say(phrases.render("FAM_DEMO_START", {}))
             if demo_ctl["skip"].is_set() or gen != run_gen["n"]:
                 return
+            await _lock_controls(True)          # hands off: MAVIS has control
             await _set_frozen(False)
             flew = True
             for i, step in enumerate(steps):
@@ -1357,6 +1376,11 @@ async def amain(cfg):
         sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {about} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
+        if not engine.finds_field:
+            # the persona describes a circuit at Paya Lebar; this lesson has no
+            # navigation part, so keep the model from inventing one
+            sysp += (" This lesson has no navigation: do not mention Paya Lebar, the airfield, "
+                     "finding it, or flying back to it.")
         reached = "yes" if not card.incomplete else "no"   # finished the lesson
         try:
             out = await coach._ollama(

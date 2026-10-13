@@ -197,6 +197,10 @@ class MockAdapter:
         self._tgt["home"] = False
         return True
 
+    def lock_controls(self, on: bool) -> bool:
+        """No trainee hardware drives the mock, so nothing to lock."""
+        return True
+
     def comply(self, code: str, data: dict):
         if self._free:
             m = data.get("mock") if code.startswith("PHASE_ENTER_") else None

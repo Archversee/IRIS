@@ -69,6 +69,32 @@ _FREEZES = [
 # small sequential ids pysimconnect's DataDefinition hands out (0, 1, 2...).
 _INITPOS_DEF_ID = 900
 
+# Trainee controls locked out while MAVIS flies a demonstration: the key
+# events a stick, pedals, throttle, trim wheel or keyboard send. lock_controls()
+# puts them in a maskable notification group, so SimConnect hands them to us
+# and the sim never sees them. MAVIS's own demo input avoids these: throttle is
+# a simvar write, the rudder RUDDER_SET, the rest the autopilot. A name a sim
+# version doesn't know is just a logged SimConnect exception, nothing more.
+_LOCK_GROUP_ID = 77
+_LOCK_EVENT_BASE = 5000    # client event ids, well clear of pysimconnect's own (0, 1, 2...)
+_LOCKED_EVENTS = [
+    # pitch / roll
+    "AXIS_ELEVATOR_SET", "ELEVATOR_SET", "ELEV_UP", "ELEV_DOWN",
+    "AXIS_AILERONS_SET", "AILERON_SET", "AILERONS_LEFT", "AILERONS_RIGHT", "CENTER_AILER_RUDDER",
+    # yaw
+    "AXIS_RUDDER_SET", "RUDDER_LEFT", "RUDDER_RIGHT", "RUDDER_CENTER",
+    "RUDDER_AXIS_PLUS", "RUDDER_AXIS_MINUS",
+    # power
+    "AXIS_THROTTLE_SET", "AXIS_THROTTLE1_SET", "THROTTLE_SET", "THROTTLE1_SET",
+    "THROTTLE_AXIS_SET_EX1", "THROTTLE1_AXIS_SET_EX1",
+    "THROTTLE_INCR", "THROTTLE_DECR", "THROTTLE_INCR_SMALL", "THROTTLE_DECR_SMALL",
+    "THROTTLE1_INCR", "THROTTLE1_DECR", "THROTTLE_FULL", "THROTTLE_CUT",
+    # trim
+    "AXIS_ELEV_TRIM_SET", "ELEVATOR_TRIM_SET", "ELEV_TRIM_UP", "ELEV_TRIM_DN",
+    # knocking the autopilot off mid-demo
+    "AP_MASTER", "AUTOPILOT_DISENGAGE_TOGGLE",
+]
+
 
 class MSFSAdapter:
     def __init__(self, host: str = "127.0.0.1", port: int = 500, weather: dict | None = None):
@@ -76,6 +102,8 @@ class MSFSAdapter:
         self._sm = None
         self._datadef = None
         self._initpos_defined = False
+        self._lock_mapped = False      # _LOCKED_EVENTS mapped to client ids yet
+        self._locked = False
         # the tick loop and a teleport both run in executor threads -- one
         # SimConnect call at a time on the shared handle
         import threading
@@ -388,7 +416,9 @@ class MSFSAdapter:
                                           max(0.0, min(100.0, float(cmd["throttle"]) * 100.0)),
                                           "percent")
                 if "rudder" in cmd:
-                    ev("AXIS_RUDDER_SET", round(max(-1.0, min(1.0, float(cmd["rudder"]))) * 16383))
+                    # RUDDER_SET, not the pedals' AXIS_RUDDER_SET: that one is
+                    # masked while the controls are locked for the demo
+                    ev("RUDDER_SET", round(max(-1.0, min(1.0, float(cmd["rudder"]))) * 16383))
                 if cmd.get("ap") is False:
                     ev("AUTOPILOT_OFF")
                 elif cmd.get("ap") is True:
@@ -406,6 +436,40 @@ class MSFSAdapter:
         except Exception as e:
             log.error("SimConnect demo_control(%s) failed: %s", cmd, e)
             return False
+        return True
+
+    def lock_controls(self, on: bool) -> bool:
+        """Lock the trainee's stick, pedals, throttle and trim out of the sim
+        while MAVIS flies a demonstration (on=True), hand them back after.
+        SimConnect masks the events for us: a maskable notification group at
+        the highest maskable priority receives them first and they go no
+        further. Masking also ends on its own if MAVIS disconnects. Returns
+        False if the sim refused or isn't connected."""
+        if self._sm is None:
+            return False
+        from simconnect.scdefs import GROUP_PRIORITY_HIGHEST_MASKABLE, RECV_EVENT
+        try:
+            with self._lock:
+                if on and not self._locked:
+                    if not self._lock_mapped:
+                        for i, name in enumerate(_LOCKED_EVENTS):
+                            self._sm.MapClientEventToSimEvent(_LOCK_EVENT_BASE + i, name)
+                        # the masked events are delivered to us: swallow them
+                        # quietly (pysimconnect warns about unhandled ones)
+                        self._sm.add_receiver(RECV_EVENT, lambda recv: True)
+                        self._lock_mapped = True
+                    for i in range(len(_LOCKED_EVENTS)):
+                        self._sm.AddClientEventToNotificationGroup(
+                            _LOCK_GROUP_ID, _LOCK_EVENT_BASE + i, True)
+                    self._sm.SetNotificationGroupPriority(_LOCK_GROUP_ID, GROUP_PRIORITY_HIGHEST_MASKABLE)
+                    self._locked = True
+                elif not on and self._locked:
+                    self._sm.ClearNotificationGroup(_LOCK_GROUP_ID)
+                    self._locked = False
+        except Exception as e:
+            log.error("SimConnect lock_controls(%s) failed: %s", on, e)
+            return False
+        log.info("trainee controls %s", "locked for the demo" if on else "handed back")
         return True
 
     def set_frozen(self, on: bool) -> bool:
