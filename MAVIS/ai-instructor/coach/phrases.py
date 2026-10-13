@@ -322,9 +322,26 @@ def intro_code(mode: str) -> str:
     return "INTRO_BEGINNER" if normalize_mode(mode) == "visitor" else "INTRO_TRAINING"
 
 
+# Lesson-authored wording for a callout code ({code: {layman, pilot}}), set from
+# the active lesson's `say:` block (set_lesson_lines); wins over TEMPLATES.
+_LESSON_SAY: dict = {}
+
+
+def set_lesson_lines(say: dict | None) -> None:
+    global _LESSON_SAY
+    _LESSON_SAY = dict(say or {})
+
+
 def render(code: str, data: dict) -> str:
     import random
     d = dict(data)
+    own = _LESSON_SAY.get(code)
+    if own:
+        txt = own.get(_JARGON) or own.get("layman") or ""
+        try:
+            return txt.format(**d)
+        except (KeyError, IndexError):
+            return txt
     if code == "LESSON_NOTE":
         # lesson YAML teaching point: {layman, pilot} variants authored per phase
         txt = d.get(_JARGON) or d.get("layman") or ""

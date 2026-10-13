@@ -103,6 +103,9 @@ class Scorer:
         v = aircraft["v_speeds"]
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"], "FINAL": v["final"]}
+        b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band
+        self.speed_band = ({"CLIMB_OUT": (float(b[0]), float(b[1])),
+                            "CROSSWIND": (float(b[0]), float(b[1]))} if b else {})
         self.reset()
 
     def reset(self) -> None:
@@ -127,7 +130,11 @@ class Scorer:
             if aerr is not None:
                 self._add("altitude", aerr)
         spd = self.tgt_speed.get(phase)
-        if spd:
+        band = self.speed_band.get(phase)
+        if band:
+            ias = tel.get("ias", 0.0)
+            self._add("speed", max(0.0, band[0] - ias, ias - band[1]))
+        elif spd:
             self._add("speed", abs(tel.get("ias", 0.0) - spd))
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)
         pitch = ctrl["pitch"] if ctrl and ctrl.get("available") else -tel.get("elevator", 0.0)

@@ -16,15 +16,15 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:                    # not flown; kept so shared map/scorer code has its keys
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -52,17 +52,21 @@ steps:
 exercises:
   straight_level_hold_s: 10 # seconds wings level
   altitude_band_ft: 150
-  trim_hold_s: 10           # hands off the stick and steady (no big climb or dive)
-  slow_kt: 80
-  fast_kt: 105
+  trim_hold_s: 10           # hands off the stick and steady...
+  trim_max_vs_fpm: 500      # ...climbing or descending at under this
+  slow_kt: 80               # slow down: 75-85 kt
+  fast_kt: 105              # speed up: what the demo flies to
+  fast_band_kt: [90, 120]   # speed up: anywhere in here counts
   speed_hold_s: 10          # seconds inside +/- 5 kt
   climb_to_ft: 500          # target = start height + this, a round hundred
+  climb_speed_band_kt: [70, 90]   # climb and level off: any speed in here is fine
   descend_to_ft: 500
   level_band_ft: 100        # "levelled at the target" = within this
   level_hold_s: 5           # ...and steady there this long
   glide_kt: 68              # C172 best glide
+  glide_band_kt: [60, 80]   # glide: any speed in here is fine
   glide_ft: 300             # glide down this far
-  step_timeout_s: 150
+  step_timeout_s: 210
 
 freeze_during_instructions: true
 

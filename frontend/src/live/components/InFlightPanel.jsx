@@ -31,7 +31,8 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, o
             over the map or the toolbar */}
         <div className="mavis-hud__mapwrap">
           <MapCanvas state={state} />
-          {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
+          {/* any lesson that sends one: airborne lessons, Take-off, Landing */}
+          {state?.fam_todo && <TodoCard todo={state.fam_todo} />}
         </div>
         {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
       </div>

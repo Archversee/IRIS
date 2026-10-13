@@ -18,6 +18,15 @@ class Monitors:
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
                           "FINAL": v["final"]}
         self.tgt_flaps = {"DOWNWIND": f["downwind"], "BASE": f["base"], "FINAL": f["final"]}
+        # legs flown without a speed to hold (the Take-off lesson's climb-out):
+        # no speed shown, called or nudged there
+        for ph in lesson.get("no_speed_target") or []:
+            self.tgt_speed.pop(ph, None)
+        # climb legs flown to a band rather than one number (lesson
+        # climb_speed_band_kt): nudged only once well outside it
+        b = lesson.get("climb_speed_band_kt")
+        self.speed_band = ({ph: (float(b[0]), float(b[1])) for ph in ("CLIMB_OUT", "CROSSWIND")
+                            if ph in self.tgt_speed} if b else {})
         self.pattern_alt = lesson["pattern"]["altitude_msl_ft"]
         self.xwind_agl = lesson["pattern"]["crosswind_turn_agl_ft"]
         rw_len = float(lesson["runway"]["length_m"])
@@ -187,7 +196,15 @@ class Monitors:
             self._rotate_called = False
 
         spd = self.tgt_speed.get(phase)
-        if spd and not tel.on_ground and not settling:
+        band = self.speed_band.get(phase)
+        if band and not tel.on_ground and not settling:
+            lo, hi = band                    # e.g. 70-90 kt: "toward 90" / "toward 70"
+            if tel.ias > hi + 5:
+                E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": round(hi)}))
+            elif tel.ias < lo - 5:
+                sev = "correction" if tel.ias < lo - 10 else "nudge"
+                E(CoachEvent("SPEED_SLOW", sev, {"ias": round(tel.ias), "tgt": round(lo)}))
+        elif spd and not tel.on_ground and not settling:
             if tel.ias > spd + 10:
                 E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": spd}))
             elif tel.ias < spd - 10:

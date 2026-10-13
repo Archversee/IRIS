@@ -1,9 +1,11 @@
-// Flight familiarization to-do list, top right of the pilot view: every
+// Lesson to-do list beside the map in the pilot view (airborne lessons,
+// Take-off, Landing): every
 // exercise with a tick when done, the current one expanded into short
 // checklist lines + a live "now / target" readout (how far to turn, how
 // much bank, how high to climb...), so the trainee doesn't have to pick the
 // task out of MAVIS's spoken explanation. Driven by state.fam_todo
-// (FamiliarizationEngine.todo()).
+// (FamiliarizationEngine.todo(), or LessonEngine.todo() for lessons with
+// todo_steps).
 function Meter({ m }) {
   const hasBar = typeof m.pct === "number";
   const state = hasBar ? (m.pct >= 1 ? " is-ok" : "") : m.ok === true ? " is-ok" : m.ok === false ? " is-off" : "";

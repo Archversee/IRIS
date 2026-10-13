@@ -14,15 +14,15 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -31,7 +31,7 @@ total_circuits: 1
 airborne_start:
   final_m: 2800
   alt_msl_ft: 550
-  heading_true: 23
+  heading_true: 22.4
   ias_kt: 70
   throttle_pct: 35
 
@@ -43,6 +43,29 @@ phases:
   - DEBRIEF
 targets:
   FINAL:         { speed: "{final}", flaps: 30 }
+
+# To-do list in the pilot view: one row per stage, with live readouts.
+todo_steps:
+  - phases: [FINAL]
+    title: Final approach
+    todo:
+      - "Flaps all the way down"
+      - "Nose for speed, throttle for height"
+      - "Keep the runway steady in the windscreen"
+    meters: [speed_band, glidepath, centreline, flaps]
+  - phases: [FLARE_TOUCHDOWN]
+    title: Flare and touch down
+    todo:
+      - "Throttle all the way back"
+      - "Eyes on the far end, ease the nose up"
+    meters: [height_agl, sink]
+  - phases: [ROLLOUT]
+    title: Roll out and stop
+    todo:
+      - "Keep straight with your feet"
+      - "Brake gently to a stop"
+    meters: [stop, centreline]
+todo_done: "Landed and stopped. Well done."
 
 briefing:
   layman: >-

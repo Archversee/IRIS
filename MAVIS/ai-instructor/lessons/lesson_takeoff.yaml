@@ -12,16 +12,16 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   # above end_at_agl_ft on purpose: no "turn crosswind" call before the lesson ends
   crosswind_turn_agl_ft: 2000
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -32,8 +32,39 @@ phases:
   - CLIMB_OUT
   - DEBRIEF
 targets:
-  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
-  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  TAKEOFF_ROLL:  { speed: null }
+  CLIMB_OUT:     { speed: null, flaps: 0 }
+
+# No speed to fly in this lesson: MAVIS says when to lift the nose, and the
+# climb is just "wings level, straight ahead" -- no knots shown, called or
+# nudged on these legs.
+no_speed_target: [CLIMB_OUT, CROSSWIND]
+
+# This lesson's own wording for callouts that otherwise quote a speed.
+say:
+  ROTATE_NOW:
+    layman: "That's flying speed. Gently ease the stick back and let her lift off."
+    pilot: "Rotate."
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Wings level, and keep climbing straight ahead."
+    pilot: "Airborne. Positive climb, wings level, runway heading."
+
+# To-do list in the pilot view: one row per stage, with live readouts.
+todo_steps:
+  - phases: [PRE_TAKEOFF, TAKEOFF_ROLL]
+    title: Take-off roll
+    todo:
+      - "Throttle all the way forward, smoothly"
+      - "Keep straight down the middle with your feet"
+      - "Ease the stick back when MAVIS says"
+    meters: [speed, centreline]
+  - phases: [CLIMB_OUT, CROSSWIND]
+    title: Climb out
+    todo:
+      - "Wings level, straight ahead"
+      - "Keep climbing to 1,000 ft"
+    meters: [height_to, centreline]
+todo_done: "Take-off done. After your score you're put back on the runway."
 
 # Once scored (in the air at end_at_agl_ft): back on the runway centreline
 # this far past the threshold, stopped, ready to go again.
@@ -42,16 +73,16 @@ end_reposition:
 
 briefing:
   layman: >-
-    Take-off. We're lined up on the runway at Paya Lebar. Push the throttle all
-    the way forward, keep the nose straight down the middle with your feet, and
-    when I say rotate, gently lift the nose. Then climb straight ahead to about
-    a thousand feet. That's the whole lesson.
+    Take-off. We're lined up in the middle of the runway at Paya Lebar. Push
+    the throttle all the way forward, keep the nose straight down the middle
+    with your feet, and when I tell you, gently lift the nose. Then climb
+    straight ahead to about a thousand feet. That's the whole lesson.
   pilot: >-
-    Take-off, runway 02. Full power, centreline with rudder, rotate at Vr, climb
-    out at Vy on the runway heading to one thousand feet AGL.
+    Take-off, runway 02. Full power, centreline with rudder, rotate on my
+    call, climb out on the runway heading to one thousand feet AGL.
 
 # Teaching point for each leg, spoken after the standard phase call (or on its
-# own in Trainee/Pilot modes). {speed} comes from the targets above.
+# own in Trainee/Pilot modes).
 phase_notes:
   TAKEOFF_ROLL:
     layman: >-
@@ -62,10 +93,10 @@ phase_notes:
       eyes on the far end.
   CLIMB_OUT:
     layman: >-
-      We're flying. Keep the wings level and the nose up just enough to hold
-      {speed} knots. Straight ahead, nice and steady.
+      We're flying. Keep the wings level and the nose just above the horizon.
+      Straight ahead, nice and steady.
     pilot: >-
-      Positive climb. Vy, {speed} knots, wings level, runway heading.
+      Positive climb, wings level, runway heading.
 
 closing:
   layman: >-
@@ -76,12 +107,13 @@ closing:
     debrief.
 
 debrief_summary: >-
-  take-off (full power, keeping straight on the runway, rotating at Vr, then
-  climbing straight ahead at Vy to one thousand feet; no landing)
+  take-off (full power, keeping straight on the runway, lifting off when the
+  instructor said, then climbing straight ahead to one thousand feet; no
+  landing; there was no speed to fly, so don't mention one)
 
-# Scored on the climb-out only: centreline track, climb speed, smoothness.
+# Scored on keeping straight and smooth only -- there's no speed to fly.
 scoring:
-  weights:    { track: 30, speed: 40, altitude: 0, landing: 0, smoothness: 30 }
+  weights:    { track: 50, speed: 0, altitude: 0, landing: 0, smoothness: 50 }
   scales:     { track: 60, speed: 8, altitude: 120, smoothness: 0.22,
                 land_sink: 300, land_center: 40, land_speed: 10 }
   grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]

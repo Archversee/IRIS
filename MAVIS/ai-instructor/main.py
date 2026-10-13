@@ -198,6 +198,7 @@ async def amain(cfg):
 
     flap_style = aircraft.get("flaps", {}).get("control_style", "notches")
     phrases.configure(flap_style, "layman")
+    phrases.set_lesson_lines(lesson.get("say"))    # lesson's own wording for some callouts
     # main-menu selection: visitor/trainee/pilot/exam policies; jargon still
     # independent (Settings). Defaults are safe before the menu sends anything.
     _default_policy = policy_for("visitor")
@@ -1100,6 +1101,7 @@ async def amain(cfg):
             sim = make_adapter(cfg, lesson)
             sim.connect()
         lesson = lesson_for_sim(cfg, sim, lesson)
+        phrases.set_lesson_lines(lesson.get("say"))
         engine = make_engine(cfg, lesson, aircraft)
         scorer = make_scorer(lesson, aircraft)
         refs = ReferenceRegistry(lesson, lesson_id)

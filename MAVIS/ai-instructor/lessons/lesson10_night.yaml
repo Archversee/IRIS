@@ -10,18 +10,26 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
+
+# Climb legs flown to a speed band, not one number: anywhere in here is fine
+# (scored, called and nudged against the band).
+climb_speed_band_kt: [70, 90]
+say:
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
+    pilot: "Airborne. Climb at 70 to 90 knots, wings level."
 phases:
   - BRIEFING
   - PRE_TAKEOFF
@@ -67,7 +75,7 @@ phase_notes:
       level using the screen in front of you, and climb straight ahead.
     pilot: >-
       No visual horizon. Wings level on the attitude indicator, positive rate,
-      and hold {speed} knots on the tape.
+      and hold 70 to 90 knots on the tape.
   DOWNWIND:
     layman: >-
       Look left. That line of white lights is the runway. Keep it sitting in

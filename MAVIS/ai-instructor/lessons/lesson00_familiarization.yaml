@@ -11,15 +11,15 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:                    # not flown; kept so shared map/scorer code has its keys
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -42,8 +42,9 @@ exercises:
   turn_deg: 90              # heading change for each turn
   turn_bank_deg: 20         # spoken as a range: 15-25 degrees
   climb_ft: 500             # spoken as a range: 400-600 feet
+  climb_speed_band_kt: [70, 90]   # climb: any speed in here is fine
   descend_ft: 500
-  step_timeout_s: 120       # a step that isn't completed moves on anyway
+  step_timeout_s: 180       # a step that isn't completed moves on anyway
   hint_every_s: 35          # "Paya Lebar is at your 10 o'clock" while searching
 
 # The lesson ends -- aircraft frozen, scorecard up -- once the trainee has found

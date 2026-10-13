@@ -13,15 +13,15 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:                    # not flown; kept so shared map/scorer code has its keys
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -55,7 +55,7 @@ exercises:
   roll_hold_s: 2            # hold the bank this long, then roll level
   yaw_deg: 10               # nose swing with rudder alone
   power_throttle_change: 0.2  # throttle lever travel forward (0..1) before bringing it back
-  step_timeout_s: 120
+  step_timeout_s: 180
 
 freeze_during_instructions: true
 
