@@ -21,7 +21,10 @@ VERBATIM = frozenset({
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
-    "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF", "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
+    "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+    "SINK_HIGH_FAST",   # the fix is the nose, not power: never reworded into "add power"
+    "ALT_LOW_FAST", "ALT_HIGH_SLOW", "FAM_FAST_DIVE",   # same: nose, not power
+    "SPEED_FAST_LEVEL", "SPEED_SLOW_LEVEL",             # level flight: power, not nose "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
     "FAM_DEMO_START", "FAM_DEMO_END", "FAM_STEP_CUE", "FAM_DEMO_SKIPPED",
 })
 
@@ -102,9 +105,9 @@ class Coach:
         tel = self.live_tel() if self.live_tel else None
         if not tel:
             return False
-        if ev.code in ("SPEED_FAST", "SPEED_SLOW") and ev.data.get("tgt"):
+        if ev.code.startswith(("SPEED_FAST", "SPEED_SLOW")) and ev.data.get("tgt"):
             return abs(tel.get("ias", 0) - ev.data["tgt"]) <= 6
-        if ev.code in ("ALT_HIGH", "ALT_LOW") and ev.data.get("tgt"):
+        if ev.code.startswith(("ALT_HIGH", "ALT_LOW")) and ev.data.get("tgt"):
             return abs(tel.get("alt_msl", 0) - ev.data["tgt"]) <= 60
         return False
 
@@ -115,9 +118,9 @@ class Coach:
         tel = self.live_tel() if self.live_tel else None
         if not tel:
             return
-        if ev.code in ("SPEED_FAST", "SPEED_SLOW") and tel.get("ias") is not None:
+        if ev.code.startswith(("SPEED_FAST", "SPEED_SLOW")) and tel.get("ias") is not None:
             ev.data["ias"] = round(tel["ias"])
-        elif ev.code in ("ALT_HIGH", "ALT_LOW") and ev.data.get("tgt"):
+        elif ev.code.startswith(("ALT_HIGH", "ALT_LOW")) and ev.data.get("tgt"):
             ev.data["off"] = round(abs(tel.get("alt_msl", 0) - ev.data["tgt"]))
 
     def resume(self):

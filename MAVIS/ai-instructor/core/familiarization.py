@@ -621,7 +621,10 @@ class FamiliarizationEngine:
         if tel.ias < 58 and self.phase not in ("SLOW_FLIGHT", "STALL"):   # slow on purpose there
             out.append(CoachEvent("FAM_SLOW", "correction", {"ias": round(tel.ias)}, cooldown_s=15))
         elif tel.ias > 140:
-            out.append(CoachEvent("FAM_FAST", "correction", {"ias": round(tel.ias)}, cooldown_s=15))
+            # already at idle, or diving: pulling the throttle won't fix it
+            diving = tel.throttle <= 0.2 or tel.vs < -300
+            out.append(CoachEvent("FAM_FAST_DIVE" if diving else "FAM_FAST", "correction",
+                                  {"ias": round(tel.ias)}, cooldown_s=15))
         if abs(tel.bank) > (58 if self.phase in STEEP_TURNS else 40):
             out.append(CoachEvent("FAM_STEEP", "correction", {"bank": round(abs(tel.bank))}, cooldown_s=15))
         if self.phase in ("YAW_LEFT", "YAW_RIGHT") and now - self._entry["t"] > 20:

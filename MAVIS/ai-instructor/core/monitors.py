@@ -223,25 +223,39 @@ class Monitors:
             fb = final_speed_band(self._lesson, self._v, tel.alt_agl)
             band = fb[:2] if fb else None
             slack = 0.0                      # final: the band's already wide; its floor guards the stall
+        # downwind is flown level: there the speed is the throttle's job;
+        # climbing / descending legs it's the nose's (the *_LEVEL wording)
+        lvl = "_LEVEL" if phase == "DOWNWIND" else ""
         if band and not tel.on_ground and not settling:
             lo, hi = band                    # e.g. 70-90 kt: "toward 90" / "toward 70"
             if tel.ias > hi + slack:
-                E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": round(hi)}))
+                E(CoachEvent("SPEED_FAST" + lvl, "nudge", {"ias": round(tel.ias), "tgt": round(hi)}))
             elif tel.ias < lo - slack:
                 sev = "correction" if tel.ias < lo - slack - 5 else "nudge"
-                E(CoachEvent("SPEED_SLOW", sev, {"ias": round(tel.ias), "tgt": round(lo)}))
+                E(CoachEvent("SPEED_SLOW" + lvl, sev, {"ias": round(tel.ias), "tgt": round(lo)}))
         elif spd and not tel.on_ground and not settling:
             if tel.ias > spd + 10:
-                E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": spd}))
+                E(CoachEvent("SPEED_FAST" + lvl, "nudge", {"ias": round(tel.ias), "tgt": spd}))
             elif tel.ias < spd - 10:
                 sev = "correction" if tel.ias < spd - 15 else "nudge"
-                E(CoachEvent("SPEED_SLOW", sev, {"ias": round(tel.ias), "tgt": spd}))
+                E(CoachEvent("SPEED_SLOW" + lvl, sev, {"ias": round(tel.ias), "tgt": spd}))
 
         if phase == "DOWNWIND" and not settling:
             dv = tel.alt_msl - self.pattern_alt
             if abs(dv) > 100:
-                E(CoachEvent("ALT_HIGH" if dv > 0 else "ALT_LOW", "nudge",
-                             {"off": round(abs(dv)), "tgt": self.pattern_alt}))
+                # off height: low and fast -> the nose (the extra speed climbs
+                # us back up); high and slow -> the nose too; otherwise power
+                dw = self.tgt_speed.get("DOWNWIND") or 85
+                if dv < 0:
+                    code = "ALT_LOW_FAST" if tel.ias > dw + 5 else "ALT_LOW"
+                else:
+                    code = "ALT_HIGH_SLOW" if tel.ias < dw - 5 else "ALT_HIGH"
+                E(CoachEvent(code, "nudge", {"off": round(abs(dv)), "tgt": self.pattern_alt}))
+                if code in ("ALT_LOW_FAST", "ALT_HIGH_SLOW"):
+                    # the nose fixes height and speed together: no
+                    # contradicting "more / less power" speed call as well
+                    clash = "SPEED_FAST_LEVEL" if code == "ALT_LOW_FAST" else "SPEED_SLOW_LEVEL"
+                    ev[:] = [x for x in ev if x.code != clash]
             # Mid-downwind: flap + power (halfway along the long leg, not at base-turn end)
             abeam_ready = g.along < self._abeam_along_mid and tel.flaps_deg < 5
             if abeam_ready and not self._abeam_prev:
@@ -261,8 +275,15 @@ class Monitors:
             if abs(g.cross) > self.centreline_nudge_m and tel.alt_agl > 100:
                 E(CoachEvent("CENTERLINE_DRIFT", "nudge",
                              {"side": "left" if g.cross > 0 else "right"}, cooldown_s=15))
-            if tel.vs < -900:
-                E(CoachEvent("SINK_HIGH", "correction", {"vs": round(-tel.vs)}, cooldown_s=15))
+            if tel.vs < -900 and not settling:
+                # sinking fast: with the speed up as well the nose is too low --
+                # ease it up, don't add power (that only adds speed); otherwise
+                # it's a power problem: a little more throttle
+                fb = final_speed_band(self._lesson, self._v, tel.alt_agl)
+                aim = fb[2] if fb else (self.tgt_speed.get("FINAL") or 65)
+                code = "SINK_HIGH_FAST" if tel.ias > aim + 5 else "SINK_HIGH"
+                E(CoachEvent(code, "correction", {"vs": round(-tel.vs), "ias": round(tel.ias)},
+                             cooldown_s=15))
 
         # control smoothness (raw HID): large rapid stick reversals
         if ctrl.available and not tel.on_ground and phase in ("FINAL", "FLARE_TOUCHDOWN"):

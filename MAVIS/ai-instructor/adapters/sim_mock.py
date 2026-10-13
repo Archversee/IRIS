@@ -229,9 +229,9 @@ class MockAdapter:
                 lag = self.rotate_speech_lag_s if code == "ROTATE_NOW" else 0.4
                 self._rotate_at = time.time() + lag
             return
-        if code in ("SPEED_FAST", "SPEED_SLOW") and data.get("tgt"):
+        if code.startswith(("SPEED_FAST", "SPEED_SLOW")) and data.get("tgt"):
             self._leg_spd[self._seg] = float(data["tgt"])
-        elif code in ("ALT_HIGH", "ALT_LOW"):
+        elif code.startswith(("ALT_HIGH", "ALT_LOW")):
             self._leg_alt[self._seg] = self.pattern_agl_m
         elif code in ("ABEAM_FLAPS", "FLAPS_REMINDER") and data.get("flaps"):
             self._leg_flaps[2] = float(data["flaps"])
