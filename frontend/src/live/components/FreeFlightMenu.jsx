@@ -30,6 +30,7 @@ export default function FreeFlightMenu({ onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
+        free_flight: true, // logged as Free Flight, not as the lesson MAVIS has loaded underneath
       });
       await mavisApi.start();
       onStarting();

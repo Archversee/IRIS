@@ -36,7 +36,11 @@ alter table flight_data
     add column if not exists rpm              double precision,
     add column if not exists aileron_position double precision,
     add column if not exists flaps_deg        double precision, -- MAVIS reads flap surface angle, not handle %
-    add column if not exists on_ground        boolean;
+    add column if not exists on_ground        boolean,
+    -- MAVIS reads rudder/aileron trim next to the elevator trim flight_data already has.
+    -- -100..100 %; an aircraft with no such trim reports a constant 0.
+    add column if not exists rudder_trim_pct  double precision,
+    add column if not exists aileron_trim_pct double precision;
 
 -- ---------------------------------------------------------------------
 -- coaching_events: MAVIS's CoachEvent stream + transcript, one row per
@@ -125,10 +129,11 @@ create index if not exists leaderboard_entries_lesson on leaderboard_entries (le
 -- ---------------------------------------------------------------------
 create table if not exists flight_events (
     session_id  uuid not null references sessions(id) on delete cascade,
-    seq         integer not null,        -- order within the session, from 0
+    seq         integer not null,        -- order within the session, from 0 (continues across flights)
+    flight      integer not null default 1,  -- which flight of the session (session_flights.flight)
     event_id    text not null,           -- lesson step/phase id, e.g. 'TURN_LEFT', 'DOWNWIND'
     label       text not null,           -- display name, e.g. 'Gentle left turn'
-    kind        text,                    -- 'exercise' (to-do step) | 'phase' (circuit phase)
+    kind        text,                    -- 'exercise' (to-do step) | 'phase' (circuit phase) | 'demo' (MAVIS flying; not the trainee's, never graded)
     phase       text,
     circuit     integer,
     attempt     integer not null default 1,
@@ -139,4 +144,29 @@ create table if not exists flight_events (
     grade       text,
     detail      jsonb,
     primary key (session_id, seq)
+);
+
+-- Added after flight_events was first created (idempotent either way):
+alter table flight_events add column if not exists flight integer not null default 1;
+
+-- ---------------------------------------------------------------------
+-- session_flights: one row per flight in a session. "Fly again" and Restart keep the
+-- same session_id, so a session can hold several flights, each from its own
+-- curriculum. curriculum = 'lesson' (a catalog lesson: lesson_id/title/module say
+-- which) or 'free_flight' (Free Flight menu; lesson_id is then only whatever lesson
+-- MAVIS had loaded underneath, not what was flown). flight_events.flight points here.
+-- outcome: completed | abandoned (ended early) | restarted.
+-- ---------------------------------------------------------------------
+create table if not exists session_flights (
+    session_id  uuid not null references sessions(id) on delete cascade,
+    flight      integer not null,
+    lesson_id   text,
+    title       text not null,           -- 'Flight Familiarization', 'Your First Circuit', 'Free Flight', ...
+    curriculum  text not null default 'lesson',
+    module      text,                    -- catalog group, e.g. 'Basic Flight'
+    mode        text,
+    start_ts    timestamptz not null,
+    end_ts      timestamptz,
+    outcome     text,
+    primary key (session_id, flight)
 );

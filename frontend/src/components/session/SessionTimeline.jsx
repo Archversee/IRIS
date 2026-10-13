@@ -111,7 +111,7 @@ export default function SessionTimeline({
                   style={{ left: `${leftPct}%`, ...(widthPct != null ? { width: `calc(${widthPct}% - 2px)` } : {}),
                            borderColor: p.color, color: p.color }}
                   onClick={() => openPhase(p)}
-                  title={`${p.label}: ${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`
+                  title={`${p.label}${p.curriculum ? ` (${p.curriculum})` : ""}: ${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`
                     + (p.grade ? ` · grade ${p.grade}` : "")
                     + (p.outcome && p.outcome !== "completed" ? ` · ${p.outcome}` : "")}>
                   {p.label}

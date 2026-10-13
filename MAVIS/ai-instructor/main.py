@@ -131,9 +131,10 @@ def event_log_setup(lesson, engine) -> tuple[dict, str]:
     steps under the names the to-do list shows, or the circuit's phases."""
     if is_familiarization(lesson):
         notes = lesson.get("step_notes") or {}
-        return ({sid: (notes.get(sid) or {}).get("title") or STEP_TITLES.get(sid, sid)
-                 for sid in engine.detector.ORDER}, "exercise")
-    return {}, "phase"
+        labels = {sid: (notes.get(sid) or {}).get("title") or STEP_TITLES.get(sid, sid)
+                  for sid in engine.detector.ORDER}
+        return {**labels, "DEMO": "MAVIS demonstration"}, "exercise"
+    return {"DEMO": "MAVIS demonstration"}, "phase"
 
 
 def lesson_state(lesson) -> dict:
@@ -209,6 +210,12 @@ async def amain(cfg):
 
     event_log = EventLog()               # start/end time of each to-do step / phase, for IRIS to grade
     event_log.configure(*event_log_setup(lesson, engine))
+
+    def _publish_events() -> None:
+        """Push the event log + flight list into the state IRIS's bridge reads."""
+        state["flight_events"] = event_log.to_list()
+        state["flights"] = event_log.flights()
+
     board = Leaderboard(HERE / "data" / "leaderboard.json")
     board.seed_demo_if_empty()
     lesson_id = Path(cfg["lesson"]).stem
@@ -234,6 +241,7 @@ async def amain(cfg):
                    # reattach to a running session after navigating away.
                    "lesson_running": False,
                    "flight_events": [],
+                   "flights": [],
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "demo": None,       # {phase, title} while MAVIS is flying a demo
@@ -579,6 +587,10 @@ async def amain(cfg):
             await _lock_controls(True)          # hands off: MAVIS has control
             await _set_frozen(False)
             flew = True
+            # MAVIS flies this stretch: marked as its own event so it is never mistaken for
+            # (or graded as) the trainee's flying
+            event_log.observe("DEMO", _sim_now(), kind="demo")
+            _publish_events()
             for i, step in enumerate(steps):
                 tel = dict(state.get("tel") or tel0)
                 data = engine.preview(step, Telemetry(**tel))
@@ -602,6 +614,9 @@ async def amain(cfg):
                 demo_ctl["shown"].add(step)
             skipped = skipped or demo_ctl["skip"].is_set()
         finally:
+            if flew and gen == run_gen["n"]:
+                event_log.close(_sim_now(), "skipped" if (skipped or demo_ctl["skip"].is_set()) else "completed")
+                _publish_events()
             await loop.run_in_executor(None, sim.demo_control, {"ap": False, "rudder": 0.0})
             state["demo"] = None
             state["look_at"] = None
@@ -682,9 +697,21 @@ async def amain(cfg):
         demo_ctl["shown"] = set()
         started.set()
         asyncio.create_task(_load_sop())     # never blocks the start of the lesson
-        if not (keep_session and session.get("session_id")):
+        new_session = not (keep_session and session.get("session_id"))
+        if new_session:
             session["session_id"] = str(uuid.uuid4())
+            event_log.reset()
         state["session_id"] = session["session_id"]
+        # a new flight in this session: which curriculum it came from (free flight is
+        # not a lesson, whatever lesson MAVIS happens to have loaded underneath)
+        meta = lesson_meta(catalog, lesson_id) or {}
+        free = bool(session.get("free_flight"))
+        event_log.begin_flight(
+            _sim_now(), lesson_id,
+            "Free Flight" if free else (meta.get("title") or lesson.get("name") or lesson_id),
+            "free_flight" if free else "lesson",
+            "" if free else meta.get("module_title", ""), session.get("mode", ""))
+        _publish_events()
         state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
             await _apply_lesson_clock()
@@ -890,8 +917,10 @@ async def amain(cfg):
         engine.restart()
         scorer.reset()
         recorder.reset()
-        event_log.reset()
-        state["flight_events"] = []
+        # the flight in progress ends here; its events stay (a restarted attempt is
+        # still data) and the next Start adds a new flight to the same session
+        event_log.end_flight(_sim_now(), "restarted")
+        _publish_events()
         scored["done"] = False
         coach.resume()
         session.pop("reference_recording", None)
@@ -1047,7 +1076,7 @@ async def amain(cfg):
         refs = ReferenceRegistry(lesson, lesson_id)
         recorder.reset()
         event_log.configure(*event_log_setup(lesson, engine))
-        state["flight_events"] = []
+        _publish_events()
         attempts.clear()
         checkpoints.clear()
         scored["done"] = False
@@ -1072,7 +1101,7 @@ async def amain(cfg):
     async def configure_session(mode: str, jargon: str, reference: str = "planned",
                                 reference_recording: bool = False,
                                 trainee_name: str = "",
-                                tone: str = "warm"):
+                                tone: str = "warm", free_flight: bool = False):
         stop_speech()
         coach.pause()
         if is_familiarization(lesson):
@@ -1087,6 +1116,7 @@ async def amain(cfg):
                       and mid in ("trainee", "pilot"))
         session["tone"] = "drill" if want_drill else "warm"
         session["reference_recording"] = bool(reference_recording)
+        session["free_flight"] = bool(free_flight)
         session["name"] = (trainee_name or "").strip()[:48]
         tc = int(lesson.get("total_circuits", 1))
         engine.detector.total_circuits = 1 if reference_recording else tc
@@ -1468,10 +1498,16 @@ async def amain(cfg):
         if is_familiarization(lesson):
             await _set_frozen(False)        # hand the aircraft back on the way out
         if scored["done"]:
+            # the flight already finished on its own and is scored: nothing more to score,
+            # but leaving the lesson must still end the run -- otherwise it stays "in
+            # progress", the next lesson can't be selected and the page re-enters it
+            started.clear()
+            state["lesson_running"] = False
+            intro_shown.clear()
             return
         scored["done"] = True
-        event_log.close(_sim_now(), "abandoned")
-        state["flight_events"] = event_log.to_list()
+        event_log.end_flight(_sim_now(), "abandoned")
+        _publish_events()
         stop_speech()
         coach.pause()
         started.clear()
@@ -1625,9 +1661,13 @@ async def amain(cfg):
                     recorder.sample(tel.as_dict(), ctrl.as_dict(), geom_d, engine.phase)
                     # the to-do list / phase tracker decides event boundaries: when it
                     # moves on, the previous event ends and the next starts, at this tick
-                    if event_log.observe(engine.phase, tel.t, engine.circuit,
-                                         getattr(engine, "skipped", ())):
-                        state["flight_events"] = event_log.to_list()
+                    changed = event_log.observe(engine.phase, tel.t, engine.circuit,
+                                                getattr(engine, "skipped", ()))
+                    if engine.phase == "DEBRIEF" and not scored["done"]:
+                        event_log.end_flight(tel.t, "completed")
+                        changed = True
+                    if changed:
+                        _publish_events()
                     if prev_on_ground is False and tel.on_ground \
                             and engine.phase in ("FLARE_TOUCHDOWN", "FINAL", "ROLLOUT"):
                         scorer.on_landing(tel.as_dict(), geom_d)

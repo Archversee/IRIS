@@ -22,6 +22,7 @@ export const METRICS = [
 export const GRADE_COLORS = { S: "#4ade80", A: "#4ade80", B: "#a3e635", C: "#f5a623", D: "#fb923c", F: "#ef4444" };
 export const EVENT_COLORS = ["#38bdf8", "#a78bfa", "#14b8a6", "#f5a623", "#fb7185", "#60a5fa", "#facc15", "#4ade80"];
 export function eventColor(e, i) {
+  if (e.kind === "demo") return "#475569";   // MAVIS flying the demonstration: not graded
   if (e.grade && GRADE_COLORS[e.grade]) return GRADE_COLORS[e.grade];
   if (e.outcome === "skipped") return "#ef4444";
   if (e.outcome === "retried" || e.outcome === "abandoned") return "#64748b";

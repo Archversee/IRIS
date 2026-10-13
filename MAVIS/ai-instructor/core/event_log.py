@@ -11,6 +11,11 @@ The log only records. Scoring each event against the SOP rules, and the
 analysis of why it scored as it did, happens downstream (IRIS): `score`,
 `grade` and `detail` are left empty here for that purpose.
 
+A session can hold several flights ("Fly again", Restart): each is a numbered
+flight that records which curriculum it came from (a lesson, or free flight),
+and every event carries its flight number. Events and flights accumulate
+across a session; only a new session wipes them.
+
 Times are epoch seconds (the same clock as Telemetry.t, hence the same as
 flight_data.ts in IRIS), so an event's [start_t, end_t] slices the flight
 data directly.
@@ -30,16 +35,44 @@ class EventLog:
         self.reset()
 
     def reset(self) -> None:
+        """New session: forget every flight and event."""
         self._events: list[dict] = []
         self._open: dict | None = None
+        self._flights: list[dict] = []
+        self._flight: dict | None = None
 
     def configure(self, labels: dict[str, str], kind: str) -> None:
         self.labels, self.kind = labels, kind
         self.reset()
 
+    # ---- flights ----
+    def begin_flight(self, t: float, lesson_id: str, title: str, curriculum: str,
+                     module: str = "", mode: str = "") -> int:
+        """A flight starts (Start / Fly again). curriculum: "lesson" or
+        "free_flight"; title is what the dashboard shows ("Flight Familiarization",
+        "Free Flight"); module is the catalog group ("Basic Flight")."""
+        self.end_flight(t, "abandoned")
+        self._flight = {
+            "flight": len(self._flights) + 1, "lesson_id": lesson_id, "title": title,
+            "curriculum": curriculum, "module": module, "mode": mode,
+            "start_t": t, "end_t": None, "outcome": None,
+        }
+        self._flights.append(self._flight)
+        return self._flight["flight"]
+
+    def end_flight(self, t: float, outcome: str) -> None:
+        """The flight ends (completed / abandoned / restarted); closes any open
+        event with the same outcome. No-op when no flight is in progress."""
+        if self._flight is None:
+            return
+        self.close(t, "completed" if outcome == "completed" else outcome)
+        self._flight["end_t"] = t
+        self._flight["outcome"] = outcome
+        self._flight = None
+
     # ---- recording ----
     def observe(self, phase: str, t: float, circuit: int = 1,
-                skipped: set[str] | frozenset = frozenset()) -> bool:
+                skipped: set[str] | frozenset = frozenset(), kind: str | None = None) -> bool:
         """Call every tick with the engine's current step. Returns True when
         the log changed (an event closed and/or opened)."""
         cur = self._open
@@ -50,12 +83,14 @@ class EventLog:
             self._close(t, "skipped" if cur["phase"] in skipped else "completed")
             changed = True
         if phase not in NOT_EVENTS:
-            attempt = 1 + sum(1 for e in self._events
-                              if e["phase"] == phase and e["circuit"] == circuit)
+            flight = self._flight["flight"] if self._flight else 1
+            attempt = 1 + sum(1 for e in self._events if e["flight"] == flight
+                              and e["phase"] == phase and e["circuit"] == circuit)
             self._open = {
-                "seq": len(self._events), "event_id": phase,
+                "seq": len(self._events),
+                "flight": flight, "event_id": phase,
                 "label": self.labels.get(phase) or phase.replace("_", " ").title(),
-                "kind": self.kind, "phase": phase, "circuit": circuit,
+                "kind": kind or self.kind, "phase": phase, "circuit": circuit,
                 "attempt": attempt, "start_t": t, "end_t": None, "outcome": None,
                 "score": None, "grade": None, "detail": None,
             }
@@ -82,3 +117,6 @@ class EventLog:
     # ---- output ----
     def to_list(self) -> list[dict]:
         return [dict(e) for e in self._events]
+
+    def flights(self) -> list[dict]:
+        return [dict(f) for f in self._flights]

@@ -32,6 +32,8 @@ class Telemetry:
     # an adapter doesn't read them (IRIS then derives flaps from flaps_deg)
     flaps_handle_pct: float | None = None   # 0..100
     elevator_trim_pct: float | None = None  # -100..100, + nose up
+    rudder_trim_pct: float | None = None    # -100..100, + nose right (aircraft with no rudder trim read 0)
+    aileron_trim_pct: float | None = None   # -100..100, + right wing down (ditto)
 
     def as_dict(self) -> dict:
         return asdict(self)

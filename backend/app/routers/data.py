@@ -80,7 +80,23 @@ async def get_events(session_id: UUID):
     by MAVIS. end_ts is null for an event still in progress (live session)."""
     async with db.acquire() as conn:
         rows = await conn.fetch(
-            "select * from flight_events where session_id = $1 order by seq", session_id)
+            """
+            select e.*, f.title as flight_title, f.curriculum, f.lesson_id
+              from flight_events e
+              left join session_flights f on f.session_id = e.session_id and f.flight = e.flight
+             where e.session_id = $1
+             order by e.seq
+            """, session_id)
+    return [dict(r) for r in rows]
+
+
+@router.get("/flights")
+async def get_flights(session_id: UUID):
+    """The session's flights in order -- which curriculum each came from (a lesson, or
+    free flight), its mode, start and end."""
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            "select * from session_flights where session_id = $1 order by flight", session_id)
     return [dict(r) for r in rows]
 
 

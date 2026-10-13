@@ -22,6 +22,9 @@ class Session(SessionCreate):
     # MAVIS-sourced sessions only (db/schema_mavis_integration.sql); null otherwise
     lesson_id: str | None = None
     mode: str | None = None
+    # What each flight in the session was ("Flight Familiarization", "Free Flight", ...),
+    # in order, repeats removed; null when no flight was logged by MAVIS
+    curricula: list[str] | None = None
 
 
 class SessionUpdate(BaseModel):

@@ -52,6 +52,8 @@ _SIMVARS = [
     ("LOCAL TIME", "seconds"),
     ("FLAPS HANDLE PERCENT", "Percent"),
     ("ELEVATOR TRIM PCT", "Percent"),
+    ("RUDDER TRIM PCT", "Percent"),
+    ("AILERON TRIM PCT", "Percent"),
     ("IS LATITUDE LONGITUDE FREEZE ON", "Bool"),
     ("IS ALTITUDE FREEZE ON", "Bool"),
     ("IS ATTITUDE FREEZE ON", "Bool"),
@@ -182,8 +184,11 @@ class MSFSAdapter:
                 pass
             raise
         self._sm, self._datadef = sm, dd
-        log.info("SimConnect connected (pysimconnect) -- flaps handle %s%%, elevator trim %s%%",
-                 self._get("FLAPS HANDLE PERCENT", None), self._get("ELEVATOR TRIM PCT", None))
+        log.info("SimConnect connected (pysimconnect) -- flaps handle %s%%, trim: elevator %s%%, "
+                 "rudder %s%%, aileron %s%% (a rudder/aileron trim stuck at 0 means this aircraft "
+                 "doesn't implement it)",
+                 self._get("FLAPS HANDLE PERCENT", None), self._get("ELEVATOR TRIM PCT", None),
+                 self._get("RUDDER TRIM PCT", None), self._get("AILERON TRIM PCT", None))
 
     def _get(self, name: str, default=0.0):
         dd = self._datadef
@@ -270,6 +275,8 @@ class MSFSAdapter:
             local_time_h=g("LOCAL TIME", 43200) / 3600.0,
             flaps_handle_pct=g("FLAPS HANDLE PERCENT", None),
             elevator_trim_pct=g("ELEVATOR TRIM PCT", None),
+            rudder_trim_pct=g("RUDDER TRIM PCT", None),
+            aileron_trim_pct=g("AILERON TRIM PCT", None),
         )
 
     def _wait_for(self, pred, timeout_s: float) -> bool:

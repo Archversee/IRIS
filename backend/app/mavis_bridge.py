@@ -41,12 +41,17 @@ _FLAPS_FULL_DEG = 30.0   # C172 full flap -- only for deriving handle % from fla
 # paths are untouched.
 MAVIS_FLIGHT_EXTRA_COLUMNS = [
     "phase", "along_ft", "cross_ft", "rpm", "aileron_position", "flaps_deg", "on_ground",
+    "rudder_trim_pct", "aileron_trim_pct",
 ]
 FLIGHT_COLUMNS = db.FLIGHT_COLUMNS + MAVIS_FLIGHT_EXTRA_COLUMNS
 
 COACHING_EVENT_COLUMNS = ["session_id", "ts", "code", "severity", "who", "phase", "message", "data"]
 FLIGHT_EVENT_COLUMNS = [
-    "session_id", "seq", "event_id", "label", "kind", "phase", "circuit", "attempt",
+    "session_id", "seq", "flight", "event_id", "label", "kind", "phase", "circuit", "attempt",
+    "start_ts", "end_ts", "outcome",
+]
+SESSION_FLIGHT_COLUMNS = [
+    "session_id", "flight", "lesson_id", "title", "curriculum", "module", "mode",
     "start_ts", "end_ts", "outcome",
 ]
 SCORECARD_COLUMNS = [
@@ -109,6 +114,8 @@ def map_telemetry_fields(state: dict) -> dict | None:
         "aileron_position": tel.get("aileron"),
         "flaps_deg": tel.get("flaps_deg"),
         "on_ground": tel.get("on_ground"),
+        "rudder_trim_pct": tel.get("rudder_trim_pct"),
+        "aileron_trim_pct": tel.get("aileron_trim_pct"),
     }
 
 
@@ -137,9 +144,23 @@ def map_flight_events(session_id: UUID, events: list[dict]) -> list[tuple]:
         start = _to_utc(e.get("start_t"))
         if start is None:
             continue
-        rows.append((session_id, e["seq"], e.get("event_id") or e.get("phase"), e.get("label") or "",
+        rows.append((session_id, e["seq"], e.get("flight") or 1,
+                     e.get("event_id") or e.get("phase"), e.get("label") or "",
                      e.get("kind"), e.get("phase"), e.get("circuit"), e.get("attempt") or 1,
                      start, _to_utc(e.get("end_t")), e.get("outcome")))
+    return rows
+
+
+def map_session_flights(session_id: UUID, flights: list[dict]) -> list[tuple]:
+    """Pure mapping: MAVIS's flight list (state["flights"]) -> session_flights rows."""
+    rows = []
+    for f in flights:
+        start = _to_utc(f.get("start_t"))
+        if start is None:
+            continue
+        rows.append((session_id, f["flight"], f.get("lesson_id"), f.get("title") or "",
+                     f.get("curriculum") or "lesson", f.get("module"), f.get("mode"),
+                     start, _to_utc(f.get("end_t")), f.get("outcome")))
     return rows
 
 
@@ -154,7 +175,7 @@ def map_scorecard_row(session_id: UUID, state: dict, sc: dict) -> tuple:
 
 
 class _SessionCursor:
-    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig")
+    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig", "flights_sig")
 
     def __init__(self):
         self.seen = False
@@ -172,6 +193,7 @@ class _SessionCursor:
         self.last_scorecard_seq = None
         self.row_buffer: list[tuple] = []
         self.events_sig: str | None = None   # last flight_events list written, to skip unchanged pushes
+        self.flights_sig: str | None = None  # same, for the session_flights list
 
 
 class MavisBridge:
@@ -258,13 +280,19 @@ class MavisBridge:
             if events:
                 await db.copy_rows("coaching_events", COACHING_EVENT_COLUMNS, events)
 
+        flights = state.get("flights")
+        if flights is not None:
+            sig = json.dumps(flights, sort_keys=True)
+            if sig != cur.flights_sig:
+                cur.flights_sig = sig
+                await self._write_session_flights(session_id, map_session_flights(session_id, flights))
+
         events = state.get("flight_events")
         if events is not None:
             sig = json.dumps(events, sort_keys=True)
             if sig != cur.events_sig:
                 cur.events_sig = sig
-                # an open event's end_ts changes when it closes; a restarted run
-                # reuses the session with fewer events
+                # an open event's end_ts changes when it closes
                 await self._write_flight_events(session_id, map_flight_events(session_id, events))
 
         sc = state.get("scorecard")
@@ -296,7 +324,7 @@ class MavisBridge:
         SOP scoring pass survive MAVIS re-sending the list; drop rows beyond it."""
         cols = ", ".join(FLIGHT_EVENT_COLUMNS)
         params = ", ".join(f"${i + 1}" for i in range(len(FLIGHT_EVENT_COLUMNS)))
-        sets = ", ".join(f"{c} = excluded.{c}" for c in FLIGHT_EVENT_COLUMNS[2:])
+        sets = ", ".join(f"{c} = excluded.{c}" for c in FLIGHT_EVENT_COLUMNS[2:])   # all but the key
         async with db.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("delete from flight_events where session_id = $1 and seq >= $2",
@@ -305,6 +333,18 @@ class MavisBridge:
                     await conn.executemany(
                         f"insert into flight_events ({cols}) values ({params}) "
                         f"on conflict (session_id, seq) do update set {sets}", rows)
+
+    async def _write_session_flights(self, session_id: UUID, rows: list[tuple]) -> None:
+        """Upsert the session's flights (one per Start / Fly again), keyed by flight number."""
+        if not rows:
+            return
+        cols = ", ".join(SESSION_FLIGHT_COLUMNS)
+        params = ", ".join(f"${i + 1}" for i in range(len(SESSION_FLIGHT_COLUMNS)))
+        sets = ", ".join(f"{c} = excluded.{c}" for c in SESSION_FLIGHT_COLUMNS[2:])
+        async with db.acquire() as conn:
+            await conn.executemany(
+                f"insert into session_flights ({cols}) values ({params}) "
+                f"on conflict (session_id, flight) do update set {sets}", rows)
 
     async def _flush_flight_rows(self) -> None:
         all_rows: list[tuple] = []
@@ -358,20 +398,31 @@ def _json_safe(fields: dict) -> dict:
 
 
 async def ensure_schema() -> None:
-    """flight_events table (also in db/schema_mavis_integration.sql), created
-    at startup like the other additive pieces so an existing DB needs no manual step."""
+    """Additive MAVIS-integration tables/columns (also in db/schema_mavis_integration.sql),
+    created at startup like the other additive pieces so an existing DB needs no manual step."""
     try:
         async with db.acquire() as conn:
             await conn.execute("""
+                create table if not exists session_flights (
+                    session_id uuid not null references sessions(id) on delete cascade,
+                    flight integer not null, lesson_id text, title text not null,
+                    curriculum text not null default 'lesson', module text, mode text,
+                    start_ts timestamptz not null, end_ts timestamptz, outcome text,
+                    primary key (session_id, flight))""")
+            await conn.execute("""
                 create table if not exists flight_events (
                     session_id uuid not null references sessions(id) on delete cascade,
-                    seq integer not null, event_id text not null, label text not null,
+                    seq integer not null, flight integer not null default 1,
+                    event_id text not null, label text not null,
                     kind text, phase text, circuit integer, attempt integer not null default 1,
                     start_ts timestamptz not null, end_ts timestamptz, outcome text,
                     score integer, grade text, detail jsonb,
                     primary key (session_id, seq))""")
+            await conn.execute("alter table flight_events add column if not exists flight integer not null default 1")
+            await conn.execute("alter table flight_data add column if not exists rudder_trim_pct double precision")
+            await conn.execute("alter table flight_data add column if not exists aileron_trim_pct double precision")
     except Exception as e:  # sessions table not created yet -- run db/schema.sql first
-        log.warning("mavis_bridge: couldn't create flight_events: %s", e)
+        log.warning("mavis_bridge: couldn't create the event/flight tables or trim columns: %s", e)
 
 
 _bridge: MavisBridge | None = None

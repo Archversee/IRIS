@@ -43,7 +43,16 @@ async def create_session(body: SessionCreate):
 @router.get("", response_model=list[Session])
 async def list_sessions():
     async with db.acquire() as conn:
-        rows = await conn.fetch("select * from sessions order by created_at desc")
+        rows = await conn.fetch(
+            """
+            select s.*,
+                   (select array_agg(t.title order by t.first_flight)
+                      from (select title, min(flight) as first_flight
+                              from session_flights f where f.session_id = s.id
+                             group by title) t) as curricula
+              from sessions s
+             order by s.created_at desc
+            """)
     return [dict(r) for r in rows]
 
 

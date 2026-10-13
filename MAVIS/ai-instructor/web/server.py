@@ -24,6 +24,7 @@ class SessionCfg(BaseModel):
     reference: str = "planned" # planned | maverick | iceman | ...
     reference_recording: bool = False  # instructor capture: one circuit, full stop
     trainee_name: str = ""     # display name for debrief / scorecard
+    free_flight: bool = False  # Free Flight menu: the session is logged as free flight, not as a lesson
 
 
 class RefCfg(BaseModel):
@@ -130,7 +131,7 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
         fn = actions.get("configure_session")
         if fn:
             await fn(cfg.mode, cfg.jargon, cfg.reference, cfg.reference_recording,
-                     cfg.trainee_name.strip(), cfg.tone)
+                     cfg.trainee_name.strip(), cfg.tone, cfg.free_flight)
         return {"ok": True}
 
     @app.post("/lesson/select")

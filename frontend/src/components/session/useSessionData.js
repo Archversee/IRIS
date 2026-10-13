@@ -437,11 +437,14 @@ export function useSessionData({ id, live }) {
   // next starts. An event still open runs to the newest sample.
   const flightPhases = useMemo(() => {
     if (!flightEvents.length || !flight.length) return heuristicPhases;
+    const multi = new Set(flightEvents.map((e) => e.flight)).size > 1;   // several flights in this session
     return flightEvents.map((e, i) => {
       const start = +elapsed(e.start_ts).toFixed(1);
       const end = +(e.end_ts ? elapsed(e.end_ts) : totalT).toFixed(1);
+      const name = e.attempt > 1 ? `${e.label} (try ${e.attempt})` : e.label;
       return {
-        key: `ev${e.seq}`, event: true, label: e.attempt > 1 ? `${e.label} (try ${e.attempt})` : e.label,
+        key: `ev${e.seq}`, event: true, kind: e.kind, flight: e.flight, curriculum: e.flight_title,
+        label: multi ? `F${e.flight} · ${name}` : name,
         start, end, color: eventColor(e, i), eventId: e.event_id, outcome: e.outcome,
         score: e.score, grade: e.grade, detail: e.detail,
       };
