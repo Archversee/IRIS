@@ -48,7 +48,7 @@ class DemoPilot:
         # stall guard: below this speed the step is abandoned and the
         # aircraft recovered (full power, hold the height). Slow flight is
         # flown slow on purpose, so its floor is the stall speed itself.
-        stall = float(getattr(eng, "stall_kt", 50.0))
+        stall = float(getattr(eng, "vs1", 48.0)) + 2.0
         self.min_ias = stall if step == "SLOW_FLIGHT" else stall + 5.0
         self.rescued = False
         self.a0 = float(tel0.get("alt_msl", 0.0))
@@ -105,15 +105,21 @@ class DemoPilot:
                      "until": "level", "min_s": 1, "max_s": 15}]
         if p in ("YAW_LEFT", "YAW_RIGHT"):
             want = -1 if p == "YAW_LEFT" else 1
-            return [{"cmd": {"ap": False, "rudder": want * 0.5, "hdg": (h0 + want * 20) % 360},
+            # autopilot keeps the wings level (and the trainee's stick out of
+            # it); the pedal swings the nose
+            return [{"cmd": {"ap": True, "lateral": "roll", "vertical": "pitch", "rudder": want * 0.5,
+                             "mock_hdg": (h0 + want * 20) % 360},
                      "until": "yaw", "want": want, "deg": eng.yaw_deg, "max_s": 8},
                     {"cmd": {"rudder": 0.0}, "min_s": 2, "max_s": 2},
                     {"cmd": {"ap": True, "hdg": "current", "alt": a0, "spd": 95},
                      "until": "level", "min_s": 1, "max_s": 10}]
         if p == "POWER":
-            return [{"cmd": {"ap": False, "throttle": min(1.0, th0 + 0.3), "alt": a0 + 150, "spd": 95},
+            # full power, then back: the autopilot holds the nose attitude, so
+            # the extra power shows as the aircraft climbing away
+            return [{"cmd": {"ap": True, "vertical": "pitch", "hdg": h0, "throttle": 1.0,
+                             "mock_alt": a0 + 150, "spd": 95},
                      "min_s": 7, "max_s": 7},
-                    {"cmd": {"throttle": th0, "alt": a0 + 150}, "min_s": 4, "max_s": 4}]
+                    {"cmd": {"throttle": th0, "mock_alt": a0 + 150}, "min_s": 4, "max_s": 4}]
         if p in ("SLOW_CRUISE", "FAST_CRUISE"):
             slow = p == "SLOW_CRUISE"
             spd = eng.speeds[p]
@@ -227,11 +233,15 @@ class DemoPilot:
                 return self._resolve(seg["cmd"], tel)
         if self._finished(seg, tel, dt):
             return self._next(tel)
-        # resend the command in force every few seconds: a mode the autopilot
-        # didn't take, or dropped, gets set again (all of these are idempotent)
-        if self._cur and self.t_seg - self._resent >= 3.0:
+        # resend the command in force every second: a mode the autopilot didn't
+        # take, or dropped, gets set again (all of these are idempotent) ...
+        if self._cur and self.t_seg - self._resent >= 1.0:
             self._resent = self.t_seg
             return dict(self._cur)
+        # ... and the throttle every tick, over a hardware throttle that keeps
+        # putting its own position back
+        if self._cur and "throttle" in self._cur:
+            return {"throttle": self._cur["throttle"]}
         return None
 
     def _next(self, tel: dict) -> dict | None:

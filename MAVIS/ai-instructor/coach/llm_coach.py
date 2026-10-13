@@ -20,10 +20,16 @@ VERBATIM = frozenset({
     "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
-    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL", "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
+    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
+    "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF", "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
     "FAM_DEMO_START", "FAM_DEMO_END", "FAM_STEP_CUE", "FAM_DEMO_SKIPPED",
 })
 
+
+
+# "now come back" calls (core.familiarization.PART_CUES): may wait a little
+# behind a line already being spoken
+_PART_CUES = frozenset({"FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:
@@ -133,6 +139,7 @@ class Coach:
                 # turn cues and lesson teaching points follow a phase call that
                 # takes several seconds to speak, so they get a longer shelf life
                 limit = (25.0 if ev.code.startswith("TURN_") or ev.code == "LESSON_NOTE"
+                         else 12.0 if ev.code in _PART_CUES
                          else max_age.get(ev.severity, 3.0))
                 if age > limit:
                     continue

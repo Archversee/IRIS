@@ -117,6 +117,10 @@ TEMPLATES = {
     "FAM_TURN_REMIND": ["Ease the stick {dir}, {bank_lo} to {bank_hi} degrees."],
     "FAM_YAW_REMIND": ["Gently press the {dir} pedal and watch the nose swing {dir}."],
     "FAM_STALL": ["That's the stall. Nose down, full power, then level off."],
+    "FAM_ROLL_OUT": ["That's enough, now roll the wings level."],
+    "FAM_CENTRE_PEDALS": ["Good, now feet level again."],
+    "FAM_THROTTLE_BACK": ["Good, now bring the throttle back to where it was."],
+    "FAM_LEVEL_OFF": ["Nearly there, ease the nose over and level off."],
     "FAM_FIELD_HINT": ["Paya Lebar: {clock} o'clock, about {dist_nm} miles. Head {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["That's Paya Lebar on the nose. Well found. Runway start after your score."],
     "FAM_DEBRIEF_DONE": ["That's every step done. Nicely flown. Runway start after your score."],
@@ -175,6 +179,10 @@ PILOT_TEMPLATES = {
     "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank_lo} to {bank_hi} degrees."],
     "FAM_YAW_REMIND": ["Apply {dir} rudder. Note the yaw, then the roll that follows."],
     "FAM_STALL": ["Stall. Recover: nose down, full power, wings level."],
+    "FAM_ROLL_OUT": ["Roll out, wings level."],
+    "FAM_CENTRE_PEDALS": ["Centralise the rudder."],
+    "FAM_THROTTLE_BACK": ["Power back to cruise."],
+    "FAM_LEVEL_OFF": ["Approaching altitude, level off."],
     "FAM_FIELD_HINT": ["Paya Lebar, {clock} o'clock, {dist_nm} miles. Heading {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["Field on the nose. Exercise complete. Runway start after the debrief."],
     "FAM_DEBRIEF_DONE": ["Exercise complete. Runway start after the debrief."],
@@ -332,6 +340,44 @@ def set_lesson_lines(say: dict | None) -> None:
     _LESSON_SAY = dict(say or {})
 
 
+def speakable(text: str) -> str:
+    """Screen text (to-do lines / targets) as MAVIS should say it:
+    "25-35°" -> "25 to 35 degrees", "70-80 kt" -> "70 to 80 knots"."""
+    import re
+    t = re.sub(r"(\d)\s*[-\u2013]\s*(\d)", r"\1 to \2", text)
+    t = re.sub(r"\s*\u00b0", " degrees", t)
+    t = t.replace(" \u00b1", ", within ").replace("\u00b1", "within ")
+    t = re.sub(r"(\d)\s*%\+", r"\1 percent or more", t)
+    t = re.sub(r"(\d)\s*%", r"\1 percent", t)
+    t = re.sub(r"(\d)\+\s*kt\b", r"\1 knots or more", t)
+    t = re.sub(r"(\d)\s*kt\b", r"\1 knots", t)
+    t = re.sub(r"(\d)\s*fpm\b", r"\1 feet per minute", t)
+    t = re.sub(r"(\d)\s*ft\b", r"\1 feet", t)
+    t = re.sub(r"(\d)\s*s\b", r"\1 seconds", t)
+    t = re.sub(r"\s*\(([^)]*)\)", r", \1", t)          # "aim 65 knots (45 to 85)" -> ", 45 to 85"
+    return t.replace("/", " or ")
+
+
+# Readouts that aren't something to aim for, so not read out as a target.
+_NOT_TARGETS = {"", "falling", "rising", "watch it roll", "watch it rise", "watch it settle",
+                "slowly up", "middle", "on the path", "settle on", "stop the sink", "stopped"}
+
+
+def spoken_targets(meters: list[dict] | None) -> str:
+    """The to-do list's targets for a step, as one spoken sentence:
+    "Target: steady 10 seconds, bank under 5 degrees." ("" if none)."""
+    parts = []
+    for m in meters or []:
+        tgt = (m.get("target") or "").strip()
+        if tgt.lower() in _NOT_TARGETS:
+            continue
+        label = m.get("label", "")
+        if label and not any(w[:1].isupper() for w in label.split()[1:]):
+            label = label[:1].lower() + label[1:]     # "Speed" -> "speed", not "Paya Lebar"
+        parts.append(f"{label} {tgt}".strip())
+    return speakable("Target: " + ", ".join(parts) + ".") if parts else ""
+
+
 def render(code: str, data: dict) -> str:
     import random
     d = dict(data)
@@ -346,9 +392,14 @@ def render(code: str, data: dict) -> str:
         # lesson YAML teaching point: {layman, pilot} variants authored per phase
         txt = d.get(_JARGON) or d.get("layman") or ""
         try:
-            return txt.format(**d)
+            txt = txt.format(**d)
         except (KeyError, IndexError):
-            return txt
+            pass
+        # ...followed by the step's targets from the to-do list, when the
+        # step's instructions are given (not in the up-front demo)
+        if d.get("say_targets"):
+            txt = f"{txt} {d['say_targets']}".strip()
+        return txt
     opts = TEMPLATES.get(code)
     if not opts:
         return ""

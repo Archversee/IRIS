@@ -195,10 +195,12 @@ class MockAdapter:
         (a rudder demo carries the heading the nose swings to)."""
         if not self._free:
             return False
-        if cmd.get("hdg") is not None:
-            self._tgt["hdg"] = wrap(float(cmd["hdg"]))
-        if cmd.get("alt") is not None:
-            self._tgt["alt"] = max(0.0, (float(cmd["alt"]) - self.elev) * FT2M)
+        hdg = cmd.get("mock_hdg", cmd.get("hdg"))     # mock_*: what a real aircraft would do
+        alt = cmd.get("mock_alt", cmd.get("alt"))
+        if hdg is not None:
+            self._tgt["hdg"] = wrap(float(hdg))
+        if alt is not None:
+            self._tgt["alt"] = max(0.0, (float(alt) - self.elev) * FT2M)
         if cmd.get("spd") is not None:
             self._tgt["spd"] = float(cmd["spd"])
         self._tgt["home"] = False

@@ -66,7 +66,7 @@ todo_steps:
       - "Flaps all the way down"
       - "Nose for speed, throttle for height"
       - "Keep the runway steady in the windscreen"
-    meters: [speed_band, glidepath, centreline, flaps]
+    meters: [speed_band, height, glidepath, centreline, flaps]
   - phases: [FLARE_TOUCHDOWN]
     title: Flare and touch down
     todo:

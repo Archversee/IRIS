@@ -87,7 +87,8 @@ _LOCKED_EVENTS = [
     "AXIS_RUDDER_SET", "RUDDER_LEFT", "RUDDER_RIGHT", "RUDDER_CENTER",
     "RUDDER_AXIS_PLUS", "RUDDER_AXIS_MINUS",
     # power
-    "AXIS_THROTTLE_SET", "AXIS_THROTTLE1_SET", "THROTTLE_SET", "THROTTLE1_SET",
+    # (THROTTLE1_SET is left out on purpose: it's how MAVIS sets the demo's power)
+    "AXIS_THROTTLE_SET", "AXIS_THROTTLE1_SET", "THROTTLE_SET",
     "THROTTLE_AXIS_SET_EX1", "THROTTLE1_AXIS_SET_EX1",
     "THROTTLE_INCR", "THROTTLE_DECR", "THROTTLE_INCR_SMALL", "THROTTLE_DECR_SMALL",
     "THROTTLE1_INCR", "THROTTLE1_DECR", "THROTTLE_FULL", "THROTTLE_CUT",
@@ -419,9 +420,13 @@ class MSFSAdapter:
         try:
             with self._lock:
                 if "throttle" in cmd:
-                    self._sm.set_simdatum("GENERAL ENG THROTTLE LEVER POSITION:1",
-                                          max(0.0, min(100.0, float(cmd["throttle"]) * 100.0)),
-                                          "percent")
+                    pct = max(0.0, min(100.0, float(cmd["throttle"]) * 100.0))
+                    # both the lever simvar and the key event (an event the lock
+                    # doesn't mask): a hardware throttle that keeps reasserting
+                    # its own position has to be overridden, and MAVIS re-sends
+                    # this every tick while a demo step sets the power
+                    self._sm.set_simdatum("GENERAL ENG THROTTLE LEVER POSITION:1", pct, "percent")
+                    ev("THROTTLE1_SET", round(pct / 100.0 * 16383))
                 if "rudder" in cmd:
                     # RUDDER_SET, not the pedals' AXIS_RUDDER_SET: that one is
                     # masked while the controls are locked for the demo
@@ -430,6 +435,15 @@ class MSFSAdapter:
                     ev("AUTOPILOT_OFF")
                 elif cmd.get("ap") is True:
                     ev("AUTOPILOT_ON")
+                    # basic modes: wings level (ROL) / hold the nose attitude
+                    # (PIT) -- the autopilot keeps hold of the aircraft (the
+                    # trainee's stick can't fly it) while the rudder or the
+                    # throttle shows its effect
+                    if cmd.get("lateral") == "roll":
+                        ev("AP_HDG_HOLD_OFF")
+                    if cmd.get("vertical") == "pitch":
+                        ev("AP_ALT_HOLD_OFF")
+                        ev("AP_VS_OFF")
                     if cmd.get("hdg") is not None:
                         ev("HEADING_BUG_SET", round(float(cmd["hdg"])) % 360)
                         ev("AP_HDG_HOLD_ON")

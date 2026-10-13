@@ -36,7 +36,7 @@ from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
 from core.event_log import EventLog
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
-from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
+from core.familiarization import (PART_CUES, FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, lesson_steps, runway_start,
                                   start_position)
 from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
@@ -500,14 +500,7 @@ async def amain(cfg):
         if fn and not await loop.run_in_executor(None, fn, on):
             log.warning("sim did not confirm freeze=%s", on)
 
-    def _speakable(text: str) -> str:
-        """A to-do line (written for the screen) as MAVIS should say it:
-        "25-35°" -> "25 to 35 degrees", "70-80 kt" -> "70 to 80 knots"."""
-        t = re.sub(r"(\d)\s*[-\u2013]\s*(\d)", r"\1 to \2", text)
-        t = re.sub(r"\s*\u00b0", " degrees", t)
-        t = re.sub(r"(\d)\s*kt\b", r"\1 knots", t)
-        t = re.sub(r"(\d)\s*ft\b", r"\1 feet", t)
-        return t
+    _speakable = phrases.speakable      # to-do text as MAVIS says it
 
     def _demos_wanted() -> bool:
         """Fly the whole airborne lesson once as a demonstration before the
@@ -1670,7 +1663,9 @@ async def amain(cfg):
                     if ev.code == "PHASE_ENTER_DEBRIEF":
                         continue   # finish_lesson/_await_spoken_close owns this line
                     if (not allow_coach_event(pol, ev.code, ev.severity)
-                            and ev.code not in (lesson.get("always_say") or [])):
+                            and ev.code not in (lesson.get("always_say") or [])
+                            # "now come back" calls: every mode but Exam (silent)
+                            and not (ev.code in PART_CUES and pol.get("coaching") != "silent")):
                         continue
                     if ev.code == "LESSON_NOTE" and is_familiarization(lesson):
                         state["look_at"] = {"items": ev.data.get("look") or [],

@@ -76,13 +76,13 @@ step_notes:
     title: Medium turn left
     todo:
       - "Bank left {med_bank_lo}-{med_bank_hi}°"
-      - "A little back pressure to hold height"
+      - "A little back pressure to hold {alt_now:,} ft"
       - "Roll level after a half circle"
     look: [attitude, altitude]
     layman: >-
-      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, a little back pressure, half a circle.
+      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, a little back pressure to hold {alt_now:,} feet, half a circle.
     pilot: >-
-      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, through 180.
+      Medium turn left, {med_bank_lo} to {med_bank_hi} degrees, through 180, hold {alt_now:,} feet.
   MEDIUM_TURN_RIGHT:
     title: Medium turn right
     todo:
@@ -91,20 +91,20 @@ step_notes:
     look: [attitude, altitude]
     freeze: false
     layman: >-
-      Same to the right.
+      Same to the right, holding {alt_now:,} feet.
     pilot: >-
-      Medium turn right, through 180.
+      Medium turn right, through 180, hold {alt_now:,} feet.
   STEEP_TURN_LEFT:
     title: Steep turn left
     todo:
       - "Bank left {steep_bank_lo}-{steep_bank_hi}°, add some power"
-      - "Pull back firmly to hold height"
+      - "Pull back firmly to hold {alt_now:,} ft"
       - "Roll level after a full circle"
     look: [attitude, altitude]
     layman: >-
-      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees: a bit of power, pull back firmly, full circle.
+      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees: a bit of power, pull back firmly to hold {alt_now:,} feet, full circle.
     pilot: >-
-      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360, add power, back pressure.
+      Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360, add power, hold {alt_now:,} feet.
     demo_layman: >-
       The autopilot can't bank this steeply, so listen: {steep_bank_lo} to {steep_bank_hi} degrees, a bit of power, pull back firmly.
     demo_pilot: >-
@@ -117,9 +117,9 @@ step_notes:
     look: [attitude, altitude]
     freeze: false
     layman: >-
-      Same to the right, full circle.
+      Same to the right, full circle, holding {alt_now:,} feet.
     pilot: >-
-      Steep turn right, through 360.
+      Steep turn right, through 360, hold {alt_now:,} feet.
     demo_layman: >-
       Then the same to the right.
     demo_pilot: >-

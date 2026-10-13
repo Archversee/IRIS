@@ -308,7 +308,12 @@ class MavisBridge:
 
     async def _ensure_session_row(self, session_id: UUID, state: dict) -> None:
         sess = state.get("session") or {}
-        name = (sess.get("name") or "").strip() or f"MAVIS {state.get('lesson_id') or 'session'}"
+        # default name: the lesson's title (not its id, e.g. "lesson06_steep")
+        # with the trainee's name, or the start time when there's no name --
+        # "Steep Turns – Alex" / "Steep Turns – 13 Oct 14:05". Editable on Save.
+        title = ((state.get("active_lesson") or {}).get("title") or "").strip() or "MAVIS session"
+        who = (sess.get("name") or "").strip()
+        name = f"{title} – {who}" if who else f"{title} – {datetime.now().strftime('%d %b %H:%M')}"
         async with db.acquire() as conn:
             await conn.execute(
                 """

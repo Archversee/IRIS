@@ -10,6 +10,7 @@ from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
 from .monitors import Monitors, final_speed_band
+from coach.phrases import spoken_targets
 from .phase_detector import PhaseDetector
 
 
@@ -125,6 +126,7 @@ class LessonEngine:
             out.append(CoachEvent(f"PHASE_ENTER_{new_phase}", "info", data, cooldown_s=0))
             note = self.phase_notes.get(new_phase)
             if note:
+                note = {**note, "say_targets": self._spoken_targets(new_phase)}
                 # same severity as the phase call, queued after it, so it is
                 # spoken as the follow-on teaching point for this leg
                 out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
@@ -155,6 +157,13 @@ class LessonEngine:
             steps.append(row)
         return {"steps": steps, "complete": phase == "DEBRIEF", "done_text": self.todo_done}
 
+    def _spoken_targets(self, phase: str) -> str:
+        """The to-do targets of the step this phase belongs to, spoken."""
+        st = next((s for s in self.todo_steps if phase in s.get("phases", [])), None)
+        if not st:
+            return ""
+        return spoken_targets([m for m in (self._meter(k) for k in st.get("meters") or []) if m])
+
     def _meter(self, kind: str) -> dict | None:
         """One live "now / target" row. No target speed on the take-off: it
         shows the speed, the trainee isn't asked to fly a number."""
@@ -181,7 +190,7 @@ class LessonEngine:
             if fb:
                 lo, hi, aim = fb       # aim slides lower over the last stretch to the runway
                 return {"label": "Speed", "now": f"{tel.ias:.0f} kt",
-                        "target": f"aim {aim:.0f} ({lo:.0f}\u2013{hi:.0f})", "ok": lo <= tel.ias <= hi}
+                        "target": f"aim {aim:.0f} kt ({lo:.0f}\u2013{hi:.0f})", "ok": lo <= tel.ias <= hi}
             spd = self.monitors.tgt_speed.get(self.detector.phase)
             if not spd:
                 return None
@@ -196,10 +205,12 @@ class LessonEngine:
             want = self.monitors.tgt_flaps.get("FINAL", 30)
             return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": f"full ({want}°)",
                     "ok": tel.flaps_deg >= want - 6}
+        if kind == "height":
+            return {"label": "Height", "now": f"{agl:,.0f} ft", "target": ""}
         if kind == "height_agl":
             return {"label": "Height", "now": f"{agl:,.0f} ft", "target": "settle on"}
         if kind == "sink":
-            return {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm", "target": "gentle, under 500",
+            return {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm", "target": "under 500 fpm",
                     "ok": -tel.vs < 500}
         if kind == "stop":
             return {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": "stopped",

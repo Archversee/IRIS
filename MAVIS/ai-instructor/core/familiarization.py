@@ -22,6 +22,7 @@ from .events import CoachEvent
 from .monitors import Monitors
 from .phase_detector import PhaseDetector, hdg_diff
 from .scoring import DEFAULTS, ScoreCard, _curve
+from coach.phrases import spoken_targets
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,9 @@ STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left t
 
 DEFAULT_STEPS = ["STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND", "FIND_AIRFIELD"]
 ROLL_STEPS = ("ROLL_LEFT", "ROLL_RIGHT")
+# Spoken the moment the first half of a two-part step is done, so the trainee
+# knows when to come back: roll level, feet level, throttle back, level off.
+PART_CUES = ("FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF")
 LEVEL_OFF_STEPS = ("CLIMB_TO", "DESCEND_TO")            # to a set height, then level off there
 MEDIUM_TURNS = ("MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT")
 STEEP_TURNS = ("STEEP_TURN_LEFT", "STEEP_TURN_RIGHT")
@@ -146,7 +150,7 @@ def speed_bands(ex: dict) -> dict:
     slow_kt / fast_kt / glide_kt +/- 5."""
     out = {}
     for step, key, default in (("SLOW_CRUISE", "slow", 80), ("FAST_CRUISE", "fast", 105),
-                               ("GLIDE", "glide", 68)):
+                               ("GLIDE", "glide", 68), ("SLOW_FLIGHT", "slow_flight", 55)):
         mid, band = float(ex.get(f"{key}_kt", default)), ex.get(f"{key}_band_kt")
         out[step] = (float(band[0]), float(band[1])) if band else (mid - 5, mid + 5)
     return out
@@ -229,6 +233,8 @@ class FamiliarizationEngine:
         self.sf_hold_s = float(ex.get("slow_flight_hold_s", 10))
         self.stall_kt = float(ex.get("stall_kt", vs1 + 2))
         self.recover_kt = float(ex.get("recover_kt", 65))
+        self.recover_sink = float(ex.get("recover_max_sink_fpm", 200))  # "sink stopped": slower than this
+        self.vs1 = vs1                                                   # the real stall speed (demo guard)
         # medium & steep turns: (bank, degrees of turn)
         self.turn_spec = {"MEDIUM": (float(ex.get("medium_bank_deg", 30)), float(ex.get("medium_turn_deg", 180))),
                           "STEEP": (float(ex.get("steep_bank_deg", 45)), float(ex.get("steep_turn_deg", 360)))}
@@ -413,7 +419,9 @@ class FamiliarizationEngine:
         out = [CoachEvent(f"PHASE_ENTER_{p}", "info", data, cooldown_s=0)]
         note = self.notes.get(p)
         if note:
-            out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
+            out.append(CoachEvent("LESSON_NOTE", "info",
+                                  {**data, **note, "say_targets": spoken_targets(self._meters)},
+                                  cooldown_s=0))
         log.info("familiarization step -> %s (alt %.0f, hdg %.0f, field ~%s nm, bearing from %s)",
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
         return out
@@ -436,14 +444,15 @@ class FamiliarizationEngine:
         slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
         mb, mdeg = self.turn_spec["MEDIUM"]
         sb, sdeg = self.turn_spec["STEEP"]
-        return {"phase": p, "circuit": 1, "total_circuits": 1,
+        return {"phase": p, "circuit": 1, "total_circuits": 1, "alt_now": _r(a, 10),
                 "tgt_alt": (round(self.level_target(p, a, demo)) if p in LEVEL_OFF_STEPS
                             else round(a)),
                 "level_band": round(self.level_band), "level_hold_s": round(self.level_hold_s),
                 "glide_lo": round(self.speed_band["GLIDE"][0]),
                 "glide_hi": round(self.speed_band["GLIDE"][1]),
                 "glide_ft": round(self.glide_ft),
-                "sf_lo": _r(self.sf_kt - 5, 5), "sf_hi": _r(self.sf_kt + 5, 5),
+                "sf_lo": round(self.speed_band["SLOW_FLIGHT"][0]),
+                "sf_hi": round(self.speed_band["SLOW_FLIGHT"][1]),
                 "sf_hold_s": round(self.sf_hold_s), "band_ft": round(self.height_band),
                 "stall_kt": round(self.stall_kt), "recover_kt": round(self.recover_kt),
                 "med_bank_lo": _r(mb - 5, 5), "med_bank_hi": _r(mb + 5, 5), "med_turn_deg": round(mdeg),
@@ -482,7 +491,12 @@ class FamiliarizationEngine:
             return self._held >= self.hold_s
         if p in ("TURN_LEFT", "TURN_RIGHT"):
             want = -1.0 if p == "TURN_LEFT" else 1.0
-            return self._turned * want >= self.turn_deg - 20 and abs(tel.bank) < 8
+            far_enough = self._turned * want >= self.turn_deg - 20
+            if far_enough and self._stage == 0:
+                self._stage = 1
+                if abs(tel.bank) >= 8:                # still banked: time to roll out
+                    self._cue("FAM_ROLL_OUT")
+            return far_enough and abs(tel.bank) < 8
         if p == "CLIMB":
             return tel.alt_msl >= e["alt"] + self.climb_ft - 100
         if p == "DESCEND":
@@ -499,6 +513,7 @@ class FamiliarizationEngine:
                     self._held += dt
                     if self._held >= self.roll_hold_s:
                         self._stage = 1
+                        self._cue("FAM_ROLL_OUT")
                 return False
             return abs(tel.bank) < 5
         if p == "POWER":
@@ -510,6 +525,7 @@ class FamiliarizationEngine:
             if self._stage == 0:
                 if tel.throttle >= t0 + self.power_throttle:
                     self._stage = 1
+                    self._cue("FAM_THROTTLE_BACK")
                 return False
             return abs(tel.throttle - t0) <= 0.08
         if p in ("YAW_LEFT", "YAW_RIGHT"):
@@ -517,7 +533,10 @@ class FamiliarizationEngine:
             # aircraft has no rudder, so there the swing alone counts)
             want = -1.0 if p == "YAW_LEFT" else 1.0
             self._rudder = max(self._rudder, abs(tel.rudder))
-            return self._turned * want >= self.yaw_deg and (self.mock or self._rudder >= 0.2)
+            swung = self._turned * want >= self.yaw_deg and (self.mock or self._rudder >= 0.2)
+            if swung:
+                self._cue("FAM_CENTRE_PEDALS")
+            return swung
         if p == "TRIM":
             # hands (nearly) off the stick and it stays steady -- no height target
             if abs(tel.vs) < self.trim_vs and (self.mock or abs(tel.elevator) < 0.1):
@@ -538,6 +557,7 @@ class FamiliarizationEngine:
             if self._stage == 0:
                 if abs(tel.alt_msl - tgt) < self.level_band:
                     self._stage = 1
+                    self._cue("FAM_LEVEL_OFF")
                 return False
             if abs(tel.alt_msl - tgt) < self.level_band and abs(tel.vs) < 200:
                 self._held += dt
@@ -545,20 +565,21 @@ class FamiliarizationEngine:
         if p == "GLIDE":
             return tel.alt_msl <= e["alt"] - self.glide_ft
         if p == "SLOW_FLIGHT":
-            if abs(tel.ias - self.sf_kt) <= 5 and abs(tel.alt_msl - e["alt"]) < self.height_band:
+            lo, hi = self.speed_band["SLOW_FLIGHT"]
+            if lo <= tel.ias <= hi and abs(tel.alt_msl - e["alt"]) < self.height_band:
                 self._held += dt
             return self._held >= self.sf_hold_s
         if p == "STALL":
             if self._stage == 0:
                 # stalled: down at the stall speed, or nose up and sinking anyway
-                if tel.ias <= self.stall_kt or (tel.pitch > 10 and tel.vs < -300):
+                if tel.ias <= self.stall_kt or (tel.pitch > 8 and tel.vs < -200):
                     self._stage = 1
                     self._events.append(CoachEvent(
                         "FAM_STALL", "safety",
                         {"phase": p, "mock": {"spd": self.recover_kt + 10, "alt_delta_ft": 0}},
                         cooldown_s=0))
                 return False
-            return tel.ias >= self.recover_kt and tel.vs >= -200
+            return tel.ias >= self.recover_kt and tel.vs >= -self.recover_sink
         if p in BANKED_TURNS:
             # the turn only counts while banked enough and holding height
             bank, deg = self.turn_target(p)
@@ -571,9 +592,14 @@ class FamiliarizationEngine:
                     self._progress += max(0.0, step_turn * want)
                 if self._progress >= deg - 20:
                     self._stage = 1
+                    self._cue("FAM_ROLL_OUT")
                 return False
             return abs(tel.bank) < 8
         return False
+
+    def _cue(self, code: str) -> None:
+        """Queue a "now come back" call (PART_CUES) for this tick's output."""
+        self._events.append(CoachEvent(code, "correction", {"phase": self.phase}, cooldown_s=0))
 
     def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
         """Done, or out of time (finding the field never times out: it's the
@@ -634,13 +660,14 @@ class FamiliarizationEngine:
             return self._enter(tel, now)
         self._meters = self._readout(tel)
         if self._step_done(tel, dt, now):
-            self._events = []
+            pending, self._events = self._events, []
             order = self.detector.ORDER
             self.detector.advance(order[order.index(self.phase) + 1])
             if self.phase == "DEBRIEF":
                 self._meters = []
-                return [CoachEvent("PHASE_ENTER_DEBRIEF", "info", {"phase": "DEBRIEF"}, cooldown_s=0)]
-            return self._enter(tel, now)
+                return pending + [CoachEvent("PHASE_ENTER_DEBRIEF", "info", {"phase": "DEBRIEF"},
+                                             cooldown_s=0)]
+            return pending + self._enter(tel, now)
         out.extend(self._events)                 # e.g. the stall callout
         self._events = []
         for ev in self._monitors(tel, now):
@@ -650,6 +677,23 @@ class FamiliarizationEngine:
 
 
     def _readout(self, tel: Telemetry) -> list[dict]:
+        """The step's to-do rows, always with a Height row: the height to hold
+        or reach where the step has one, otherwise the current height for
+        reference only (no target, so it isn't read out or marked red)."""
+        rows = self._readout_rows(tel)
+        if any(r.get("label") == "Height" for r in rows):
+            return rows
+        p, e, d = self.phase, self._entry, self._data
+        alt = tel.alt_msl
+        row = {"label": "Height", "now": f"{_r(alt, 10):,} ft", "target": ""}
+        if p in ("CLIMB", "DESCEND", "PITCH_UP", "PITCH_DOWN") and d:
+            row.update(target=f"{d['alt_lo']:,}\u2013{d['alt_hi']:,} ft",
+                       ok=d["alt_lo"] <= alt <= d["alt_hi"])
+        elif p == "GLIDE" and e:
+            row.update(target=f"down to {_r(e['alt'] - self.glide_ft, 10):,} ft")
+        return rows + [row]
+
+    def _readout_rows(self, tel: Telemetry) -> list[dict]:
         """Live "now / target" rows for the to-do list: how far through the
         step the trainee is and how big an angle/height/speed to aim for.
         Each row: label, now, target, and pct (0..1, progress bar) or ok
@@ -736,7 +780,7 @@ class FamiliarizationEngine:
             rows = [{"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.trim_s:.0f} s",
                      "pct": min(1.0, self._held / self.trim_s)},
                     {"label": "Climb/descent", "now": f"{_r(tel.vs, 50):+} fpm",
-                     "target": f"under {self.trim_vs:.0f}", "ok": abs(tel.vs) < self.trim_vs}]
+                     "target": f"under {self.trim_vs:.0f} fpm", "ok": abs(tel.vs) < self.trim_vs}]
             if not self.mock:
                 rows.append({"label": "Stick", "now": f"{abs(tel.elevator) * 100:.0f}%",
                              "target": "hands off", "ok": abs(tel.elevator) < 0.1})
@@ -748,7 +792,7 @@ class FamiliarizationEngine:
                     {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{lo}\u2013{hi} kt",
                      "ok": lo <= tel.ias <= hi}]
         height_row = {"label": "Height", "now": f"{_r(alt, 10):,} ft",
-                      "target": f"\u00b1{self.height_band:.0f} ft",
+                      "target": f"{_r(e.get('alt', alt), 10):,} ft \u00b1{self.height_band:.0f} ft",
                       "ok": abs(alt - e.get("alt", alt)) < self.height_band}
         if p in LEVEL_OFF_STEPS:
             tgt = e.get("tgt", alt)
@@ -786,13 +830,13 @@ class FamiliarizationEngine:
         if p == "STALL":
             if self._stage == 0:
                 start = e.get("ias", tel.ias)
-                return [{"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"down to {self.stall_kt:.0f}",
+                return [{"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"down to {self.stall_kt:.0f} kt",
                          "pct": min(1.0, max(0.0, (start - tel.ias) / max(1.0, start - self.stall_kt)))},
                         {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "slowly up"}]
             return [{"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{self.recover_kt:.0f}+ kt",
                      "ok": tel.ias >= self.recover_kt},
-                    {"label": "Climb/descent", "now": f"{_r(tel.vs, 50):+} fpm", "target": "stop the sink",
-                     "ok": tel.vs >= -200}]
+                    {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm",
+                     "target": f"under {self.recover_sink:.0f} fpm", "ok": tel.vs >= -self.recover_sink}]
         if p in BANKED_TURNS:
             bank, deg = self.turn_target(p)
             k = "med_" if p in MEDIUM_TURNS else "steep_"
@@ -848,7 +892,7 @@ class FamiliarizationEngine:
                 if self._stage == 1:
                     msg = {"POWER": "Now bring the throttle back",
                            "STALL": "Stall! Nose down, full power, then level off"}.get(self.phase)
-                    if self.phase in (*ROLL_STEPS, *BANKED_TURNS):
+                    if self.phase in (*ROLL_STEPS, *BANKED_TURNS, "TURN_LEFT", "TURN_RIGHT"):
                         msg = "Now roll the wings level"
                     elif self.phase in LEVEL_OFF_STEPS:
                         msg = "Now level off and hold it there"
