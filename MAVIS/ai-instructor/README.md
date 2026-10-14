@@ -96,15 +96,23 @@ start the app - no code or config edits:
 ## Layout
 
 ```
-main.py                 wiring + tick loop (10 Hz)
+main.py                 wiring: builds the runtime, web actions, the 10 Hz tick loop, server
+runtime/   context.py           `rt`: the shared runtime context every module reads
+           bootstrap.py         config/lesson loading, sim adapter / engine / scorer factories
+           session.py           configure / start / restart / relaunch / quit, lesson select
+           flight_flow.py       briefing, freeze + control lock, demo, airborne start, night
+           tick_steps.py        the tick loop's steps (event routing, scoring, state, track)
+           checkpoints.py       "let me try that again": checkpoints, retry, forced repeats
+           chat_router.py       chat intents: deterministic rules -> LLM tool pick -> Q&A
+           scoring_flow.py      scorecard, debrief (with fallback), leaderboard
+           speech.py            serialized TTS channel, reading-lesson narration
+           sop_live.py          SOP rules checked live during the flight
+           instructor_admin.py  instructor PIN / accounts / reference runs
 adapters/  sim_msfs.py  SimConnect (MSFS/P3D), all sim-specific code lives here
            sim_mock.py  self-flying mock for development/demo
            input_hid.py Warthog/rudder raw HID via device profile YAMLs
 core/      phase_detector.py  pattern geometry -> phase transitions
            monitors.py        altitude/speed/flaps/bank/centerline/control checks
-           lesson_engine.py   state machine + optional night event + cooldowns
-
-See **docs/phase-transitions.md** for exact rules to advance each phase.
            lesson_engine.py   state machine + optional night event + cooldowns
 coach/     llm_coach.py  Ollama phrasing + typed Q&A, template fallback
            phrases.py    gentle persona + fallback lines (edit tone here)
@@ -112,6 +120,24 @@ voice/     tts.py        kokoro | piper | pyttsx3, all local
 web/       server.py + static/index.html   tablet UI (avatar, chat, map, gauges)
 profiles/  aircraft & device YAMLs         lessons/  lesson scripts
 ```
+
+See **docs/phase-transitions.md** for exact rules to advance each phase.
+
+**How main.py and runtime/ fit together.** `main.py` creates the shared
+objects (state, session, coach, event log, ...), publishes each on `rt`, and
+calls one `build_X(rt)` per runtime module; each module defines its actions and
+publishes them on `rt` too (`rt.start`, `rt.finish_lesson`, `rt.speak`, ...).
+Code always reads through `rt` at call time and never keeps its own copy:
+`select_lesson()` swaps `rt.lesson` / `rt.engine` / `rt.scorer` mid-run, and a
+held reference would go stale. A new shared name needs a slot in
+`runtime/context.py`.
+
+**The tick loop** (`ticker()` in main.py) is one synchronous, ordered loop
+by design: read telemetry, spike filter, `rt.engine.tick()` (phase detection +
+monitors), then the `tick_steps` calls in a fixed order. The steps never
+`await`; background work (forced repeats, finishing a lesson) is only started
+from them with `asyncio.create_task`. Keep deterministic reflexes in this loop:
+don't move them into callbacks or async handlers.
 
 ## Swapping things (the flexibility story)
 
