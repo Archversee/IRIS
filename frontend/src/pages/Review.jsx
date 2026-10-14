@@ -9,7 +9,7 @@ import ScanPathCard from "../components/session/ScanPathCard.jsx";
 import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
-import RuleChecksPanel, { RuleChecksChip, ruleMarks } from "../components/session/RuleChecksPanel.jsx";
+import RuleChecksPanel, { RuleChecksChip } from "../components/session/RuleChecksPanel.jsx";
 import "./review.css";
 
 export default function Review() {
@@ -63,7 +63,7 @@ export default function Review() {
         </div>
 
         <ScreensPanel {...screens} />
-        <SessionTimeline {...timeline} ruleMarks={ruleMarks(rules.evaluation, timeline.flightStartMs)} />
+        <SessionTimeline {...timeline} />
 
         <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />

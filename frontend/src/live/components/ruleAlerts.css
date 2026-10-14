@@ -1,13 +1,30 @@
-/* live SOP rule checks (RuleAlerts.jsx) -- used by /live and the Live Monitor */
-.mavis-rules { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
-.mavis-rules__label { color: var(--muted, #8b98a5); }
+/* live SOP rule checks (RuleAlerts.jsx) -- used by /live and the Live Monitor.
+   Kept to ONE line: items never wrap, long text is cut with an ellipsis (full
+   text on hover), extra broken rules go behind "+N more". */
+.mavis-rules {
+  display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; font-size: 13px;
+  min-width: 0; position: relative;
+}
+.mavis-rules__label { color: var(--muted, #8b98a5); white-space: nowrap; flex: none; }
 .mavis-rules__item {
   padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border, #2a3644);
   background: rgba(10, 14, 22, 0.6); color: #e8eef8;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 46ch;
 }
 .mavis-rules__item--warning { border-color: #ff5c5c; color: #ffb3b3; }
 .mavis-rules__item--caution { border-color: #f5a623; color: #ffd28a; }
 .mavis-rules__item--advisory { border-color: #38bdf8; color: #a5dcf7; }
 .mavis-rules__item--past { color: var(--muted, #8b98a5); }
-.mavis-rules__item--sum { border-color: #4ade80; color: #b6f3c9; }
-.mavis-rules__item--off { border-color: #f5a623; color: #ffd28a; white-space: normal; }
+.mavis-rules__item--sum { border-color: #4ade80; color: #b6f3c9; flex: none; }
+.mavis-rules__item--off { border-color: #f5a623; color: #ffd28a; }
+.mavis-rules__more { position: relative; flex: none; }
+.mavis-rules__more-btn { font: inherit; cursor: pointer; max-width: none; }
+.mavis-rules__more-btn:hover { border-color: var(--border-strong, #3a4a5c); }
+.mavis-rules__pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  max-height: 40vh; overflow-y: auto; width: max-content; max-width: min(520px, 80vw);
+  background: rgba(10, 14, 22, 0.96); border: 1px solid var(--border, #2a3644); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.mavis-rules__pop .mavis-rules__item { display: inline-block; max-width: 100%; }

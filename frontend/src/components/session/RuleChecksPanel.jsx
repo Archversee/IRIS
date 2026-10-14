@@ -26,19 +26,6 @@ const GROUPS = [
 ];
 const groupOf = (v) => (v === "fail" || v === "pass" || v === "instructor" ? v : "other");
 
-// Violations as timeline bands: [{x1, x2, severity, title}] in timeline seconds.
-export function ruleMarks(evaluation, flightStartMs) {
-  if (!evaluation || !flightStartMs) return [];
-  const out = [];
-  for (const r of evaluation.results || []) {
-    if (r.final_verdict !== "fail") continue;
-    for (const v of r.violations || []) {
-      out.push({ x1: v.t0 - flightStartMs / 1000, x2: v.t1 - flightStartMs / 1000, severity: r.severity, title: r.title });
-    }
-  }
-  return out;
-}
-
 export function RuleChecksChip({ evaluation, missing, onClick }) {
   if (missing) return <button className="rc-chip" onClick={onClick}>SOP checks: not run</button>;
   if (!evaluation) return null;
