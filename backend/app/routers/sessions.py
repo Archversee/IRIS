@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 
 from .. import db, mavis_bridge, videos
+from ..catalog import lesson_title
 from ..schemas import Session, SessionCreate, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -52,7 +53,11 @@ async def list_sessions():
               from sessions s
              order by s.created_at desc
             """)
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    for r in out:      # flown before flights were logged: the session's own lesson says what it was
+        if not r.get("curricula") and lesson_title(r.get("lesson_id")):
+            r["curricula"] = [lesson_title(r["lesson_id"])]
+    return out
 
 
 @router.get("/{session_id}", response_model=Session)

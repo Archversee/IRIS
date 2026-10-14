@@ -288,7 +288,10 @@ class MavisBridge:
                 await self._write_session_flights(session_id, map_session_flights(session_id, flights))
 
         events = state.get("flight_events")
-        if events is not None:
+        # An empty list is never written: MAVIS clears its event log when the next lesson is
+        # picked while still reporting the finished session's id, and that must not touch the
+        # finished session's saved events.
+        if events:
             sig = json.dumps(events, sort_keys=True)
             if sig != cur.events_sig:
                 cur.events_sig = sig
@@ -325,19 +328,18 @@ class MavisBridge:
             )
 
     async def _write_flight_events(self, session_id: UUID, rows: list[tuple]) -> None:
-        """Upsert MAVIS's fields only, so score/grade/detail written later by the
-        SOP scoring pass survive MAVIS re-sending the list; drop rows beyond it."""
+        """Upsert MAVIS's fields only, so score/grade/detail written later by the SOP scoring
+        pass survive MAVIS re-sending the list. Rows are only ever added or updated, never
+        deleted: a session's events are final once it is over, whatever MAVIS reports later."""
+        if not rows:
+            return
         cols = ", ".join(FLIGHT_EVENT_COLUMNS)
         params = ", ".join(f"${i + 1}" for i in range(len(FLIGHT_EVENT_COLUMNS)))
         sets = ", ".join(f"{c} = excluded.{c}" for c in FLIGHT_EVENT_COLUMNS[2:])   # all but the key
         async with db.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute("delete from flight_events where session_id = $1 and seq >= $2",
-                                   session_id, len(rows))
-                if rows:
-                    await conn.executemany(
-                        f"insert into flight_events ({cols}) values ({params}) "
-                        f"on conflict (session_id, seq) do update set {sets}", rows)
+            await conn.executemany(
+                f"insert into flight_events ({cols}) values ({params}) "
+                f"on conflict (session_id, seq) do update set {sets}", rows)
 
     async def _write_session_flights(self, session_id: UUID, rows: list[tuple]) -> None:
         """Upsert the session's flights (one per Start / Fly again), keyed by flight number."""

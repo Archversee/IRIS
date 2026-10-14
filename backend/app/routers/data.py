@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import db
+from ..catalog import lesson_title
 from ..config import settings
 
 log = logging.getLogger(__name__)
@@ -77,6 +78,44 @@ async def get_eye(
     return await _query_timeseries("eye_tracking_data", session_id, start, end, max_points)
 
 
+# Phases that are not events (the briefing/debrief are not flown)
+_NOT_EVENTS = {"", "BRIEFING", "DEBRIEF"}
+
+
+async def _derive_events(conn, session_id, title: str | None) -> list[dict]:
+    """Events rebuilt from flight_data.phase for a session that has none stored (flown
+    before events were logged, or whose stored events were lost): every unbroken run of
+    one phase is one event, each ending where the next begins. Outcomes and try counts
+    from the live log are unknowable here, so outcome is null."""
+    runs = await conn.fetch(
+        """
+        select phase, min(ts) as start_ts, max(ts) as end_ts
+          from (select ts, phase,
+                       sum(case when phase is distinct from prev then 1 else 0 end)
+                           over (order by ts) as grp
+                  from (select ts, phase, lag(phase) over (order by ts) as prev
+                          from flight_data where session_id = $1) a) b
+         group by grp, phase
+         order by min(ts)
+        """, session_id)
+    out, seen = [], {}
+    for i, r in enumerate(runs):
+        phase = r["phase"] or ""
+        if phase in _NOT_EVENTS:
+            continue
+        nxt = runs[i + 1] if i + 1 < len(runs) else None
+        end = nxt["start_ts"] if nxt and (nxt["phase"] or "") not in _NOT_EVENTS else r["end_ts"]
+        seen[phase] = seen.get(phase, 0) + 1
+        out.append({
+            "seq": len(out), "flight": 1, "event_id": phase, "label": phase.replace("_", " ").title(),
+            "kind": "derived", "phase": phase, "circuit": None, "attempt": seen[phase],
+            "start_ts": r["start_ts"], "end_ts": end, "outcome": None,
+            "score": None, "grade": None, "detail": None,
+            "flight_title": title, "curriculum": "lesson", "lesson_id": None,
+        })
+    return out
+
+
 @router.get("/events")
 async def get_events(session_id: UUID):
     """Start/end of each graded event (to-do step / phase) in order, as logged
@@ -97,7 +136,10 @@ async def get_events(session_id: UUID):
             log.exception("events: curriculum join failed, returning the plain events")
             rows = await conn.fetch(
                 "select * from flight_events where session_id = $1 order by seq", session_id)
-    return [dict(r) for r in rows]
+        if rows:
+            return [dict(r) for r in rows]
+        lesson_id = await conn.fetchval("select lesson_id from sessions where id = $1", session_id)
+        return await _derive_events(conn, session_id, lesson_title(lesson_id))
 
 
 @router.get("/flights")
@@ -128,6 +170,10 @@ async def get_summary(session_id: UUID):
                 "where session_id = $1 order by flight", session_id)
         except Exception:      # table not created yet (backend not restarted since the upgrade)
             flights = []
+        if not flights and s["lesson_id"] and lesson_title(s["lesson_id"]):
+            # flown before flights were logged: the session's own lesson says what it was
+            flights = [{"flight": 1, "title": lesson_title(s["lesson_id"]), "curriculum": "lesson",
+                        "module": None, "mode": s["mode"], "outcome": None}]
     session = dict(s)
     for screen in ("instrument", "otw"):
         filename = session.get(f"{screen}_video_filename")
