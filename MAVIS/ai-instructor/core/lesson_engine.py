@@ -9,7 +9,8 @@ log = logging.getLogger(__name__)
 from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
-from .monitors import Monitors
+from .monitors import Monitors, final_speed_band
+from coach.phrases import spoken_targets
 from .phase_detector import PhaseDetector
 
 
@@ -25,6 +26,17 @@ class LessonEngine:
         self.briefing_done = False
         self._last_fire: dict[str, float] = {}
         self.geom = None
+        # where flying starts: the runway (PRE_TAKEOFF), or e.g. FINAL for the
+        # landing lesson, which starts airborne on final approach
+        self.start_phase = lesson.get("start_phase", "PRE_TAKEOFF")
+        self._announce_start = False
+        # to-do list for the pilot view (Take-off / Landing): lesson `todo_steps`
+        self.todo_steps = lesson.get("todo_steps") or []
+        self.todo_done = lesson.get("todo_done") or "Done. Well flown."
+        self.end_agl = float(lesson.get("end_at_agl_ft") or 0)
+        self.elev = float(lesson["airport"]["elevation_ft"])
+        self._tel: Telemetry | None = None
+        self._ever: set[str] = set()             # phases reached this run
 
     @property
     def phase(self) -> str: return self.detector.phase
@@ -35,7 +47,10 @@ class LessonEngine:
     def start_flying(self):
         """Called once the briefing has been spoken (or presenter skips)."""
         self.briefing_done = True
-        self.detector.advance("PRE_TAKEOFF")
+        self.detector.advance(self.start_phase)
+        # a lesson starting mid-circuit announces that leg (and its teaching
+        # point) on the first tick, as if it had just been entered
+        self._announce_start = self.start_phase != "PRE_TAKEOFF"
 
     def skip_phase(self):
         order = self.detector.ORDER
@@ -48,6 +63,8 @@ class LessonEngine:
         self.detector.circuit = 1
         self.night_done = False
         self.briefing_done = False
+        self._announce_start = False
+        self._ever.clear()
         self._last_fire.clear()
         self.monitors.reset_turn_cues()
 
@@ -81,14 +98,25 @@ class LessonEngine:
 
     def tick(self, tel: Telemetry, ctrl: ControlSample) -> list[CoachEvent]:
         g = self.geom = self.detector.geometry(tel)
+        self._tel = tel
+        if self.briefing_done:
+            self._ever.add(self.detector.phase)
         out: list[CoachEvent] = []
         if not self.briefing_done:
             return out
         new_phase = self.detector.tick(tel, g)
+        starting = not new_phase and self._announce_start
+        if starting:
+            new_phase = self.detector.phase
+        self._announce_start = False
         if new_phase:
             log.info("phase -> %s (circuit %s, agl %.0f, ias %.0f, cross %.0f)",
                      new_phase, self.detector.circuit, tel.alt_agl, tel.ias, g.cross)
-            catch = self.monitors.catchup_turn(new_phase)
+            # no catch-up turn call for the leg a lesson starts on (the landing
+            # lesson starts straight in on final -- there was no turn)
+            catch = None if starting else self.monitors.catchup_turn(new_phase)
+            if starting:
+                self.monitors._turn_spoken.add(f"TURN_{new_phase}")
             if catch:
                 out.append(catch)
             data = {"phase": new_phase, "circuit": self.detector.circuit,
@@ -98,6 +126,7 @@ class LessonEngine:
             out.append(CoachEvent(f"PHASE_ENTER_{new_phase}", "info", data, cooldown_s=0))
             note = self.phase_notes.get(new_phase)
             if note:
+                note = {**note, "say_targets": self._spoken_targets(new_phase)}
                 # same severity as the phase call, queued after it, so it is
                 # spoken as the follow-on teaching point for this leg
                 out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
@@ -108,3 +137,82 @@ class LessonEngine:
 
     def targets(self) -> dict:
         return self.monitors.targets_for(self.detector.phase)
+
+    # ---- to-do list (lessons with todo_steps) ----
+    def todo(self) -> dict | None:
+        """Same shape as FamiliarizationEngine.todo(): every step with its
+        status, the active one with its checklist lines and live readouts."""
+        if not self.todo_steps:
+            return None
+        phase = self.detector.phase
+        cur = next((i for i, st in enumerate(self.todo_steps) if phase in st.get("phases", [])),
+                   len(self.todo_steps) if phase == "DEBRIEF" else -1)
+        steps = []
+        for i, st in enumerate(self.todo_steps):
+            row = {"id": f"step{i}", "title": st.get("title", ""),
+                   "status": "done" if i < cur else ("active" if i == cur else "todo")}
+            if i == cur:
+                row["lines"] = list(st.get("todo") or [])
+                row["meters"] = [m for m in (self._meter(k) for k in st.get("meters") or []) if m]
+            steps.append(row)
+        return {"steps": steps, "complete": phase == "DEBRIEF", "done_text": self.todo_done}
+
+    def _spoken_targets(self, phase: str) -> str:
+        """The to-do targets of the step this phase belongs to, spoken."""
+        st = next((s for s in self.todo_steps if phase in s.get("phases", [])), None)
+        if not st:
+            return ""
+        return spoken_targets([m for m in (self._meter(k) for k in st.get("meters") or []) if m])
+
+    def _meter(self, kind: str) -> dict | None:
+        """One live "now / target" row. No target speed on the take-off: it
+        shows the speed, the trainee isn't asked to fly a number."""
+        tel, g = self._tel, self.geom
+        if tel is None or g is None:
+            return None
+        agl = max(0.0, tel.alt_msl - self.elev)
+        side = "left" if g.cross > 0 else "right"     # cross + = pattern side (left traffic)
+        if kind == "speed":
+            return {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": ""}
+        if kind == "centreline":
+            # how far off still counts as fine (m): the lesson's centreline_ok_m
+            # in the air (default 30), a third of that on the ground (min 10)
+            air = float(self.lesson.get("centreline_ok_m", 30))
+            lim = max(10.0, air / 3) if tel.on_ground else air
+            now = "on the line" if abs(g.cross) < 10 else f"{abs(g.cross):.0f} m {side}"
+            return {"label": "Centreline", "now": now, "target": "middle", "ok": abs(g.cross) < lim}
+        if kind == "height_to":
+            tgt = self.end_agl or 1000.0
+            return {"label": "Height", "now": f"{agl:,.0f} ft", "target": f"{tgt:,.0f} ft",
+                    "pct": min(1.0, agl / tgt)}
+        if kind == "speed_band":
+            fb = final_speed_band(self.lesson, self.monitors._v, agl) if self.detector.phase == "FINAL" else None
+            if fb:
+                lo, hi, aim = fb       # aim slides lower over the last stretch to the runway
+                return {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                        "target": f"aim {aim:.0f} kt ({lo:.0f}\u2013{hi:.0f})", "ok": lo <= tel.ias <= hi}
+            spd = self.monitors.tgt_speed.get(self.detector.phase)
+            if not spd:
+                return None
+            return {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": f"{spd - 5:.0f}–{spd + 5:.0f} kt",
+                    "ok": abs(tel.ias - spd) <= 5}
+        if kind == "glidepath":
+            ideal = max(0.0, -g.along) * 0.1719            # 3-degree path, ft above the runway
+            diff = agl - ideal
+            now = "on the path" if abs(diff) < 40 else f"{abs(diff):.0f} ft {'high' if diff > 0 else 'low'}"
+            return {"label": "Glidepath", "now": now, "target": "on the path", "ok": abs(diff) < 60}
+        if kind == "flaps":
+            want = self.monitors.tgt_flaps.get("FINAL", 30)
+            return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": f"full ({want}°)",
+                    "ok": tel.flaps_deg >= want - 6}
+        if kind == "height":
+            return {"label": "Height", "now": f"{agl:,.0f} ft", "target": ""}
+        if kind == "height_agl":
+            return {"label": "Height", "now": f"{agl:,.0f} ft", "target": "settle on"}
+        if kind == "sink":
+            return {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm", "target": "under 500 fpm",
+                    "ok": -tel.vs < 500}
+        if kind == "stop":
+            return {"label": "Speed", "now": f"{tel.ias:.0f} kt", "target": "stopped",
+                    "pct": min(1.0, max(0.0, 1.0 - tel.ias / 60.0))}
+        return None

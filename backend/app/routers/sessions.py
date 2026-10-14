@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 
 from .. import db, mavis_bridge, videos
+from ..catalog import lesson_title
 from ..schemas import Session, SessionCreate, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -14,10 +15,9 @@ async def list_running_sessions():
     """MAVIS-sourced sessions still in progress -- Live Monitor's picker
     lists these instead of owning any start/end lifecycle itself (MAVIS is
     the only thing that logs anything; IRIS only views). A session counts
-    as "still running" until its End Session/Main-menu flow in MAVIS's own
-    UI explicitly PATCHes ended_at (see LiveCoach.jsx) -- not merely
-    because a scorecard appeared, since "Fly again" keeps flying under the
-    same session_id."""
+    as "still running" until it is ended: End Session / Main menu, or a
+    lesson finishing on its own, PATCHes ended_at (see LiveCoach.jsx). Fly
+    again then starts a new session; Restart stays in the same one."""
     async with db.acquire() as conn:
         rows = await conn.fetch(
             "select * from sessions where source = 'mavis' and ended_at is null "
@@ -43,8 +43,21 @@ async def create_session(body: SessionCreate):
 @router.get("", response_model=list[Session])
 async def list_sessions():
     async with db.acquire() as conn:
-        rows = await conn.fetch("select * from sessions order by created_at desc")
-    return [dict(r) for r in rows]
+        rows = await conn.fetch(
+            """
+            select s.*,
+                   (select array_agg(t.title order by t.first_flight)
+                      from (select title, min(flight) as first_flight
+                              from session_flights f where f.session_id = s.id
+                             group by title) t) as curricula
+              from sessions s
+             order by s.created_at desc
+            """)
+    out = [dict(r) for r in rows]
+    for r in out:      # flown before flights were logged: the session's own lesson says what it was
+        if not r.get("curricula") and lesson_title(r.get("lesson_id")):
+            r["curricula"] = [lesson_title(r["lesson_id"])]
+    return out
 
 
 @router.get("/{session_id}", response_model=Session)
@@ -81,6 +94,10 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         # state push from MAVIS (which otherwise keeps polling/broadcasting
         # telemetry regardless of whether a lesson was quit).
         mavis_bridge.mark_ended(session_id)
+    elif "ended_at" in fields:
+        # cleared (null): "Fly again" after a lesson ended on its own --
+        # flying again under the same session, LiveAdapter.py records again
+        mavis_bridge.mark_reopened(session_id)
     return dict(row)
 
 

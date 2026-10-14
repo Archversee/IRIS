@@ -26,7 +26,7 @@ class MockAdapter:
         rw = lesson["runway"]
         pat = lesson["pattern"]
         vs = (aircraft or {}).get("v_speeds") or {}
-        self.vr = float(vs.get("vr", 55))
+        self.vr = float(lesson.get("rotate_kt") or vs.get("vr", 55))   # the lesson's rotate call speed
         self.vy = float(vs.get("vy", 74))
         self.rotate_speech_lag_s = 4.0
         self.lat0 = rw["threshold"]["lat"]
@@ -66,6 +66,9 @@ class MockAdapter:
         ]
         self._leg_flaps = [0.0, 0.0, 0.0, 30.0, 30.0]
         self.stop_after = int(lesson.get("total_circuits", 1))
+        # landing lesson: placed in the air on final -> fly the circuit's final
+        # leg down to the runway, not free flight
+        self._final_start = "final_m" in (lesson.get("airborne_start") or {})
         self.reset()
 
     def _pt(self, along: float, left: float) -> tuple[float, float]:
@@ -174,6 +177,10 @@ class MockAdapter:
             self._rotate_at = None
         self.stopping = False
         self._tgt = {"hdg": self.hdg, "alt": self.alt, "spd": self.spd or 95.0, "home": False}
+        if not on_ground and self._final_start:
+            self._free = False
+            self._airborne = True
+            self._seg = 4
         self._t = time.time()
         return True
 
@@ -181,23 +188,50 @@ class MockAdapter:
         self.frozen = bool(on)
         return True
 
+    def demo_control(self, cmd: dict) -> bool:
+        """Instructor demonstration (core/demo.py): the mock just flies to
+        the command's heading / altitude / speed; it has no autopilot, throttle
+        or rudder of its own, so `ap`, `throttle`, `vs` and `rudder` are moot
+        (a rudder demo carries the heading the nose swings to)."""
+        if not self._free:
+            return False
+        hdg = cmd.get("mock_hdg", cmd.get("hdg"))     # mock_*: what a real aircraft would do
+        alt = cmd.get("mock_alt", cmd.get("alt"))
+        if hdg is not None:
+            self._tgt["hdg"] = wrap(float(hdg))
+        if alt is not None:
+            self._tgt["alt"] = max(0.0, (float(alt) - self.elev) * FT2M)
+        if cmd.get("spd") is not None:
+            self._tgt["spd"] = float(cmd["spd"])
+        self._tgt["home"] = False
+        self._tgt["turn_rem"] = 0.0
+        return True
+
+    def lock_controls(self, on: bool) -> bool:
+        """No trainee hardware drives the mock, so nothing to lock."""
+        return True
+
     def comply(self, code: str, data: dict):
         if self._free:
-            m = data.get("mock") if code.startswith("PHASE_ENTER_") else None
+            # step plans ride on PHASE_ENTER; the stall callout carries the recovery
+            m = data.get("mock") if (code.startswith("PHASE_ENTER_") or code == "FAM_STALL") else None
             if m:
                 self._tgt["hdg"] = wrap(self.hdg + m.get("hdg_delta", 0.0))
                 self._tgt["alt"] = self.alt + m.get("alt_delta_ft", 0.0) * FT2M
                 self._tgt["spd"] = float(m.get("spd", self._tgt["spd"]))
                 self._tgt["home"] = bool(m.get("home"))
+                # banked turn: this many degrees (+ right) at this bank, then roll out
+                self._tgt["turn_rem"] = float(m.get("turn_deg", 0.0))
+                self._tgt["bank"] = float(m.get("bank", 25.0))
             return
         if code in ("ROTATE_NOW", "ROTATE_LATE"):
             if not self._airborne:
                 lag = self.rotate_speech_lag_s if code == "ROTATE_NOW" else 0.4
                 self._rotate_at = time.time() + lag
             return
-        if code in ("SPEED_FAST", "SPEED_SLOW") and data.get("tgt"):
+        if code.startswith(("SPEED_FAST", "SPEED_SLOW")) and data.get("tgt"):
             self._leg_spd[self._seg] = float(data["tgt"])
-        elif code in ("ALT_HIGH", "ALT_LOW"):
+        elif code.startswith(("ALT_HIGH", "ALT_LOW")):
             self._leg_alt[self._seg] = self.pattern_agl_m
         elif code in ("ABEAM_FLAPS", "FLAPS_REMINDER") and data.get("flaps"):
             self._leg_flaps[2] = float(data["flaps"])
@@ -221,12 +255,35 @@ class MockAdapter:
         self.n += v * dt * math.cos(math.radians(self.hdg))
         self._vs = climb / FT2M * 60.0
 
+    def _fly_turn(self, t: dict, dt: float):
+        """Hold a set bank until t["turn_rem"] degrees are turned (+ right),
+        at the rate a real turn has at that bank and speed, then wings level."""
+        sgn = 1.0 if t["turn_rem"] > 0 else -1.0
+        self.bank += (sgn * t.get("bank", 25.0) - self.bank) * min(1.0, 2.0 * dt)
+        rate = 1091.0 * math.tan(math.radians(abs(self.bank))) / max(40.0, self.spd)   # deg/s
+        d = sgn * rate * dt
+        self.hdg = wrap(self.hdg + d)
+        t["turn_rem"] -= d
+        if t["turn_rem"] * sgn <= 0:
+            t["turn_rem"] = 0.0
+            t["hdg"] = self.hdg
+        self.spd += max(-4.0, min(2.5, t["spd"] - self.spd)) * dt
+        climb = max(-4.3, min(6.5, (t["alt"] - self.alt) * 0.06))
+        self.alt = max(0.0, self.alt + climb * dt)
+        v = self.spd * KT2MS
+        self.e += v * dt * math.sin(math.radians(self.hdg))
+        self.n += v * dt * math.cos(math.radians(self.hdg))
+        self._vs = climb / FT2M * 60.0
+
     def _step(self, dt: float):
         if not self.released or self.frozen:
             return
         if self._free:
             t = self._tgt
             hdg = t["hdg"]
+            if t.get("turn_rem"):  # banked turn of a set size (medium / steep turns)
+                self._fly_turn(t, dt)
+                return
             if t.get("home"):     # head for the runway midpoint
                 mid = self._runway_length_m / 2.0
                 e_m, n_m = self._pt(mid, 0.0)

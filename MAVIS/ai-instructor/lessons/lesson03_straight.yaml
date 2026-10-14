@@ -1,0 +1,166 @@
+name: "Straight & Level, Climbs & Descents"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, up-front demo, to-do list, "look here" card and
+# scorecard. `steps` picks this lesson's exercises; it ends after the last one
+# (finding Paya Lebar is Flight Familiarization's job, not this lesson's).
+# Straight & Level and Climbs & Descents in one lesson: the same idea --
+# attitude + power = performance -- first at a steady height, then going up
+# and down to a set height.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# aircraft is put back on at the end.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+airborne_start:
+  bearing_from_field_deg: 180   # due south of Paya Lebar
+  distance_nm: 3
+  alt_msl_ft: 2500
+  heading_true: 90
+  ias_kt: 95
+  throttle_pct: 70
+
+# Wings level at cruise, trim it out, change speed; then climb to a set
+# height and level off, descend to one and level off, and a power-off glide.
+# Each step is judged on its own skill only.
+steps:
+  - STRAIGHT_LEVEL
+  - TRIM
+  - SLOW_CRUISE
+  - FAST_CRUISE
+  - CLIMB_TO
+  - DESCEND_TO
+  - GLIDE
+
+exercises:
+  straight_level_hold_s: 10 # seconds wings level
+  altitude_band_ft: 150
+  trim_hold_s: 10           # hands off the stick and steady...
+  trim_max_vs_fpm: 500      # ...climbing or descending at under this
+  slow_kt: 80               # slow down: 75-85 kt
+  fast_kt: 105              # speed up: what the demo flies to
+  fast_band_kt: [90, 120]   # speed up: anywhere in here counts
+  speed_hold_s: 10          # seconds inside +/- 5 kt
+  climb_to_ft: 500          # target = start height + this, a round hundred
+  climb_speed_band_kt: [70, 90]   # climb and level off: any speed in here is fine
+  descend_to_ft: 500
+  level_band_ft: 100        # "levelled at the target" = within this
+  level_hold_s: 5           # ...and steady there this long
+  glide_kt: 68              # C172 best glide
+  glide_band_kt: [60, 80]   # glide: any speed in here is fine
+  glide_ft: 300             # glide down this far
+  step_timeout_s: 210
+
+freeze_during_instructions: true
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  straight and level, climbs and descents exercise (airborne start; wings
+  level, trimming hands off, flying slower and faster, then climbing and
+  descending to a set height and levelling off, and a power-off glide; no
+  take-off or landing)
+
+briefing:
+  layman: >-
+    Straight and level, climbs and descents. We're up at about {alt} feet,
+    south of Paya Lebar. First I'll fly it for you: wings level, trimming,
+    slowing down and speeding up, then climbing and descending to a set height,
+    and a glide. Then it's your turn, following the to-do list, top right.
+  pilot: >-
+    Straight and level, climbs and descents, airborne at {alt} feet south of
+    Paya Lebar. Attitude plus power equals performance. Demonstration first:
+    trim, speed changes, level-offs at assigned altitudes, power-off glide.
+
+# See lesson00_familiarization.yaml for the step_notes format.
+step_notes:
+  STRAIGHT_LEVEL:
+    title: Straight & level
+    todo:
+      - "Wings level, nose on the horizon"
+    look: [attitude]
+    layman: >-
+      Straight and level: wings flat, nose on the horizon.
+    pilot: >-
+      Straight and level, wings level, lookout.
+  TRIM:
+    title: Trim it out
+    todo:
+      - "Roll the trim wheel until the stick feels light"
+      - "Let go of the stick"
+    look: [attitude, vsi]
+    layman: >-
+      Trim: roll the wheel until the stick feels light, then let go.
+    pilot: >-
+      Trim out the pressure, then hands off.
+  SLOW_CRUISE:
+    title: Slow down
+    todo:
+      - "Throttle back a little"
+      - "Settle on the new speed"
+    look: [airspeed]
+    layman: >-
+      Throttle back a little and settle at {slow_lo} to {slow_hi} knots.
+    pilot: >-
+      Reduce power, {slow_lo} to {slow_hi} knots.
+  FAST_CRUISE:
+    title: Speed up
+    todo:
+      - "Throttle forward"
+      - "Settle on the new speed"
+    look: [airspeed]
+    freeze: false
+    layman: >-
+      Throttle forward and let the speed build to {fast_lo} to {fast_hi} knots.
+    pilot: >-
+      Increase power, {fast_lo} to {fast_hi} knots.
+  CLIMB_TO:
+    title: Climb and level off
+    todo:
+      - "Full power, nose up, {spd_lo}-{spd_hi} kt"
+      - "About 50 ft before {tgt_alt:,}, ease the nose down"
+      - "Power back to cruise, hold {tgt_alt:,} ft"
+    look: [airspeed, altitude]
+    layman: >-
+      Climb to {tgt_alt:,} feet at full power, then ease the nose down and level off.
+    pilot: >-
+      Climb to {tgt_alt:,} feet, lead the level-off by fifty feet.
+  DESCEND_TO:
+    title: Descend and level off
+    todo:
+      - "Power back a little, nose down gently"
+      - "About 50 ft before {tgt_alt:,}, raise the nose to level"
+      - "Power back to cruise, hold {tgt_alt:,} ft"
+    look: [altitude, vsi]
+    layman: >-
+      Power back, nose down, and level off at {tgt_alt:,} feet.
+    pilot: >-
+      Descend to {tgt_alt:,} feet and level off.
+  GLIDE:
+    title: Glide
+    todo:
+      - "Throttle to idle"
+      - "Hold {glide_lo}-{glide_hi} kt with the nose"
+    look: [airspeed, vsi]
+    layman: >-
+      Glide: throttle to idle, and use the nose to hold {glide_lo} to {glide_hi} knots.
+    pilot: >-
+      Power-off glide, idle, {glide_lo} to {glide_hi} knots.

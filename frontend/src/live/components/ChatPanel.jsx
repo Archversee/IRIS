@@ -44,7 +44,7 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     }
   }
 
-  const disabled = chatEnabled === false;
+  const disabled = false;   // questions are never blocked, in any mode
 
   // status line: "Listening…"/"Transcribing…" stay up; results fade after a few seconds
   function showStatus(msg, sticky = false) {
@@ -64,10 +64,14 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     busyRef.current = true;
     const stop = new Promise((r) => { stopRef.current = r; });
     setTalking(true);
-    showStatus("Listening… release when done", true);
+    showStatus("Opening microphone…", true);
     let rec;
     try {
-      rec = await recordMicWav({ stopSignal: stop });
+      rec = await recordMicWav({
+        maxMs: 60000,
+        stopSignal: stop,
+        onReady: () => showStatus("Speak now… release when done", true),
+      });
     } catch (e) {
       stopRef.current = null;
       busyRef.current = false;
@@ -76,9 +80,10 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
       return;
     }
     setTalking(false);
-    if (rec.durationMs < 350 || rec.peak < 0.008) {
+    if (rec.durationMs < 200 || rec.maxAbs < 0.0005) {
       busyRef.current = false;
-      showStatus(VOICE_REASONS.too_short);
+      const heard = `${(rec.durationMs / 1000).toFixed(1)} s, peak ${rec.maxAbs.toFixed(4)}, audio ${rec.engine}; input: ${rec.device}`;
+      showStatus(`${rec.durationMs < 200 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
       return;
     }
     showStatus("Transcribing…", true);

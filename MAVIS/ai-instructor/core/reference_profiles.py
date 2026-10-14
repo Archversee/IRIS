@@ -228,6 +228,9 @@ PLANNED = ReferenceProfile("planned", "Planned circuit", "lesson01_pattern", tra
 class ReferenceRegistry:
     def __init__(self, lesson: dict, lesson_id: str):
         self.lesson_id = lesson_id
+        # A lesson flown over the same circuit (e.g. the night circuit) can share
+        # another lesson's expert runs: references_from: lesson01_pattern
+        self.shared_from = lesson.get("references_from") or ""
         self.rw = lesson["runway"]
         self.pat = lesson["pattern"]
         self._profiles: dict[str, ReferenceProfile] = {"planned": PLANNED}
@@ -236,7 +239,7 @@ class ReferenceRegistry:
         self.reload()
 
     def _profile_from_file(self, path: Path, data: dict) -> ReferenceProfile | None:
-        if data.get("lesson") and data["lesson"] != self.lesson_id:
+        if data.get("lesson") and data["lesson"] not in (self.lesson_id, self.shared_from):
             return None
         pid = data.get("id") or path.stem
         track = data.get("track")
@@ -248,7 +251,7 @@ class ReferenceRegistry:
         return ReferenceProfile(
             pid,
             data.get("display_name") or data.get("callsign") or pid,
-            data.get("lesson", self.lesson_id),
+            self.lesson_id,     # shared runs list under the lesson being flown
             track=track,
             callsign=data.get("callsign") or pid.split("_")[0].title(),
             run_no=int(data.get("run_no") or 1),
@@ -292,7 +295,7 @@ class ReferenceRegistry:
                 "id": rid,
                 "callsign": callsign,
                 "display_name": label,
-                "lesson": self.lesson_id,
+                "lesson": self.shared_from or self.lesson_id,
                 "aircraft": "c172sp_g1000",
                 "run_no": run_no,
                 "recorded_at": recorded_at,

@@ -4,17 +4,19 @@ import LookCard from "./LookCard.jsx";
 import TodoCard from "./TodoCard.jsx";
 import MapCanvas from "./MapCanvas.jsx";
 import ScorecardOverlay from "./ScorecardOverlay.jsx";
+import DemoBanner from "./DemoBanner.jsx";
 
 // Two columns: avatar + chat on the left, and the ground track (planned
 // vs. flown path) filling the whole right side top to bottom.
-export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard }) {
+export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, onFlyAgain }) {
   return (
     <div className="mavis-hud">
       <div className="mavis-hud__left">
         {toolbar}
         <AvatarBox speaking={state?.speaking} />
+        {/* plain push-to-talk: no speakerName, so MAVIS never gates the mic on an enrolled voice print */}
         <ChatPanel transcript={state?.transcript} chatEnabled={state?.session?.policy?.chat}
-          joyPtt={!!state?.ctrl?.ptt} speakerName={state?.session?.name || ""} />
+          joyPtt={!!state?.ctrl?.ptt} />
       </div>
 
       <div className="mavis-hud__right">
@@ -24,12 +26,18 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard })
           <SopChip sop={state?.sop} />
         </div>
 
-        <MapCanvas state={state} />
-        {state?.lesson?.type === "familiarization" && <TodoCard todo={state?.fam_todo} />}
+        <DemoBanner demo={state?.demo} />
+        {/* the to-do list sits beside the map, in the layout -- never floating
+            over the map or the toolbar */}
+        <div className="mavis-hud__mapwrap">
+          <MapCanvas state={state} />
+          {/* any lesson that sends one: airborne lessons, Take-off, Landing */}
+          {state?.fam_todo && <TodoCard todo={state.fam_todo} />}
+        </div>
         {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
       </div>
 
-      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} />}
+      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} onFlyAgain={onFlyAgain} />}
     </div>
   );
 }

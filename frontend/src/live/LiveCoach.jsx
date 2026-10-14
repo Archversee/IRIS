@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMavisState, useMavisStatus } from "./hooks/useMavisSocket.js";
 import { useInstructorVoice } from "./hooks/useInstructorVoice.js";
@@ -55,9 +55,10 @@ export default function LiveCoach({ freeFlight = false }) {
   useInstructorVoice(state?.audio, inLesson && !state?.scorecard);
 
   // Marks this session as no longer in progress -- Live Monitor's picker
-  // (GET /sessions/running, under IRIS now) filters on ended_at is null.
-  // Not set merely because a scorecard appeared: "Fly again" keeps flying
-  // under the same session_id, so only an actual quit ends it.
+  // (GET /sessions/running, under IRIS now) filters on ended_at is null, and
+  // LiveAdapter.py polls it to stop the OBS recording. Set on End Session,
+  // and also when a lesson finishes on its own (effect below). Fly again does not
+  // reopen it: that is a new session.
   async function markEnded() {
     const sid = state?.session_id;
     if (!sid) return;
@@ -65,6 +66,41 @@ export default function LiveCoach({ freeFlight = false }) {
       await api.updateSession(sid, { ended_at: new Date().toISOString() });
     } catch {
       // best-effort -- Live Monitor just keeps listing it as running
+    }
+  }
+
+  // A lesson that finishes on its own (its scorecard appears without End
+  // Session being pressed) ends the session the same way End Session does:
+  // ended_at set, so OBS stops recording. endedRef = the session already
+  // marked; flyingAgainRef holds off until the old scorecard has cleared.
+  const endedRef = useRef(null);
+  const flyingAgainRef = useRef(false);
+  const sid = state?.session_id;
+  const hasScorecard = !!state?.scorecard;
+  useEffect(() => {
+    if (!hasScorecard) {
+      flyingAgainRef.current = false;
+      return;
+    }
+    if (!inLesson || !sid || flyingAgainRef.current || endedRef.current === sid) return;
+    endedRef.current = sid;
+    markEnded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasScorecard, inLesson, sid]);
+
+  // Scorecard "Fly again": a whole new cycle. The finished session stays ended (its
+  // OBS recording stops) and MAVIS starts a NEW session, which gets its own recording.
+  // (Restart, by contrast, stays in the same session.)
+  async function flyAgain() {
+    flyingAgainRef.current = true;
+    if (sid && endedRef.current !== sid) {     // normally already marked when the scorecard appeared
+      endedRef.current = sid;
+      await markEnded();
+    }
+    try {
+      await mavisApi.relaunchNew();
+    } catch {
+      // best-effort -- the HUD's own Restart button shows errors
     }
   }
 
@@ -81,6 +117,7 @@ export default function LiveCoach({ freeFlight = false }) {
   // silently dropping back to the start menu.
   async function confirmEndSession() {
     setConfirmingEnd(false);
+    endedRef.current = state?.session_id;
     await markEnded();
     setEnding(true);
     try {
@@ -90,8 +127,8 @@ export default function LiveCoach({ freeFlight = false }) {
     }
   }
 
-  // Topbar "Restart": back to the lesson's start position and fly it again,
-  // same session (MAVIS keeps the session_id, so recording/IRIS carry on).
+  // Topbar "Restart": back to the lesson's start position and fly it again, in the
+  // same session and flight (MAVIS keeps the session_id, so recording/IRIS carry on).
   async function confirmRestart() {
     setConfirmingRestart(false);
     setRestarting(true);
@@ -198,7 +235,8 @@ export default function LiveCoach({ freeFlight = false }) {
     <div className={inLesson ? "mavis-shell mavis-shell--hud" : "mavis-shell mavis-shell--menu"}>
       {!inLesson && toolbar}
       {inLesson ? (
-        <InFlightPanel state={state} toolbar={toolbar} onMainMenu={backToDashboardHome} onDiscard={finishAndDiscard} />
+        <InFlightPanel state={state} toolbar={toolbar} onMainMenu={backToDashboardHome}
+          onDiscard={finishAndDiscard} onFlyAgain={flyAgain} />
       ) : freeFlight ? (
         <FreeFlightMenu onStarting={() => setStartedHere(true)} />
       ) : (

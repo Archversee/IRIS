@@ -16,6 +16,20 @@ export const METRICS = [
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
 ];
 
+// Flight events (MAVIS to-do steps / circuit phases). Coloured by SOP grade once
+// scored; until then each step gets a neutral colour of its own, a timed-out
+// step is red and an abandoned (retried) attempt is grey.
+export const GRADE_COLORS = { S: "#4ade80", A: "#4ade80", B: "#a3e635", C: "#f5a623", D: "#fb923c", F: "#ef4444" };
+export const EVENT_COLORS = ["#38bdf8", "#a78bfa", "#14b8a6", "#f5a623", "#fb7185", "#60a5fa", "#facc15", "#4ade80"];
+export function eventColor(e, i) {
+  if (e.kind === "demo") return "#475569";   // MAVIS flying the demonstration: not graded
+  if (e.grade && GRADE_COLORS[e.grade]) return GRADE_COLORS[e.grade];
+  if (e.kind === "stall") return "#ef4444";   // a stall interrupts the flight: always stands out
+  if (e.outcome === "skipped") return "#ef4444";
+  if (e.outcome === "retried" || e.outcome === "abandoned") return "#64748b";
+  return EVENT_COLORS[i % EVENT_COLORS.length];
+}
+
 export const VIDEO_SYNC_TOLERANCE = 0.15;
 export const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75;
 export const MIN_AOI_DWELL_SEC_DEFAULT = 0.1;

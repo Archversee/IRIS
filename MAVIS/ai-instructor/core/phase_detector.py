@@ -41,6 +41,8 @@ class PhaseDetector:
         self._downwind_phase_cross_min = self._pattern_off_m * float(
             pat.get("downwind_turn_cross_frac", 0.88))
         self.total_circuits = total_circuits
+        # Take-off lesson: the lesson ends on the climb-out at this height (AGL)
+        self.end_agl = float(lesson.get("end_at_agl_ft") or 0) or None
         self.phase = "BRIEFING"
         self.circuit = 1
         self._still_since = None
@@ -84,6 +86,8 @@ class PhaseDetector:
             return self.advance("TAKEOFF_ROLL")
         if p in ("PRE_TAKEOFF", "TAKEOFF_ROLL") and not tel.on_ground and tel.alt_agl > 50:
             return self.advance("CLIMB_OUT")   # also catches 'already airborne' starts
+        if p in ("CLIMB_OUT", "CROSSWIND") and self.end_agl and tel.alt_agl >= self.end_agl:
+            return self.advance("DEBRIEF")     # take-off lesson: climbed out, done
         if p == "CLIMB_OUT":
             if on_dw_hdg and away and g.cross >= self._downwind_phase_cross_min:
                 return self.advance("DOWNWIND")

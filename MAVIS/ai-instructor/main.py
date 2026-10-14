@@ -25,6 +25,7 @@ APP_VERSION = "0.2.0"
 import uvicorn
 
 from adapters.input_hid import HIDInput, ControlSample
+from adapters.sim_base import Telemetry
 from coach.llm_coach import Coach, clip_spoken
 from coach import phrases
 from core.events import CoachEvent
@@ -33,10 +34,13 @@ from core.scoring import Scorer
 from core.leaderboard import Leaderboard
 from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
+from core.event_log import EventLog
+from core.free_flight import LABELS as FREE_FLIGHT_LABELS, FreeFlightTracker
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
-from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer,
-                                  field_center, is_familiarization, runway_start,
+from core.familiarization import (PART_CUES, FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
+                                  field_center, is_familiarization, lesson_steps, runway_start,
                                   start_position)
+from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
 from lessons import lesson00_preflight, lesson00_cockpit
 
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
@@ -48,7 +52,7 @@ READING_LESSONS = {
 from core.reference_profiles import ReferenceRegistry
 from core.modes import policy_for, normalize_mode, allow_coach_event
 from agent.tools import Tool, ToolRegistry
-from agent.router import IntentRouter
+from agent.router import Decision, IntentRouter
 from voice.tts import TTS
 from voice.speaker import VoiceStore
 from voice.stt import WhisperSTT
@@ -123,14 +127,33 @@ def make_scorer(lesson, aircraft):
     return (FamiliarizationScorer if is_familiarization(lesson) else Scorer)(lesson, aircraft)
 
 
+def event_log_setup(lesson, engine) -> tuple[dict, str]:
+    """(labels, kind) for the flight event log: the familiarization to-do
+    steps under the names the to-do list shows, or the circuit's phases."""
+    if is_familiarization(lesson):
+        notes = lesson.get("step_notes") or {}
+        labels = {sid: (notes.get(sid) or {}).get("title") or STEP_TITLES.get(sid, sid)
+                  for sid in engine.detector.ORDER}
+        return {**labels, "DEMO": "MAVIS demonstration"}, "exercise"
+    return {"DEMO": "MAVIS demonstration"}, "phase"
+
+
 def lesson_state(lesson) -> dict:
     """state["lesson"]: what the web map needs to draw this lesson."""
     out = {"runway": lesson["runway"], "pattern": lesson["pattern"],
            "airport": lesson["airport"], "scoring": lesson.get("scoring", {})}
+    if lesson.get("segment"):
+        # Take-off / Landing: the map draws that piece of the circuit only
+        out["segment"] = lesson["segment"]
+        out["final_m"] = float((lesson.get("airborne_start") or {}).get("final_m", 0))
     if is_familiarization(lesson):
-        lat, lon = field_center(lesson)
-        out.update(type="familiarization", field={"lat": lat, "lon": lon},
-                   finish_radius_nm=float((lesson.get("finish") or {}).get("radius_nm", 2.0)))
+        out.update(type="familiarization")
+        if "FIND_AIRFIELD" in lesson_steps(lesson):
+            # the "fly back to here" ring -- only for a lesson that ends by
+            # finding Paya Lebar (Flight Familiarization), not the others
+            lat, lon = field_center(lesson)
+            out.update(field={"lat": lat, "lon": lon},
+                       finish_radius_nm=float((lesson.get("finish") or {}).get("radius_nm", 2.0)))
     return out
 
 
@@ -176,6 +199,7 @@ async def amain(cfg):
 
     flap_style = aircraft.get("flaps", {}).get("control_style", "notches")
     phrases.configure(flap_style, "layman")
+    phrases.set_lesson_lines(lesson.get("say"))    # lesson's own wording for some callouts
     # main-menu selection: visitor/trainee/pilot/exam policies; jargon still
     # independent (Settings). Defaults are safe before the menu sends anything.
     _default_policy = policy_for("visitor")
@@ -186,6 +210,27 @@ async def amain(cfg):
     engine = make_engine(cfg, lesson, aircraft)
     scorer = make_scorer(lesson, aircraft)
     recorder = FlightRecorder()          # §15: capture each run (groundwork for reference re-score)
+    def _sim_now() -> float:
+        """Telemetry clock (== flight_data.ts in IRIS; differs from wall time in replay)."""
+        return (state.get("tel") or {}).get("t") or time.time()
+
+    event_log = EventLog()               # start/end time of each to-do step / phase, for IRIS to grade
+    event_log.configure(*event_log_setup(lesson, engine))
+
+    # Free Flight has no set track, so its phases come from the aircraft's own state
+    # (core/free_flight.py), not from the circuit detector's runway geometry
+    _vspd = aircraft.get("v_speeds") or {}
+    free_tracker = FreeFlightTracker(vs1=_vspd.get("vs1", 48), vs0=_vspd.get("vs0", 40))
+
+    def _flight_phase() -> str:
+        """The phase to show and log: the circuit's, or the free-flight tracker's."""
+        return free_tracker.phase if session.get("free_flight") else engine.phase
+
+    def _publish_events() -> None:
+        """Push the event log + flight list into the state IRIS's bridge reads."""
+        state["flight_events"] = event_log.to_list()
+        state["flights"] = event_log.flights()
+
     board = Leaderboard(HERE / "data" / "leaderboard.json")
     board.seed_demo_if_empty()
     lesson_id = Path(cfg["lesson"]).stem
@@ -194,6 +239,9 @@ async def amain(cfg):
     instructors = InstructorRegistry(instructor_pin)
     score_seq = {"n": 0}
     run_gen = {"n": 0}          # bumped on restart, stale finish_lesson tasks ignore
+    # up-front demonstration of an airborne lesson (core/demo.py): Skip ends
+    # it; `shown` = steps the trainee watched (they then get a short cue, no hold)
+    demo_ctl = {"skip": asyncio.Event(), "shown": set()}
     pending: dict = {"card": None, "posted": False}
     scored = {"done": False}
     tts: TTS | None = None
@@ -207,8 +255,11 @@ async def amain(cfg):
                    # True from Start until quit/restart -- lets the web UI
                    # reattach to a running session after navigating away.
                    "lesson_running": False,
+                   "flight_events": [],
+                   "flights": [],
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
+                   "demo": None,       # {phase, title} while MAVIS is flying a demo
                    "theme": cfg["web"].get("theme", {}),
                    "monitor": cfg["web"].get("monitor_sources", []),
                    # replay: the trainee-view clip is the recording of the replayed flight,
@@ -369,7 +420,10 @@ async def amain(cfg):
             await coach.say(own)
         else:
             await coach.say(phrases.render("BRIEFING_1", {}))
-        await coach.say(phrases.render("BRIEFING_2", {}))
+        if not lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own
+            await coach.say(phrases.render("BRIEFING_2", {}))
+        if lesson.get("airborne_start"):
+            await _set_frozen(False)          # held on final through the briefing
         engine.start_flying()
 
     def _lesson_clock() -> tuple[int, int]:
@@ -456,20 +510,161 @@ async def amain(cfg):
         if fn and not await loop.run_in_executor(None, fn, on):
             log.warning("sim did not confirm freeze=%s", on)
 
+    _speakable = phrases.speakable      # to-do text as MAVIS says it
+
+    def _demos_wanted() -> bool:
+        """Fly the whole airborne lesson once as a demonstration before the
+        trainee's turn? Not in Exam (silent) coaching, not when the lesson
+        says `demos: false`, not on a sim that can't be flown remotely."""
+        pol = session.get("policy") or {}
+        return (bool(lesson.get("demos", True)) and pol.get("coaching") != "silent"
+                and hasattr(sim, "demo_control"))
+
     async def _fam_instruct(ev):
         """Speak one familiarization step with the aircraft frozen, then hand
         over: "You have control", unfreeze, and start the step's clock."""
         gen, eng = run_gen["n"], engine
+        phase = ev.data.get("phase")
         try:
             await _set_frozen(True)
-            await coach.say(phrases.render("LESSON_NOTE", ev.data), phase=ev.data.get("phase"))
+            await coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
             if gen == run_gen["n"] and started.is_set():
-                await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}),
-                                phase=ev.data.get("phase"))
+                await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}), phase=phase)
         finally:
             if gen == run_gen["n"] and eng is engine:
                 await _set_frozen(False)
                 eng.release()
+                if hasattr(sim, "comply"):     # mock student flies the step from here
+                    sim.comply(f"PHASE_ENTER_{phase}", ev.data)
+
+    async def _lock_controls(on: bool) -> None:
+        """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
+        the demo, handed back after."""
+        fn = getattr(sim, "lock_controls", None)
+        if fn and not await loop.run_in_executor(None, fn, on):
+            log.warning("sim did not take lock_controls(%s): the trainee's controls "
+                        "may still move the aircraft during the demo", on)
+
+    async def _fly_demo(pilot: DemoPilot, gen: int):
+        """Feed the demo pilot live telemetry and send its commands to the sim."""
+        last = time.time()
+        while not pilot.done and gen == run_gen["n"]:
+            now = time.time()
+            cmd = pilot.tick(state.get("tel") or {}, now - last)
+            last = now
+            if cmd:
+                await loop.run_in_executor(None, sim.demo_control, cmd)
+            await asyncio.sleep(0.2)
+
+    async def _fam_opening(briefing: bool):
+        """Start of an airborne lesson: the briefing (turn-by-turn modes), the
+        whole lesson flown once as a demonstration, then the hand-over, so the
+        trainee then flies every step in one go."""
+        gen = run_gen["n"]
+        try:
+            if briefing:
+                alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
+                await coach.say(_lesson_text(lesson.get("briefing")).replace("{alt}", f"{alt:,}"))
+            if gen != run_gen["n"]:
+                return
+            await _fam_demo_all(gen)
+            if gen != run_gen["n"]:
+                return
+            if demo_ctl["shown"]:
+                await coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}))
+                if gen != run_gen["n"]:
+                    return
+            # controls stay locked from the demo's start until "You have control"
+            await _lock_controls(False)
+            if demo_ctl["shown"]:
+                await _set_frozen(False)
+            engine.start_flying()
+        finally:
+            await _lock_controls(False)     # whatever happened: never leave them locked
+
+    async def _fam_demo_all(gen: int):
+        """"I have control": the sim flies every step in order while MAVIS
+        explains each, then the aircraft goes back to the start, frozen.
+        Skip (state.demo, /demo/skip_demo) ends it there; steps not shown in
+        full are explained the usual way (held still) when the trainee gets
+        to them."""
+        # fresh from the sim: right after the airborne start, state["tel"] can
+        # still be the parked aircraft from before it
+        tel0 = (await loop.run_in_executor(None, sim.get_telemetry)).as_dict()
+        steps = [s for s in engine.detector.ORDER[1:-1]
+                 if s not in NO_DEMO and (engine.notes.get(s) or {}).get("demo", True)]
+        if not steps or not tel0 or tel0.get("on_ground", True):
+            return
+        mock = cfg["sim"]["adapter"] == "mock"
+        base_th = tel0.get("throttle", 0.7)
+        # the whole demo in about two minutes (lesson demo_max_s): each step gets
+        # an equal share of the flying time, less a little for the opening and
+        # closing lines
+        # steps that change height need longer to show than the steady ones
+        weight = {s: (3.0 if s in DEMO_LONG_STEPS else 1.0) for s in steps}
+        unit = (float(lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
+        demo_ctl["skip"].clear()
+        state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
+        flew = skipped = False
+        try:
+            await coach.say(phrases.render("FAM_DEMO_START", {}))
+            if demo_ctl["skip"].is_set() or gen != run_gen["n"]:
+                return
+            await _lock_controls(True)          # hands off: MAVIS has control
+            await _set_frozen(False)
+            flew = True
+            # MAVIS flies this stretch: marked as its own event so it is never mistaken for
+            # (or graded as) the trainee's flying
+            event_log.observe("DEMO", _sim_now(), kind="demo")
+            _publish_events()
+            for i, step in enumerate(steps):
+                tel = dict(state.get("tel") or tel0)
+                data = engine.preview(step, Telemetry(**tel), demo=True)
+                if data.get("demo_layman"):
+                    # a step the autopilot can't fly: its explain-only lines
+                    data = {**data, "layman": data["demo_layman"],
+                            "pilot": data.get("demo_pilot") or data["demo_layman"]}
+                state["demo"] = {"n": i + 1, "of": len(steps),
+                                 "title": data.get("title") or STEP_TITLES.get(step, step),
+                                 "describe": step in DESCRIBE_ONLY}
+                state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
+                pilot = DemoPilot(step, engine, tel, mock=mock, base_throttle=base_th,
+                                  max_s=max(4.0, unit * weight[step]))
+                speak = asyncio.create_task(coach.say(phrases.render("LESSON_NOTE", data), phase=step))
+                fly = asyncio.create_task(_fly_demo(pilot, gen))
+                skip_w = asyncio.create_task(demo_ctl["skip"].wait())
+                await asyncio.wait({fly, skip_w}, return_when=asyncio.FIRST_COMPLETED)
+                if not demo_ctl["skip"].is_set():
+                    # flown: let the explanation finish (the autopilot holds it)
+                    await asyncio.wait({speak, skip_w}, return_when=asyncio.FIRST_COMPLETED)
+                skipped = demo_ctl["skip"].is_set() or gen != run_gen["n"]
+                for t in (fly, skip_w) + ((speak,) if skipped else ()):
+                    t.cancel()
+                if skipped:
+                    stop_speech()
+                    break
+                if pilot.rescued:
+                    log.warning("demo: %s abandoned near the stall (%.0f kt) -- recovered",
+                                step, (state.get("tel") or {}).get("ias", 0))
+                demo_ctl["shown"].add(step)
+            skipped = skipped or demo_ctl["skip"].is_set()
+        finally:
+            if flew and gen == run_gen["n"]:
+                event_log.close(_sim_now(), "skipped" if (skipped or demo_ctl["skip"].is_set()) else "completed")
+                _publish_events()
+            await loop.run_in_executor(None, sim.demo_control, {"ap": False, "rudder": 0.0})
+            state["demo"] = None
+            state["look_at"] = None
+            if flew and gen == run_gen["n"]:
+                await _set_frozen(True)
+                ok = await loop.run_in_executor(None, lambda: sim.set_position(
+                    tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
+                    throttle_pct=base_th * 100.0))
+                if not ok:
+                    log.warning("demo: couldn't put the aircraft back at the start")
+                state["track"].append([])      # the trainee's own flight starts a fresh line
+        if gen == run_gen["n"] and demo_ctl["shown"]:
+            await coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))
 
     async def _fam_finish():
         """End of the exercise: hold the aircraft while it's scored, then put
@@ -527,18 +722,39 @@ async def amain(cfg):
             return
         if cfg["sim"]["adapter"] == "msfs":
             await _connect_msfs_with_retries()
-            if not is_familiarization(lesson):
+            if not is_familiarization(lesson) and not lesson.get("airborne_start"):
                 _orient_lesson_to_aircraft(await loop.run_in_executor(None, sim.get_telemetry))
-        if is_familiarization(lesson):
+        if lesson.get("airborne_start"):
             await _airborne_start()
             if _fam_freezes():
                 await _set_frozen(True)     # held through the briefing
+            elif (not is_familiarization(lesson)
+                    and (session.get("policy") or {}).get("coaching") == "turn_by_turn"):
+                await _set_frozen(True)     # landing: held on final while it's briefed
         state["look_at"] = None
+        demo_ctl["shown"] = set()
         started.set()
         asyncio.create_task(_load_sop())     # never blocks the start of the lesson
-        if not (keep_session and session.get("session_id")):
+        new_session = not (keep_session and session.get("session_id"))
+        if new_session:
             session["session_id"] = str(uuid.uuid4())
+            event_log.reset()
         state["session_id"] = session["session_id"]
+        # a new flight in this session: which curriculum it came from (free flight is
+        # not a lesson, whatever lesson MAVIS happens to have loaded underneath)
+        meta = lesson_meta(catalog, lesson_id) or {}
+        free = bool(session.get("free_flight"))
+        free_tracker.reset()
+        labels, kind = event_log_setup(lesson, engine)
+        event_log.labels = {**labels, **(FREE_FLIGHT_LABELS if free else {})}
+        event_log.kind = kind
+        if not event_log.in_flight:            # a Restart carries on the flight it interrupted
+            event_log.begin_flight(
+                _sim_now(), lesson_id,
+                "Free Flight" if free else (meta.get("title") or lesson.get("name") or lesson_id),
+                "free_flight" if free else "lesson",
+                "" if free else meta.get("module_title", ""), session.get("mode", ""))
+        _publish_events()
         state["lesson_running"] = True
         if (lesson.get("night_event") or {}).get("at") == "start":
             await _apply_lesson_clock()
@@ -547,7 +763,10 @@ async def amain(cfg):
         if hasattr(sim, "release"):        # mock: start the autopilot immediately
             sim.release()
         pol = session.get("policy") or {}
-        if pol.get("coaching") == "turn_by_turn":
+        if is_familiarization(lesson) and _demos_wanted():
+            # briefing, the whole lesson flown once as a demo, then hand over
+            asyncio.create_task(_fam_opening(pol.get("coaching") == "turn_by_turn"))
+        elif pol.get("coaching") == "turn_by_turn":
             asyncio.create_task(_briefing_lines())
         else:
             engine.start_flying()
@@ -593,6 +812,10 @@ async def amain(cfg):
     TIME_HINT = (r"(time|clock|hrs|o'?clock|[ap]\.?m\b|\d{1,2}[:.]\d{2}|night|day(time)?|dusk|"
                  r"dawn|sunset|sunrise|morning|noon|midnight|midday|evening|afternoon)")
 
+    # words that could make a free-text request a tool call (retry a leg, show/hide the guide, lighting)
+    ROUTE_HINT = (r"(again|redo|retry|rewind|checkpoint|another go|go back|guide|diagram|"
+                  r"controls?|show|hide|close|open|dark|bright|light|weather)")
+
     def parse_clock(t: str):
         """Deterministic parse of explicit times: 12:45pm, 0630, 1400 hrs, 7 pm."""
         import re
@@ -626,8 +849,6 @@ async def amain(cfg):
 
     async def chat(text: str):
         if not text:
-            return
-        if not session.get("policy", {}).get("chat", True):
             return
         import re
         await coach.say(text, who="trainee")
@@ -708,9 +929,17 @@ async def amain(cfg):
             return
         # --- agentic fallback: let the local LLM pick ONE safe tool for a fuzzy
         #     request the rules above didn't catch (deterministic path already ran) ---
-        decision = await router.decide(
-            text, {"phase": engine.phase, "time": state.get("tel", {}).get("local_time_h")},
-            allow_regex=False)
+        # A plain question ("what's ...", "why ...") is never a command, so skip the
+        # tool-picking call: it is a whole extra model round trip before the answer.
+        # Likewise anything with no time/weather/retry/guide flavour ("count from 10 to 1",
+        # "3 - 2") can't map to a tool, so it needs no router call either.
+        if re.search(QUESTION_RE, t) or not re.search(
+                TIME_HINT + "|" + WEATHER_HINT + "|" + ROUTE_HINT, t):
+            decision = Decision("answer", source="no-tool")
+        else:
+            decision = await router.decide(
+                text, {"phase": engine.phase, "time": state.get("tel", {}).get("local_time_h")},
+                allow_regex=False)
         if (decision.kind == "tool" and decision.tool in ("set_weather", "set_time_of_day")
                 and re.search(QUESTION_RE, t)):
             decision.kind = "answer"     # "is it going to rain?" asks, it doesn't order
@@ -731,6 +960,10 @@ async def amain(cfg):
         engine.restart()
         scorer.reset()
         recorder.reset()
+        # Restart: same session, same flight. The attempt in progress ends as
+        # "restarted" (still data); the next attempt's events count as try 2.
+        event_log.restart_attempt(_sim_now())
+        _publish_events()
         scored["done"] = False
         coach.resume()
         session.pop("reference_recording", None)
@@ -753,21 +986,25 @@ async def amain(cfg):
 
     relaunching = asyncio.Lock()
 
-    async def relaunch():
-        """Restart button (and the scorecard's Fly again): reset the run, put
-        the aircraft back where the lesson starts -- the airborne start for
-        familiarization (start() does that), the start of the runway for the
-        circuit lessons -- and begin again under the same session."""
+    async def relaunch(new_session: bool = False):
+        """Reset the run, put the aircraft back where the lesson starts -- the
+        airborne start for familiarization (start() does that), the start of the
+        runway for the circuit lessons -- and begin again. The Restart button keeps
+        the same session; the scorecard's Fly again (new_session) starts a new one."""
         if relaunching.locked():
             return                      # a double-click shouldn't restart twice
         async with relaunching:
             await restart()
-            if not is_familiarization(lesson) and cfg["sim"]["adapter"] == "msfs":
+            if not lesson.get("airborne_start") and cfg["sim"]["adapter"] == "msfs":
                 await _connect_msfs_with_retries()
                 if not await _to_runway_start():
                     raise RuntimeError("Couldn't move the aircraft back to the start of the "
                                        "runway -- check MAVIS's log.")
-            await start(keep_session=True)
+            await start(keep_session=not new_session)
+
+    async def relaunch_new():
+        """Scorecard "Fly again": a whole new cycle -- new session, new recording."""
+        await relaunch(new_session=True)
 
     async def mute():
         state["muted"] = not state.get("muted", False)
@@ -814,6 +1051,7 @@ async def amain(cfg):
                                                on_ground=gnd))
         if ok:
             scorer.note_retry()
+            event_log.retried(_sim_now())     # the abandoned attempt ends here; the re-fly is a new attempt
             engine.load_phase(want, ckpt["circuit"])
             state["track"].append([])          # new attempt = new track segment (all attempts kept)
         else:
@@ -822,7 +1060,8 @@ async def amain(cfg):
     # ---------- training modes (visitor / trainee / pilot / exam) ----------
     # Trainee + pilot gate progression with FORCE_REPEAT when a graded leg isn't
     # flown to tolerance (up to MAX_ATTEMPTS). Visitor + exam never force a
-    # repeat. Coaching density / guidance style come from session["policy"].
+    # repeat, and neither does Free Flight. Coaching density / guidance style come
+    # from session["policy"].
     GATED = {"CROSSWIND", "DOWNWIND", "BASE", "FINAL"}
     MAX_ATTEMPTS = 2
     attempts: dict[str, int] = {}
@@ -880,10 +1119,13 @@ async def amain(cfg):
             sim = make_adapter(cfg, lesson)
             sim.connect()
         lesson = lesson_for_sim(cfg, sim, lesson)
+        phrases.set_lesson_lines(lesson.get("say"))
         engine = make_engine(cfg, lesson, aircraft)
         scorer = make_scorer(lesson, aircraft)
         refs = ReferenceRegistry(lesson, lesson_id)
         recorder.reset()
+        event_log.configure(*event_log_setup(lesson, engine))
+        _publish_events()
         attempts.clear()
         checkpoints.clear()
         scored["done"] = False
@@ -892,7 +1134,7 @@ async def amain(cfg):
         state.update(
             phase=engine.phase, circuit=1,
             total_circuits=int(lesson.get("total_circuits", 1)),
-            track=[[]], scorecard=None, speaking=False, look_at=None,
+            track=[[]], scorecard=None, speaking=False, look_at=None, demo=None,
             lesson_id=lesson_id,
             active_lesson=meta,
             reference_track=None,
@@ -908,7 +1150,7 @@ async def amain(cfg):
     async def configure_session(mode: str, jargon: str, reference: str = "planned",
                                 reference_recording: bool = False,
                                 trainee_name: str = "",
-                                tone: str = "warm"):
+                                tone: str = "warm", free_flight: bool = False):
         stop_speech()
         coach.pause()
         if is_familiarization(lesson):
@@ -923,6 +1165,7 @@ async def amain(cfg):
                       and mid in ("trainee", "pilot"))
         session["tone"] = "drill" if want_drill else "warm"
         session["reference_recording"] = bool(reference_recording)
+        session["free_flight"] = bool(free_flight)
         session["name"] = (trainee_name or "").strip()[:48]
         tc = int(lesson.get("total_circuits", 1))
         engine.detector.total_circuits = 1 if reference_recording else tc
@@ -1170,15 +1413,20 @@ async def amain(cfg):
         if is_familiarization(lesson):
             return await _make_fam_debrief(card, sc)
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
-        fallback = f"Nice circuit. Best was your {best}; work on {worst} next time."
-        if card.scores.get("landing") is None:
+        fallback = (f"Nicely flown. Best was your {best}; work on {worst} next time."
+                    if lesson.get("segment") else
+                    f"Nice circuit. Best was your {best}; work on {worst} next time.")
+        if card.incomplete and lesson.get("segment"):
+            fallback = f"Good effort. Your {best} stood out. We didn't finish it this time."
+        elif card.scores.get("landing") is None and not lesson.get("segment"):
             fallback = f"Good effort. Your {best} stood out. No landing yet, so that's unscored."
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's circuit from "
+        what = lesson.get("debrief_summary") or "circuit"
+        sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {what} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
         try:
@@ -1193,25 +1441,35 @@ async def amain(cfg):
 
     async def _make_fam_debrief(card, sc) -> str:
         names = {"exercises": "getting through every exercise", "altitude": "height holding",
-                 "bank": "turns", "climb_speed": "climb speed", "smoothness": "smooth hands"}
+                 "bank": "turns", "climb_speed": "climb speed", "speed": "speed control",
+                 "level_off": "levelling off",
+                 "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
         if card.incomplete:
-            fallback = f"Good effort. Your {names[best]} stood out. We didn't reach Paya Lebar this time."
+            fallback = (f"Good effort. Your {names[best]} stood out. "
+                        + ("We didn't reach Paya Lebar this time." if engine.finds_field
+                           else "We didn't get through every step this time."))
         if not coach.llm_ok:
             return fallback
         who = (session.get("name") or "").strip()
         who_line = (f"The trainee's name is {who}. Use that name at most once in the whole debrief."
                     if who else "Address the trainee only as 'you'. Do not use any proper name.")
-        sysp = (phrases.PERSONA + "\nWrite a spoken debrief of the trainee's flight "
-                "familiarisation exercise (airborne start, straight and level, a turn each way, "
-                "a climb and a descent, then finding Paya Lebar; no take-off or landing) from "
+        about = (lesson.get("debrief_summary") or "flight familiarisation exercise (airborne "
+                 "start, straight and level, a turn each way, a climb and a descent, then "
+                 "finding Paya Lebar; no take-off or landing)")
+        sysp = (phrases.PERSONA + f"\nWrite a spoken debrief of the trainee's {about} from "
                 "these 0-100 scores: two short sentences, 30 words at most. Name one strength "
                 "and one thing to work on. No lists; don't read out the numbers. " + who_line)
-        reached = "yes" if not card.incomplete else "no"
+        if not engine.finds_field:
+            # the persona describes a circuit at Paya Lebar; this lesson has no
+            # navigation part, so keep the model from inventing one
+            sysp += (" This lesson has no navigation: do not mention Paya Lebar, the airfield, "
+                     "finding it, or flying back to it.")
+        reached = "yes" if not card.incomplete else "no"   # finished the lesson
         try:
             out = await coach._ollama(
-                sysp, f"scores={sc} reached_airfield={reached} total={card.total} grade={card.grade}", 10.0)
+                sysp, f"scores={sc} finished_lesson={reached} total={card.total} grade={card.grade}", 10.0)
             out = (out or "").strip()
             if 10 < len(out) < 400:
                 return _sanitize_debrief(out, who)
@@ -1240,8 +1498,10 @@ async def amain(cfg):
             break
         # Phase 2, spoken close (single owner; not submitted from the ticker)
         if not _debrief_spoken():
-            code = "FAM_DEBRIEF" if is_familiarization(lesson) else "PHASE_ENTER_DEBRIEF"
-            await coach.say(phrases.render(code, {
+            code = (("FAM_DEBRIEF" if engine.finds_field else "FAM_DEBRIEF_DONE")
+                    if is_familiarization(lesson) else "PHASE_ENTER_DEBRIEF")
+            own = _lesson_text(lesson.get("closing"))    # e.g. Take-off / Landing's own close
+            await coach.say(own or phrases.render(code, {
                 "phase": "DEBRIEF", "circuit": engine.circuit}), phase="DEBRIEF")
         # Phase 3, wait until TTS actually finishes
         while time.time() < deadline and _coach_active():
@@ -1265,7 +1525,8 @@ async def amain(cfg):
         pending["recording"] = recorder.to_dict(meta={
             "lesson": lesson_id, "aircraft": Path(cfg["aircraft_profile"]).stem,
             "mode": session["mode"], "reference": session.get("reference", "planned"),
-            "practice": practice, "name": session.get("name", "")})
+            "practice": practice, "name": session.get("name", ""),
+            "events": event_log.to_list()})
         try:
             recorder.save(HERE / "data" / "recordings" / "last_run.json")
         except Exception as e:
@@ -1293,8 +1554,17 @@ async def amain(cfg):
         if is_familiarization(lesson):
             await _set_frozen(False)        # hand the aircraft back on the way out
         if scored["done"]:
+            # the flight already finished on its own and is scored: nothing more to score,
+            # but leaving the lesson must still end the run -- otherwise it stays "in
+            # progress", the next lesson can't be selected and the page re-enters it
+            started.clear()
+            state["lesson_running"] = False
+            intro_shown.clear()
             return
         scored["done"] = True
+        # a Free Flight has no lesson to complete: ending it is how it finishes
+        event_log.end_flight(_sim_now(), "completed" if session.get("free_flight") else "abandoned")
+        _publish_events()
         stop_speech()
         coach.pause()
         started.clear()
@@ -1333,12 +1603,16 @@ async def amain(cfg):
         pending["card"] = None
         pending["posted"] = False
 
+    async def skip_demo():
+        demo_ctl["skip"].set()
+
     async def score_submit(name: str, given: str = "", family: str = ""):
         _post_card(name, given, family)
 
     actions = {"start": start, "night": night_sequence,
                "skip": _wrap(lambda: engine.skip_phase()), "restart": restart,
-               "relaunch": relaunch,
+               "skip_demo": skip_demo,
+               "relaunch": relaunch, "relaunch_new": relaunch_new,
                "chat": chat, "mute": mute, "intro": intro, "retry": retry,
                "configure_session": configure_session,
                "select_lesson": select_lesson,
@@ -1391,9 +1665,12 @@ async def amain(cfg):
                 prev_phase = engine.phase
                 events = engine.tick(tel, ctrl)
                 # trainee/pilot: if a graded leg just ended below tolerance, send
-                # them back to re-fly it (bounded) instead of progressing.
+                # them back to re-fly it (bounded) instead of progressing. Never in Free
+                # Flight: there is no set track to be held to, and MAVIS must not move
+                # the aircraft on its own there.
                 pol = session.get("policy") or {}
                 force_redo = (pol.get("force_repeat")
+                              and not session.get("free_flight")
                               and not session.get("reference_recording")
                               and engine.phase != prev_phase
                               and prev_phase in GATED
@@ -1404,15 +1681,35 @@ async def amain(cfg):
                         continue   # don't announce the new leg; we're reverting
                     if ev.code == "PHASE_ENTER_DEBRIEF":
                         continue   # finish_lesson/_await_spoken_close owns this line
-                    if not allow_coach_event(pol, ev.code, ev.severity):
+                    if (not allow_coach_event(pol, ev.code, ev.severity)
+                            and ev.code not in (lesson.get("always_say") or [])
+                            # "now come back" calls: every mode but Exam (silent)
+                            and not (ev.code in PART_CUES and pol.get("coaching") != "silent")):
                         continue
                     if ev.code == "LESSON_NOTE" and is_familiarization(lesson):
                         state["look_at"] = {"items": ev.data.get("look") or [],
                                             "phase": ev.data.get("phase"), "seq": time.time()}
-                        if _fam_freezes() and ev.data.get("freeze", True):
+                        if ev.data.get("phase") in demo_ctl["shown"]:
+                            # watched in the demo: a short cue, no hold -- keep the momentum
+                            title = ev.data.get("title") or ev.data.get("phase")
+                            action = (ev.data.get("todo") or [""])[0]
+                            try:
+                                action = action.format(**ev.data)    # "Bank left {med_bank_lo}-..."
+                            except (KeyError, IndexError, ValueError):
+                                pass
+                            cue = phrases.render("FAM_STEP_CUE", {
+                                "title": title, "title_lc": title[:1].lower() + title[1:],
+                                "action": _speakable(action).rstrip(".")})
+                            ev = CoachEvent("LESSON_NOTE", ev.severity,
+                                            {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
+                        elif _fam_freezes() and ev.data.get("freeze", True):
                             engine.hold()       # judge nothing until "you have control"
                             asyncio.create_task(_fam_instruct(ev))
                             continue
+                        if hasattr(sim, "comply"):
+                            # mock student: fly the step even when the mode
+                            # filters out its PHASE_ENTER announcement
+                            sim.comply(f"PHASE_ENTER_{ev.data.get('phase')}", ev.data)
                     coach.submit(ev)
                     if hasattr(sim, "comply"):   # mock student obeys callouts
                         sim.comply(ev.code, ev.data)
@@ -1430,14 +1727,27 @@ async def amain(cfg):
                     if not getattr(engine, "held", False):   # frozen for an explanation: not flying
                         scorer.sample(tel.as_dict(), geom_d, ctrl.as_dict(), engine.phase)
                     recorder.sample(tel.as_dict(), ctrl.as_dict(), geom_d, engine.phase)
+                    # the to-do list / phase tracker decides event boundaries: when it
+                    # moves on, the previous event ends and the next starts, at this tick
+                    if session.get("free_flight"):
+                        free_tracker.tick(tel)
+                    changed = event_log.observe(_flight_phase(), tel.t, engine.circuit,
+                                                getattr(engine, "skipped", ()),
+                                                kind="stall" if _flight_phase() == "STALL" else None)
+                    if engine.phase == "DEBRIEF" and not scored["done"]:
+                        event_log.end_flight(tel.t, "completed")
+                        changed = True
+                    if changed:
+                        _publish_events()
                     if prev_on_ground is False and tel.on_ground \
                             and engine.phase in ("FLARE_TOUCHDOWN", "FINAL", "ROLLOUT"):
                         scorer.on_landing(tel.as_dict(), geom_d)
                     prev_on_ground = tel.on_ground
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         scored["done"] = True
-                        if is_familiarization(lesson):
+                        if is_familiarization(lesson) or lesson.get("end_reposition"):
                             # practice over: freeze, score, then back to the runway
+                            # (airborne lessons, and the take-off lesson)
                             asyncio.create_task(_fam_finish())
                         else:
                             asyncio.create_task(finish_lesson(False))
@@ -1447,7 +1757,7 @@ async def amain(cfg):
                     and engine.wants_night_switch() and night_task is None:
                 night_task = asyncio.create_task(night_sequence())
             state.update(
-                tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=engine.phase,
+                tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=_flight_phase(),
                 circuit=engine.circuit, total_circuits=engine.detector.total_circuits,
                 targets=engine.targets(),
                 night=not (6.0 < tel.local_time_h < 18.5),
@@ -1461,7 +1771,7 @@ async def amain(cfg):
             # the older part is halved, so the full path stays on the map
             # (just coarser at the start) and the payload stays bounded.
             if not scored["done"] and t0 - last_track > 1.0 and not spike \
-                    and abs(tel.lat) > 0.01:
+                    and abs(tel.lat) > 0.01 and not state.get("demo"):
                 seg = state["track"][-1]
                 d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 1.0
                 if d >= 0.02:     # real reposition (> ~2 km/sample): new segment, no false line across the jump

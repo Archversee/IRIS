@@ -95,6 +95,8 @@ def to_telemetry(row: dict, elev_ft: float, vs: float, local_h: float) -> Teleme
         local_time_h=local_h,
         flaps_handle_pct=float(row["flaps_handle_pct"]) if row.get("flaps_handle_pct") not in (None, "") else None,
         elevator_trim_pct=float(row["elevator_trim_pct"]) if row.get("elevator_trim_pct") not in (None, "") else None,
+        rudder_trim_pct=float(row["rudder_trim_pct"]) if row.get("rudder_trim_pct") not in (None, "") else None,
+        aileron_trim_pct=float(row["aileron_trim_pct"]) if row.get("aileron_trim_pct") not in (None, "") else None,
     )
 
 
