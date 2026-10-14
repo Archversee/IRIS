@@ -25,6 +25,7 @@ class SessionCfg(BaseModel):
     reference_recording: bool = False  # instructor capture: one circuit, full stop
     trainee_name: str = ""     # display name for debrief / scorecard
     free_flight: bool = False  # Free Flight menu: the session is logged as free flight, not as a lesson
+    strictness: str = ""       # SOP rule checks: lenient | standard | strict ("" = trainee's / mode's)
 
 
 class RefCfg(BaseModel):
@@ -131,7 +132,7 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
         fn = actions.get("configure_session")
         if fn:
             await fn(cfg.mode, cfg.jargon, cfg.reference, cfg.reference_recording,
-                     cfg.trainee_name.strip(), cfg.tone, cfg.free_flight)
+                     cfg.trainee_name.strip(), cfg.tone, cfg.free_flight, cfg.strictness)
         return {"ok": True}
 
     @app.post("/lesson/select")
@@ -352,5 +353,16 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
             await sop_store.close()
     except ImportError as e:
         log.warning("SOP rules disabled (missing dependency: %s)", e)
+
+    # Checking flights against their rules (sop/eval_routes.py) -- needs only
+    # asyncpg, so it is mounted even when the PDF tools above are missing.
+    try:
+        import asyncpg  # noqa: F401
+        from sop.eval_routes import build_eval_router
+        eval_router, rule_results = build_eval_router(app_cfg, getattr(app.state, "sop_store", None))
+        app.include_router(eval_router)
+        app.state.rule_results = rule_results
+    except ImportError as e:
+        log.warning("Rule checks of flights disabled (missing dependency: %s)", e)
 
     return app

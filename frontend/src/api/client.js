@@ -149,4 +149,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
   deleteAoiZone: (id) => req(`/aoi-zones/${id}`, { method: "DELETE" }),
+
+  // SOP / handbook rule checks of a session (backend/app/routers/rule_results.py).
+  // MAVIS computes them (sopApi.evaluate); the instructor's verdicts and sign-off go here.
+  ruleResults: (id) => req(`/sessions/${id}/rule-results`),
+  setRuleVerdict: (resultId, body) => req(`/rule-results/${resultId}`, json("PATCH", body)),
+  signOffRules: (id, body) => req(`/sessions/${id}/rule-results/sign-off`, json("POST", body)),
+  getRuleStrictness: (userId) => req(`/users/${userId}/rule-strictness`),
+  setRuleStrictness: (userId, strictness) => req(`/users/${userId}/rule-strictness`, json("PUT", { strictness })),
 };

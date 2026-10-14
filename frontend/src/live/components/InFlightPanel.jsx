@@ -4,6 +4,7 @@ import LookCard from "./LookCard.jsx";
 import TodoCard from "./TodoCard.jsx";
 import MapCanvas from "./MapCanvas.jsx";
 import ScorecardOverlay from "./ScorecardOverlay.jsx";
+import RuleAlerts from "./RuleAlerts.jsx";
 import DemoBanner from "./DemoBanner.jsx";
 
 // Two columns: avatar + chat on the left, and the ground track (planned
@@ -25,6 +26,7 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, o
           <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
           <SopChip sop={state?.sop} />
         </div>
+        <RuleAlerts live={state?.sop_live} flying={!!state?.lesson_running} />
 
         <DemoBanner demo={state?.demo} />
         {/* the to-do list sits beside the map, in the layout -- never floating

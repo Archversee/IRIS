@@ -299,6 +299,10 @@ DRILL_INDIRECT_TEMPLATES = {
 
 # Casual/layman line for a forced-repeat event, so render() always resolves.
 TEMPLATES["FORCE_REPEAT"] = ["Let's give that part another go and really nail it. Taking you back."]
+# A warning-severity SOP / handbook rule is being broken (sop/evaluate.py via main.py).
+# Spoken verbatim (llm_coach.VERBATIM): the numbers are the SOP's own.
+TEMPLATES["SOP_RULE"] = ["Careful, {title}. We're at {value_text}, it should be {requirement}."]
+PILOT_TEMPLATES["SOP_RULE"] = ["{title}: {value_text}, should be {requirement}."]
 
 # Layman script snapshot, configure() always rebuilds from this (never a stale runtime copy).
 LAYMAN_TEMPLATES = {k: list(v) for k, v in TEMPLATES.items()}

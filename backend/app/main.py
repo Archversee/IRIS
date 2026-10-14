@@ -1,4 +1,5 @@
 """FastAPI entrypoint."""
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -8,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth, db, mavis_bridge, videos
 from .config import settings
-from .routers import accounts, adapter, aoi_zones, analytics, data, ingest, routes, sessions, stream
+from .routers import (accounts, adapter, aoi_zones, analytics, data, ingest, routes, rule_results, sessions,
+                      stream)
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
@@ -17,6 +19,10 @@ async def lifespan(app: FastAPI):
     await db.connect()
     await auth.ensure_schema()  # users/auth_tokens tables + first admin account
     await videos.ensure_schema()  # sessions.recording_paths (OBS files to delete with a session)
+    try:
+        await rule_results.ensure_schema()  # SOP rule checks of flights (db/schema_rule_results.sql)
+    except Exception as e:  # e.g. sessions table not created yet -- never block startup
+        logging.getLogger(__name__).warning("rule results schema not applied: %s", e)
     await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)
     # Background WS client into MAVIS -- reconnects on its own if MAVIS
     # isn't up yet/goes away, so this never blocks IRIS's own startup or
@@ -44,6 +50,7 @@ app.include_router(aoi_zones.router)
 app.include_router(ingest.router)
 app.include_router(data.router)
 app.include_router(analytics.router)
+app.include_router(rule_results.router)
 app.include_router(stream.router)
 app.include_router(videos.router)
 
