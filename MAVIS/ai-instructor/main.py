@@ -35,6 +35,7 @@ from core.leaderboard import Leaderboard
 from core.instructors import InstructorRegistry
 from core.recorder import FlightRecorder
 from core.event_log import EventLog
+from core.free_flight import LABELS as FREE_FLIGHT_LABELS, FreeFlightTracker
 from core.lesson_catalog import flatten_lessons, lesson_meta, load_catalog
 from core.familiarization import (PART_CUES, FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, lesson_steps, runway_start,
@@ -215,6 +216,14 @@ async def amain(cfg):
 
     event_log = EventLog()               # start/end time of each to-do step / phase, for IRIS to grade
     event_log.configure(*event_log_setup(lesson, engine))
+
+    # Free Flight has no set track, so its phases come from the aircraft's own state
+    # (core/free_flight.py), not from the circuit detector's runway geometry
+    free_tracker = FreeFlightTracker()
+
+    def _flight_phase() -> str:
+        """The phase to show and log: the circuit's, or the free-flight tracker's."""
+        return free_tracker.phase if session.get("free_flight") else engine.phase
 
     def _publish_events() -> None:
         """Push the event log + flight list into the state IRIS's bridge reads."""
@@ -734,6 +743,10 @@ async def amain(cfg):
         # not a lesson, whatever lesson MAVIS happens to have loaded underneath)
         meta = lesson_meta(catalog, lesson_id) or {}
         free = bool(session.get("free_flight"))
+        free_tracker.reset()
+        labels, kind = event_log_setup(lesson, engine)
+        event_log.labels = {**labels, **(FREE_FLIGHT_LABELS if free else {})}
+        event_log.kind = kind
         if not event_log.in_flight:            # a Restart carries on the flight it interrupted
             event_log.begin_flight(
                 _sim_now(), lesson_id,
@@ -1548,7 +1561,8 @@ async def amain(cfg):
             intro_shown.clear()
             return
         scored["done"] = True
-        event_log.end_flight(_sim_now(), "abandoned")
+        # a Free Flight has no lesson to complete: ending it is how it finishes
+        event_log.end_flight(_sim_now(), "completed" if session.get("free_flight") else "abandoned")
         _publish_events()
         stop_speech()
         coach.pause()
@@ -1714,7 +1728,9 @@ async def amain(cfg):
                     recorder.sample(tel.as_dict(), ctrl.as_dict(), geom_d, engine.phase)
                     # the to-do list / phase tracker decides event boundaries: when it
                     # moves on, the previous event ends and the next starts, at this tick
-                    changed = event_log.observe(engine.phase, tel.t, engine.circuit,
+                    if session.get("free_flight"):
+                        free_tracker.tick(tel)
+                    changed = event_log.observe(_flight_phase(), tel.t, engine.circuit,
                                                 getattr(engine, "skipped", ()))
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         event_log.end_flight(tel.t, "completed")
@@ -1739,7 +1755,7 @@ async def amain(cfg):
                     and engine.wants_night_switch() and night_task is None:
                 night_task = asyncio.create_task(night_sequence())
             state.update(
-                tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=engine.phase,
+                tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=_flight_phase(),
                 circuit=engine.circuit, total_circuits=engine.detector.total_circuits,
                 targets=engine.targets(),
                 night=not (6.0 < tel.local_time_h < 18.5),
