@@ -42,6 +42,7 @@ export function useSessionData({ id, live }) {
   // Ground track reference route (MAVIS planned circuit): "" = none.
   const [routes, setRoutes] = useState([]);
   const [routeKey, setRouteKey] = useState(null); // null = not chosen yet -> auto-pick once
+  const routeAutoRef = useRef(false);                  // true while routeKey is the automatic pick
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -51,6 +52,8 @@ export function useSessionData({ id, live }) {
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const [openPhases, setOpenPhases] = useState([]);
   const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
+  const [sessionFlights, setSessionFlights] = useState([]); // which curriculum each flight came from
+  const [flightsLoaded, setFlightsLoaded] = useState(false);
   const zCounter = useRef(10);
   const [hiddenAois, setHiddenAois] = useState(new Set());
   const [aoiFilterOpen, setAoiFilterOpen] = useState(false);
@@ -87,8 +90,13 @@ export function useSessionData({ id, live }) {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    const load = () => api.events(id).then((ev) => { if (!cancelled) setFlightEvents(ev); })
-      .catch((e) => console.warn("flight events unavailable:", e?.message || e));
+    const load = () => {
+      api.events(id).then((ev) => { if (!cancelled) setFlightEvents(ev); })
+        .catch((e) => console.warn("flight events unavailable:", e?.message || e));
+      api.flights(id).then((fl) => { if (!cancelled) setSessionFlights(fl); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setFlightsLoaded(true); });
+    };
     load();
     const timer = live ? setInterval(load, 3000) : null;
     return () => { cancelled = true; if (timer) clearInterval(timer); };
@@ -324,11 +332,16 @@ export function useSessionData({ id, live }) {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
+  // A Free Flight session has no planned route: MAVIS only has some lesson loaded underneath
+  // (the first circuit), and drawing that circuit would also squash the real track into a corner.
+  const isFreeFlight = sessionFlights.some((f) => f.curriculum === "free_flight");
+
   // Auto-pick the reference route once: the session's own lesson if MAVIS
   // flew it, otherwise any route -- from the runway end nearest where the
-  // flight starts (within 3 km). Falls back to none.
+  // flight starts (within 3 km). Falls back to none. Never for Free Flight.
   useEffect(() => {
-    if (routeKey !== null || !routes.length || !flight.length || !summary) return;
+    if (routeKey !== null || !routes.length || !flight.length || !summary || !flightsLoaded) return;
+    if (isFreeFlight) { setRouteKey(""); return; }
     const start = flight.find((r) => r.latitude != null && r.longitude != null);
     if (!start) return;
     const lessonId = summary.session?.lesson_id;
@@ -338,8 +351,16 @@ export function useSessionData({ id, live }) {
       .map((r) => ({ r, d: km(r.runway[0]) - (lessonId && r.lesson_id === lessonId ? 1000 : 0) }))
       .sort((a, b) => a.d - b.d);
     const best = ranked[0];
+    routeAutoRef.current = true;
     setRouteKey(best && km(best.r.runway[0]) <= 3 ? best.r.key : "");
-  }, [routes, flight, summary, routeKey]);
+  }, [routes, flight, summary, routeKey, flightsLoaded, isFreeFlight]);
+
+  // Live: the flight record can arrive just after the route was auto-picked. If it turns out
+  // to be Free Flight, drop that automatic pick (a route the user chose by hand stays).
+  useEffect(() => {
+    if (isFreeFlight && routeAutoRef.current && routeKey) { routeAutoRef.current = false; setRouteKey(""); }
+  }, [isFreeFlight, routeKey]);
+  const pickRoute = (k) => { routeAutoRef.current = false; setRouteKey(k); };
 
   const route = routes.find((r) => r.key === routeKey) || null;
 
@@ -675,7 +696,7 @@ export function useSessionData({ id, live }) {
       aoiZones, curAoi, scanTrail, scanTrailLen: SCAN_TRAIL_LEN,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
-      routes, routeKey: routeKey ?? "", setRouteKey, groundRoute,
+      routes, routeKey: routeKey ?? "", setRouteKey: pickRoute, groundRoute,
       onGroundMouseDown: (e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseMove: (e) => { if (groundScrubbing) seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseUp: () => setGroundScrubbing(false),
