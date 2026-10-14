@@ -1046,7 +1046,8 @@ async def amain(cfg):
     # ---------- training modes (visitor / trainee / pilot / exam) ----------
     # Trainee + pilot gate progression with FORCE_REPEAT when a graded leg isn't
     # flown to tolerance (up to MAX_ATTEMPTS). Visitor + exam never force a
-    # repeat. Coaching density / guidance style come from session["policy"].
+    # repeat, and neither does Free Flight. Coaching density / guidance style come
+    # from session["policy"].
     GATED = {"CROSSWIND", "DOWNWIND", "BASE", "FINAL"}
     MAX_ATTEMPTS = 2
     attempts: dict[str, int] = {}
@@ -1649,9 +1650,12 @@ async def amain(cfg):
                 prev_phase = engine.phase
                 events = engine.tick(tel, ctrl)
                 # trainee/pilot: if a graded leg just ended below tolerance, send
-                # them back to re-fly it (bounded) instead of progressing.
+                # them back to re-fly it (bounded) instead of progressing. Never in Free
+                # Flight: there is no set track to be held to, and MAVIS must not move
+                # the aircraft on its own there.
                 pol = session.get("policy") or {}
                 force_redo = (pol.get("force_repeat")
+                              and not session.get("free_flight")
                               and not session.get("reference_recording")
                               and engine.phase != prev_phase
                               and prev_phase in GATED
