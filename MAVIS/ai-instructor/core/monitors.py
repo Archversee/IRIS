@@ -9,15 +9,45 @@ from .phase_detector import Geometry
 from .reference_profiles import ReferenceProfile
 
 
+def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
+    """Final approach speed band for a lesson with final_speed_band_kt
+    (e.g. the Landing lesson): (lo, hi, aim) kt, or None. The aim is the
+    approach speed, sliding down to touchdown_speed_kt over the last
+    slow_down_below_agl_ft; the band is aim +/- final_speed_band_kt, never
+    below min_speed_kt (kept clear of the stall)."""
+    band = lesson.get("final_speed_band_kt")
+    if not band:
+        return None
+    fin = float(v_speeds["final"])
+    td = float(lesson.get("touchdown_speed_kt", fin))
+    below = float(lesson.get("slow_down_below_agl_ft", 100))
+    f = max(0.0, min(1.0, agl / below)) if below > 0 else 1.0
+    aim = td + (fin - td) * f
+    return max(float(lesson.get("min_speed_kt", 0)), aim - band), aim + band, aim
+
+
 class Monitors:
     def __init__(self, aircraft: dict, lesson: dict, sim_adapter: str = "mock"):
         v = aircraft["v_speeds"]
         f = aircraft["flaps"]
-        self.vr = v["vr"]
+        self._lesson, self._v = lesson, v
+        # how far off the centreline on final before a "drifting" nudge (m)
+        self.centreline_nudge_m = float(lesson.get("centreline_nudge_m", 60))
+        # rotate call speed: the aircraft's Vr, or the lesson's own rotate_kt
+        self.vr = float(lesson.get("rotate_kt") or v["vr"])
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
                           "FINAL": v["final"]}
         self.tgt_flaps = {"DOWNWIND": f["downwind"], "BASE": f["base"], "FINAL": f["final"]}
+        # legs flown without a speed to hold (the Take-off lesson's climb-out):
+        # no speed shown, called or nudged there
+        for ph in lesson.get("no_speed_target") or []:
+            self.tgt_speed.pop(ph, None)
+        # climb legs flown to a band rather than one number (lesson
+        # climb_speed_band_kt): nudged only once well outside it
+        b = lesson.get("climb_speed_band_kt")
+        self.speed_band = ({ph: (float(b[0]), float(b[1])) for ph in ("CLIMB_OUT", "CROSSWIND")
+                            if ph in self.tgt_speed} if b else {})
         self.pattern_alt = lesson["pattern"]["altitude_msl_ft"]
         self.xwind_agl = lesson["pattern"]["crosswind_turn_agl_ft"]
         rw_len = float(lesson["runway"]["length_m"])
@@ -187,18 +217,45 @@ class Monitors:
             self._rotate_called = False
 
         spd = self.tgt_speed.get(phase)
-        if spd and not tel.on_ground and not settling:
+        band = self.speed_band.get(phase)
+        slack = 5.0                          # climb band: nudge once well outside it
+        if phase == "FINAL" and band is None:
+            fb = final_speed_band(self._lesson, self._v, tel.alt_agl)
+            band = fb[:2] if fb else None
+            slack = 0.0                      # final: the band's already wide; its floor guards the stall
+        # downwind is flown level: there the speed is the throttle's job;
+        # climbing / descending legs it's the nose's (the *_LEVEL wording)
+        lvl = "_LEVEL" if phase == "DOWNWIND" else ""
+        if band and not tel.on_ground and not settling:
+            lo, hi = band                    # e.g. 70-90 kt: "toward 90" / "toward 70"
+            if tel.ias > hi + slack:
+                E(CoachEvent("SPEED_FAST" + lvl, "nudge", {"ias": round(tel.ias), "tgt": round(hi)}))
+            elif tel.ias < lo - slack:
+                sev = "correction" if tel.ias < lo - slack - 5 else "nudge"
+                E(CoachEvent("SPEED_SLOW" + lvl, sev, {"ias": round(tel.ias), "tgt": round(lo)}))
+        elif spd and not tel.on_ground and not settling:
             if tel.ias > spd + 10:
-                E(CoachEvent("SPEED_FAST", "nudge", {"ias": round(tel.ias), "tgt": spd}))
+                E(CoachEvent("SPEED_FAST" + lvl, "nudge", {"ias": round(tel.ias), "tgt": spd}))
             elif tel.ias < spd - 10:
                 sev = "correction" if tel.ias < spd - 15 else "nudge"
-                E(CoachEvent("SPEED_SLOW", sev, {"ias": round(tel.ias), "tgt": spd}))
+                E(CoachEvent("SPEED_SLOW" + lvl, sev, {"ias": round(tel.ias), "tgt": spd}))
 
         if phase == "DOWNWIND" and not settling:
             dv = tel.alt_msl - self.pattern_alt
             if abs(dv) > 100:
-                E(CoachEvent("ALT_HIGH" if dv > 0 else "ALT_LOW", "nudge",
-                             {"off": round(abs(dv)), "tgt": self.pattern_alt}))
+                # off height: low and fast -> the nose (the extra speed climbs
+                # us back up); high and slow -> the nose too; otherwise power
+                dw = self.tgt_speed.get("DOWNWIND") or 85
+                if dv < 0:
+                    code = "ALT_LOW_FAST" if tel.ias > dw + 5 else "ALT_LOW"
+                else:
+                    code = "ALT_HIGH_SLOW" if tel.ias < dw - 5 else "ALT_HIGH"
+                E(CoachEvent(code, "nudge", {"off": round(abs(dv)), "tgt": self.pattern_alt}))
+                if code in ("ALT_LOW_FAST", "ALT_HIGH_SLOW"):
+                    # the nose fixes height and speed together: no
+                    # contradicting "more / less power" speed call as well
+                    clash = "SPEED_FAST_LEVEL" if code == "ALT_LOW_FAST" else "SPEED_SLOW_LEVEL"
+                    ev[:] = [x for x in ev if x.code != clash]
             # Mid-downwind: flap + power (halfway along the long leg, not at base-turn end)
             abeam_ready = g.along < self._abeam_along_mid and tel.flaps_deg < 5
             if abeam_ready and not self._abeam_prev:
@@ -215,11 +272,18 @@ class Monitors:
             E(CoachEvent("BANK_STEEP", sev, {"bank": round(abs(tel.bank))}, cooldown_s=12))
 
         if phase == "FINAL":
-            if abs(g.cross) > 60 and tel.alt_agl > 100:
+            if abs(g.cross) > self.centreline_nudge_m and tel.alt_agl > 100:
                 E(CoachEvent("CENTERLINE_DRIFT", "nudge",
                              {"side": "left" if g.cross > 0 else "right"}, cooldown_s=15))
-            if tel.vs < -900:
-                E(CoachEvent("SINK_HIGH", "correction", {"vs": round(-tel.vs)}, cooldown_s=15))
+            if tel.vs < -900 and not settling:
+                # sinking fast: with the speed up as well the nose is too low --
+                # ease it up, don't add power (that only adds speed); otherwise
+                # it's a power problem: a little more throttle
+                fb = final_speed_band(self._lesson, self._v, tel.alt_agl)
+                aim = fb[2] if fb else (self.tgt_speed.get("FINAL") or 65)
+                code = "SINK_HIGH_FAST" if tel.ias > aim + 5 else "SINK_HIGH"
+                E(CoachEvent(code, "correction", {"vs": round(-tel.vs), "ias": round(tel.ias)},
+                             cooldown_s=15))
 
         # control smoothness (raw HID): large rapid stick reversals
         if ctrl.available and not tel.on_ground and phase in ("FINAL", "FLARE_TOUCHDOWN"):

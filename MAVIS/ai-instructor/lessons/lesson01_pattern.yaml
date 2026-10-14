@@ -1,13 +1,13 @@
-name: "Lesson 1: Your First Circuit"
+name: "Your First Circuit"
 airport:
   icao: WSAP
   name: Paya Lebar Air Base
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }   # approx RWY 02 threshold - verify in sim
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:
   side: left               # left traffic RWY 02 -> circuit west of runway
   altitude_msl_ft: 1100    # 65 ft elev + ~1000 AGL, rounded
@@ -15,7 +15,7 @@ pattern:
   crosswind_turn_agl_ft: 600
   # Crosswind-turn cue: past runway end (m along from threshold). Default = length_m + 120.
   # crosswind_turn_min_along_m: 3900
-  centerline_offset_m: 18   # calibrate: if centred in sim reads right on map, increase; left, decrease
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   # Distance past abeam threshold (along runway axis) before the base turn.
   # 1100 m, ~100 m past mock geometry; grey planned circuit + MSFS use base_turn_past_abeam_m.
   # Mock autopilot + voice cues in mock mode use mock_base_turn_past_abeam_m (unchanged).
@@ -26,6 +26,14 @@ pattern:
   # downwind_turn_along_margin_m: 250
   # turn_cue_min_gap_s: 14
 total_circuits: 1          # one take-off, one full-stop landing, no touch-and-go
+
+# Climb legs flown to a speed band, not one number: anywhere in here is fine
+# (scored, called and nudged against the band).
+climb_speed_band_kt: [70, 90]
+say:
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
+    pilot: "Airborne. Climb at 70 to 90 knots, wings level."
 phases:
   # ordered; transition logic lives in core/phase_detector.py (parameterized by this file)
   - BRIEFING

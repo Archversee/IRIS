@@ -20,10 +20,21 @@ VERBATIM = frozenset({
     "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
-    "FAM_TURN_REMIND", "FAM_FIELD_HINT", "FAM_DEBRIEF",
+    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
+    "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+    "SINK_HIGH_FAST",   # the fix is the nose, not power: never reworded into "add power"
+    "ALT_LOW_FAST", "ALT_HIGH_SLOW", "FAM_FAST_DIVE",   # same: nose, not power
+    "SPEED_FAST_LEVEL", "SPEED_SLOW_LEVEL",             # level flight: power, not nose
+    "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
+    "FAM_DEMO_START", "FAM_DEMO_END", "FAM_STEP_CUE", "FAM_DEMO_SKIPPED",
     "SOP_RULE",           # quotes the SOP's own numbers: never let the LLM rephrase them
 })
 
+
+
+# "now come back" calls (core.familiarization.PART_CUES): may wait a little
+# behind a line already being spoken
+_PART_CUES = frozenset({"FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:
@@ -50,6 +61,7 @@ class Coach:
     def __init__(self, cfg: dict, aircraft: dict, speak_fn, transcript):
         self.url = cfg["ollama_url"].rstrip("/")
         self.model = cfg["model"]
+        self._think: bool | None = False   # see _ollama
         self.timeout = cfg.get("timeout_s", 1.5)
         self.min_gap = cfg.get("min_speak_interval_s", 8)
         self.aircraft = aircraft
@@ -95,9 +107,9 @@ class Coach:
         tel = self.live_tel() if self.live_tel else None
         if not tel:
             return False
-        if ev.code in ("SPEED_FAST", "SPEED_SLOW") and ev.data.get("tgt"):
+        if ev.code.startswith(("SPEED_FAST", "SPEED_SLOW")) and ev.data.get("tgt"):
             return abs(tel.get("ias", 0) - ev.data["tgt"]) <= 6
-        if ev.code in ("ALT_HIGH", "ALT_LOW") and ev.data.get("tgt"):
+        if ev.code.startswith(("ALT_HIGH", "ALT_LOW")) and ev.data.get("tgt"):
             return abs(tel.get("alt_msl", 0) - ev.data["tgt"]) <= 60
         if ev.code == "SOP_RULE" and ev.data.get("metric") and tel.get(ev.data["metric"]) is not None:
             v = float(tel[ev.data["metric"]])      # back inside the rule's range already
@@ -112,9 +124,9 @@ class Coach:
         tel = self.live_tel() if self.live_tel else None
         if not tel:
             return
-        if ev.code in ("SPEED_FAST", "SPEED_SLOW") and tel.get("ias") is not None:
+        if ev.code.startswith(("SPEED_FAST", "SPEED_SLOW")) and tel.get("ias") is not None:
             ev.data["ias"] = round(tel["ias"])
-        elif ev.code in ("ALT_HIGH", "ALT_LOW") and ev.data.get("tgt"):
+        elif ev.code.startswith(("ALT_HIGH", "ALT_LOW")) and ev.data.get("tgt"):
             ev.data["off"] = round(abs(tel.get("alt_msl", 0) - ev.data["tgt"]))
 
     def resume(self):
@@ -136,6 +148,7 @@ class Coach:
                 # turn cues and lesson teaching points follow a phase call that
                 # takes several seconds to speak, so they get a longer shelf life
                 limit = (25.0 if ev.code.startswith("TURN_") or ev.code == "LESSON_NOTE"
+                         else 12.0 if ev.code in _PART_CUES
                          else max_age.get(ev.severity, 3.0))
                 if age > limit:
                     continue
@@ -225,13 +238,20 @@ class Coach:
                "e.g. 10.0 = 1000 HRS), never invent a clock time.")
         # (the trainee's question is already logged to the transcript by the caller)
         out = None
+        why = ""
         try:
-            out = await self._ollama(sys, question, timeout=12.0)
+            out = await self._ollama(sys, question, timeout=40.0)
             out = (out or "").strip()
+            if not out:
+                why = f"The model {self.model} returned an empty reply."
         except Exception as e:
-            log.warning("Q&A LLM failed: %s", e)
+            why = self._llm_failure(e)
+            log.warning("Q&A LLM failed: %s -- %s", type(e).__name__, why)
         if not out:
             out = self._offline_answer(question)
+        if not out and why:
+            # say what is actually wrong instead of pretending it is a teaching call
+            out = why
         if not out:
             out = ("I'll cover that on the ground. For now, "
                    "eyes up and keep flying, you're doing great.")
@@ -264,18 +284,60 @@ class Coach:
             log.debug("extract_time failed: %s", e)
             return None
 
+    def _llm_failure(self, e: Exception) -> str:
+        """A one-sentence reason a question got no answer from the model."""
+        if isinstance(e, httpx.HTTPStatusError):
+            code = e.response.status_code
+            if code == 404:
+                return (f"Ollama doesn't have the model {self.model}. "
+                        f"On the Ollama PC run: ollama pull {self.model}")
+            return f"Ollama at {self.url} returned an error ({code})."
+        if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)):
+            return (f"I can't reach the language model at {self.url}. "
+                    "Check Ollama is running and the address in config.yaml is right.")
+        if isinstance(e, httpx.TimeoutException):
+            return f"The language model at {self.url} took too long to answer."
+        return f"The language model failed ({type(e).__name__})."
+
     async def _ollama(self, system: str, user: str, timeout: float) -> str:
+        # Reasoning models (Qwen3.x, Gemma 4, DeepSeek-R1...) spend the token budget
+        # on a hidden "thinking" channel and leave message.content empty, so thinking
+        # is switched off (builds too old to know the flag get it left out).
+        body = {
+            "model": self.model, "stream": False,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+            "keep_alive": -1,   # pin the model in VRAM, no mid-lesson reloads
+            "options": {"temperature": 0.7, "num_predict": 200},
+        }
+        if self._think is not None:
+            body["think"] = self._think
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as cli:
-            r = await cli.post(f"{self.url}/api/chat", json={
-                "model": self.model, "stream": False,
-                "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": user}],
-                "keep_alive": -1,   # pin the model in VRAM, no mid-lesson reloads
-                "options": {"temperature": 0.7, "num_predict": 80},
-            })
+            r = await cli.post(f"{self.url}/api/chat", json=body)
+            if r.status_code == 400 and "think" in body and "think" in r.text.lower():
+                self._think = None
+                body.pop("think")
+                r = await cli.post(f"{self.url}/api/chat", json=body)
             r.raise_for_status()
             self.llm_ok = True
-            return r.json()["message"]["content"]
+            j = r.json()
+            msg = j.get("message") or {}
+            # Ollama's own timings say where the time went: load_duration is the model
+            # (re)loading into memory, eval_duration is generating, prompt_eval the input
+            ns = 1e9
+            gen_s = (j.get("eval_duration") or 0) / ns
+            log.info("LLM %s: total %.1fs (load %.1fs, prompt %s tok %.1fs, generate %s tok %.1fs = %.0f tok/s, "
+                     "thinking %s chars)",
+                     self.model, (j.get("total_duration") or 0) / ns, (j.get("load_duration") or 0) / ns,
+                     j.get("prompt_eval_count"), (j.get("prompt_eval_duration") or 0) / ns,
+                     j.get("eval_count"), gen_s, (j.get("eval_count") or 0) / gen_s if gen_s else 0,
+                     len(msg.get("thinking") or ""))
+            out = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
+            if not out:
+                log.warning("Ollama returned no answer text (model %s, thinking field %s chars, "
+                            "done_reason %s)", self.model, len(msg.get("thinking") or ""),
+                            r.json().get("done_reason"))
+            return out
 
     async def check_llm(self):
         try:

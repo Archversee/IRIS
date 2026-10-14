@@ -26,7 +26,8 @@ function TLTooltip({ active, payload }) {
   );
 }
 
-// Chart + transport controls + flight-phase (takeoff/landing) event buttons.
+// Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
+// or a takeoff/landing guess for sessions without any).
 // `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
 // clickable phases/event buttons, no playback transport.
 export default function SessionTimeline({
@@ -81,10 +82,13 @@ export default function SessionTimeline({
                 else if (x2 === chartMaxT) x1 = Math.max(chartMinT, x2 - minSpan);
               }
             }
+            // display only: the shaded event boxes let clicks and drags through
+            // to the chart underneath, so scrubbing works across them (the
+            // event buttons below the chart are what you click to open one)
             return (
-              <ReferenceArea key={p.key} x1={x1} x2={x2}
+              <ReferenceArea key={p.key} x1={x1} x2={x2} className="tl-event-area"
                 fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
-                onClick={readOnly ? undefined : () => seekTo(p.start)} style={{ cursor: readOnly ? "default" : "pointer" }}
+                style={{ pointerEvents: "none" }}
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
@@ -109,10 +113,18 @@ export default function SessionTimeline({
           <div className="phase-buttons-label">Events:</div>
           <div className="phase-buttons-row">
             {flightPhases.map((p) => {
-              const leftPct = chartMaxT > chartMinT ? ((p.start - chartMinT) / (chartMaxT - chartMinT)) * 100 : 0;
+              const span = chartMaxT - chartMinT;
+              const leftPct = span > 0 ? ((p.start - chartMinT) / span) * 100 : 0;
+              // MAVIS events tile the flight: draw each across its own start..end
+              const widthPct = p.event && span > 0 ? Math.max(0.5, ((p.end - p.start) / span) * 100) : null;
               return (
-                <button key={p.key} className="phase-btn" style={{ left: `${leftPct}%`, borderColor: p.color, color: p.color }}
-                  onClick={() => openPhase(p)} title={`${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`}>
+                <button key={p.key} className={"phase-btn" + (p.event ? " ev" : "")}
+                  style={{ left: `${leftPct}%`, ...(widthPct != null ? { width: `calc(${widthPct}% - 2px)` } : {}),
+                           borderColor: p.color, color: p.color }}
+                  onClick={() => openPhase(p)}
+                  title={`${p.label}${p.curriculum ? ` (${p.curriculum})` : ""}: ${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`
+                    + (p.grade ? ` · grade ${p.grade}` : "")
+                    + (p.outcome && p.outcome !== "completed" ? ` · ${p.outcome}` : "")}>
                   {p.label}
                 </button>
               );

@@ -16,6 +16,8 @@ import math
 import time
 from dataclasses import dataclass
 
+from .monitors import final_speed_band
+
 M_PER_NM = 1852.0
 
 DEFAULTS = {
@@ -91,10 +93,22 @@ class Scorer:
         fin = float(p.get("base_turn_past_abeam_m")
                     or cfg.get("final_length_m", DEFAULTS["final_length_m"]))
         self.poly = [(0.0, 0.0), (upA, 0.0), (upA, off), (-fin, off), (-fin, 0.0), (0.0, 0.0)]
+        # Take-off / Landing lessons fly one piece of the circuit: the ideal
+        # track is the runway centreline (extended out along the final approach)
+        self.segment = lesson.get("segment")
+        if self.segment == "takeoff":
+            self.poly = [(0.0, 0.0), (upA, 0.0)]
+        elif self.segment == "landing":
+            final_m = float((lesson.get("airborne_start") or {}).get("final_m", 3000.0))
+            self.poly = [(-final_m, 0.0), (rw["length_m"], 0.0)]
         self.pattern_alt = p["altitude_msl_ft"]
         v = aircraft["v_speeds"]
+        self._lesson, self._v = lesson, v
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"], "FINAL": v["final"]}
+        b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band
+        self.speed_band = ({"CLIMB_OUT": (float(b[0]), float(b[1])),
+                            "CROSSWIND": (float(b[0]), float(b[1]))} if b else {})
         self.reset()
 
     def reset(self) -> None:
@@ -102,12 +116,15 @@ class Scorer:
         self._prev_ctrl = None
         self._landings: list[dict] = []
         self.retries = 0
+        self.reached = False         # got to DEBRIEF: how a take-off lesson is "complete"
 
     def note_retry(self) -> None:
         self.retries += 1
 
     # ---- per-tick sampling (tel/ctrl are plain dicts; geom is {along,cross} or None) ----
     def sample(self, tel: dict, geom: dict | None, ctrl: dict | None, phase: str) -> None:
+        if phase == "DEBRIEF":
+            self.reached = True
         if tel.get("on_ground", True):
             return                                   # score airborne flying only
         if geom is not None:
@@ -116,7 +133,14 @@ class Scorer:
             if aerr is not None:
                 self._add("altitude", aerr)
         spd = self.tgt_speed.get(phase)
-        if spd:
+        band = self.speed_band.get(phase)
+        if phase == "FINAL" and band is None:
+            fb = final_speed_band(self._lesson, self._v, tel.get("alt_agl", 0.0))
+            band = fb[:2] if fb else None
+        if band:
+            ias = tel.get("ias", 0.0)
+            self._add("speed", max(0.0, band[0] - ias, ias - band[1]))
+        elif spd:
             self._add("speed", abs(tel.get("ias", 0.0) - spd))
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)
         pitch = ctrl["pitch"] if ctrl and ctrl.get("available") else -tel.get("elevator", 0.0)
@@ -127,10 +151,14 @@ class Scorer:
     def on_landing(self, tel: dict, geom: dict | None) -> None:
         """Capture a touchdown (on_ground transition). The last one is graded
         (L1 has a single full-stop landing)."""
+        ias = tel.get("ias", 0.0)
+        fb = final_speed_band(self._lesson, self._v, 0.0)        # the touchdown end of the band
+        err = (max(0.0, fb[0] - ias, ias - fb[1]) if fb
+               else abs(ias - self.tgt_speed.get("FINAL", 65)))
         self._landings.append({
             "sink": abs(tel.get("vs", 0.0)),
             "center": abs(geom["cross"]) if geom else 0.0,
-            "speed_err": abs(tel.get("ias", 0.0) - self.tgt_speed.get("FINAL", 65)),
+            "speed_err": err,
         })
 
     def _add(self, key: str, err: float) -> None:
@@ -185,10 +213,12 @@ class Scorer:
             "landing": round(landing_raw) if landing_raw is not None else None,
             "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"])),
         }
-        incomplete = landing_raw is None
+        # a metric this lesson doesn't weigh (weight 0) isn't on its card --
+        # the take-off lesson has no landing, no circuit height
+        scores = {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
+        incomplete = (not self.reached) if self.segment == "takeoff" else landing_raw is None
         wsum = sum(self.w.values()) or 1
-        total = sum((scores[k] if scores[k] is not None else 0) * self.w[k]
-                    for k in self.w) / wsum
+        total = sum((scores.get(k) or 0) * self.w[k] for k in self.w) / wsum
         capped = False
         # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.
         if score_caps is None:
@@ -199,4 +229,5 @@ class Scorer:
                 total, capped = cap, True
         total = round(total)
         return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, self._grade(total, scores, incomplete), capped, practice)
+                         self.retries, total, self._grade(total, scores, incomplete), capped, practice,
+                         incomplete=incomplete)

@@ -94,9 +94,11 @@ export default function MapCanvas({ state }) {
 
     ctx.clearRect(0, 0, cv.width, cv.height);
 
-    if (L.type === "familiarization" && L.field) {
-      // Familiarization: no circuit -- the dashed ring is "fly back to here",
-      // the lesson ends once the aircraft is inside it.
+    if (L.type === "familiarization") {
+      // Airborne lessons: no circuit. Only Flight Familiarization has a
+      // field to find: its dashed ring is "fly back to here", the lesson
+      // ends once the aircraft is inside it. The others draw no target.
+      if (L.field) {
       const [fa, fc] = en(L.field.lat, L.field.lon);
       const [fx, fy] = px(fa, fc);
       ctx.strokeStyle = GOOD + "88";
@@ -104,6 +106,21 @@ export default function MapCanvas({ state }) {
       ctx.setLineDash([7, 7]);
       ctx.beginPath();
       ctx.arc(fx, fy, (L.finish_radius_nm || 2) * 1852 * sc, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      }
+    } else if (L.segment) {
+      // Take-off / Landing: one piece of the circuit -- the climb-out straight
+      // ahead off the runway, or the final approach down the extended centreline
+      const [a0, a1] = L.segment === "landing" ? [-(L.final_m || 2800), 0] : [rw.length_m, upA + 1200];
+      const [x0, y0] = px(a0, 0);
+      const [x1, y1] = px(a1, 0);
+      ctx.strokeStyle = ACC + "88";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
       ctx.stroke();
       ctx.setLineDash([]);
     } else {

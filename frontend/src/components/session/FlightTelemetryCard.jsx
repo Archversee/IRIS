@@ -8,7 +8,8 @@ import { fmt } from "./utils.js";
 // Units (flight_data, see db/schema.sql + backend/app/mavis_bridge.py):
 // aileron/elevator/rudder are SimConnect "Position" (-1..1; + elevator =
 // stick back / nose up, - aileron = left), throttle/flaps are 0..100 %,
-// elevator trim is -100..100 %. Anything a source doesn't log comes through null.
+// elevator/aileron trim are -100..100 % (aileron + = right, as for the controls).
+// (rudder trim is still logged in flight_data.rudder_trim_pct, just not shown.) Anything a source doesn't log comes through null.
 
 const SPEED_MAX = 163; // C172 Vne, same scale MAVIS uses
 const CLIMB_MAX = 1200;
@@ -146,6 +147,7 @@ function Numbers({ cur }) {
         <RO k="Elevator" v={fmt(cur.elevator_position, 2)} />
         <RO k="Rudder" v={fmt(cur.rudder_position, 2)} />
         <RO k="Elev trim" v={`${fmt(cur.elevator_trim_pct)}%`} />
+        <RO k="Aileron trim" v={`${fmt(cur.aileron_trim_pct)}%`} />
         <RO k="Flaps" v={`${fmt(cur.flaps_handle_pct, 0)}%`} />
         <RO k="Gear" v={cur.gear_handle_position ? "DOWN" : "UP"} />
       </div>
@@ -216,6 +218,10 @@ export default function FlightTelemetryCard({ cur: rawCur, altMax }) {
             <CenterBar label="TRIM" value={num(cur.elevator_trim_pct) == null ? null : cur.elevator_trim_pct / 100}
               text={(x) => (Math.abs(x) < 0.05 ? "neutral" : `${x > 0 ? "nose up" : "nose dn"} ${Math.round(Math.abs(x) * 100)}%`)}
               title="Elevator trim wheel. Middle = neutral; up = nose-up trim." />
+            <CenterBar label="AILERON TRIM" horizontal
+              value={num(cur.aileron_trim_pct) == null ? null : cur.aileron_trim_pct / 100}
+              text={(x) => (Math.abs(x) < 0.05 ? "neutral" : `${x < 0 ? "left" : "right"} ${Math.round(Math.abs(x) * 100)}%`)}
+              title="Aileron (roll) trim: takes the sideways push off the stick. Middle = neutral. Reads 0 on aircraft without it." />
           </div>
         </div>
       )}

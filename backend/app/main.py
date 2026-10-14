@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
         await rule_results.ensure_schema()  # SOP rule checks of flights (db/schema_rule_results.sql)
     except Exception as e:  # e.g. sessions table not created yet -- never block startup
         logging.getLogger(__name__).warning("rule results schema not applied: %s", e)
+    await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)
     # Background WS client into MAVIS -- reconnects on its own if MAVIS
     # isn't up yet/goes away, so this never blocks IRIS's own startup or
     # crashes the app when MAVIS is offline. See docs/INTEGRATION_PLAN.md §1b.

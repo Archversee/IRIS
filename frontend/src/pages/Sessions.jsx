@@ -45,6 +45,7 @@ export default function Sessions() {
             <tr>
               <th>Name</th>
               <th>Pilot</th>
+              <th>Curriculum</th>
               <th>Aircraft</th>
               <th>Sim</th>
               <th>Started</th>
@@ -56,6 +57,7 @@ export default function Sessions() {
               <tr key={s.id}>
                 <td>{s.name}</td>
                 <td>{s.pilot_name || "—"}</td>
+                <td>{s.curricula?.length ? s.curricula.join(", ") : "—"}</td>
                 <td>{s.aircraft || "—"}</td>
                 <td>{s.sim_source || "—"}</td>
                 <td>{s.started_at ? new Date(s.started_at).toLocaleString() : "—"}</td>

@@ -113,6 +113,10 @@ export const api = {
   },
 
   summary: (id) => req(`/sessions/${id}/summary`),
+  // start/end of each graded event (to-do step / phase) as logged by MAVIS
+  events: (id) => req(`/sessions/${id}/events`),
+  // the session's flights (which curriculum each came from, or free flight)
+  flights: (id) => req(`/sessions/${id}/flights`),
   // 200000 is the backend's own ceiling (see max_points in data.py).
   // onProgress(loadedBytes, totalBytes) is optional -- lets callers show a
   // real download progress bar for these (often large) payloads.

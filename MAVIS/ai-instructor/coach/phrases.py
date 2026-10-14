@@ -81,11 +81,16 @@ TEMPLATES = {
     "SPEED_SLOW": ["Speed's drifting low at {ias}. Gently lower the nose toward {tgt} knots."],
     "ALT_HIGH": ["We've floated about {off} feet high. Ease it back down, no rush."],
     "ALT_LOW": ["We're sitting a little low. Push the throttle forward a touch and hold it there."],
+    "ALT_LOW_FAST": ["A little low and a bit quick. Ease the nose up, the extra speed brings us back up."],
+    "ALT_HIGH_SLOW": ["A little high and a bit slow. Lower the nose gently, that brings the speed back."],
+    "SPEED_FAST_LEVEL": ["We're a touch quick at {ias}. Pull the power back a little, toward {tgt} knots."],
+    "SPEED_SLOW_LEVEL": ["Speed's drifting low at {ias}. A little more power, toward {tgt} knots."],
     "ABEAM_FLAPS": ["We're halfway along this side. Pull the power back a little, and set the first notch of flaps."],
     "FLAPS_REMINDER": ["How about the {notch} of flaps now, whenever you're comfortable."],
     "BANK_STEEP": ["Let's make that turn a little gentler. Shallow, easy turns work best here."],
     "CENTERLINE_DRIFT": ["Drifting a little {side}. Small correction, then wings level again."],
     "SINK_HIGH": ["Coming down a bit fast. Push the throttle forward a little, and soften the descent."],
+    "SINK_HIGH_FAST": ["Coming down fast and the speed's up. Ease the nose up gently, keep the throttle where it is."],
     "SMOOTH_HANDS": ["Small, soft movements. You have more time than it feels like."],
     "NIGHT_ANNOUNCE": ["You're flying this so well, I want to show you something special. "
                         "I'm going to turn day into night. Same runway, same aeroplane, same you. "
@@ -113,11 +118,23 @@ TEMPLATES = {
     "FAM_LOW": ["Getting low. Add power, raise the nose."],
     "FAM_SLOW": ["Speed's low. Nose down a little, add power."],
     "FAM_FAST": ["Bit fast. Ease the throttle back."],
+    "FAM_FAST_DIVE": ["Bit fast. Ease the nose up a little."],
     "FAM_STEEP": ["Too steep. Ease the turn off."],
     "FAM_TURN_REMIND": ["Ease the stick {dir}, {bank_lo} to {bank_hi} degrees."],
+    "FAM_YAW_REMIND": ["Gently press the {dir} pedal and watch the nose swing {dir}."],
+    "FAM_STALL": ["That's the stall. Nose down, full power, then level off."],
+    "FAM_ROLL_OUT": ["That's enough, now roll the wings level."],
+    "FAM_CENTRE_PEDALS": ["Good, now feet level again."],
+    "FAM_THROTTLE_BACK": ["Good, now bring the throttle back to where it was."],
+    "FAM_LEVEL_OFF": ["Nearly there, ease the nose over and level off."],
     "FAM_FIELD_HINT": ["Paya Lebar: {clock} o'clock, about {dist_nm} miles. Head {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["That's Paya Lebar on the nose. Well found. Runway start after your score."],
+    "FAM_DEBRIEF_DONE": ["That's every step done. Nicely flown. Runway start after your score."],
     "FAM_YOU_HAVE_CONTROL": ["You have control."],
+    "FAM_DEMO_START": ["Watch me first. I have control."],
+    "FAM_DEMO_END": ["Your turn now, same steps."],
+    "FAM_STEP_CUE": ["Now, {title_lc}. {action}."],
+    "FAM_DEMO_SKIPPED": ["Okay, demo skipped. Back to the start. Your turn now, the same steps in order."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
@@ -154,21 +171,38 @@ PILOT_TEMPLATES = {
     "SPEED_SLOW": ["Speed {ias} is low. Lower the nose to {tgt} knots."],
     "ALT_HIGH": ["{off} feet above circuit altitude. Reduce and re-establish."],
     "ALT_LOW": ["Below circuit altitude. Add power and regain it."],
+    "ALT_LOW_FAST": ["Low and fast. Raise the nose, trade the speed for height."],
+    "ALT_HIGH_SLOW": ["High and slow. Lower the nose, regain the speed."],
+    "SPEED_FAST_LEVEL": ["Speed {ias} is high. Reduce power toward {tgt} knots."],
+    "SPEED_SLOW_LEVEL": ["Speed {ias} is low. Add power toward {tgt} knots."],
     "ABEAM_FLAPS": ["Abeam the numbers. Carb heat, power back, flaps as required."],
     "FLAPS_REMINDER": ["Select landing flap when you're ready."],
     "BANK_STEEP": ["Watch the bank. Keep it to a rate-one turn."],
     "CENTERLINE_DRIFT": ["Drifting {side} of the centreline. Correct back."],
     "SINK_HIGH": ["High sink rate. Add power and reduce the descent."],
+    "SINK_HIGH_FAST": ["High sink rate, fast. Raise the nose, hold the power."],
     "SMOOTH_HANDS": ["Smaller, smoother inputs. Anticipate the corrections, don't chase them."],
     "PHASE_ENTER_DEBRIEF": ["That's a full stop. Brakes to a stop. We'll taxi clear and debrief the circuit."],
     "FAM_LOW": ["Low. Power, climb."],
     "FAM_SLOW": ["Airspeed low. Nose down, power."],
     "FAM_FAST": ["Airspeed high. Reduce power."],
+    "FAM_FAST_DIVE": ["Airspeed high. Raise the nose."],
     "FAM_STEEP": ["Bank too steep. Shallow it."],
     "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank_lo} to {bank_hi} degrees."],
+    "FAM_YAW_REMIND": ["Apply {dir} rudder. Note the yaw, then the roll that follows."],
+    "FAM_STALL": ["Stall. Recover: nose down, full power, wings level."],
+    "FAM_ROLL_OUT": ["Roll out, wings level."],
+    "FAM_CENTRE_PEDALS": ["Centralise the rudder."],
+    "FAM_THROTTLE_BACK": ["Power back to cruise."],
+    "FAM_LEVEL_OFF": ["Approaching altitude, level off."],
     "FAM_FIELD_HINT": ["Paya Lebar, {clock} o'clock, {dist_nm} miles. Heading {brg_lo} to {brg_hi}."],
     "FAM_DEBRIEF": ["Field on the nose. Exercise complete. Runway start after the debrief."],
+    "FAM_DEBRIEF_DONE": ["Exercise complete. Runway start after the debrief."],
     "FAM_YOU_HAVE_CONTROL": ["You have control."],
+    "FAM_DEMO_START": ["Demonstration. I have control."],
+    "FAM_DEMO_END": ["Your turn, same sequence."],
+    "FAM_STEP_CUE": ["{title}. {action}."],
+    "FAM_DEMO_SKIPPED": ["Demonstration skipped. Repositioned. Your turn."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],
     "TELEPORT_FAIL": ["Unable to reposition. We'll fly the circuit round and set up for another approach."],
@@ -191,6 +225,11 @@ INDIRECT_TEMPLATES = {
     "SPEED_SLOW": ["Check your attitude and power."],
     "ALT_HIGH": ["Check your pitch and power."],
     "ALT_LOW": ["Check your power."],
+    "ALT_LOW_FAST": ["Check your pitch."],
+    "ALT_HIGH_SLOW": ["Check your pitch."],
+    "SPEED_FAST_LEVEL": ["Check your power."],
+    "SPEED_SLOW_LEVEL": ["Check your power."],
+    "SINK_HIGH_FAST": ["Check your attitude."],
     "CENTERLINE_DRIFT": ["Check your heading."],
     "SINK_HIGH": ["Check your power and attitude."],
     "BANK_STEEP": ["Check your bank."],
@@ -312,16 +351,76 @@ def intro_code(mode: str) -> str:
     return "INTRO_BEGINNER" if normalize_mode(mode) == "visitor" else "INTRO_TRAINING"
 
 
+# Lesson-authored wording for a callout code ({code: {layman, pilot}}), set from
+# the active lesson's `say:` block (set_lesson_lines); wins over TEMPLATES.
+_LESSON_SAY: dict = {}
+
+
+def set_lesson_lines(say: dict | None) -> None:
+    global _LESSON_SAY
+    _LESSON_SAY = dict(say or {})
+
+
+def speakable(text: str) -> str:
+    """Screen text (to-do lines / targets) as MAVIS should say it:
+    "25-35°" -> "25 to 35 degrees", "70-80 kt" -> "70 to 80 knots"."""
+    import re
+    t = re.sub(r"(\d)\s*[-\u2013]\s*(\d)", r"\1 to \2", text)
+    t = re.sub(r"\s*\u00b0", " degrees", t)
+    t = t.replace(" \u00b1", ", within ").replace("\u00b1", "within ")
+    t = re.sub(r"(\d)\s*%\+", r"\1 percent or more", t)
+    t = re.sub(r"(\d)\s*%", r"\1 percent", t)
+    t = re.sub(r"(\d)\+\s*kt\b", r"\1 knots or more", t)
+    t = re.sub(r"(\d)\s*kt\b", r"\1 knots", t)
+    t = re.sub(r"(\d)\s*fpm\b", r"\1 feet per minute", t)
+    t = re.sub(r"(\d)\s*ft\b", r"\1 feet", t)
+    t = re.sub(r"(\d)\s*s\b", r"\1 seconds", t)
+    t = re.sub(r"\s*\(([^)]*)\)", r", \1", t)          # "aim 65 knots (45 to 85)" -> ", 45 to 85"
+    return t.replace("/", " or ")
+
+
+# Readouts that aren't something to aim for, so not read out as a target.
+_NOT_TARGETS = {"", "falling", "rising", "watch it roll", "watch it rise", "watch it settle",
+                "slowly up", "middle", "on the path", "settle on", "stop the sink", "stopped"}
+
+
+def spoken_targets(meters: list[dict] | None) -> str:
+    """The to-do list's targets for a step, as one spoken sentence:
+    "Target: steady 10 seconds, bank under 5 degrees." ("" if none)."""
+    parts = []
+    for m in meters or []:
+        tgt = (m.get("target") or "").strip()
+        if tgt.lower() in _NOT_TARGETS:
+            continue
+        label = m.get("label", "")
+        if label and not any(w[:1].isupper() for w in label.split()[1:]):
+            label = label[:1].lower() + label[1:]     # "Speed" -> "speed", not "Paya Lebar"
+        parts.append(f"{label} {tgt}".strip())
+    return speakable("Target: " + ", ".join(parts) + ".") if parts else ""
+
+
 def render(code: str, data: dict) -> str:
     import random
     d = dict(data)
-    if code == "LESSON_NOTE":
-        # lesson YAML teaching point: {layman, pilot} variants authored per phase
-        txt = d.get(_JARGON) or d.get("layman") or ""
+    own = _LESSON_SAY.get(code)
+    if own:
+        txt = own.get(_JARGON) or own.get("layman") or ""
         try:
             return txt.format(**d)
         except (KeyError, IndexError):
             return txt
+    if code == "LESSON_NOTE":
+        # lesson YAML teaching point: {layman, pilot} variants authored per phase
+        txt = d.get(_JARGON) or d.get("layman") or ""
+        try:
+            txt = txt.format(**d)
+        except (KeyError, IndexError):
+            pass
+        # ...followed by the step's targets from the to-do list, when the
+        # step's instructions are given (not in the up-front demo)
+        if d.get("say_targets"):
+            txt = f"{txt} {d['say_targets']}".strip()
+        return txt
     opts = TEMPLATES.get(code)
     if not opts:
         return ""

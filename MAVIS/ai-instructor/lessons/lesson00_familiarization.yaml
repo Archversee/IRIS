@@ -11,15 +11,15 @@ airport:
   elevation_ft: 65
 runway:
   ident: "02"
-  heading_true: 23.0
-  threshold: { lat: 1.34470, lon: 103.90264 }
-  length_m: 3780
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
 pattern:                    # not flown; kept so shared map/scorer code has its keys
   side: left
   altitude_msl_ft: 1100
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  centerline_offset_m: 18
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   base_turn_past_abeam_m: 1100
   mock_base_turn_past_abeam_m: 1000
 total_circuits: 1
@@ -37,13 +37,14 @@ airborne_start:
   throttle_pct: 70          # cruise-ish power; a hardware throttle overrides it once moved
 
 exercises:
-  straight_level_hold_s: 20 # seconds wings-level, inside the altitude band, to pass
+  straight_level_hold_s: 10 # seconds wings-level, inside the altitude band, to pass
   altitude_band_ft: 200     # "hold height" means within +/- this
   turn_deg: 90              # heading change for each turn
   turn_bank_deg: 20         # spoken as a range: 15-25 degrees
   climb_ft: 500             # spoken as a range: 400-600 feet
+  climb_speed_band_kt: [70, 90]   # climb: any speed in here is fine
   descend_ft: 500
-  step_timeout_s: 120       # a step that isn't completed moves on anyway
+  step_timeout_s: 180       # a step that isn't completed moves on anyway
   hint_every_s: 35          # "Paya Lebar is at your 10 o'clock" while searching
 
 # The lesson ends -- aircraft frozen, scorecard up -- once the trainee has found
@@ -90,13 +91,11 @@ step_notes:
     title: Straight & level
     todo:
       - "Wings level, nose on the horizon"
-    look: [attitude, altitude]
+    look: [attitude]
     layman: >-
-      I'm holding us still. In the middle screen, keep the yellow plane level
-      on the horizon line, and your height between {alt_lo:,} and {alt_hi:,} feet.
+      Straight and level: wings flat, nose on the horizon.
     pilot: >-
-      Straight and level, {alt_lo:,} to {alt_hi:,} feet. Wings level, nose on
-      the horizon, trim.
+      Straight and level, wings level, nose on the horizon.
   TURN_LEFT:
     title: Gentle left turn
     todo:
@@ -104,11 +103,9 @@ step_notes:
       - "Roll level after about 90°"
     look: [attitude, heading]
     layman: >-
-      Gentle left turn. Ease the stick left until the triangle at the top
-      shows {bank_lo} to {bank_hi} degrees. Level out after a quarter circle.
+      Gentle left turn: stick left to {bank_lo} to {bank_hi} degrees, then level out.
     pilot: >-
-      Left turn, {bank_lo} to {bank_hi} degrees of bank, about ninety degrees.
-      Hold altitude.
+      Left turn, {bank_lo} to {bank_hi} degrees, roll out after ninety.
   TURN_RIGHT:
     title: Gentle right turn
     todo:
@@ -117,9 +114,9 @@ step_notes:
     look: [attitude, heading]
     freeze: false
     layman: >-
-      Same again to the right, {bank_lo} to {bank_hi} degrees, then level out.
+      Same to the right, then level out.
     pilot: >-
-      Right turn, {bank_lo} to {bank_hi} degrees, roll out after ninety.
+      Right turn, same bank, roll out after ninety.
   CLIMB:
     title: Climb
     todo:
@@ -127,12 +124,9 @@ step_notes:
       - "Level off at the top"
     look: [airspeed, vsi]
     layman: >-
-      Now climb. Throttle forward, raise the nose gently, and keep the speed
-      tape on the left at {spd_lo} to {spd_hi} knots. Up {climb_lo} to
-      {climb_hi} feet.
+      Climb: throttle forward, nose up gently, {spd_lo} to {spd_hi} knots.
     pilot: >-
-      Climb {climb_lo} to {climb_hi} feet. Full power, Vy, {spd_lo} to
-      {spd_hi} knots.
+      Climb, full power, {spd_lo} to {spd_hi} knots.
   DESCEND:
     title: Descend
     todo:
@@ -141,11 +135,9 @@ step_notes:
     look: [altitude, vsi]
     freeze: false
     layman: >-
-      Now down. Throttle back a little, nose down gently, {descend_lo} to
-      {descend_hi} feet.
+      Descend: throttle back a little, nose down gently.
     pilot: >-
-      Descend {descend_lo} to {descend_hi} feet, level between {alt_lo:,} and
-      {alt_hi:,}.
+      Descend, reduced power, nose down.
   FIND_AIRFIELD:
     title: Find Paya Lebar & point at it
     todo:

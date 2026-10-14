@@ -118,13 +118,32 @@ class ModelIn(BaseModel):
     model: str                                    # an installed Ollama model; "" = back to config.yaml's
 
 
+def _same_server(a: str, b: str) -> bool:
+    """Do two Ollama URLs point at the same server? localhost and 127.0.0.1 are
+    the same machine; the default port is 11434."""
+    from urllib.parse import urlsplit
+
+    def key(u: str):
+        p = urlsplit((u or "").strip() if "://" in (u or "") else f"http://{(u or '').strip()}")
+        host = (p.hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            host = "localhost"
+        return host, p.port or 11434
+    return key(a) == key(b)
+
+
 def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[APIRouter, JobManager, RuleStore]:
     cfg = cfg or {}
     sop_cfg = cfg.get("sop") or {}
     coach_cfg = cfg.get("coach") or {}
     store = RuleStore((cfg.get("database") or {}).get("url"))
     think = sop_cfg.get("think", False)
-    parser = OllamaParser(sop_cfg.get("ollama_url") or coach_cfg.get("ollama_url", "http://localhost:11434"),
+    # Like the coach, the SOP LLM can live on another device: sop.ollama_url
+    # (empty = the coach's Ollama). Different address = its own GPU.
+    coach_url = coach_cfg.get("ollama_url", "http://localhost:11434")
+    sop_url = sop_cfg.get("ollama_url") or coach_url
+    shares_gpu = _same_server(sop_url, coach_url)
+    parser = OllamaParser(sop_url,
                           sop_cfg.get("model") or coach_cfg.get("model", "qwen2.5:14b-instruct"),
                           timeout_s=float(sop_cfg.get("llm_timeout_s", 300)),
                           num_ctx=int(sop_cfg.get("num_ctx", 8192)),
@@ -166,7 +185,10 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
                       handbook_num_ctx=int(sop_cfg.get("handbook_num_ctx", HANDBOOK_NUM_CTX)),
                       handbook_chunk_chars=int(sop_cfg.get("handbook_chunk_chars", HANDBOOK_CHUNK_CHARS)),
                       handbook_overlap_chars=int(sop_cfg.get("handbook_overlap_chars", HANDBOOK_OVERLAP_CHARS)),
-                      poh_num_ctx=int(sop_cfg.get("poh_num_ctx", POH_NUM_CTX)), coach_model=coach_model)
+                      poh_num_ctx=int(sop_cfg.get("poh_num_ctx", POH_NUM_CTX)), coach_model=coach_model,
+                      shares_gpu=shares_gpu)
+    log.info("SOP LLM: %s at %s (%s)", parser.model, parser.url,
+             "shares the coach's GPU" if shares_gpu else "separate device from the coach")
     r = APIRouter(prefix="/sop", tags=["sop"])
 
     async def db(coro):
@@ -190,6 +212,7 @@ def build_sop_router(state: dict, cfg: dict | None, app_root: Path) -> tuple[API
             None, extract.ocr_check, tess, sop_cfg.get("ocr_lang", "eng"))
         return {"db": db_ok, "db_detail": db_detail, "llm": llm_ok, "model": parser.model, "models": names or [],
                 "configured_model": configured_model, "coach_model": coach_model,
+                "llm_url": parser.url, "llm_separate_device": not shares_gpu,
                 "ocr": ocr_ok, "ocr_detail": ocr_detail,
                 "busy": jobs.busy, "flying": is_flying(), "max_pdf_mb": jobs.max_pdf_mb}
 
