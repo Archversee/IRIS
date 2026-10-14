@@ -16,6 +16,11 @@ written for them (take-off roll, climb-out, final, flare, rollout) still line up
   FLARE_TOUCHDOWN within 30 ft of the ground, descending
   ROLLOUT         on the ground after landing, slowing
 A touch-and-go goes ROLLOUT -> CLIMB_OUT again; a go-around goes FINAL -> AIRBORNE.
+
+  STALL           an interruption, not a stage: while climbing out, flying or on final, the
+                  aircraft stalls (same test as the Slow Flight lesson: at/below the stall
+                  speed, or nose well up and sinking). The phase it interrupted resumes when
+                  the aircraft has been out of the stall for a couple of seconds.
 """
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ LABELS = {
     "FINAL": "Final approach",
     "FLARE_TOUCHDOWN": "Flare & touchdown",
     "ROLLOUT": "Landing rollout",
+    "STALL": "Stall",
 }
 
 LIFTOFF_AGL_FT = 50.0        # same threshold the circuit detector uses
@@ -41,16 +47,23 @@ GO_AROUND_AGL_FT = 1200.0
 FLARE_AGL_FT = 30.0
 HOLD_S = 6.0                 # a condition must hold this long (turbulence / a dip is not a phase)
 STOPPED_KT = 8.0
+STALL_MARGIN_KT = 2.0        # "stalled" = at or below Vs + this (the Slow Flight lesson's rule)
+STALL_ENTER_S = 1.0
+STALL_CLEAR_S = 2.0
+LANDING_FLAPS_DEG = 15.0     # flaps out beyond this: use the lower, landing-configuration stall speed
 
 
 class FreeFlightTracker:
-    def __init__(self):
+    def __init__(self, vs1: float = 48.0, vs0: float = 40.0):
+        """vs1 / vs0: the aircraft's stall speed, flaps up / landing configuration (kt)."""
+        self.vs1, self.vs0 = float(vs1), float(vs0)
         self.reset()
 
     def reset(self) -> None:
         self.phase = "PRE_TAKEOFF"
         self._since: dict[str, float | None] = {}
         self._rollout_min = 1e9     # slowest speed seen since touchdown
+        self._before_stall = "AIRBORNE"
 
     def _held(self, key: str, cond: bool, t: float, need: float = HOLD_S) -> bool:
         """True once `cond` has been true continuously for `need` seconds."""
@@ -66,9 +79,27 @@ class FreeFlightTracker:
         self._since.clear()
         return phase
 
+    def _stalled(self, tel: Telemetry) -> bool:
+        """Airborne (above the flare) and stalled: at/below the stall speed for the current
+        flap setting, or nose more than 8 deg up and sinking anyway."""
+        if tel.on_ground or tel.alt_agl <= FLARE_AGL_FT:
+            return False
+        vs_kt = self.vs0 if tel.flaps_deg > LANDING_FLAPS_DEG else self.vs1
+        return tel.ias <= vs_kt + STALL_MARGIN_KT or (tel.pitch > 8 and tel.vs < -200)
+
     def tick(self, tel: Telemetry) -> str:
         p, t = self.phase, tel.t
         agl, ias, vs = tel.alt_agl, tel.ias, tel.vs
+        if p == "STALL":
+            if tel.on_ground:                                    # hit the ground mid-stall:
+                p = self.phase = self._before_stall              # carry on from where it began
+            elif self._held("recover", not self._stalled(tel), t, STALL_CLEAR_S):
+                return self._go(self._before_stall)              # out of the stall: resume that phase
+            else:
+                return p
+        elif p in ("CLIMB_OUT", "AIRBORNE", "FINAL") and self._held("stall", self._stalled(tel), t, STALL_ENTER_S):
+            self._before_stall = p
+            return self._go("STALL")
         if tel.on_ground:
             if p in ("CLIMB_OUT", "AIRBORNE", "FINAL"):
                 return self._go("FLARE_TOUCHDOWN")               # wheels down: always logs a touchdown,

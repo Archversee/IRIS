@@ -88,13 +88,20 @@ class EventLog:
         if cur is not None and cur["phase"] == phase and cur["circuit"] == circuit:
             return False
         changed = False
+        resumed = None          # the event a stall interrupted, when this is its continuation
         if cur is not None:
+            if cur["kind"] == "stall" and len(self._events) >= 2:
+                before = self._events[-2]
+                if before["phase"] == phase and before["circuit"] == circuit and before["flight"] == cur["flight"]:
+                    resumed = before
             self._close(t, "skipped" if cur["phase"] in skipped else "completed")
             changed = True
         if phase not in NOT_EVENTS:
             flight = self._flight["flight"] if self._flight else 1
-            attempt = 1 + sum(1 for e in self._events if e["flight"] == flight
-                              and e["phase"] == phase and e["circuit"] == circuit)
+            # picking up again after a stall is the same attempt, not a retry
+            attempt = resumed["attempt"] if resumed else 1 + sum(
+                1 for e in self._events
+                if e["flight"] == flight and e["phase"] == phase and e["circuit"] == circuit)
             self._open = {
                 "seq": len(self._events),
                 "flight": flight, "event_id": phase,

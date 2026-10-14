@@ -24,6 +24,7 @@ export const EVENT_COLORS = ["#38bdf8", "#a78bfa", "#14b8a6", "#f5a623", "#fb718
 export function eventColor(e, i) {
   if (e.kind === "demo") return "#475569";   // MAVIS flying the demonstration: not graded
   if (e.grade && GRADE_COLORS[e.grade]) return GRADE_COLORS[e.grade];
+  if (e.kind === "stall") return "#ef4444";   // a stall interrupts the flight: always stands out
   if (e.outcome === "skipped") return "#ef4444";
   if (e.outcome === "retried" || e.outcome === "abandoned") return "#64748b";
   return EVENT_COLORS[i % EVENT_COLORS.length];

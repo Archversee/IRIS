@@ -219,7 +219,8 @@ async def amain(cfg):
 
     # Free Flight has no set track, so its phases come from the aircraft's own state
     # (core/free_flight.py), not from the circuit detector's runway geometry
-    free_tracker = FreeFlightTracker()
+    _vspd = aircraft.get("v_speeds") or {}
+    free_tracker = FreeFlightTracker(vs1=_vspd.get("vs1", 48), vs0=_vspd.get("vs0", 40))
 
     def _flight_phase() -> str:
         """The phase to show and log: the circuit's, or the free-flight tracker's."""
@@ -1731,7 +1732,8 @@ async def amain(cfg):
                     if session.get("free_flight"):
                         free_tracker.tick(tel)
                     changed = event_log.observe(_flight_phase(), tel.t, engine.circuit,
-                                                getattr(engine, "skipped", ()))
+                                                getattr(engine, "skipped", ()),
+                                                kind="stall" if _flight_phase() == "STALL" else None)
                     if engine.phase == "DEBRIEF" and not scored["done"]:
                         event_log.end_flight(tel.t, "completed")
                         changed = True
