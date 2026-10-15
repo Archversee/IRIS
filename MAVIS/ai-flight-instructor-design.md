@@ -47,7 +47,7 @@ cd C:\Users\ares\Desktop\FION\ai-instructor
 python main.py              # mock mode: self-flying demo aircraft, no sim needed
 python main.py --sim msfs   # real sim (sim.host in config.yaml = sim PC's LAN IP)
 ```
-Open `http://<laptop-ip>:6945` on the tablet. `?demo=1` adds presenter buttons (skip phase / night / restart). Full setup details (SimConnect.xml, firewall, packages) are in `ai-instructor/README.md`.
+Open `http://<laptop-ip>:6945` on the tablet. `?demo=1` adds presenter buttons (skip phase / night / restart). Full setup details (SimConnect.xml, firewall, packages) are in the repo-root `README.md`, §4 MAVIS.
 
 **Mock mode matters:** it's a kinematic C172 that flies the whole lesson, obeys MAVIS's callouts (`comply()`), makes one deliberate mistake (height overshoot) and corrects it after her nudge, rotates exactly at the called 55 kt, and full-stops after the landing. Nearly everything was developed and demo-rehearsed against it. There is also an accelerated headless test pattern (tick the mock with fake dt) used throughout development — keep using it.
 
