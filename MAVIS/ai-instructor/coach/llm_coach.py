@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 VERBATIM = frozenset({
     "BRIEFING", "BRIEFING_1", "BRIEFING_2", "NIGHT_ANNOUNCE", "NIGHT_AFTER", "LESSON_NOTE",
     "ROTATE_NOW", "ROTATE_LATE",
-    "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
+    "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL", "ROLL_OUT_LEG",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
@@ -32,9 +32,27 @@ VERBATIM = frozenset({
 
 
 
+# Speaking order, highest first: safety > timing-critical calls (worthless if
+# late: turn / roll-out / rotate / level-off) > corrections > nudges > info.
+# A timing-critical or safety line cuts off a less important one mid-sentence.
+RANK_URGENT, RANK_SAFETY = 3, 4
+_URGENT = frozenset({"TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
+                     "ROLL_OUT_LEG", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
+                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
+SAY_RANK = 2   # lines said directly (answers, chat replies): cut off only by urgent/safety
+
+
+def rank(ev: CoachEvent) -> int:
+    if ev.severity == "safety":
+        return RANK_SAFETY
+    if ev.code in _URGENT:
+        return RANK_URGENT
+    return ev.priority     # info 0, nudge 1, correction 2
+
+
 # "now come back" calls (core.familiarization.PART_CUES): may wait a little
 # behind a line already being spoken
-_PART_CUES = frozenset({"FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
+_PART_CUES = frozenset({"FAM_ROLL_OUT", "ROLL_OUT_LEG", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:
@@ -77,6 +95,8 @@ class Coach:
         self._paused = False
         self._last_turn_spoken = 0.0
         self._working = False   # True while run() is processing a dequeued event
+        self._speaking_rank: int | None = None   # rank of the line being spoken now
+        self.interrupt = None   # fn() that cuts off the line being spoken (rt.stop_speech)
 
     @property
     def busy(self) -> bool:
@@ -88,8 +108,27 @@ class Coach:
         if self._paused:
             return
         self._seq += 1
-        # negative priority: safety first; seq keeps FIFO within severity
-        self.queue.put_nowait((-ev.priority, self._seq, ev))
+        r = rank(ev)
+        # negative rank: most important first; seq keeps FIFO within a rank
+        self.queue.put_nowait((-r, self._seq, ev))
+        if (r >= RANK_URGENT and self.interrupt and self._speaking_rank is not None
+                and r > self._speaking_rank):
+            log.info("%s cuts off a less important line", ev.code)
+            self.interrupt()
+
+    def _outranked(self, r: int) -> bool:
+        """True if something more important than rank r is waiting."""
+        q = self.queue._queue      # heap: [0] is the most important item
+        return bool(q) and -q[0][0] > r
+
+    async def _wait(self, seconds: float, r: int) -> bool:
+        """Sleep, but give up early (False) once a more important line is waiting."""
+        end = time.time() + seconds
+        while time.time() < end:
+            if self._outranked(r):
+                return False
+            await asyncio.sleep(min(0.1, end - time.time()))
+        return True
 
     def pause(self):
         """Stop queuing new callouts and drop anything already waiting."""
@@ -111,6 +150,8 @@ class Coach:
             return abs(tel.get("ias", 0) - ev.data["tgt"]) <= 6
         if ev.code.startswith(("ALT_HIGH", "ALT_LOW")) and ev.data.get("tgt"):
             return abs(tel.get("alt_msl", 0) - ev.data["tgt"]) <= 60
+        if ev.code == "ROLL_OUT_LEG":
+            return abs(tel.get("bank", 0)) < 5     # wings already level
         if ev.code == "SOP_RULE" and ev.data.get("metric") and tel.get(ev.data["metric"]) is not None:
             v = float(tel[ev.data["metric"]])      # back inside the rule's range already
             lo, hi = ev.data.get("lo"), ev.data.get("hi")
@@ -136,11 +177,13 @@ class Coach:
         # corrections/safety jump ahead with a much shorter breathing gap
         gap_for = {"info": self.min_gap, "nudge": self.min_gap,
                    "correction": 2.0, "safety": 0.0}
+        put_back = self.queue.put_nowait
         max_age = {"info": 3.0, "nudge": 3.0, "correction": 3.0, "safety": 30.0}
         while True:
-            _, _, ev = await self.queue.get()
+            neg_r, seq, ev = await self.queue.get()
             if self._paused:
                 continue
+            r = -neg_r
             self._working = True
             try:
                 # drop events whose telemetry is too old, never voice 20-second-old data
@@ -156,27 +199,35 @@ class Coach:
                     continue
                 self._freshen(ev)   # refresh any spoken numbers to live values
                 gap = time.time() - self._last_spoken
-                need = gap_for.get(ev.severity, self.min_gap)
+                need = 0.0 if r >= RANK_URGENT else gap_for.get(ev.severity, self.min_gap)
                 if ev.code.startswith("TURN_"):
                     since_turn = time.time() - self._last_turn_spoken
                     if self._last_turn_spoken and since_turn < 12.0:
                         need = max(need, 12.0 - since_turn)
-                if gap < need:
-                    await asyncio.sleep(need - gap)
+                if gap < need and not await self._wait(need - gap, r):
+                    put_back((neg_r, seq, ev))   # something more important first
+                    continue
                 text = await self.phrase(ev)
+                if self._outranked(r):           # arrived while the LLM was phrasing
+                    put_back((neg_r, seq, ev))
+                    continue
                 if text:
-                    await self.say(text, who="instructor", phase=ev.data.get("phase"))
+                    await self.say(text, who="instructor", phase=ev.data.get("phase"), rank=r)
                 self._last_spoken = time.time()
                 if ev.code.startswith("TURN_"):
                     self._last_turn_spoken = self._last_spoken
             finally:
                 self._working = False
 
-    async def say(self, text: str, who="instructor", phase=None, speak=True):
+    async def say(self, text: str, who="instructor", phase=None, speak=True, rank=SAY_RANK):
         async with self._speech_lock:      # serialize: finish speaking before the next line
             self.transcript.append({"who": who, "text": text, "t": time.time(), "phase": phase})
             if who == "instructor" and speak:   # speak=False: shown in chat only
-                await self.speak_fn(text)       # (e.g. lines voiced by the intro video)
+                self._speaking_rank = rank      # (e.g. lines voiced by the intro video)
+                try:
+                    await self.speak_fn(text)
+                finally:
+                    self._speaking_rank = None
 
     # ---------- phrasing ----------
     async def phrase(self, ev: CoachEvent) -> str:
@@ -347,3 +398,16 @@ class Coach:
         except Exception:
             self.llm_ok = False
         log.info("Ollama %savailable at %s", "" if self.llm_ok else "NOT ", self.url)
+        if self.llm_ok:
+            # loading the model takes seconds; do it now, not on the first callout
+            asyncio.create_task(self._warm_up())
+
+    async def _warm_up(self):
+        try:
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cli:
+                r = await cli.post(f"{self.url}/api/generate",
+                                   json={"model": self.model, "keep_alive": -1})
+                r.raise_for_status()
+            log.info("LLM %s loaded", self.model)
+        except Exception as e:
+            log.warning("LLM warm-up failed: %s", self._llm_failure(e))

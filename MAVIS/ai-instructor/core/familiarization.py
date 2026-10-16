@@ -19,7 +19,7 @@ import time
 from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
-from .monitors import Monitors
+from .monitors import Monitors, roll_out_lead
 from .phase_detector import PhaseDetector, hdg_diff
 from .scoring import DEFAULTS, ScoreCard, _curve
 from coach.phrases import spoken_targets
@@ -492,7 +492,7 @@ class FamiliarizationEngine:
         if p in ("TURN_LEFT", "TURN_RIGHT"):
             want = -1.0 if p == "TURN_LEFT" else 1.0
             far_enough = self._turned * want >= self.turn_deg - 20
-            if far_enough and self._stage == 0:
+            if self._stage == 0 and self._turned * want >= self.turn_deg - roll_out_lead(tel.bank):
                 self._stage = 1
                 if abs(tel.bank) >= 8:                # still banked: time to roll out
                     self._cue("FAM_ROLL_OUT")
@@ -590,7 +590,7 @@ class FamiliarizationEngine:
                 if (tel.bank * want >= bank - 8
                         and abs(tel.alt_msl - e["alt"]) < self.height_band):
                     self._progress += max(0.0, step_turn * want)
-                if self._progress >= deg - 20:
+                if self._progress >= deg - roll_out_lead(tel.bank):
                     self._stage = 1
                     self._cue("FAM_ROLL_OUT")
                 return False

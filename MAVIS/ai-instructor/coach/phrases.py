@@ -73,10 +73,12 @@ TEMPLATES = {
     "ROTATE_LATE": ["Ease the stick back a little now, nice and easy, the aeroplane is ready."],
     # proactive turn cues: told BEFORE the turn so the trainee knows to bank,
     # {dir} is left/right from the pattern side
-    "TURN_CROSSWIND": ["You're at {xwind} feet. Ease into a gentle {dir} turn now."],
+    "TURN_CROSSWIND": ["Ease into a gentle {dir} turn now, we're at {xwind} feet."],
     "TURN_DOWNWIND": ["Now roll {dir} again onto the long leg, and level off around {alt} feet."],
     "TURN_BASE": ["Time to turn {dir} now, onto the short leg before the runway."],
     "TURN_FINAL": ["Turn gently {dir} to line up with the runway ahead of you."],
+    # end of a circuit turn: the new leg's heading is coming up
+    "ROLL_OUT_LEG": ["Okay, you can stop turning now. Roll the wings level."],
     "SPEED_FAST": ["We're a touch quick at {ias}. Ease the nose up a little, toward {tgt} knots."],
     "SPEED_SLOW": ["Speed's drifting low at {ias}. Gently lower the nose toward {tgt} knots."],
     "ALT_HIGH": ["We've floated about {off} feet high. Ease it back down, no rush."],
@@ -167,6 +169,7 @@ PILOT_TEMPLATES = {
     "TURN_DOWNWIND": ["Turn {dir} onto downwind, level at {alt} feet."],
     "TURN_BASE": ["Turn {dir} onto base."],
     "TURN_FINAL": ["Turn {dir} onto final, line up with the centreline."],
+    "ROLL_OUT_LEG": ["Roll out on {leg}, wings level."],
     "SPEED_FAST": ["Speed {ias} is high. Reduce toward {tgt} knots."],
     "SPEED_SLOW": ["Speed {ias} is low. Lower the nose to {tgt} knots."],
     "ALT_HIGH": ["{off} feet above circuit altitude. Reduce and re-establish."],

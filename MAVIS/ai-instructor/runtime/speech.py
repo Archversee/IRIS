@@ -74,7 +74,11 @@ def build_speech(rt):
                     dur = _wav_seconds(wav)
                     log.info("TTS -> tablet %s (%.1fs)", wav.name, dur)
                     rt.state["audio"] = {"url": f"/tts/{wav.name}", "seq": tts_seq["n"]}
-                    await asyncio.sleep(dur + 0.3)
+                    # wait out the line, unless stop_speech() cuts it off (the
+                    # tablet switches to the next published line straight away)
+                    end = rt.loop.time() + dur + 0.3
+                    while rt.loop.time() < end and gen == rt.speak_gen["n"]:
+                        await asyncio.sleep(min(0.1, end - rt.loop.time()))
                 else:
                     log.warning("TTS synth failed. No audio: %s", text[:80])
                     await asyncio.sleep(min(6.0, 0.4 + len(text) / 15))  # console mode

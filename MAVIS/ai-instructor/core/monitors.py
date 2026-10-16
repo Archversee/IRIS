@@ -1,12 +1,19 @@
 """Continuous monitors: judge flight + control inputs within a phase and
 emit CoachEvents. Thresholds are deliberately forgiving - gentle teacher."""
 from __future__ import annotations
+import math
 
 from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
-from .phase_detector import Geometry
+from .phase_detector import Geometry, hdg_diff
 from .reference_profiles import ReferenceProfile
+
+
+def roll_out_lead(bank: float) -> float:
+    """Degrees before the new heading to call "stop turning": half the bank,
+    as a pilot leads a roll-out (20 deg bank -> 10 deg early)."""
+    return max(5.0, min(25.0, abs(bank) / 2))
 
 
 def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
@@ -57,6 +64,13 @@ class Monitors:
             lesson["pattern"].get("crosswind_turn_min_along_m", rw_len + 120.0))
         self.vy = float(aircraft["v_speeds"]["vy"])
         self.turn_word = "left" if lesson["pattern"].get("side", "left") == "left" else "right"
+        # circuit turns: left traffic turns left (heading offset decreasing)
+        self._turn_sign = -1.0 if self.turn_word == "left" else 1.0
+        # heading offset from the runway heading each turn ends on
+        s = self._turn_sign
+        self._leg_hdg_off = {"TURN_CROSSWIND": 90.0 * s, "TURN_DOWNWIND": 180.0,
+                             "TURN_BASE": -90.0 * s, "TURN_FINAL": 0.0}
+        self._roll_out: tuple[str, float] | None = None   # (turn code, time armed)
         pat = lesson["pattern"]
         fin_planned = float(pat.get("base_turn_past_abeam_m")
                             or lesson.get("scoring", {}).get("final_length_m", 500))
@@ -86,6 +100,17 @@ class Monitors:
         self._downwind_cue_along_min = self._up_a - float(
             pat.get("downwind_turn_along_margin_m", 250))
         self._turn_cue_min_gap_s = float(pat.get("turn_cue_min_gap_s", 14.0))
+        # Real sim: downwind / base / final cues fire one turn radius (at the
+        # current speed) plus the time to voice the call ahead of the next leg,
+        # so a trainee who turns on the word rolls out on the leg, not past it.
+        # The mock autopilot turns at its own fixed corners, so mock keeps the
+        # fixed cue points below; so does a lesson that pins a cue point.
+        self._lead_turns = sim_adapter != "mock"
+        self._lead_downwind = self._lead_turns and "downwind_turn_cross_frac" not in pat
+        self._lead_base = self._lead_turns and "base_turn_along_m" not in pat
+        self._cue_bank = float(pat.get("turn_cue_bank_deg", 25))
+        self._cue_lead_s = float(pat.get("turn_cue_lead_s", 3.0))
+        self._ref_turns = False    # an expert reference supplies its own turn points
         self.grace_s = 8.0     # settle-in for speed/alt nudges only (not turn cues)
         # Mid-downwind flap callout: halfway along the long leg (up_a → -fin), not past the threshold.
         self._abeam_along_mid = float(
@@ -98,6 +123,7 @@ class Monitors:
         self.pattern_alt = self._default_pattern_alt
         self._turn_base_along = self._default_turn_base_along
         self._turn_final_cross = self._default_turn_final_cross
+        self._ref_turns = prof.id != "planned"
         if prof.id == "planned":
             return
         for phase, td in (prof.targets or {}).items():
@@ -111,6 +137,14 @@ class Monitors:
             self._turn_base_along = float(tb["along_max"])
         if "cross_max" in tf:
             self._turn_final_cross = float(tf["cross_max"])
+
+    def turn_lead_m(self, ias: float) -> float:
+        """Distance before the next leg to call the turn: the turn radius at
+        this speed and turn_cue_bank_deg, plus turn_cue_lead_s of travel for
+        the voice to say it and the trainee to react."""
+        v = max(ias, 50.0) * 0.5144        # kt -> m/s
+        r = v * v / (9.81 * math.tan(math.radians(self._cue_bank)))
+        return r + v * self._cue_lead_s
 
     def targets_for(self, phase: str) -> dict:
         # show the circuit-height band while climbing to it, not just on downwind
@@ -127,6 +161,7 @@ class Monitors:
         if cond and not was and code not in self._turn_spoken:
             self._turn_last[code] = now
             self._turn_spoken.add(code)
+            self._roll_out = (code, now)
             return CoachEvent(code, "correction", data, cooldown_s=0)
         return None
 
@@ -143,6 +178,7 @@ class Monitors:
         self._turn_spoken.add(need)
         import time as _time
         self._turn_last[need] = _time.time()
+        self._roll_out = (need, _time.time())
         d: dict = {"dir": self.turn_word}
         if need == "TURN_CROSSWIND":
             d["xwind"] = int(self.xwind_agl)
@@ -154,8 +190,30 @@ class Monitors:
         self._turn_spoken.clear()
         self._turn_last.clear()
         self._abeam_prev = False
+        self._roll_out = None
         for code in ("TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL"):
             setattr(self, f"_turn_prev_{code}", False)
+
+    def _roll_out_cue(self, tel: Telemetry, g: Geometry, now: float):
+        """After a turn cue: once the heading nears the new leg's (or has gone
+        past it) while the wings are still banked into the turn, tell the
+        trainee to stop turning."""
+        if not self._roll_out:
+            return None
+        code, t0 = self._roll_out
+        if tel.on_ground or now - t0 > 90:
+            self._roll_out = None              # never turned / landed: drop it
+            return None
+        # degrees still to turn (negative = past the new heading)
+        rem = hdg_diff(self._leg_hdg_off[code], g.hdg_off) * self._turn_sign
+        bank_in = tel.bank * self._turn_sign   # + = banked into the turn
+        if not -45 <= rem <= roll_out_lead(tel.bank):
+            return None
+        self._roll_out = None
+        if bank_in < 8:
+            return None                        # already rolling out on their own
+        leg = code.removeprefix("TURN_").lower()
+        return CoachEvent("ROLL_OUT_LEG", "correction", {"leg": leg}, cooldown_s=0)
 
     def tick(self, phase: str, tel: Telemetry, g: Geometry,
              ctrl: ControlSample) -> list[CoachEvent]:
@@ -186,23 +244,36 @@ class Monitors:
         elif phase == "CROSSWIND":
             last_xw = self._turn_last.get("TURN_CROSSWIND", 0.0)
             gap_ok = (not last_xw) or (now - last_xw) >= self._turn_cue_min_gap_s
+            if self._lead_downwind:
+                # the call says "level off around {alt}": no need to wait for the height
+                near = self._pattern_off_m - g.cross <= self.turn_lead_m(tel.ias)
+            else:
+                near = (tel.alt_msl >= self.pattern_alt - 120
+                        and g.cross >= self._downwind_cue_cross_min)
             downwind_ready = (
                 gap_ok
-                and tel.alt_msl >= self.pattern_alt - 120
-                and g.cross >= self._downwind_cue_cross_min
+                and near
                 and g.along >= self._downwind_cue_along_min
                 and abs(abs(g.hdg_off) - 180) > 20)
             c = self._turn_cue("TURN_DOWNWIND", downwind_ready,
                                {**d, "alt": self.pattern_alt}, now)
             if c: E(c)
         elif phase == "DOWNWIND":
-            c = self._turn_cue("TURN_BASE", g.along < self._turn_base_along, d, now)
+            if self._lead_base and not self._ref_turns:
+                base_at = -self._fin + self.turn_lead_m(tel.ias)
+            else:
+                base_at = self._turn_base_along
+            c = self._turn_cue("TURN_BASE", g.along < base_at, d, now)
             if c: E(c)
         elif phase == "BASE":
+            final_at = (self.turn_lead_m(tel.ias) if self._lead_turns and not self._ref_turns
+                        else self._turn_final_cross)
             c = self._turn_cue("TURN_FINAL",
-                               abs(g.cross) < self._turn_final_cross and abs(g.hdg_off) > 30,
+                               abs(g.cross) < final_at and abs(g.hdg_off) > 30,
                                d, now)
             if c: E(c)
+        c = self._roll_out_cue(tel, g, now)
+        if c: E(c)
 
         if phase == "TAKEOFF_ROLL":
             if tel.ias >= self.vr and not self._rotate_called:

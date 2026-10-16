@@ -204,6 +204,7 @@ async def amain(cfg):
     coach = Coach(cfg["coach"], aircraft, rt.speak, transcript)
     rt.coach = coach
     coach.live_tel = lambda: state.get("tel")   # for stale-callout suppression
+    coach.interrupt = rt.stop_speech            # turn / safety calls cut off lesser lines
     await coach.check_llm()
 
     started = asyncio.Event()     # set by start(), cleared on restart / reconfigure / quit
