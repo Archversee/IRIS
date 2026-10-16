@@ -192,11 +192,9 @@ def build_flight_flow(rt):
             await _fam_demo_all(gen)
             if gen != rt.run_gen["n"]:
                 return
-            if rt.demo_ctl["shown"]:
-                await rt.coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}))
-                if gen != rt.run_gen["n"]:
-                    return
-            # controls stay locked from the demo's start until "You have control"
+            # the demo's closing line ("Your turn now, same steps.") is the
+            # hand-over: no separate "You have control" after it.
+            # Controls stay locked from the demo's start until then.
             await _lock_controls(False)
             if rt.demo_ctl["shown"]:
                 await _set_frozen(False)
