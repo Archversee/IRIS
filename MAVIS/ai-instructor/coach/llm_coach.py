@@ -28,6 +28,7 @@ VERBATIM = frozenset({
     "FAM_FIELD_HINT", "FAM_DEBRIEF", "FAM_DEBRIEF_DONE",
     "FAM_DEMO_START", "FAM_DEMO_END", "FAM_STEP_CUE", "FAM_DEMO_SKIPPED",
     "SOP_RULE",           # quotes the SOP's own numbers: never let the LLM rephrase them
+    "OFF_TRACK",          # left/right must never be flipped by a rewording
 })
 
 

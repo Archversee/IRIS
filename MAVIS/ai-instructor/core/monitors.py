@@ -38,8 +38,10 @@ class Monitors:
         v = aircraft["v_speeds"]
         f = aircraft["flaps"]
         self._lesson, self._v = lesson, v
-        # how far off the centreline on final before a "drifting" nudge (m)
+        # how far off the centreline on final before an "off track" nudge (m)
         self.centreline_nudge_m = float(lesson.get("centreline_nudge_m", 60))
+        # ... and off the other straight legs (climb-out, downwind, base)
+        self.off_track_nudge_m = float(lesson.get("off_track_nudge_m", 150))
         # rotate call speed: the aircraft's Vr, or the lesson's own rotate_kt
         self.vr = float(lesson.get("rotate_kt") or v["vr"])
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
@@ -109,7 +111,8 @@ class Monitors:
         self._lead_downwind = self._lead_turns and "downwind_turn_cross_frac" not in pat
         self._lead_base = self._lead_turns and "base_turn_along_m" not in pat
         self._cue_bank = float(pat.get("turn_cue_bank_deg", 25))
-        self._cue_lead_s = float(pat.get("turn_cue_lead_s", 3.0))
+        # voice to say it (~1-2 s) + the trainee's reaction time to start rolling
+        self._cue_lead_s = float(pat.get("turn_cue_lead_s", 4.0))
         self._ref_turns = False    # an expert reference supplies its own turn points
         self.grace_s = 8.0     # settle-in for speed/alt nudges only (not turn cues)
         # Mid-downwind flap callout: halfway along the long leg (up_a → -fin), not past the threshold.
@@ -145,6 +148,54 @@ class Monitors:
         v = max(ias, 50.0) * 0.5144        # kt -> m/s
         r = v * v / (9.81 * math.tan(math.radians(self._cue_bank)))
         return r + v * self._cue_lead_s
+
+    # straight legs with a fixed line on the planned circuit: a point on it and
+    # the direction it's flown, in (along, cross) metres. The crosswind leg
+    # has none: where it's flown depends on when the climb reaches turn height.
+    def _leg_line(self, phase: str):
+        if phase in ("CLIMB_OUT", "FINAL"):
+            return (0.0, 0.0), (1.0, 0.0)
+        if phase == "DOWNWIND":
+            return (0.0, self._pattern_off_m), (-1.0, 0.0)
+        if phase == "BASE":
+            return (-self._fin, 0.0), (0.0, -1.0)
+        return None
+
+    def _off_track_cue(self, phase: str, tel: Telemetry, g: Geometry, settling: bool, now: float):
+        """Off the planned leg and not heading back to it: say which way to
+        turn. Quiet while turning, settling into a new leg, or with a turn
+        call / roll-out still to come (the turn itself fixes it)."""
+        line = self._leg_line(phase)
+        # mock autopilot flies its own path: only the centreline on final applies there
+        if (not line or (not self._lead_turns and phase != "FINAL") or self._ref_turns
+                or tel.on_ground or settling
+                or self._roll_out or abs(tel.bank) > 10
+                or now - max(self._turn_last.values(), default=0.0) < 15):
+            return None
+        if phase == "CLIMB_OUT" and tel.alt_agl < 200:
+            return None
+        if phase == "FINAL" and tel.alt_agl < 100:
+            return None
+        (a0, c0), (da, dc) = line
+        pa, pc = g.along - a0, g.cross - c0
+        off = pa * dc - pc * da            # signed distance from the line
+        limit = self.centreline_nudge_m if phase == "FINAL" else self.off_track_nudge_m
+        if abs(off) <= limit:
+            return None
+        # aim at a point 600 m further along the line: the way to turn is
+        # toward it (heading offsets: +cross is 90 deg toward the pattern side)
+        along_line = pa * da + pc * dc + 600.0
+        va, vc = a0 + da * along_line - g.along, c0 + dc * along_line - g.cross
+        hdg = lambda a, c: math.degrees(math.atan2(c * self._turn_sign, a))
+        want = hdg(va, vc)
+        err = hdg_diff(want, g.hdg_off)
+        toward = hdg_diff(want, hdg(da, dc))   # sign: which way the line lies
+        if abs(err) < 10 or err * toward < 0:
+            return None                    # already heading back to it (or cutting back in steeply)
+        leg = {"CLIMB_OUT": "runway centreline", "FINAL": "centreline"}.get(phase, phase.lower() + " leg")
+        return CoachEvent("OFF_TRACK", "nudge",
+                          {"dir": "right" if err > 0 else "left", "leg": leg, "off": round(abs(off))},
+                          cooldown_s=15)
 
     def targets_for(self, phase: str) -> dict:
         # show the circuit-height band while climbing to it, not just on downwind
@@ -342,10 +393,10 @@ class Monitors:
             sev = "safety" if abs(tel.bank) > 45 else "nudge"
             E(CoachEvent("BANK_STEEP", sev, {"bank": round(abs(tel.bank))}, cooldown_s=12))
 
+        c = self._off_track_cue(phase, tel, g, settling, now)
+        if c: E(c)
+
         if phase == "FINAL":
-            if abs(g.cross) > self.centreline_nudge_m and tel.alt_agl > 100:
-                E(CoachEvent("CENTERLINE_DRIFT", "nudge",
-                             {"side": "left" if g.cross > 0 else "right"}, cooldown_s=15))
             if tel.vs < -900 and not settling:
                 # sinking fast: with the speed up as well the nose is too low --
                 # ease it up, don't add power (that only adds speed); otherwise

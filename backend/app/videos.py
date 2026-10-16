@@ -1,5 +1,7 @@
 import logging
 import os
+import threading
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
@@ -122,16 +124,44 @@ async def session_files(conn, session_id) -> list[str]:
     return sorted(set(files))
 
 
-def delete_files(paths: list[str]) -> list[str]:
-    """Best-effort delete; returns the files actually removed."""
+# A file can't go straight away when OBS still has it open (deleted mid-recording,
+# or while it remuxes .mkv -> .mp4, which also creates the .mp4 only afterwards):
+# keep trying for this long in the background.
+_RETRY_S = 120
+
+
+def _delete_pass(paths: list[str], last_error: dict) -> list[str]:
     removed = []
     for p in paths:
-        if os.path.splitext(p)[1].lower() not in RECORDING_EXTS or not os.path.isfile(p):
+        if not os.path.isfile(p):
             continue
         try:
             os.remove(p)
             removed.append(p)
+            last_error.pop(p, None)
             log.info("deleted video file %s", p)
         except OSError as e:  # e.g. still open in OBS
+            last_error[p] = e
+    return removed
+
+
+def _retry_worker(paths: list[str], last_error: dict) -> None:
+    deadline = time.time() + _RETRY_S
+    while time.time() < deadline:
+        time.sleep(2)
+        _delete_pass(paths, last_error)
+    for p, e in last_error.items():
+        if os.path.isfile(p):
             log.warning("couldn't delete video file %s: %s", p, e)
+
+
+def delete_files(paths: list[str]) -> list[str]:
+    """Best-effort delete; returns the files removed straight away. Anything
+    still locked or not written yet is retried in the background."""
+    paths = [p for p in paths if os.path.splitext(p)[1].lower() in RECORDING_EXTS]
+    last_error: dict[str, OSError] = {}
+    removed = _delete_pass(paths, last_error)
+    rest = [p for p in paths if p not in removed]
+    if rest:
+        threading.Thread(target=_retry_worker, args=(rest, last_error), daemon=True).start()
     return removed
