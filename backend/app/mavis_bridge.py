@@ -221,7 +221,9 @@ class MavisBridge:
         delay = _RECONNECT_DELAY_S
         while True:
             try:
-                async with websockets.connect(self.ws_url, open_timeout=5) as ws:
+                # no 1 MB message cap: MAVIS's full state (track, transcript,
+                # SOP rules) can outgrow it on a long session
+                async with websockets.connect(self.ws_url, open_timeout=5, max_size=None) as ws:
                     log.info("mavis_bridge: connected to %s", self.ws_url)
                     delay = _RECONNECT_DELAY_S
                     async for raw in ws:
