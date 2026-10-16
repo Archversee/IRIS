@@ -77,6 +77,9 @@ TEMPLATES = {
     "TURN_DOWNWIND": ["Now roll {dir} again onto the long leg, and level off around {alt} feet."],
     "TURN_BASE": ["Time to turn {dir} now, onto the short leg before the runway."],
     "TURN_FINAL": ["Turn gently {dir} to line up with the runway ahead of you."],
+    # sat-nav style heads-up before a turn call
+    "PRE_TURN": ["In {dist} metres, get ready to turn {dir}."],
+    "PRE_TURN_ALT": ["Coming up to {xwind} feet. Get ready to turn {dir}."],
     # end of a circuit turn: the new leg's heading is coming up
     "ROLL_OUT_LEG": ["Okay, you can stop turning now. Roll the wings level."],
     "SPEED_FAST": ["We're a touch quick at {ias}. Ease the nose up a little, toward {tgt} knots."],
@@ -91,7 +94,7 @@ TEMPLATES = {
     "FLAPS_REMINDER": ["How about the {notch} of flaps now, whenever you're comfortable."],
     "BANK_STEEP": ["Let's make that turn a little gentler. Shallow, easy turns work best here."],
     # off the planned leg: {dir} is the way to turn to get back on it
-    "OFF_TRACK": ["We're drifting off the line. Turn a little {dir} to get back on track."],
+    "OFF_TRACK": ["We're drifting off the line. Turn {dir} about {deg} degrees to get back on track."],
     "SINK_HIGH": ["Coming down a bit fast. Push the throttle forward a little, and soften the descent."],
     "SINK_HIGH_FAST": ["Coming down fast and the speed's up. Ease the nose up gently, keep the throttle where it is."],
     "SMOOTH_HANDS": ["Small, soft movements. You have more time than it feels like."],
@@ -171,6 +174,8 @@ PILOT_TEMPLATES = {
     "TURN_BASE": ["Turn {dir} onto base."],
     "TURN_FINAL": ["Turn {dir} onto final, line up with the centreline."],
     "ROLL_OUT_LEG": ["Roll out on {leg}, wings level."],
+    "PRE_TURN": ["In {dist} metres, {dir} turn onto {leg}."],
+    "PRE_TURN_ALT": ["Approaching {xwind} feet, {dir} turn onto crosswind next."],
     "SPEED_FAST": ["Speed {ias} is high. Reduce toward {tgt} knots."],
     "SPEED_SLOW": ["Speed {ias} is low. Lower the nose to {tgt} knots."],
     "ALT_HIGH": ["{off} feet above circuit altitude. Reduce and re-establish."],
@@ -182,7 +187,7 @@ PILOT_TEMPLATES = {
     "ABEAM_FLAPS": ["Abeam the numbers. Carb heat, power back, flaps as required."],
     "FLAPS_REMINDER": ["Select landing flap when you're ready."],
     "BANK_STEEP": ["Watch the bank. Keep it to a rate-one turn."],
-    "OFF_TRACK": ["Off track. Turn {dir} to regain the {leg}."],
+    "OFF_TRACK": ["Off track. Turn {dir} {deg} degrees to regain the {leg}."],
     "SINK_HIGH": ["High sink rate. Add power and reduce the descent."],
     "SINK_HIGH_FAST": ["High sink rate, fast. Raise the nose, hold the power."],
     "SMOOTH_HANDS": ["Smaller, smoother inputs. Anticipate the corrections, don't chase them."],

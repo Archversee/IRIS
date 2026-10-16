@@ -1,6 +1,5 @@
 import AvatarBox from "./AvatarBox.jsx";
 import ChatPanel from "./ChatPanel.jsx";
-import LookCard from "./LookCard.jsx";
 import TodoCard from "./TodoCard.jsx";
 import MapCanvas from "./MapCanvas.jsx";
 import ScorecardOverlay from "./ScorecardOverlay.jsx";
@@ -36,7 +35,6 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, o
           {/* any lesson that sends one: airborne lessons, Take-off, Landing */}
           {state?.fam_todo && <TodoCard todo={state.fam_todo} />}
         </div>
-        {state?.lesson?.type === "familiarization" && <LookCard lookAt={state?.look_at} />}
       </div>
 
       {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} onFlyAgain={onFlyAgain} />}

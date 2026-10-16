@@ -18,6 +18,7 @@ VERBATIM = frozenset({
     "BRIEFING", "BRIEFING_1", "BRIEFING_2", "NIGHT_ANNOUNCE", "NIGHT_AFTER", "LESSON_NOTE",
     "ROTATE_NOW", "ROTATE_LATE",
     "TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL", "ROLL_OUT_LEG",
+    "PRE_TURN", "PRE_TURN_ALT",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
@@ -38,7 +39,7 @@ VERBATIM = frozenset({
 # A timing-critical or safety line cuts off a less important one mid-sentence.
 RANK_URGENT, RANK_SAFETY = 3, 4
 _URGENT = frozenset({"TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
-                     "ROLL_OUT_LEG", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
+                     "ROLL_OUT_LEG", "PRE_TURN", "PRE_TURN_ALT", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
                      "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
 SAY_RANK = 2   # lines said directly (answers, chat replies): cut off only by urgent/safety
 
