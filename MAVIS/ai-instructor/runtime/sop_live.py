@@ -56,10 +56,17 @@ def build_sop_live(rt):
     try:
         from sop.evaluate import RuleEvaluator, sample_from_telemetry, summarize
         from sop.results import ResultStore, aircraft_note, snapshot
+        from sop import check_settings
         rule_results = ResultStore(sop_rt.store, rt.cfg) if sop_rt is not None else None
     except ImportError as e:
         log.info("live rule checks disabled (%s)", e)
         rule_results = None
+
+    def _rules_disabled() -> dict:
+        """Switched off on purpose (SOP Rules page): the live views show nothing."""
+        log.info("live rule checks switched off for circuit flights (SOP Rules page)")
+        return {"status": "disabled", "reason": "Rule checks are switched off for circuit flights.",
+                "n_rules": 0, "active": [], "recent": [], "n_findings": 0, "summary": None}
 
     def _rules_off(reason: str) -> dict:
         """state["sop_live"] when nothing is being checked: the live views say why."""
@@ -88,6 +95,10 @@ def build_sop_live(rt):
         if rule_results is None:
             rt.state["sop_live"] = _rules_off("Rule checks are disabled in MAVIS (needs asyncpg; see the startup log).")
             return
+        # an instructor can switch checks off for circuit flights; Free Flight is always checked
+        if not check_settings.checks_on_for(rt.cfg, bool(rt.session.get("free_flight"))):
+            rt.state["sop_live"] = _rules_disabled()
+            return
         act = sop_rt.active if sop_rt is not None else None
         if not act or not act.get("rules"):
             rt.state["sop_live"] = _rules_off(_why_no_rules())
@@ -113,7 +124,7 @@ def build_sop_live(rt):
         sl = rt.state.get("sop_live")
         if ev is None or sl is None:
             return
-        found = ev.step(sample_from_telemetry(tel.as_dict(), rt.engine.phase))
+        found = ev.step(sample_from_telemetry(tel.as_dict(), rt._flight_phase()))
         sl["active"] = ev.active()
         if not found:
             return
@@ -127,7 +138,7 @@ def build_sop_live(rt):
             if now - live_rules["spoken"].get(f["rule_id"], 0.0) < RULE_REPEAT_S:
                 continue
             live_rules["spoken"][f["rule_id"]] = now
-            rt.coach.submit(CoachEvent("SOP_RULE", severity="safety", data={**f, "phase": rt.engine.phase}))
+            rt.coach.submit(CoachEvent("SOP_RULE", severity="safety", data={**f, "phase": rt._flight_phase()}))
 
     async def _finish_rule_checks() -> None:
         """End of a run: the live results go to the state (scorecard view) and,

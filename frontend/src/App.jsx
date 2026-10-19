@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import Sidebar from "./components/Sidebar.jsx";
+import Sidebar, { SOP_ROLES } from "./components/Sidebar.jsx";
 import Home from "./pages/Home.jsx";
 import Sessions from "./pages/Sessions.jsx";
 import Upload from "./pages/Upload.jsx";
@@ -46,8 +46,9 @@ export default function App() {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/scoring" element={<ScoringGuidePage />} />
           <Route path="/controls" element={<ControlsGuidePage />} />
-          <Route path="/sop/new" element={<SopNew />} />
-          <Route path="/sop/rules" element={<SopRules />} />
+          {/* instructor tools (Sidebar SOP_ROLES): a trainee is sent home */}
+          <Route path="/sop/new" element={SOP_ROLES.includes(user.role) ? <SopNew /> : <Navigate to="/" replace />} />
+          <Route path="/sop/rules" element={SOP_ROLES.includes(user.role) ? <SopRules /> : <Navigate to="/" replace />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />

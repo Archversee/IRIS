@@ -40,6 +40,7 @@ export default function RuleAlerts({ live, flying = true }) {
   if (!live) {
     return flying ? <div className="mavis-rules"><span className="mavis-rules__label">Rules · loading…</span></div> : null;
   }
+  if (live.status === "disabled") return null;   // instructor switched checks off for circuit flights
   if (live.status === "off") {
     return (
       <div className="mavis-rules">

@@ -6,6 +6,8 @@ tools), so flights can be checked on any machine that can reach Postgres.
     POST /sop/evaluate/{session_id}       check (or re-check) a session's flight
                                           body: {strictness?, use_current_rules?}
     GET  /sop/evaluations/{session_id}    the latest check, with the instructor's verdicts applied
+    GET  /sop/check-settings              which flights are checked live: {circuit_flights, free_flight}
+    PUT  /sop/check-settings              {circuit_flights: bool} -- Free Flight is always checked
 
 The instructor's verdicts and sign-off are written by IRIS (backend/app/
 routers/rule_results.py), which knows who is signed in and their role.
@@ -18,11 +20,16 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from . import check_settings
 from .evaluate import MODE_STRICTNESS, STRICTNESS, STRICTNESS_HELP
 from .results import ResultStore
 from .store import DBUnavailable, RuleStore
 
 log = logging.getLogger(__name__)
+
+
+class CheckSettingsIn(BaseModel):
+    circuit_flights: bool
 
 
 class EvaluateIn(BaseModel):
@@ -51,6 +58,17 @@ def build_eval_router(cfg: dict | None, store: RuleStore | None = None) -> tuple
     @r.get("/strictness")
     async def strictness():
         return {"presets": STRICTNESS, "mode_defaults": MODE_STRICTNESS, "help": STRICTNESS_HELP}
+
+    @r.get("/check-settings")
+    async def get_check_settings():
+        return check_settings.as_dict(cfg)
+
+    @r.put("/check-settings")
+    async def put_check_settings(body: CheckSettingsIn, x_sop_editor: str | None = Header(None)):
+        check_settings.set_circuit_flights_checked(cfg, body.circuit_flights)
+        log.info("live rule checks for circuit flights %s (by %s)",
+                 "ON" if body.circuit_flights else "OFF", x_sop_editor or "?")
+        return check_settings.as_dict(cfg)
 
     @r.post("/evaluate/{session_id}")
     async def evaluate(session_id: UUID, body: EvaluateIn | None = None,

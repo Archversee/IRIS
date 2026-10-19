@@ -101,6 +101,8 @@ sop:
   pdf_dir: data/sop        # originals kept for the page-image view in the wizard
   tesseract_cmd: ""        # Windows: C:/Program Files/Tesseract-OCR/tesseract.exe (empty = on PATH)
   ocr_lang: eng
+  check_circuit_flights: true   # check circuit / lesson flights against the rules live (Free Flight is
+                                # always checked). The SOP Rules page's switch overrides this.
   aircraft_override: ""    # force the SOP of this profile id (e.g. c172sp_g1000) instead of
                            # detecting the aircraft loaded in the sim at lesson start
 

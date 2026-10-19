@@ -32,7 +32,7 @@ export default function SopNew() {
     <div className="sop">
       <header className="sop-head">
         <div>
-          <div className="sop-crumb">MAVIS · Preflight &amp; Cockpit</div>
+          <div className="sop-crumb">IRIS · Instructor tools</div>
           <h1>Upload SOP or handbook</h1>
         </div>
         <div className="spacer" />
