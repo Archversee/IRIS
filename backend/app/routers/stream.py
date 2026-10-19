@@ -72,7 +72,7 @@ _EYE_INSERT_SQL = (
 class _LiveBuffer:
     __slots__ = (
         "flight_samples", "eye_samples", "subscribers", "flight_connected", "eye_connected", "flight_ws",
-        "eye_row_buffer", "last_eye_flush",
+        "eye_row_buffer", "last_eye_flush", "last_external",
     )
 
     def __init__(self):
@@ -89,6 +89,9 @@ class _LiveBuffer:
         # eye_stream_producer/_flush_eye_rows below.
         self.eye_row_buffer: list[tuple] = []
         self.last_eye_flush: float = 0.0
+        # When ingest_external_sample() (mavis_bridge) last fed this buffer.
+        # That producer holds no socket here, so it's tracked by time instead.
+        self.last_external: float = 0.0
 
 
 _live: dict[str, _LiveBuffer] = {}
@@ -98,9 +101,21 @@ def _buffer(session_id: UUID) -> _LiveBuffer:
     return _live.setdefault(str(session_id), _LiveBuffer())
 
 
+# A buffer mavis_bridge has fed within this long still has a producer: the
+# flight is going on, so its backlog must survive nobody watching for a while
+# (leaving the Live page and coming back would otherwise show an empty
+# timeline / ground track).
+_EXTERNAL_IDLE_S = 120.0
+
+
+def _idle(buf: _LiveBuffer) -> bool:
+    return (not buf.subscribers and not buf.flight_connected and not buf.eye_connected
+            and time.monotonic() - buf.last_external > _EXTERNAL_IDLE_S)
+
+
 def _drop_if_idle(session_id: UUID, buf: _LiveBuffer):
     # nothing left producing or watching -- free the memory
-    if not buf.subscribers and not buf.flight_connected and not buf.eye_connected:
+    if _idle(buf):
         _live.pop(str(session_id), None)
 
 
@@ -236,6 +251,14 @@ async def ingest_external_sample(session_id: UUID, record: dict) -> None:
     DB -- the caller is responsible for persistence (mavis_bridge batches
     its own writes to flight_data)."""
     buf = _buffer(session_id)
+    now = time.monotonic()
+    if now - buf.last_external > _EXTERNAL_IDLE_S:
+        # (at most every couple of minutes per session) free the buffers of
+        # flights that have finished and that nobody is watching any more
+        for sid, other in list(_live.items()):
+            if other is not buf and _idle(other):
+                _live.pop(sid, None)
+    buf.last_external = now
     buf.flight_samples.append(record)
     await _broadcast(buf, {"type": "sample", "sample": record})
 

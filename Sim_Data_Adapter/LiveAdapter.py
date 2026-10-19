@@ -282,11 +282,11 @@ def _discard_worker(sid: str, paths: list[str]) -> None:
         print(f"Discarded session {sid}: no recording files found at {paths}")
 
 
-def register_recordings(sid: str, paths: list[str]) -> None:
-    """Tell IRIS which files OBS wrote for this session, so deleting the
-    session later (Sessions page, Finish & discard, any time) removes them
-    -- not just a discard this process happens to still remember.
-    Best-effort: a 404 just means the session was already deleted."""
+_REGISTER_RETRY_S = 30 * 60   # keep trying this long if IRIS is down / erroring
+
+
+def _post_recordings(sid: str, paths: list[str]) -> bool:
+    """True when IRIS has the paths, or the session is already gone (404)."""
     req = urllib.request.Request(
         f"{API_BASE_URL}/sessions/{sid}/recordings",
         data=json.dumps({"paths": [os.path.abspath(p) for p in paths]}).encode(),
@@ -294,11 +294,33 @@ def register_recordings(sid: str, paths: list[str]) -> None:
     try:
         with urllib.request.urlopen(req, timeout=5):
             print(f"Registered {len(paths)} recording(s) with IRIS for session {sid}")
+        return True
     except urllib.error.HTTPError as e:
-        if e.code != 404:
-            print(f"Couldn't register recordings for {sid} with IRIS: HTTP {e.code}")
+        if e.code == 404:
+            return True
+        print(f"Couldn't register recordings for {sid} with IRIS: HTTP {e.code}")
     except (urllib.error.URLError, TimeoutError) as e:
         print(f"Couldn't register recordings for {sid} with IRIS: {e}")
+    return False
+
+
+def _register_retry_worker(sid: str, paths: list[str]) -> None:
+    deadline = time.time() + _REGISTER_RETRY_S
+    while time.time() < deadline:
+        time.sleep(15)
+        if _post_recordings(sid, paths):
+            return
+    print(f"Gave up registering recordings for {sid}: deleting the session won't remove {paths}")
+
+
+def register_recordings(sid: str, paths: list[str], retry: bool = True) -> None:
+    """Tell IRIS which files OBS wrote for this session, so deleting the
+    session later (Sessions page, Finish & discard, any time) removes them
+    -- not just a discard this process happens to still remember. If IRIS
+    can't take them right now, keep trying in the background: an unregistered
+    recording is never deleted with its session."""
+    if not _post_recordings(sid, paths) and retry:
+        threading.Thread(target=_register_retry_worker, args=(sid, paths), daemon=True).start()
 
 
 def delete_recordings(sid: str, paths: list[str]) -> None:
@@ -647,10 +669,10 @@ def main():
     recording = False  # whether OBS is currently recording for SESSION_ID
     saved: dict[str, list[str]] = {}  # session_id -> files OBS wrote for it (kept for discard)
 
-    def stop_and_remember(sid: str) -> None:
+    def stop_and_remember(sid: str, retry: bool = True) -> None:
         paths = stop_obs_recordings(obs_clients)
         if paths:
-            register_recordings(sid, paths)
+            register_recordings(sid, paths, retry)
             saved[sid] = saved.get(sid, []) + paths   # Fly again: one session, several recordings
             with _recent_lock:
                 if sid not in _recent_sids:
@@ -760,8 +782,9 @@ def main():
             print("Recording. Ctrl+C to stop the adapter entirely (fine to leave running between flights).")
     except KeyboardInterrupt:
         print("\nStopping...")
-        if recording and obs_clients:
-            stop_obs_recordings(obs_clients)
+        if recording and obs_clients and SESSION_ID:
+            # register them too: else deleting this session later leaves the files
+            stop_and_remember(SESSION_ID, retry=False)   # exiting: one try, no background retry
     finally:
         _release_lock()
 

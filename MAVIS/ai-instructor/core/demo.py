@@ -56,6 +56,12 @@ class DemoPilot:
         # cruise power the demo returns to: the lesson start's, not wherever
         # the previous step left the lever
         self.th0 = float(base_throttle if base_throttle is not None else tel0.get("throttle", 0.7))
+        # The controls the demo holds every tick, so a trainee's throttle or
+        # pedals can't take over while MAVIS has control (SimConnect masking of
+        # hardware axes isn't reliable in MSFS): the power last set, and the
+        # rudder last set (centred unless a step uses it).
+        self._power = self.th0
+        self._rudder_hold = 0.0
         self.segs = self._script(step, eng)
         self.i = -1
         self.t_seg = 0.0
@@ -230,19 +236,21 @@ class DemoPilot:
             self._rudder_checked = True
             if tel.get("rudder", 0.0) * seg["cmd"]["rudder"] < -0.05:
                 self._rudder_sign = -1.0
-                return self._resolve(seg["cmd"], tel)
+                cmd = self._resolve(seg["cmd"], tel)
+                self._rudder_hold = cmd["rudder"]
+                self._cur = {**(self._cur or {}), "rudder": cmd["rudder"]}
+                return {"throttle": self._power, **cmd}
         if self._finished(seg, tel, dt):
             return self._next(tel)
-        # resend the command in force every second: a mode the autopilot didn't
-        # take, or dropped, gets set again (all of these are idempotent) ...
-        if self._cur and self.t_seg - self._resent >= 1.0:
+        hold = {"throttle": self._power, "rudder": self._rudder_hold}
+        # resend the command in force twice a second: a mode the autopilot
+        # didn't take, or that was knocked off, gets set again (all idempotent) ...
+        if self._cur and self.t_seg - self._resent >= 0.5:
             self._resent = self.t_seg
-            return dict(self._cur)
-        # ... and the throttle every tick, over a hardware throttle that keeps
-        # putting its own position back
-        if self._cur and "throttle" in self._cur:
-            return {"throttle": self._cur["throttle"]}
-        return None
+            return {**hold, **self._cur}
+        # ... and the power and rudder every tick, over a hardware throttle or
+        # pedals the trainee moves
+        return hold
 
     def _next(self, tel: dict) -> dict | None:
         self.i += 1
@@ -254,5 +262,7 @@ class DemoPilot:
         cmd = self._resolve(self.segs[self.i]["cmd"], tel)
         if self.i == 0:
             cmd.setdefault("throttle", self.th0)    # each step starts from cruise power
+        self._power = cmd.get("throttle", self._power)
+        self._rudder_hold = cmd.get("rudder", self._rudder_hold)
         self._cur, self._resent = cmd, 0.0
-        return cmd
+        return {"throttle": self._power, "rudder": self._rudder_hold, **cmd}

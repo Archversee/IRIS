@@ -130,8 +130,9 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
         <div className="rc-why">
           <b>No rules were checked.</b> When this flight was checked, {evaluation.aircraft_profile || "the aircraft"} had
           no active rule set with rules for {evaluation.lesson_type || "normal"} lessons, and no training handbook
-          was active. Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page, then {isInstructor
-            ? "press Re-check." : "ask your instructor to re-check this flight."}
+          was active. {isInstructor
+            ? <>Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page, then press Re-check.</>
+            : "Your instructor can activate a rule set and re-check this flight."}
         </div>
       )}
       {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length) && (
@@ -140,7 +141,7 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
           Of {results.length} rules, {grouped.instructor.length} can't be measured from flight data (the instructor
           judges them below) and {grouped.other.length} didn't apply or had no data: each says why, e.g. its phase
           was never flown in this lesson.{" "}
-          {grouped.instructor.length > 0 && (
+          {isInstructor && grouped.instructor.length > 0 && (
             <>Rules about heights, speeds, bank or descent rate can be made measurable on the{" "}
               <a href="/sop/rules">SOP Rules</a> page (as a band, limit, event or capture rule).</>
           )}

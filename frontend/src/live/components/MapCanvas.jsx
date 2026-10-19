@@ -97,8 +97,9 @@ export default function MapCanvas({ state }) {
     if (L.type === "familiarization") {
       // Airborne lessons: no circuit. Only Flight Familiarization has a
       // field to find: its dashed ring is "fly back to here", the lesson
-      // ends once the aircraft is inside it. The others draw no target.
-      if (L.field) {
+      // ends once the aircraft is inside it -- so it's drawn only during
+      // that last step. The others draw no target.
+      if (L.field && state?.phase === "FIND_AIRFIELD") {
       const [fa, fc] = en(L.field.lat, L.field.lon);
       const [fx, fy] = px(fa, fc);
       ctx.strokeStyle = GOOD + "88";
@@ -187,7 +188,7 @@ export default function MapCanvas({ state }) {
       ctx.fill();
       ctx.restore();
     }
-  }, [state?.tel, state?.track, state?.lesson, state?.night, zoom, pan]);
+  }, [state?.tel, state?.track, state?.lesson, state?.night, state?.phase, zoom, pan]);
 
   function patternToLatLon(along, cross) {
     const proj = projRef.current;

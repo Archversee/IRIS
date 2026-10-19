@@ -40,8 +40,8 @@ input:
     - profiles/devices/virpil_rudder.yaml
 
 coach:
-  #ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
-  ollama_url: http://192.168.0.107:11434 # CHANGE to LLM running the alptop
+  ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
+  #ollama_url: http://192.168.0.107:11434 # Ollama on another PC (unreachable from this one)
   model: qwen2.5:7b-instruct
   timeout_s: 1.0           # fall back to template phrase beyond this
   min_speak_interval_s: 3  # gentleness vs latency: nudges wait at most this long
@@ -101,6 +101,8 @@ sop:
   pdf_dir: data/sop        # originals kept for the page-image view in the wizard
   tesseract_cmd: ""        # Windows: C:/Program Files/Tesseract-OCR/tesseract.exe (empty = on PATH)
   ocr_lang: eng
+  check_circuit_flights: true   # check circuit / lesson flights against the rules live (Free Flight is
+                                # always checked). The SOP Rules page's switch overrides this.
   aircraft_override: ""    # force the SOP of this profile id (e.g. c172sp_g1000) instead of
                            # detecting the aircraft loaded in the sim at lesson start
 

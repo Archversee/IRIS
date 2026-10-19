@@ -273,3 +273,27 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--bo
 .sop-models__list button:disabled { opacity: 0.5; cursor: not-allowed; }
 .sop-models__refresh { min-width: 34px; }
 .sop-models code { background: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 4px; }
+
+/* live rule checks switch (LiveChecksToggle.jsx) */
+.sop-livechecks {
+  border: 1px solid var(--border, #2a3644); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
+  background: var(--panel, #121a24);
+}
+.sop-livechecks__row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.sop-livechecks__item { display: inline-flex; align-items: center; gap: 8px; }
+.sop-livechecks__on { color: #4ade80; font-weight: 600; }
+.sop-livechecks__off { color: var(--muted, #8b98a5); font-weight: 600; }
+.sop-livechecks__help { color: var(--muted, #8b98a5); font-size: 13px; margin-top: 6px; }
+.sop-error-inline { color: #ff5c5c; }
+.sop-switch {
+  position: relative; width: 38px; height: 22px; border-radius: 999px; cursor: pointer; padding: 0;
+  border: 1px solid var(--border, #2a3644); background: #2a3644; transition: background .15s;
+}
+.sop-switch.is-on { background: #16a34a; border-color: #16a34a; }
+.sop-switch:disabled { opacity: .5; cursor: default; }
+.sop-switch__knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; transition: transform .15s;
+}
+.sop-switch.is-on .sop-switch__knob { transform: translateX(16px); }
+.sop-switch:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }

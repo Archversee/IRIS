@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -18,12 +18,16 @@ import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon
 // "Basic Flight", matching how the curriculum is meant to be entered.
 // Leaderboard, Scoring Guide, Upload and AOI Zones are reached from the
 // Settings drawer.
+// SOP Upload / SOP Rules (turning an aircraft SOP or training handbook into
+// flight rules) are instructor tools: they sit under IRIS and only
+// instructors and admins see them (`roles`); App.jsx guards the routes too.
+export const SOP_ROLES = ["instructor", "admin"];
 const SECTIONS = [
   {
     label: "MAVIS",
     sub: "Live",
     links: [
-      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls", "/sop"] },
+      { to: "/live?reading=lesson00_preflight", path: "/live", label: "Curriculum", icon: <BookIcon />, nested: <LessonTree />, also: ["/controls"] },
       { to: "/live/freeflight", path: "/live/freeflight", label: "Free Flight", icon: <PlaneIcon /> },
     ],
   },
@@ -33,6 +37,8 @@ const SECTIONS = [
     links: [
       { to: "/monitor", path: "/monitor", label: "Live Monitor", icon: <PulseIcon /> },
       { to: "/sessions", path: "/sessions", label: "Sessions", icon: <ListIcon /> },
+      { to: "/sop/new", path: "/sop/new", label: "SOP Upload", icon: <UploadIcon />, roles: SOP_ROLES },
+      { to: "/sop/rules", path: "/sop/rules", label: "SOP Rules", icon: <ChecklistIcon />, roles: SOP_ROLES },
     ],
   },
 ];
@@ -108,7 +114,8 @@ export default function Sidebar() {
         <span className="sidebar__text">Flight Review System</span>
       </NavLink>
       {SECTIONS.map((section) => {
-        const isActive = section.links.some((l) =>
+        const links = section.links.filter((l) => !l.roles || l.roles.includes(user.role));
+        const isActive = links.some((l) =>
           (l.path && pathname.startsWith(l.path)) || (l.also || []).some((p) => pathname.startsWith(p)));
         return (
           <div className={"sidebar__section" + (isActive ? " is-active" : "")} key={section.label}>
@@ -116,7 +123,7 @@ export default function Sidebar() {
               <span className="sidebar__section-label">{section.label}</span>
               <span className="sidebar__section-sub sidebar__text">{section.sub}</span>
             </div>
-            {section.links.map((link) => (
+            {links.map((link) => (
               <div key={link.to}>
                 {link.disabled ? (
                   <span className="sidebar__link is-disabled" aria-disabled="true"

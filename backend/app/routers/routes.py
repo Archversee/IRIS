@@ -9,6 +9,9 @@ the same way MAVIS's own map draws it (frontend/src/live/components/
 MapCanvas.jsx): runway-relative along/cross corners, rounded turns, then
 converted to lat/lon. Each lesson is offered from both runway ends (e.g. RWY
 02 and RWY 20), as MAVIS flips the lesson to whichever end you take off from.
+Only full circuits are offered (not the airborne exercises, nor Take-off /
+Landing, which fly one piece of it), and a lesson that flies the very same
+circuit as one already listed (e.g. the Night Circuit) is left out.
 """
 import json
 import logging
@@ -94,18 +97,25 @@ def _titles() -> dict:
 async def list_routes():
     titles = _titles()
     out = []
+    seen: set[str] = set()   # circuits already listed (same shape = same route)
     for f in sorted(Path(settings.mavis_lessons_dir).glob("*.yaml")):
         try:
             lesson = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
             rw = lesson.get("runway")
-            if not rw or not lesson.get("pattern"):
+            if (not rw or not lesson.get("pattern") or lesson.get("type") == "familiarization"
+                    or lesson.get("segment")):
                 continue
             label = titles.get(f.stem) or lesson.get("name") or f.stem
             for runway in (rw, _reciprocal(rw)):
+                circuit = _circuit(lesson, runway)
+                sig = json.dumps(circuit)
+                if sig in seen:
+                    continue
+                seen.add(sig)
                 out.append({
                     "key": f"{f.stem}:{runway['ident']}", "lesson_id": f.stem,
                     "label": f"{label} (RWY {runway['ident']})", "runway_ident": runway["ident"],
-                    **_circuit(lesson, runway),
+                    **circuit,
                 })
         except Exception as e:  # one bad lesson file shouldn't hide the others
             log.warning("routes: skipping %s: %s", f.name, e)

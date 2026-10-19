@@ -8,7 +8,7 @@ Everything runs on the sim laptop: PyMuPDF and Tesseract read the PDF, and Ollam
 
 ## Where it lives
 
-The pages are in the IRIS React app (the dashboard at `http://localhost:3000`), under **MAVIS → Curriculum → Preflight & Cockpit**:
+The pages are in the IRIS React app (the dashboard at `http://localhost:3000`), under **IRIS → SOP Upload / SOP Rules** in the sidebar. They are instructor tools: only instructors and admins see them, and a trainee who opens their address is sent to the home page.
 
 | Page | What it's for |
 |---|---|

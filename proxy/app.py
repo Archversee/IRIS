@@ -95,7 +95,11 @@ async def _ws_proxy(websocket: WebSocket, target_base: str, strip_prefix: str) -
     if websocket.url.query:
         target += "?" + websocket.url.query
     try:
-        upstream = await websockets.connect(target, open_timeout=5)
+        # No message size cap (the library's default is 1 MB): the Live page's
+        # first message is the whole flight so far, several MB a few minutes in.
+        # Over the cap the connection just died, so coming back to the Live
+        # page mid-flight showed no timeline / ground track.
+        upstream = await websockets.connect(target, open_timeout=5, max_size=None)
     except Exception:
         await websocket.close(code=1011)
         return

@@ -6,6 +6,7 @@ import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch, LlmNote, ExportMenu, LessonFilter, lessonMatch } from "./parts.jsx";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
+import LiveChecksToggle from "./LiveChecksToggle.jsx";
 import "../live/live.css";
 import "./sop.css";
 
@@ -47,13 +48,14 @@ export default function SopRules() {
     <div className="sop">
       <header className="sop-head">
         <div>
-          <div className="sop-crumb">MAVIS · Preflight &amp; Cockpit</div>
+          <div className="sop-crumb">IRIS · Instructor tools</div>
           <h1>SOP rules</h1>
         </div>
         <div className="spacer" />
         <EditorName />
         <Link to="/sop/new" className="sop-link-btn sop-link-btn--primary">Upload SOP</Link>
       </header>
+      <LiveChecksToggle />
       {err && <div className="sop-error">{err}</div>}
       {meta && sets && (
         <>

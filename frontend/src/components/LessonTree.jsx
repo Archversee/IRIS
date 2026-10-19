@@ -34,10 +34,6 @@ export default function LessonTree() {
   }
 
   async function pick(lesson) {
-    if (lesson.kind === "sop") {          // Aircraft SOP pages, not a flight
-      nav(lesson.route || "/sop/rules");
-      return;
-    }
     if (lesson.kind === "reading") {
       nav(`/live?reading=${encodeURIComponent(lesson.id)}`);
       return;
@@ -53,9 +49,8 @@ export default function LessonTree() {
   return (
     <div className="sidebar__lesson-tree">
       {catalog.modules.map((mod, i) => {
-        // SOP pages highlight by route; flying lessons only while on /live
-        const isOn = (l) => (l.kind === "sop" ? pathname === l.route
-          : pathname.startsWith("/live") && l.kind !== "reading" && l.id === activeLessonId);
+        // flying lessons highlight only while on /live
+        const isOn = (l) => pathname.startsWith("/live") && l.kind !== "reading" && l.id === activeLessonId;
         const open = openModule === i || (openModule === null && mod.lessons.some(isOn));
         return (
           <Fragment key={mod.title ?? i}>
