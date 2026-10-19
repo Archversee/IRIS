@@ -1,0 +1,104 @@
+name: "Go-Around"
+# Circuit Variations. Same circuit as Lesson 1, from runway 02 at Paya Lebar.
+# On final MAVIS calls "Go around!" at a random height (go_around.call_agl_ft);
+# the trainee applies full power, pitches for the climb and brings the flaps up
+# in stages (core/variations.py GoAround), then climbs out straight ahead.
+# The lesson ends climbing through go_around.end_agl_ft; after the score the
+# aircraft is put back on the runway (end_reposition). Going around before
+# the call (e.g. an unstable approach) counts too.
+variation: go_around
+go_around:
+  call_agl_ft: [150, 300]   # the call comes somewhere in here, different every run
+  end_agl_ft: 1000
+end_reposition:
+  along_m: 60
+# the call is said in every mode (Trainee/Pilot otherwise leave out most callouts)
+always_say: [PHASE_ENTER_GO_AROUND]
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+climb_speed_band_kt: [70, 90]
+say:
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
+    pilot: "Airborne. Climb at 70 to 90 knots, wings level."
+phases:
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - CROSSWIND
+  - DOWNWIND
+  - BASE
+  - FINAL
+  - GO_AROUND
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  CROSSWIND:     { speed: "{vy}" }
+  DOWNWIND:      { speed: "{pattern_downwind}", alt: 1100, flaps_abeam: 10 }
+  BASE:          { speed: "{base}", flaps: 20 }
+  FINAL:         { speed: "{final}", flaps: 30 }
+
+briefing:
+  layman: >-
+    Go-around practice. We'll fly the same rectangle as before, from runway 02.
+    On the way down to land, I'll call "go around" at some point. When I do:
+    throttle all the way forward, nose up to the horizon, and flaps up one
+    notch. I'll talk you through the rest.
+  pilot: >-
+    Go-around exercise, runway 02, one circuit. On final, expect a go-around
+    call. Full power, pitch for the climb, flaps 20; positive climb, flaps 10;
+    flaps up above 300 feet; climb straight ahead to one thousand feet.
+
+phase_notes:
+  FINAL:
+    layman: >-
+      Fly a normal approach, but keep your hand on the throttle. If I call go
+      around, it's full power straight away.
+    pilot: >-
+      Normal approach, hand on the throttle. Be ready for the go-around call.
+
+closing:
+  layman: >-
+    That's a go-around. It's the safest thing you can do when a landing isn't
+    working out. After your score I'll put us back on the runway.
+  pilot: >-
+    One thousand feet, go-around complete. Repositioning to the runway after
+    the debrief.
+
+debrief_summary: >-
+  go-around (a circuit from runway 02; on final the instructor called go
+  around: full power at once, stop the sink, flaps up in stages -- 20, then 10
+  with a positive climb, then up -- and climb out straight ahead)
+
+# Scored mostly on the go-around itself: reaction (call to full power), height
+# lost after the call, the flap sequence and the climb speed; plus the circuit.
+scoring:
+  weights:    { track: 15, speed: 10, altitude: 10, landing: 0, smoothness: 5,
+                reaction: 20, height_loss: 15, flaps: 15, climb_speed: 10 }
+  scales:     { track: 75, speed: 9, altitude: 120, smoothness: 0.22,
+                land_sink: 300, land_center: 40, land_speed: 10 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60
+  final_length_m: 1100

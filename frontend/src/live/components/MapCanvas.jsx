@@ -148,6 +148,28 @@ export default function MapCanvas({ state }) {
     ctx.font = "14px system-ui";
     ctx.fillText("RWY " + rw.ident, r1x - 16, r1y + 22);
 
+    // Short-Field: the aim point (touch down here) and the line to stop before
+    if (L.short_field) {
+      const [ax, ay] = px(L.short_field.aim_point_m, 0);
+      ctx.fillStyle = GOOD;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 6, 0, Math.PI * 2);
+      ctx.fill();
+      const [s1x, s1y] = px(L.short_field.stop_by_m, 90);
+      const [s2x, s2y] = px(L.short_field.stop_by_m, -90);
+      ctx.strokeStyle = "#ff5c5c";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(s1x, s1y);
+      ctx.lineTo(s2x, s2y);
+      ctx.stroke();
+      ctx.fillStyle = "#ff8a8a";
+      ctx.font = "12px system-ui";
+      ctx.fillText("stop before", s1x + 6, s1y - 4);
+      ctx.fillStyle = GOOD;
+      ctx.fillText("aim", ax - 10, ay - 10);
+    }
+
     // Flown track -- old attempts dim/dashed
     segs.forEach((trk, si) => {
       if (trk.length < 2) return;

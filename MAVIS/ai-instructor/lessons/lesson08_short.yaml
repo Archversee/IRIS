@@ -1,0 +1,110 @@
+name: "Short-Field Landing"
+# Circuit Variations. Same circuit as Lesson 1, from runway 02 at Paya Lebar,
+# finishing with a short-field landing. Paya Lebar's runway is 3.8 km, so the
+# lesson treats it as short: an aim point short_field.aim_point_m past the
+# threshold, and a "runway ends here" line at short_field.stop_by_m (both on
+# the map). Scored on landing on the aim point and stopping before the line
+# (core/variations.py ShortField), plus a tight approach speed.
+variation: short_field
+short_field:
+  aim_point_m: 150          # touch down here (metres past the threshold)
+  stop_by_m: 750            # ...and be stopped before this line
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+climb_speed_band_kt: [70, 90]
+# Short-field approach: the C172S POH's 61 kt with full flaps, held within
+# +/- 5 kt (the Landing lesson allows 20). Over the last 50 ft the aim slides
+# to 55 kt; never below 50.
+final_speed_kt: 61
+final_speed_band_kt: 5
+touchdown_speed_kt: 55
+slow_down_below_agl_ft: 50
+min_speed_kt: 50
+say:
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
+    pilot: "Airborne. Climb at 70 to 90 knots, wings level."
+phases:
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - CROSSWIND
+  - DOWNWIND
+  - BASE
+  - FINAL
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  CROSSWIND:     { speed: "{vy}" }
+  DOWNWIND:      { speed: "{pattern_downwind}", alt: 1100, flaps_abeam: 10 }
+  BASE:          { speed: "{base}", flaps: 20 }
+  FINAL:         { speed: 61, flaps: 30 }
+
+briefing:
+  layman: >-
+    Short-field landing. We'll fly the same rectangle from runway 02, but we'll
+    pretend the runway is short. On the map there's an aim point just past
+    the start of the runway, and a red line where the runway "ends". Land on
+    the aim point, then stop before the line.
+  pilot: >-
+    Short-field landing, runway 02, one circuit. Simulated short runway: aim
+    point 150 metres past the threshold, stop before the line at 750 metres.
+    Full flaps, 61 knots on final, plus or minus five.
+
+phase_notes:
+  FINAL:
+    layman: >-
+      Full flaps, and hold {speed} knots, tighter than usual. Look at the aim
+      point and keep it still in the windscreen: if it moves up, you're
+      dropping short; if it moves down, you'll land long.
+    pilot: >-
+      Full flaps, {speed} knots, stabilised. Fix the aim point; power for the
+      path, pitch for the speed.
+  FLARE_TOUCHDOWN:
+    layman: >-
+      Only a short float. Put it down firmly on the aim point.
+    pilot: >-
+      Minimal float, positive touchdown on the aim point.
+
+closing:
+  layman: >-
+    That's a short-field landing. Let's see how close you got to the aim point.
+  pilot: >-
+    Full stop. Short-field landing complete. Let's look at the touchdown point
+    and the stop.
+
+debrief_summary: >-
+  short-field landing (a circuit from runway 02, then a tight 61-knot
+  approach onto an aim point 150 metres past the threshold, a firm touchdown
+  on it, and stopping before a line 750 metres in)
+
+scoring:
+  weights:    { track: 15, speed: 15, altitude: 10, landing: 15, smoothness: 5,
+                touchdown: 25, stop: 15 }
+  scales:     { track: 75, speed: 6, altitude: 120, smoothness: 0.22,
+                land_sink: 400, land_center: 40, land_speed: 8 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60
+  final_length_m: 1100

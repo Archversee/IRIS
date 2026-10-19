@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 
 from .monitors import final_speed_band
+from .variations import make_variation
 
 M_PER_NM = 1852.0
 
@@ -105,7 +106,10 @@ class Scorer:
         v = aircraft["v_speeds"]
         self._lesson, self._v = lesson, v
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
-                          "DOWNWIND": v["pattern_downwind"], "BASE": v["base"], "FINAL": v["final"]}
+                          "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
+                          "FINAL": float(lesson.get("final_speed_kt") or v["final"])}
+        # Circuit Variations: their own measurements (reaction, touchdown point, ...)
+        self.variation = make_variation(lesson, aircraft)
         b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band
         self.speed_band = ({"CLIMB_OUT": (float(b[0]), float(b[1])),
                             "CROSSWIND": (float(b[0]), float(b[1]))} if b else {})
@@ -117,6 +121,8 @@ class Scorer:
         self._landings: list[dict] = []
         self.retries = 0
         self.reached = False         # got to DEBRIEF: how a take-off lesson is "complete"
+        if getattr(self, "variation", None):
+            self.variation.reset()
 
     def note_retry(self) -> None:
         self.retries += 1
@@ -125,6 +131,8 @@ class Scorer:
     def sample(self, tel: dict, geom: dict | None, ctrl: dict | None, phase: str) -> None:
         if phase == "DEBRIEF":
             self.reached = True
+        if self.variation and geom is not None:      # measured on the ground too
+            self.variation.observe(tel, geom["along"], geom["cross"], phase)
         if tel.get("on_ground", True):
             return                                   # score airborne flying only
         if geom is not None:
@@ -212,12 +220,16 @@ class Scorer:
             "altitude": round(_curve(mean("altitude"), self.s["altitude"])),
             "landing": round(landing_raw) if landing_raw is not None else None,
             "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"])),
+            **(self.variation.scores() if self.variation else {}),
         }
         # a metric this lesson doesn't weigh (weight 0) isn't on its card --
         # the take-off lesson has no landing, no circuit height
         scores = {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
         incomplete = (not self.reached) if self.segment == "takeoff" else landing_raw is None
-        wsum = sum(self.w.values()) or 1
+        v_inc = self.variation.incomplete() if self.variation else None
+        if v_inc is not None:
+            incomplete = v_inc
+        wsum = sum(w for k, w in self.w.items() if k in scores) or 1
         total = sum((scores.get(k) or 0) * self.w[k] for k in self.w) / wsum
         capped = False
         # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.

@@ -40,14 +40,16 @@ VERBATIM = frozenset({
 RANK_URGENT, RANK_SAFETY = 3, 4
 _URGENT = frozenset({"TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
                      "ROLL_OUT_LEG", "PRE_TURN", "PRE_TURN_ALT", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
-                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
+                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+                     "PHASE_ENTER_GO_AROUND"})
 SAY_RANK = 2   # lines said directly (answers, chat replies): cut off only by urgent/safety
 
 
 def rank(ev: CoachEvent) -> int:
     if ev.severity == "safety":
         return RANK_SAFETY
-    if ev.code in _URGENT:
+    # ...or a call that marks itself urgent (core/variations.py)
+    if ev.code in _URGENT or ev.data.get("urgent"):
         return RANK_URGENT
     return ev.priority     # info 0, nudge 1, correction 2
 
@@ -235,7 +237,7 @@ class Coach:
     async def phrase(self, ev: CoachEvent) -> str:
         fallback = phrases.render(ev.code, ev.data)
         # scripted / timing-critical lines are spoken verbatim
-        if (ev.code in VERBATIM or ev.code.startswith("PHASE_ENTER_")
+        if (ev.code in VERBATIM or ev.code.startswith(("PHASE_ENTER_", "VAR_"))
                 or not self.llm_ok):
             return fallback
         prompt = (f"Event: {ev.code} severity={ev.severity} data={ev.data}.\n"

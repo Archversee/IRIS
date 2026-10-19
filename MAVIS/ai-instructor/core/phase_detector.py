@@ -43,6 +43,16 @@ class PhaseDetector:
         self.total_circuits = total_circuits
         # Take-off lesson: the lesson ends on the climb-out at this height (AGL)
         self.end_agl = float(lesson.get("end_at_agl_ft") or 0) or None
+        # Go-Around lesson: FINAL -> GO_AROUND when descending through
+        # go_around_agl (set by the engine: a random call height) or when the
+        # trainee goes around first; the lesson ends climbing through ga_end_agl
+        self.go_around = lesson.get("variation") == "go_around"
+        self.go_around_agl: float | None = None
+        self.ga_end_agl = float((lesson.get("go_around") or {}).get("end_agl_ft", 1000))
+        if self.go_around:
+            order = list(self.ORDER)
+            order.insert(order.index("FINAL") + 1, "GO_AROUND")
+            self.ORDER = order
         self.phase = "BRIEFING"
         self.circuit = 1
         self._still_since = None
@@ -101,6 +111,15 @@ class PhaseDetector:
         if p in ("BASE", "DOWNWIND") and abs(g.hdg_off) < 30 and not tel.on_ground \
                 and abs(g.cross) < 400 and g.along < 0:       # lined up with the runway
             return self.advance("FINAL")
+        if p == "FINAL" and self.go_around and not tel.on_ground and (
+                (self.go_around_agl and tel.alt_agl <= self.go_around_agl and tel.vs < 100)
+                or (tel.throttle >= 0.85 and tel.vs > 300 and tel.alt_agl > 50)):
+            return self.advance("GO_AROUND")
+        if p == "GO_AROUND":
+            if tel.alt_agl >= self.ga_end_agl:
+                return self.advance("DEBRIEF")
+            if tel.on_ground:
+                return self.advance("ROLLOUT")    # landed after all
         if p == "FINAL" and tel.alt_agl < 30:
             return self.advance("FLARE_TOUCHDOWN")
         if p == "FLARE_TOUCHDOWN" and tel.on_ground:

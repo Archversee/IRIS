@@ -12,6 +12,7 @@ from .events import CoachEvent
 from .monitors import Monitors, final_speed_band
 from coach.phrases import spoken_targets
 from .phase_detector import PhaseDetector
+from .variations import make_variation
 
 
 class LessonEngine:
@@ -37,6 +38,17 @@ class LessonEngine:
         self.elev = float(lesson["airport"]["elevation_ft"])
         self._tel: Telemetry | None = None
         self._ever: set[str] = set()             # phases reached this run
+        # Circuit Variations (core/variations.py): go-around / short / soft field
+        self.variation = make_variation(lesson, aircraft)
+        self._arm_variation()
+
+    def _arm_variation(self) -> None:
+        """Fresh run of a variation; a go-around gets a new random call height."""
+        if self.variation:
+            self.variation.reset()
+            if self.detector.go_around:
+                self.detector.go_around_agl = self.variation.call_agl
+                log.info("go-around will be called at %.0f ft", self.variation.call_agl)
 
     @property
     def phase(self) -> str: return self.detector.phase
@@ -67,6 +79,7 @@ class LessonEngine:
         self._ever.clear()
         self._last_fire.clear()
         self.monitors.reset_turn_cues()
+        self._arm_variation()
 
     def _cooled(self, ev: CoachEvent) -> bool:
         last = self._last_fire.get(ev.code, 0.0)
@@ -83,6 +96,7 @@ class LessonEngine:
         self.monitors._rotate_called = False
         self.monitors._phase_prev = None       # fresh settle-in grace period
         self.monitors.reset_turn_cues()
+        self._arm_variation()
 
     def wants_night_switch(self) -> bool:
         """Mid-flight day->night reveal. A lesson flown at night from the start
@@ -133,6 +147,12 @@ class LessonEngine:
         for ev in self.monitors.tick(self.detector.phase, tel, g, ctrl):
             if self._cooled(ev):
                 out.append(ev)
+        if self.variation:
+            d = tel.as_dict()
+            self.variation.observe(d, g.along, g.cross, self.detector.phase)
+            for ev in self.variation.cues(d, g.along, g.cross, self.detector.phase):
+                if self._cooled(ev):
+                    out.append(ev)
         return out
 
     def targets(self) -> dict:

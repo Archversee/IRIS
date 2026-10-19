@@ -86,6 +86,11 @@ def lesson_state(lesson) -> dict:
     """state["lesson"]: what the web map needs to draw this lesson."""
     out = {"runway": lesson["runway"], "pattern": lesson["pattern"],
            "airport": lesson["airport"], "scoring": lesson.get("scoring", {})}
+    if lesson.get("variation") == "short_field":
+        # Short-Field: the aim point and the "runway ends here" line on the map
+        sf = lesson.get("short_field") or {}
+        out["short_field"] = {"aim_point_m": float(sf.get("aim_point_m", 150)),
+                              "stop_by_m": float(sf.get("stop_by_m", 750))}
     if lesson.get("segment"):
         # Take-off / Landing: the map draws that piece of the circuit only
         out["segment"] = lesson["segment"]

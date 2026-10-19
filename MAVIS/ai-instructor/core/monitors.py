@@ -25,7 +25,7 @@ def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
     band = lesson.get("final_speed_band_kt")
     if not band:
         return None
-    fin = float(v_speeds["final"])
+    fin = float(lesson.get("final_speed_kt") or v_speeds["final"])
     td = float(lesson.get("touchdown_speed_kt", fin))
     below = float(lesson.get("slow_down_below_agl_ft", 100))
     f = max(0.0, min(1.0, agl / below)) if below > 0 else 1.0
@@ -47,9 +47,11 @@ class Monitors:
         self.crosswind_off_track_m = float(lesson.get("crosswind_off_track_m", 300))
         # rotate call speed: the aircraft's Vr, or the lesson's own rotate_kt
         self.vr = float(lesson.get("rotate_kt") or v["vr"])
+        # Soft-Field: no "rotate now" -- the stick is back from the start of the roll
+        self._rotate_call = not lesson.get("no_rotate_call")
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
-                          "FINAL": v["final"]}
+                          "FINAL": float(lesson.get("final_speed_kt") or v["final"])}
         self.tgt_flaps = {"DOWNWIND": f["downwind"], "BASE": f["base"], "FINAL": f["final"]}
         # legs flown without a speed to hold (the Take-off lesson's climb-out):
         # no speed shown, called or nudged there
@@ -163,7 +165,7 @@ class Monitors:
     # straight legs on the planned circuit: a point on the line and the
     # direction it's flown, in (along, cross) metres.
     def _leg_line(self, phase: str):
-        if phase in ("CLIMB_OUT", "FINAL"):
+        if phase in ("CLIMB_OUT", "FINAL", "GO_AROUND"):
             return (0.0, 0.0), (1.0, 0.0)
         if phase == "CROSSWIND":
             return (self._up_a, 0.0), (0.0, 1.0)
@@ -205,7 +207,8 @@ class Monitors:
         toward = hdg_diff(want, hdg(da, dc))   # sign: which way the line lies
         if abs(err) < 10 or err * toward < 0:
             return None                    # already heading back to it (or cutting back in steeply)
-        leg = {"CLIMB_OUT": "runway centreline", "FINAL": "centreline"}.get(phase, phase.lower() + " leg")
+        leg = {"CLIMB_OUT": "runway centreline", "FINAL": "centreline",
+               "GO_AROUND": "runway centreline"}.get(phase, phase.lower() + " leg")
         # how much to turn: the intercept toward that point, 10-45 deg
         deg = int(min(45, max(10, round(abs(err) / 5) * 5)))
         # a correction (not a nudge), so a busy cockpit doesn't drop it; repeated
@@ -393,7 +396,7 @@ class Monitors:
         if c: E(c)
 
         if phase == "TAKEOFF_ROLL":
-            if tel.ias >= self.vr and not self._rotate_called:
+            if tel.ias >= self.vr and not self._rotate_called and self._rotate_call:
                 self._rotate_called = True
                 E(CoachEvent("ROTATE_NOW", "correction",
                              {"vr": self.vr}, cooldown_s=60))
