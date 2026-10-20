@@ -165,6 +165,7 @@ async def amain(cfg):
                    "lesson_running": False,
                    "flight_events": [],
                    "flights": [],
+                   "sim_aircraft": None,   # aircraft loaded in the sim, read at lesson start (sop_live)
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "demo": None,       # {phase, title} while MAVIS is flying a demo

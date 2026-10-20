@@ -219,7 +219,7 @@ def build_scoring_flow(rt):
         card.name = (name or rt.session.get("name") or "").strip()[:24] or "Anonymous"
         card.given = (given or "").strip()[:32]
         card.family = (family or "").strip()[:32]
-        card.aircraft = rt.aircraft.get("name", "")
+        card.aircraft = rt.state.get("sim_aircraft") or rt.aircraft.get("name", "")
         card.session_id = str(rt.state.get("session_id") or "")
         card.user_id = rt.session.get("pilot_user_id") or ""
         rt.board.add(card.to_entry())

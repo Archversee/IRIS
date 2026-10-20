@@ -137,6 +137,16 @@ export default function LiveSession() {
   }
 
   const waitingForData = summary && flightLoaded && flight.length === 0;
+  // Straight from MAVIS while it's flying this session (the summary is only
+  // loaded once, before MAVIS has read the aircraft): the sim's aircraft, and
+  // the curriculum of the flight in progress -- its latest flight.
+  const mavisHere = mavis?.session_id === sessionId;
+  const aircraft = (mavisHere && mavis?.sim_aircraft) || summary?.session?.aircraft;
+  const liveFlights = mavisHere ? mavis?.flights : null;
+  const curriculum = liveFlights?.length
+    ? liveFlights[liveFlights.length - 1].title
+    : (mavisHere && mavis?.active_lesson?.title)
+      || (summary?.flights || []).map((f) => f.title).filter(Boolean).pop();
   const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
@@ -150,9 +160,10 @@ export default function LiveSession() {
         <div className="rev-titlebar">
           <h1>{summary?.session?.name || "Live"}</h1>
           <span className="sub">
-            {summary ? `${summary.session.aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "loading…"}
+            {summary ? `${aircraft || "aircraft n/a"} · ${summary.session.sim_source || "sim n/a"}` : "loading…"}
           </span>
           <span className="spacer" />
+          {curriculum && <span className="rev-curriculum" title="Curriculum being flown"><small>Curriculum</small> {curriculum}</span>}
           {mavis?.session_id === sessionId && <RuleAlerts live={mavis?.sop_live} flying={!!mavis?.lesson_running} />}
           <span className={"live-badge" + (followingLive ? " is-live" : "")}>{followingLive ? "● LIVE" : "PAUSED"}</span>
         </div>

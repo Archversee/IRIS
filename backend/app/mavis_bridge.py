@@ -175,7 +175,8 @@ def map_scorecard_row(session_id: UUID, state: dict, sc: dict) -> tuple:
 
 
 class _SessionCursor:
-    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig", "flights_sig")
+    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig", "flights_sig",
+                 "aircraft")
 
     def __init__(self):
         self.seen = False
@@ -194,6 +195,7 @@ class _SessionCursor:
         self.row_buffer: list[tuple] = []
         self.events_sig: str | None = None   # last flight_events list written, to skip unchanged pushes
         self.flights_sig: str | None = None  # same, for the session_flights list
+        self.aircraft: str | None = None     # sim aircraft last written to sessions.aircraft
 
 
 class MavisBridge:
@@ -265,6 +267,15 @@ class MavisBridge:
                 await adapter.launch_adapter()
             except Exception as e:
                 log.warning("mavis_bridge: couldn't auto-launch the OBS/Smart-Eye adapter: %s", e)
+
+        # the aircraft MAVIS read from the sim at lesson start; only fills a blank one,
+        # so a name typed on the Save Session page is never overwritten
+        aircraft = (state.get("sim_aircraft") or "").strip()
+        if aircraft and aircraft != cur.aircraft:
+            async with db.acquire() as conn:
+                await conn.execute("update sessions set aircraft = $2 "
+                                   "where id = $1 and coalesce(aircraft, '') = ''", session_id, aircraft)
+            cur.aircraft = aircraft
 
         fields = map_telemetry_fields(state)
         if fields is not None and not cur.ended:
