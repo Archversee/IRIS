@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -19,8 +19,8 @@ import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon
 // Leaderboard, Scoring Guide, Upload and AOI Zones are reached from the
 // Settings drawer.
 // SOP Upload / SOP Rules (turning an aircraft SOP or training handbook into
-// flight rules) are instructor tools: they sit under IRIS and only
-// instructors and admins see them (`roles`); App.jsx guards the routes too.
+// flight rules) are instructor tools: they're reached from the Settings
+// drawer, which shows them only to SOP_ROLES; App.jsx guards the routes too.
 export const SOP_ROLES = ["instructor", "admin"];
 const SECTIONS = [
   {
@@ -37,14 +37,12 @@ const SECTIONS = [
     links: [
       { to: "/monitor", path: "/monitor", label: "Live Monitor", icon: <PulseIcon /> },
       { to: "/sessions", path: "/sessions", label: "Sessions", icon: <ListIcon /> },
-      { to: "/sop/new", path: "/sop/new", label: "SOP Upload", icon: <UploadIcon />, roles: SOP_ROLES },
-      { to: "/sop/rules", path: "/sop/rules", label: "SOP Rules", icon: <ChecklistIcon />, roles: SOP_ROLES },
     ],
   },
 ];
 
 // Pages opened from the Settings drawer -- the gear lights up on these.
-const SETTINGS_PATHS = ["/leaderboard", "/scoring", "/upload", "/aoi-zones"];
+const SETTINGS_PATHS = ["/leaderboard", "/scoring", "/upload", "/aoi-zones", "/sop"];
 
 // Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
 // icon-only; otherwise it stays at the dragged width and shows full names.
