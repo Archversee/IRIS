@@ -604,6 +604,13 @@
   font-size: 13.5px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border);
 }
 .mg-search:focus { outline: none; border-color: var(--accent); }
+.mg-grade {
+  display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 999px; text-align: center;
+  font-size: 12px; font-weight: 800; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border);
+}
+.mg-grade--S, .mg-grade--A { color: #1f9d55; border-color: #1f9d55; }
+.mg-grade--B { color: var(--accent); border-color: var(--accent); }
+.mg-grade--D, .mg-grade--F { color: #e5484d; border-color: #e5484d; }
 .mg-del {
   padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
   background: transparent; color: var(--muted); border: 1px solid var(--border);

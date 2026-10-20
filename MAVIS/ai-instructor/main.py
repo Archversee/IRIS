@@ -242,7 +242,7 @@ async def amain(cfg):
                "chat": chat, "mute": rt.mute, "intro": rt.intro, "retry": retry,
                "configure_session": rt.configure_session,
                "select_lesson": rt.select_lesson,
-               "quit": rt.quit_lesson, "score_submit": rt.score_submit,
+               "quit": rt.quit_lesson, "score_submit": rt.score_submit, "score_drop": rt.score_drop,
                "set_reference": rt.set_reference,
                "reading_say": rt.reading_say,
                "instructor_unlock": rt.instructor_unlock,

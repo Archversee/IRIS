@@ -239,6 +239,14 @@ def build_scoring_flow(rt):
     async def score_submit(name: str, given: str = "", family: str = ""):
         _post_card(name, given, family)
 
+    async def score_drop():
+        """The trainee threw the run away (IRIS's Finish & discard): clear the
+        held scorecard WITHOUT posting it -- _discard_card would post it."""
+        rt.state["scorecard"] = None
+        rt.pending["card"] = None
+        rt.pending["posted"] = False
+
     rt._discard_card = _discard_card
     rt.finish_lesson = finish_lesson
     rt.score_submit = score_submit
+    rt.score_drop = score_drop

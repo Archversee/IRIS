@@ -227,6 +227,14 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
             await fn(msg.name.strip()[:24], msg.given.strip()[:32], msg.family.strip()[:32])
         return {"ok": True}
 
+    @app.post("/score/drop")
+    async def score_drop():
+        """Throw the held scorecard away without posting it to the leaderboard."""
+        fn = actions.get("score_drop")
+        if fn:
+            await fn()
+        return {"ok": True}
+
     @app.post("/demo/{action}")
     async def demo(action: str):
         fn = actions.get(action)

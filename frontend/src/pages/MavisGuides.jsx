@@ -23,7 +23,7 @@ function GuidePage({ title, sub, wide, children }) {
 }
 
 // ---- Leaderboard: every posted run, from IRIS's Postgres (routers/leaderboard.py) ----
-// One board per mode; the search matches name, circuit or aircraft.
+// One board per mode; the search matches name, curriculum or aircraft.
 const MODES = [["visitor", "Visitor"], ["trainee", "Trainee"], ["pilot", "Pilot"]];
 const PAGE_SIZE = 20;
 
@@ -52,7 +52,7 @@ export function LeaderboardPage() {
   const canDelete = (e) => !!user && (user.role === "admin" || (e.user_id && e.user_id === user.id));
 
   async function remove(e) {
-    if (!confirm(`Delete ${e.pilot}'s score of ${e.total} on ${e.circuit || "this circuit"}? This can't be undone.`)) return;
+    if (!confirm(`Delete ${e.pilot}'s score of ${e.total} on ${e.circuit || "this curriculum"}? This can't be undone.`)) return;
     try {
       await api.deleteLeaderboardEntry(e.id);
       // last row on a later page gone: step back a page
@@ -83,7 +83,7 @@ export function LeaderboardPage() {
   const anyDeletable = rows.some(canDelete);
 
   return (
-    <GuidePage title="Leaderboard" sub="Every circuit posted from MAVIS, ranked by score." wide>
+    <GuidePage title="Leaderboard" sub="Every flight posted from MAVIS, ranked by score." wide>
       <div className="mg-tabs">
         <div className="mg-seg">
           {MODES.map(([v, l]) => (
@@ -92,7 +92,7 @@ export function LeaderboardPage() {
           ))}
         </div>
         <input type="search" className="mg-search" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name, circuit or aircraft…" aria-label="Search the leaderboard" />
+          placeholder="Search name, curriculum or aircraft…" aria-label="Search the leaderboard" />
       </div>
 
       {err ? (
@@ -105,7 +105,7 @@ export function LeaderboardPage() {
         <div className="mg-table-wrap">
           <table className="mg-lb">
             <thead>
-              <tr><th>Rank</th><th>Name</th><th>Circuit</th><th>Aircraft</th><th className="num">Score</th>{anyDeletable && <th />}</tr>
+              <tr><th>Rank</th><th>Name</th><th>Curriculum</th><th>Aircraft</th><th className="num">Score</th><th>Grade</th>{anyDeletable && <th />}</tr>
             </thead>
             <tbody>
               {rows.map((e) => (
@@ -115,6 +115,7 @@ export function LeaderboardPage() {
                   <td>{e.circuit || "–"}</td>
                   <td>{e.aircraft || "–"}</td>
                   <td className="num mg-tot">{e.total ?? "–"}</td>
+                  <td>{e.grade ? <span className={`mg-grade mg-grade--${e.grade}`}>{e.grade}</span> : "–"}</td>
                   {anyDeletable && (
                     <td className="num">
                       {canDelete(e) && (
