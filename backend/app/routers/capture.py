@@ -19,7 +19,6 @@ import ctypes
 import logging
 import sys
 import threading
-import time
 from ctypes import wintypes
 
 from fastapi import APIRouter, HTTPException
@@ -38,7 +37,7 @@ except Exception as e:  # not Windows / package missing -- screens just show as 
     WindowsCapture = None
     log.warning("window capture unavailable: %s", e)
 
-_FPS = 15
+_FPS = 30
 _MAX_WIDTH = 1280      # frames are scaled down to this before encoding -- plenty for a monitor tile
 _JPEG_QUALITY = 70
 _BOUNDARY = "frame"
@@ -113,7 +112,7 @@ class _ScreenCapture:
         self.alive = False
         self.seq = 0
         self.jpeg: bytes | None = None
-        self._last_encode = 0.0
+        self.waiters: set = set()   # (loop, asyncio.Event) per viewer, set on each new frame
 
     def _start(self, hwnd: int) -> None:
         cap = WindowsCapture(cursor_capture=False, draw_border=False,
@@ -124,10 +123,6 @@ class _ScreenCapture:
             if not self.alive:
                 control.stop()
                 return
-            now = time.monotonic()
-            if now - self._last_encode < 1 / _FPS:
-                return
-            self._last_encode = now
             img = frame.frame_buffer[:, :, :3]
             if frame.width > _MAX_WIDTH:
                 img = cv2.resize(img, (_MAX_WIDTH, round(frame.height * _MAX_WIDTH / frame.width)),
@@ -136,14 +131,21 @@ class _ScreenCapture:
             if ok:
                 self.jpeg = buf.tobytes()
                 self.seq += 1
+                self._wake()
 
         @cap.event
         def on_closed():  # window closed (or capture stopped)
             self.alive = False
+            self._wake()
 
         self.alive = True
         self.jpeg = None
         self.control = cap.start_free_threaded()
+
+    def _wake(self) -> None:
+        # runs on the capture thread -- hand each viewer's event to its own loop
+        for loop, ev in list(self.waiters):
+            loop.call_soon_threadsafe(ev.set)
 
     def subscribe(self) -> bool:
         with self.lock:
@@ -179,15 +181,26 @@ _captures = {s: _ScreenCapture(s) for s in ("otw", "instrument")}
 
 
 async def _mjpeg(cap: _ScreenCapture):
+    # Sends each frame the moment it's encoded (no polling delay); a viewer
+    # that falls behind just skips to the newest frame.
+    ev = asyncio.Event()
+    waiter = (asyncio.get_running_loop(), ev)
+    cap.waiters.add(waiter)
     try:
         last = -1
         while cap.alive:
+            ev.clear()
             if cap.seq != last and cap.jpeg:
                 last, jpg = cap.seq, cap.jpeg
                 yield (f"--{_BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
                        f"Content-Length: {len(jpg)}\r\n\r\n").encode() + jpg + b"\r\n"
-            await asyncio.sleep(1 / _FPS)
+                continue
+            try:
+                await asyncio.wait_for(ev.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass  # no new frame (static/minimised window) -- recheck alive
     finally:
+        cap.waiters.discard(waiter)
         cap.unsubscribe()
 
 
