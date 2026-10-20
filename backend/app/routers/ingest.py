@@ -183,10 +183,27 @@ async def _read_csv(file: UploadFile) -> csv.DictReader:
 
 
 async def _read_eye_rows(file: UploadFile):
+    """-> (rows, is_smart_eye_export)."""
     raw = _decode_upload(await file.read())
     if _is_smarteye_raw(raw):
-        return _smarteye_rows(raw)
-    return csv.DictReader(io.StringIO(raw))
+        return _smarteye_rows(raw), True
+    return csv.DictReader(io.StringIO(raw)), False
+
+
+async def _eye_clock_shift(session_id: UUID) -> float:
+    """Seconds to add to a Smart Eye export's timestamps: the clock offset the
+    live adapter measured for this session (app/eye_clock.py), so the full
+    file lines up with the flight data exactly like the corrected live feed.
+    0 when it wasn't measured or the live feed wasn't corrected either."""
+    try:
+        async with db.acquire() as conn:
+            row = await conn.fetchrow("select eye_clock_offset_s, eye_clock_corrected from sessions where id=$1",
+                                      session_id)
+    except Exception:          # eye-clock columns not added yet
+        return 0.0
+    if row and row["eye_clock_corrected"] and row["eye_clock_offset_s"] is not None:
+        return float(row["eye_clock_offset_s"])
+    return 0.0
 
 
 # ---- flight ---------------------------------------------------------
@@ -219,14 +236,15 @@ async def ingest_eye(session_id: UUID, file: UploadFile):
     if not await _session_exists(session_id):
         raise HTTPException(404, "Session not found")
 
-    reader = await _read_eye_rows(file)
+    reader, is_smart_eye = await _read_eye_rows(file)
+    shift = timedelta(seconds=await _eye_clock_shift(session_id)) if is_smart_eye else timedelta(0)
     records, skipped = [], 0
     for r in reader:
         ts_raw = r.get("ts") or r.get("timestamp_utc")
         if not ts_raw:
             skipped += 1
             continue
-        rec = [session_id, _to_ts(ts_raw)]
+        rec = [session_id, _to_ts(ts_raw) + shift]
         for col in db.EYE_COLUMNS[2:]:
             val = r.get(col)
             if col in EYE_BOOL:
@@ -240,7 +258,9 @@ async def ingest_eye(session_id: UUID, file: UploadFile):
         records.append(tuple(rec))
 
     inserted = await db.replace_session_rows("eye_tracking_data", session_id, db.EYE_COLUMNS, records)
-    return IngestResult(inserted=inserted, skipped=skipped)
+    note = (f"Timestamps shifted by {shift.total_seconds():+.3f} s to match the flight data "
+            f"(the eye tracker's clock offset measured live for this session)." if shift else None)
+    return IngestResult(inserted=inserted, skipped=skipped, message=note)
 
 
 async def _refresh_session_bounds(session_id: UUID):

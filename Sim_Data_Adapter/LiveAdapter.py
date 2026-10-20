@@ -655,7 +655,37 @@ _SCREEN_AOIS = ("OTW", "Instruments")
 _EYE_STATUS_EVERY_S = 30.0
 _NO_PACKET_HINT_AFTER_S = 30.0
 
-_eye_stats = {"packets": 0, "no_clock": 0, "parse_errors": 0, "queued": 0, "queue_full": 0, "sent": 0}
+_eye_stats = {"packets": 0, "no_clock": 0, "parse_errors": 0, "queued": 0, "queue_full": 0, "sent": 0,
+              "gaps": 0, "missing_s": 0.0, "covered_s": 0.0}
+_UDP_RCVBUF = 4 * 1024 * 1024     # bytes: room for a burst while this thread is busy (Windows' default is small)
+
+
+class DropMeter:
+    """Packets lost between the Smart Eye PC and this one show up as jumps in
+    Smart Eye's own timestamps. Learns the normal interval, then counts any
+    jump over 3x it as a dropout and adds up the time with no data."""
+
+    def __init__(self):
+        self._last: float | None = None
+        self._intervals: list[float] = []
+        self.step: float | None = None
+
+    def observe(self, sep_epoch: float) -> None:
+        if self._last is not None:
+            dt = sep_epoch - self._last
+            if 0 < dt < 1.0 and self.step is None:
+                self._intervals.append(dt)
+                if len(self._intervals) >= 100:
+                    self.step = sorted(self._intervals)[len(self._intervals) // 2]
+            if self.step and dt > 0:
+                _eye_stats["covered_s"] += dt
+                if dt > 3 * self.step:
+                    _eye_stats["gaps"] += 1
+                    _eye_stats["missing_s"] += dt - self.step
+        self._last = sep_epoch
+
+
+_drops = DropMeter()
 
 
 def _report_first_packet(fields: dict) -> None:
@@ -687,6 +717,10 @@ def eye_main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, _UDP_RCVBUF)
+    except OSError as e:
+        print(f"[eye] couldn't enlarge the UDP receive buffer ({e}) -- bursts may be dropped")
+    try:
         sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
     except OSError as e:
         print(f"[eye] ERROR: can't listen on UDP {UDP_LISTEN_PORT} ({e}) -- another program (an older adapter, "
@@ -706,9 +740,11 @@ def eye_main():
             if time.time() - last_status >= _EYE_STATUS_EVERY_S:
                 last_status = time.time()
                 s = _eye_stats
+                lost = (f"{s['gaps']} network dropouts, {100 * s['missing_s'] / s['covered_s']:.1f}% of the time "
+                        f"missing" if s["covered_s"] else "dropouts: measuring")
                 print(f"[eye] status: {s['packets']} packets, {s['queued']} samples queued, {s['sent']} sent to IRIS, "
                       f"{s['no_clock']} dropped (no RealTimeClock), {s['parse_errors']} unparseable, "
-                      f"{s['queue_full']} dropped (IRIS not keeping up / not connected)")
+                      f"{s['queue_full']} dropped (IRIS not keeping up / not connected); {lost}")
             if not got_first_packet:
                 got_first_packet = True
                 got_packet.set()
@@ -729,6 +765,7 @@ def eye_main():
                 epoch = None
                 if "RealTimeClock" in fields:
                     sep = _sep_epoch(fields["RealTimeClock"])
+                    _drops.observe(sep)
                     _clock.observe(sep, time.time())
                     epoch = _clock.correct(sep)
                     _clock.maybe_report(SESSION_ID)
