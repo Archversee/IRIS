@@ -31,9 +31,15 @@ router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 MODES = ("visitor", "trainee", "pilot")
 _LEGACY_MODE = {"casual": "visitor", "serious": "pilot"}
 
-# Pilot shown as given + family name when MAVIS was told them, else the posted name.
-_PILOT = "coalesce(nullif(trim(concat_ws(' ', given_name, family_name)), ''), display_name)"
-_SEARCH = (f"({_PILOT} ilike $q or display_name ilike $q"
+# Pilot shown: the Pilot picked on the session's Finish & save page; before
+# that's filled in, the given + family name MAVIS was told, else the posted name.
+_PILOT = ("coalesce(nullif(trim(s.pilot_name), ''), "
+          "nullif(trim(concat_ws(' ', e.given_name, e.family_name)), ''), e.display_name)")
+# one mode's live (not deleted) entries, with the pilot worked out; {mode} is its $n
+_BOARD = ("select e.*, {pilot} as pilot from leaderboard_entries e "
+          "left join sessions s on s.id = e.session_id "
+          "where e.mode = {mode} and e.deleted_at is null")
+_SEARCH = ("(pilot ilike $q or display_name ilike $q"
            " or coalesce(circuit, lesson_id, '') ilike $q or coalesce(aircraft, '') ilike $q)")
 
 
@@ -113,7 +119,7 @@ async def leaderboard(
         args.append(v)
         return f"${len(args)}"
 
-    mode_sql = f"where mode = {arg(mode)} and deleted_at is null"
+    board = _BOARD.format(pilot=_PILOT, mode=arg(mode))
     search_sql = ""
     q = q.strip()
     if q:
@@ -122,10 +128,9 @@ async def leaderboard(
     limit, offset = arg(page_size), arg((page - 1) * page_size)
     sql = f"""
         with ranked as (
-            select *, {_PILOT} as pilot,
-                   row_number() over (order by total desc nulls last, retries asc nulls last,
-                                               scored_at asc, id asc) as rank
-              from leaderboard_entries {mode_sql}
+            select *, row_number() over (order by total desc nulls last, retries asc nulls last,
+                                                  scored_at asc, id asc) as rank
+              from ({board}) b
         )
         select rank, id, session_id, user_id, pilot, coalesce(circuit, lesson_id) as circuit, aircraft,
                total, grade, expert_total, expert_reference, mode, retries, capped, scored_at,
@@ -138,8 +143,7 @@ async def leaderboard(
         rows = [dict(r) for r in await conn.fetch(sql, *args)]
         matches = rows[0]["matches"] if rows else (
             # past the last page: still report how many there are
-            await conn.fetchval(f"select count(*) from (select *, {_PILOT} as pilot "
-                                f"from leaderboard_entries {mode_sql}) ranked {search_sql}", *args[:-2])
+            await conn.fetchval(f"select count(*) from ({board}) ranked {search_sql}", *args[:-2])
         )
     for r in rows:
         r.pop("matches", None)

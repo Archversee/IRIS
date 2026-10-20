@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { ScoringGuideContent } from "../live/components/ScoringGuide.jsx";
@@ -80,7 +81,8 @@ export function LeaderboardPage() {
   const total = data?.total || 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
-  const anyDeletable = rows.some(canDelete);
+  // action column: View (rows linked to a session) and Delete (own runs / admin)
+  const anyActions = rows.some((e) => e.session_id || canDelete(e));
 
   return (
     <GuidePage title="Leaderboard" sub="Every flight posted from MAVIS, ranked by score." wide>
@@ -105,7 +107,7 @@ export function LeaderboardPage() {
         <div className="mg-table-wrap">
           <table className="mg-lb">
             <thead>
-              <tr><th>Rank</th><th>Name</th><th>Curriculum</th><th>Aircraft</th><th className="num">Score</th><th>Grade</th>{anyDeletable && <th />}</tr>
+              <tr><th>Rank</th><th>Name</th><th>Curriculum</th><th>Aircraft</th><th className="num">Score</th><th>Grade</th>{anyActions && <th />}</tr>
             </thead>
             <tbody>
               {rows.map((e) => (
@@ -116,13 +118,17 @@ export function LeaderboardPage() {
                   <td>{e.aircraft || "–"}</td>
                   <td className="num mg-tot">{e.total ?? "–"}</td>
                   <td>{e.grade ? <span className={`mg-grade mg-grade--${e.grade}`}>{e.grade}</span> : "–"}</td>
-                  {anyDeletable && (
-                    <td className="num">
+                  {anyActions && (
+                    <td className="num"><div className="mg-actions">
+                      {e.session_id && (
+                        <Link to={`/sessions/${e.session_id}/review`} className="mg-act"
+                          title="Open this session's review">View</Link>
+                      )}
                       {canDelete(e) && (
-                        <button type="button" className="mg-del" onClick={() => remove(e)}
+                        <button type="button" className="mg-act mg-act--del" onClick={() => remove(e)}
                           title="Delete this score" aria-label={`Delete ${e.pilot}'s score`}>Delete</button>
                       )}
-                    </td>
+                    </div></td>
                   )}
                 </tr>
               ))}

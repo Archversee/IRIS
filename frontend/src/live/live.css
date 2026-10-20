@@ -611,11 +611,14 @@
 .mg-grade--S, .mg-grade--A { color: #1f9d55; border-color: #1f9d55; }
 .mg-grade--B { color: var(--accent); border-color: var(--accent); }
 .mg-grade--D, .mg-grade--F { color: #e5484d; border-color: #e5484d; }
-.mg-del {
-  padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+.mg-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.mg-act {
+  display: inline-block; padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  line-height: 1.4; text-decoration: none;
   background: transparent; color: var(--muted); border: 1px solid var(--border);
 }
-.mg-del:hover { color: #e5484d; border-color: #e5484d; }
+.mg-act:hover { color: var(--accent); border-color: var(--accent); }
+.mg-act--del:hover { color: #e5484d; border-color: #e5484d; }
 
 .mg-pager {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
