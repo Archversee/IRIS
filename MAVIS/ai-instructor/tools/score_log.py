@@ -1,5 +1,6 @@
 """Score a logged SimConnect flight offline with the lesson's own phase detector
-and scorer, and optionally post the result to the all-time leaderboard.
+and scorer, and print the scorecard. (Leaderboard entries are saved by IRIS, in
+Postgres, when a run is posted from the live app.)
 
 Input is a CSV of raw SimConnect samples (one row per sample, any rate) with at
 least: timestamp_utc (ISO 8601) or ts, latitude, longitude, altitude_ft,
@@ -11,7 +12,7 @@ same MSFS sign conventions the live adapter applies, so the numbers match what
 a live run of the same flight would have scored.
 
     python tools/score_log.py data/recordings/supabase/visitor_log.csv \
-        --name "Marc" --reciprocal --post
+        --name "Marc" --reciprocal
 
 --reciprocal scores against the opposite runway (same pattern side), for
 flights flown from the other end of the lesson's runway.
@@ -29,7 +30,6 @@ sys.path.insert(0, str(HERE))
 
 from adapters.sim_replay import (load_log, reciprocal_runway, row_time,   # noqa: E402
                                  to_telemetry, VS_LIMIT_FPM)
-from core.leaderboard import Leaderboard          # noqa: E402
 from core.phase_detector import PhaseDetector     # noqa: E402
 from core.scoring import Scorer                   # noqa: E402
 
@@ -97,7 +97,6 @@ def main():
     ap.add_argument("--mode", default="visitor", choices=("visitor", "trainee", "pilot"))
     ap.add_argument("--hz", type=float, default=10.0, help="replay tick rate (app default 10)")
     ap.add_argument("--reciprocal", action="store_true", help="score against the opposite runway end")
-    ap.add_argument("--post", action="store_true", help="append the result to data/leaderboard.json")
     a = ap.parse_args()
 
     lesson = yaml.safe_load(a.lesson.read_text(encoding="utf-8"))
@@ -116,11 +115,6 @@ def main():
     if final_phase != "DEBRIEF":
         print(f"  flight ended in {final_phase} (no full stop detected)")
     print(json.dumps(card.to_entry(), indent=2))
-
-    if a.post:
-        board = Leaderboard(HERE / "data" / "leaderboard.json")
-        board.add(card.to_entry())
-        print(f"posted to {board.path}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 
 from .monitors import final_speed_band
+from .reference_profiles import latlon_to_pattern
 
 M_PER_NM = 1852.0
 
@@ -65,15 +66,22 @@ class ScoreCard:
     given: str = ""
     family: str = ""
     incomplete: bool | None = None   # None = circuit rule (no landing scored)
+    # The same run scored against the expert reference flown (None when the
+    # planned circuit was the reference) -- the leaderboard's second column.
+    expert_total: int | None = None
+    expert_reference: str = ""
+    aircraft: str = ""
+    session_id: str = ""
 
     def to_entry(self) -> dict:
         e = {"name": self.name, "mode": self.mode, "lesson": self.lesson,
              "ts": self.ts, "scores": self.scores, "retries": self.retries,
              "total": self.total, "grade": self.grade, "capped": self.capped}
-        if self.given:
-            e["given"] = self.given
-        if self.family:
-            e["family"] = self.family
+        for k in ("given", "family", "expert_reference", "aircraft", "session_id"):
+            if getattr(self, k):
+                e[k] = getattr(self, k)
+        if self.expert_total is not None:
+            e["expert_total"] = self.expert_total
         return e
 
 
@@ -109,10 +117,31 @@ class Scorer:
         b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band
         self.speed_band = ({"CLIMB_OUT": (float(b[0]), float(b[1])),
                             "CROSSWIND": (float(b[0]), float(b[1]))} if b else {})
+        self._ref = None             # expert reference targets (set_reference), scored alongside
         self.reset()
+
+    def set_reference(self, prof) -> None:
+        """Also score the run against an expert reference profile: its flown
+        track, its per-phase speeds and its downwind height replace the
+        planned circuit's for track / speed / altitude; landing and smoothness
+        are the same either way. The planned circuit (or None) turns it off.
+        Switching mid-run starts the expert score over from that point."""
+        if prof is None or prof.id == "planned" or not prof.track:
+            self._ref = None
+        else:
+            rw, p = self._lesson["runway"], self._lesson["pattern"]
+            self._ref = {
+                "name": prof.display_name,
+                "poly": [latlon_to_pattern(rw, p, pt[0], pt[1]) for pt in prof.track],
+                # only phases the expert has a speed for; the rest score like the planned circuit
+                "speed": {ph: float(t["ias"]) for ph, t in (prof.targets or {}).items() if "ias" in t},
+                "alt": prof.circuit_alt(self.pattern_alt),
+            }
+        self._xacc = {k: [0.0, 0] for k in ("track", "speed", "altitude")}
 
     def reset(self) -> None:
         self._acc = {k: [0.0, 0] for k in ("track", "speed", "altitude", "smoothness")}
+        self._xacc = {k: [0.0, 0] for k in ("track", "speed", "altitude")}
         self._prev_ctrl = None
         self._landings: list[dict] = []
         self.retries = 0
@@ -127,21 +156,36 @@ class Scorer:
             self.reached = True
         if tel.get("on_ground", True):
             return                                   # score airborne flying only
+        ref = self._ref
         if geom is not None:
             self._add("track", self._track_err(geom))
             aerr = self._alt_err(tel, geom, phase)
             if aerr is not None:
                 self._add("altitude", aerr)
+            if ref:
+                self._add("track", self._track_err(geom, ref["poly"]), self._xacc)
+                aerr = self._alt_err(tel, geom, phase, ref["alt"])
+                if aerr is not None:
+                    self._add("altitude", aerr, self._xacc)
         spd = self.tgt_speed.get(phase)
         band = self.speed_band.get(phase)
         if phase == "FINAL" and band is None:
             fb = final_speed_band(self._lesson, self._v, tel.get("alt_agl", 0.0))
             band = fb[:2] if fb else None
+        serr = None
+        ias = tel.get("ias", 0.0)
         if band:
-            ias = tel.get("ias", 0.0)
-            self._add("speed", max(0.0, band[0] - ias, ias - band[1]))
+            serr = max(0.0, band[0] - ias, ias - band[1])
         elif spd:
-            self._add("speed", abs(tel.get("ias", 0.0) - spd))
+            serr = abs(ias - spd)
+        if serr is not None:
+            self._add("speed", serr)
+        if ref:
+            xspd = ref["speed"].get(phase)
+            if xspd is not None:
+                self._add("speed", abs(ias - xspd), self._xacc)
+            elif serr is not None:
+                self._add("speed", serr, self._xacc)
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)
         pitch = ctrl["pitch"] if ctrl and ctrl.get("available") else -tel.get("elevator", 0.0)
         if self._prev_ctrl is not None:
@@ -161,19 +205,20 @@ class Scorer:
             "speed_err": err,
         })
 
-    def _add(self, key: str, err: float) -> None:
-        a = self._acc[key]
+    def _add(self, key: str, err: float, acc: dict | None = None) -> None:
+        a = (self._acc if acc is None else acc)[key]
         a[0] += err
         a[1] += 1
 
-    def _track_err(self, geom: dict) -> float:
+    def _track_err(self, geom: dict, poly: list | None = None) -> float:
+        poly = poly or self.poly
         px, py = geom["along"], geom["cross"]
-        return min(_seg_dist(px, py, *self.poly[i], *self.poly[i + 1])
-                   for i in range(len(self.poly) - 1))
+        return min(_seg_dist(px, py, *poly[i], *poly[i + 1])
+                   for i in range(len(poly) - 1))
 
-    def _alt_err(self, tel: dict, geom: dict, phase: str):
+    def _alt_err(self, tel: dict, geom: dict, phase: str, pattern_alt: float | None = None):
         if phase == "DOWNWIND":
-            return abs(tel.get("alt_msl", 0.0) - self.pattern_alt)
+            return abs(tel.get("alt_msl", 0.0) - (self.pattern_alt if pattern_alt is None else pattern_alt))
         if phase == "FINAL":
             dist_m = max(0.0, -geom["along"])           # metres before threshold
             ideal_agl = dist_m * 0.1719                  # ~3deg glidepath, in feet
@@ -201,33 +246,45 @@ class Scorer:
 
     def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
                  score_caps: bool | None = None) -> ScoreCard:
-        def mean(key):
-            a = self._acc[key]
+        def mean(key, acc=None):
+            a = (acc or self._acc)[key]
             return a[0] / a[1] if a[1] else 0.0
 
         landing_raw = self._landing_score()
-        scores = {
-            "track": round(_curve(mean("track"), self.s["track"])),
-            "speed": round(_curve(mean("speed"), self.s["speed"])),
-            "altitude": round(_curve(mean("altitude"), self.s["altitude"])),
-            "landing": round(landing_raw) if landing_raw is not None else None,
-            "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"])),
-        }
-        # a metric this lesson doesn't weigh (weight 0) isn't on its card --
-        # the take-off lesson has no landing, no circuit height
-        scores = {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
-        incomplete = (not self.reached) if self.segment == "takeoff" else landing_raw is None
-        wsum = sum(self.w.values()) or 1
-        total = sum((scores.get(k) or 0) * self.w[k] for k in self.w) / wsum
-        capped = False
+
+        def metric_scores(acc=None):
+            scores = {
+                "track": round(_curve(mean("track", acc), self.s["track"])),
+                "speed": round(_curve(mean("speed", acc), self.s["speed"])),
+                "altitude": round(_curve(mean("altitude", acc), self.s["altitude"])),
+                "landing": round(landing_raw) if landing_raw is not None else None,
+                "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"])),
+            }
+            # a metric this lesson doesn't weigh (weight 0) isn't on its card --
+            # the take-off lesson has no landing, no circuit height
+            return {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
+
         # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.
         if score_caps is None:
             score_caps = mode in ("trainee", "pilot", "serious")
-        if score_caps and self.retries > 0:
-            cap = self.retry_caps.get(self.retries, self.retry_cap_floor)
-            if total > cap:
-                total, capped = cap, True
-        total = round(total)
-        return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
+
+        def weighted_total(scores) -> tuple[int, bool]:
+            wsum = sum(self.w.values()) or 1
+            total = sum((scores.get(k) or 0) * self.w[k] for k in self.w) / wsum
+            capped = False
+            if score_caps and self.retries > 0:
+                cap = self.retry_caps.get(self.retries, self.retry_cap_floor)
+                if total > cap:
+                    total, capped = cap, True
+            return round(total), capped
+
+        scores = metric_scores()
+        incomplete = (not self.reached) if self.segment == "takeoff" else landing_raw is None
+        total, capped = weighted_total(scores)
+        card = ScoreCard(name or "", mode, lesson_name, time.time(), scores,
                          self.retries, total, self._grade(total, scores, incomplete), capped, practice,
                          incomplete=incomplete)
+        if self._ref:
+            card.expert_total = weighted_total(metric_scores(self._xacc))[0]
+            card.expert_reference = self._ref["name"]
+        return card

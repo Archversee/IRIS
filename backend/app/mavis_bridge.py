@@ -24,7 +24,7 @@ import websockets
 
 from . import db
 from .config import settings
-from .routers import adapter
+from .routers import adapter, leaderboard
 from .routers.stream import ingest_external_sample
 
 log = logging.getLogger(__name__)
@@ -200,7 +200,7 @@ class MavisBridge:
     def __init__(self, ws_url: str):
         self.ws_url = ws_url
         self._sessions: dict[str, _SessionCursor] = {}
-        self._last_leaderboard_count = -1
+        self._leaderboard_sig = None   # (count, last ts) of MAVIS's posted runs already saved
         self._last_flush = 0.0
         self._task: asyncio.Task | None = None
 
@@ -244,6 +244,8 @@ class MavisBridge:
             delay = min(delay * 1.5, _MAX_RECONNECT_DELAY_S)
 
     async def _handle_state(self, state: dict) -> None:
+        # before the session check: a score can be posted after the session is cleared
+        await self._sync_leaderboard(state)
         raw_sid = state.get("session_id")
         if not raw_sid:
             return  # nothing minted yet (pre-Start) -- nothing to attach data to
@@ -309,7 +311,6 @@ class MavisBridge:
         if now - self._last_flush >= _FLUSH_INTERVAL_S:
             self._last_flush = now
             await self._flush_flight_rows()
-            await self._sync_leaderboard(state)
 
     async def _ensure_session_row(self, session_id: UUID, state: dict) -> None:
         sess = state.get("session") or {}
@@ -365,37 +366,19 @@ class MavisBridge:
             await db.copy_rows("flight_data", FLIGHT_COLUMNS, all_rows)
 
     async def _sync_leaderboard(self, state: dict) -> None:
-        lb = state.get("leaderboard") or {}
-        rows: list[dict] = []
-        for mode_bucket in lb.values():
-            rows.extend((mode_bucket or {}).get("all") or [])
-        if len(rows) == self._last_leaderboard_count:
+        """Save runs posted to MAVIS's leaderboard -- MAVIS keeps none on
+        disk, so this is what makes them permanent (routers/leaderboard.py).
+        It republishes every run posted since it started; already-saved ones
+        are skipped, so a reconnect after IRIS was down catches up."""
+        posts = state.get("leaderboard_posts")
+        if not isinstance(posts, list):
             return
-        self._last_leaderboard_count = len(rows)
-        for e in rows:
-            await self._upsert_leaderboard_entry(e)
-
-    async def _upsert_leaderboard_entry(self, e: dict) -> None:
-        scores = e.get("scores") or {}
-        scored_at = _to_utc(e.get("ts")) or datetime.now(timezone.utc)
-        async with db.acquire() as conn:
-            await conn.execute(
-                """
-                insert into leaderboard_entries
-                    (display_name, given_name, family_name, mode, lesson_id, scored_at,
-                     track_score, speed_score, altitude_score, landing_score, smoothness_score,
-                     total, grade, retries, capped)
-                select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
-                where not exists (
-                    select 1 from leaderboard_entries
-                    where display_name = $1 and scored_at = $6 and lesson_id is not distinct from $5
-                )
-                """,
-                e.get("name"), e.get("given"), e.get("family"), e.get("mode"), e.get("lesson"),
-                scored_at, scores.get("track"), scores.get("speed"), scores.get("altitude"),
-                scores.get("landing"), scores.get("smoothness"), e.get("total"), e.get("grade"),
-                e.get("retries"), e.get("capped"),
-            )
+        sig = (len(posts), (posts[-1] or {}).get("ts") if posts else None)
+        if sig == self._leaderboard_sig:
+            return
+        for e in posts:
+            await leaderboard.save_entry(e)
+        self._leaderboard_sig = sig
 
 
 def _json_safe(fields: dict) -> dict:

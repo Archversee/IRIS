@@ -78,6 +78,21 @@ def _pattern_to_latlon(rw: dict, pat: dict, along: float, cross: float) -> tuple
     return lat, lon
 
 
+def latlon_to_pattern(rw: dict, pat: dict, lat: float, lon: float) -> tuple[float, float]:
+    """Inverse of _pattern_to_latlon: (along, cross) metres in the lesson's
+    pattern frame, cross pattern-side-positive (the frame Scorer works in)."""
+    lat0, lon0 = rw["threshold"]["lat"], rw["threshold"]["lon"]
+    th = math.radians(rw["heading_true"])
+    side = 1 if pat.get("side", "left") == "left" else -1
+    cl = pat.get("centerline_offset_m", 0)
+    n = (lat - lat0) * 111320.0
+    e = (lon - lon0) * 111320.0 * math.cos(math.radians(lat0))
+    sin_t, cos_t = math.sin(th), math.cos(th)
+    along = side * (e * sin_t + n * cos_t)
+    cross_adj = side * (n * sin_t - e * cos_t)
+    return along, cross_adj - side * cl
+
+
 def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 

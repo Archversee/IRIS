@@ -589,8 +589,8 @@
 
 .mg-table-wrap { overflow-x: auto; }
 .mg-lb { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.mg-lb th, .mg-lb td { padding: 10px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
-.mg-lb th:nth-child(-n+2), .mg-lb td:nth-child(-n+2) { text-align: left; }
+.mg-lb th, .mg-lb td { padding: 10px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.mg-lb .num { text-align: right; }
 .mg-lb th { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .mg-lb tbody tr:hover td { background: var(--inset); }
 .mg-rank { width: 36px; color: var(--muted); font-weight: 700; }
@@ -599,6 +599,36 @@
 .mg-lb tr.is-top-3 .mg-rank { color: #cd7f32; }
 .mg-tot { font-weight: 800; color: var(--accent); }
 .mg-empty { padding: 28px; text-align: center; font-style: italic; color: var(--muted); }
+.mg-sub { font-size: 11px; font-weight: 500; color: var(--muted); }
+.mg-mode {
+  display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+}
+.mg-mode--trainee { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.mg-mode--pilot { color: var(--text); border-color: var(--text); }
+
+.mg-search { display: flex; flex: 1 1 320px; min-width: 0; }
+.mg-search select, .mg-search input {
+  height: 36px; font-size: 13.5px; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.mg-search select { padding: 0 10px; border-radius: 9px 0 0 9px; border-right: none; }
+.mg-search input { flex: 1; min-width: 0; padding: 0 12px; border-radius: 0 9px 9px 0; }
+.mg-search input:focus, .mg-search select:focus { outline: none; border-color: var(--accent); }
+
+.mg-pager {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 16px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.mg-pager__btns { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mg-pager__btns button {
+  min-width: 34px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+}
+.mg-pager__btns button:hover:not(:disabled) { color: var(--text); }
+.mg-pager__btns button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.mg-pager__btns button:disabled { opacity: .4; cursor: default; }
+.mg-pager__gap { padding: 0 4px; }
 
 .mg-scoring .mavis-guide-list { font-size: 14px; line-height: 1.8; padding-left: 0; list-style: none; }
 .mg-scoring .mavis-guide-table { font-size: 13px; }

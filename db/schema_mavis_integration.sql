@@ -86,12 +86,13 @@ create table if not exists scorecards (
 create index if not exists scorecards_session on scorecards (session_id);
 
 -- ---------------------------------------------------------------------
--- leaderboard_entries: Postgres mirror of MAVIS's data/leaderboard.json,
--- so IRIS's frontend (which never touches MAVIS's filesystem) can render
--- a leaderboard screen. MAVIS's JSON file remains its own local/offline
--- source of truth per the "fully local" invariant; this table is a
--- read-side copy written by the integration bridge (see plan §Coupling).
--- session_id is nullable because MAVIS's demo-seeded rows have no session.
+-- leaderboard_entries: THE leaderboard -- every run posted from MAVIS.
+-- MAVIS keeps no file of its own any more; it publishes each posted run
+-- and the integration bridge saves it here (backend/app/routers/
+-- leaderboard.py, which also serves the paged/searchable board).
+-- total = basic score (vs the planned circuit); expert_total = the same
+-- run scored against the expert reference flown (null when none was).
+-- session_id is nullable: rows from before sessions were linked have none.
 -- ---------------------------------------------------------------------
 create table if not exists leaderboard_entries (
     id              bigint generated always as identity primary key,
@@ -113,6 +114,11 @@ create table if not exists leaderboard_entries (
     capped          boolean
 );
 create index if not exists leaderboard_entries_lesson on leaderboard_entries (lesson_id, total desc);
+alter table leaderboard_entries add column if not exists circuit text;           -- lesson title
+alter table leaderboard_entries add column if not exists aircraft text;
+alter table leaderboard_entries add column if not exists expert_total integer;
+alter table leaderboard_entries add column if not exists expert_reference text;  -- e.g. "Maverick - Smooth final"
+create index if not exists leaderboard_entries_rank on leaderboard_entries (total desc, retries, scored_at);
 
 -- ---------------------------------------------------------------------
 -- flight_events: start/end time of each graded event in a session -- one

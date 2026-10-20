@@ -218,9 +218,12 @@ def build_scoring_flow(rt):
         card.name = (name or "").strip()[:24] or "Anonymous"
         card.given = (given or "").strip()[:32]
         card.family = (family or "").strip()[:32]
+        card.aircraft = rt.aircraft.get("name", "")
+        card.session_id = str(rt.state.get("session_id") or "")
         rt.board.add(card.to_entry())
         rt.pending["posted"] = True
         rt.state["leaderboard"] = rt.board.snapshot()
+        rt.state["leaderboard_posts"] = rt.board.posts()
         rt.state["scorecard"] = _card_state(card, posted=True)
 
     def _discard_card() -> None:

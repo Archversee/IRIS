@@ -129,9 +129,8 @@ async def amain(cfg):
         state["flights"] = event_log.flights()
     rt._publish_events = _publish_events
 
-    board = Leaderboard(HERE / "data" / "leaderboard.json")
+    board = Leaderboard()            # in memory; IRIS keeps the all-time board in Postgres
     rt.board = board
-    board.seed_demo_if_empty()
     rt.lesson_id = Path(cfg["lesson"]).stem
     catalog = load_catalog()
     rt.catalog = catalog
@@ -177,7 +176,7 @@ async def amain(cfg):
                    "scales": {"speed_max": aircraft["v_speeds"].get("vne", 163),
                               "alt_max": alt_scale_max(rt.lesson)},
                    "flaps_style": flap_style, "session": session,
-                   "scorecard": None, "leaderboard": board.snapshot(),
+                   "scorecard": None, "leaderboard": board.snapshot(), "leaderboard_posts": [],
                    "lesson_id": rt.lesson_id,
                    "lesson_catalog": catalog,
                    "app_version": APP_VERSION,

@@ -147,6 +147,8 @@ def build_session(rt):
         rt.state["reference"] = {"id": prof.id, "name": prof.display_name}
         rt.state["reference_track"] = prof.track
         rt.engine.monitors.apply_reference(prof)
+        if hasattr(rt.scorer, "set_reference"):    # circuit lessons: expert score alongside the basic one
+            rt.scorer.set_reference(prof)
 
     async def _announce_reference_change(prof) -> None:
         if prof.id == "planned":

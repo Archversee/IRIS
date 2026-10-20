@@ -162,8 +162,9 @@ existing `db/schema.sql` (nothing renamed or dropped). Summary:
   message, data jsonb)
 - new `scorecards` (session_id, 5 metric scores, total, grade, retries,
   capped)
-- new `leaderboard_entries` (Postgres mirror of MAVIS's
-  `data/leaderboard.json`, read by IRIS's new leaderboard screen)
+- new `leaderboard_entries` (the all-time leaderboard -- MAVIS no longer
+  keeps a JSON file; the bridge saves each posted run from
+  `state["leaderboard_posts"]`, served by `routers/leaderboard.py`)
 
 `session_id` (the `sessions.id` uuid) is the join key across every table,
 minted once by MAVIS per run, consumed everywhere else — exactly the
