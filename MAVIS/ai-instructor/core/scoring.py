@@ -72,12 +72,13 @@ class ScoreCard:
     expert_reference: str = ""
     aircraft: str = ""
     session_id: str = ""
+    user_id: str = ""                # IRIS account that flew it (may delete it from the board)
 
     def to_entry(self) -> dict:
         e = {"name": self.name, "mode": self.mode, "lesson": self.lesson,
              "ts": self.ts, "scores": self.scores, "retries": self.retries,
              "total": self.total, "grade": self.grade, "capped": self.capped}
-        for k in ("given", "family", "expert_reference", "aircraft", "session_id"):
+        for k in ("given", "family", "expert_reference", "aircraft", "session_id", "user_id"):
             if getattr(self, k):
                 e[k] = getattr(self, k)
         if self.expert_total is not None:

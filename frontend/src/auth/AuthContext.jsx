@@ -7,6 +7,14 @@ const AuthContext = createContext(null);
 
 export const ROLE_LABELS = { trainee: "Trainee", instructor: "Instructor", admin: "Administrator" };
 
+// Who's flying, for MAVIS's session setup: the name it uses in the debrief and
+// posts on the leaderboard, and the account that owns those leaderboard runs
+// (so that pilot can delete them).
+export function pilotIdentity(user) {
+  if (!user) return {};
+  return { trainee_name: user.full_name || user.username || "", pilot_user_id: user.id };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(!!getToken()); // only wait if there's a token to check

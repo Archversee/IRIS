@@ -211,15 +211,17 @@ def build_scoring_flow(rt):
         rt.engine.briefing_done = False
 
     def _post_card(name: str = "", given: str = "", family: str = "") -> None:
-        """Post the held scorecard once; an empty name posts as Anonymous."""
+        """Post the held scorecard once; with no name given or set up, as Anonymous."""
         card = rt.pending.get("card")
         if not card or card.practice or rt.pending["posted"]:
             return
-        card.name = (name or "").strip()[:24] or "Anonymous"
+        # unnamed (finished without answering): the trainee name the session was set up with
+        card.name = (name or rt.session.get("name") or "").strip()[:24] or "Anonymous"
         card.given = (given or "").strip()[:32]
         card.family = (family or "").strip()[:32]
         card.aircraft = rt.aircraft.get("name", "")
         card.session_id = str(rt.state.get("session_id") or "")
+        card.user_id = rt.session.get("pilot_user_id") or ""
         rt.board.add(card.to_entry())
         rt.pending["posted"] = True
         rt.state["leaderboard"] = rt.board.snapshot()

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useAuth } from "../auth/AuthContext.jsx";
 import { ScoringGuideContent } from "../live/components/ScoringGuide.jsx";
 import "../live/live.css";
 
@@ -22,11 +23,9 @@ function GuidePage({ title, sub, wide, children }) {
 }
 
 // ---- Leaderboard: every posted run, from IRIS's Postgres (routers/leaderboard.py) ----
-const MODES = [["", "All modes"], ["visitor", "Visitor"], ["trainee", "Trainee"], ["pilot", "Pilot"]];
-const SEARCH_FIELDS = [["all", "All"], ["pilot", "Pilot"], ["circuit", "Circuit"], ["aircraft", "Aircraft"]];
+// One board per mode; the search matches name, circuit or aircraft.
+const MODES = [["visitor", "Visitor"], ["trainee", "Trainee"], ["pilot", "Pilot"]];
 const PAGE_SIZE = 20;
-
-const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "–");
 
 // 1 … 4 5 [6] 7 8 … 20
 function pageList(page, pages) {
@@ -43,11 +42,26 @@ function pageList(page, pages) {
 export function LeaderboardPage() {
   const [query, setQuery] = useState("");
   const [q, setQ] = useState("");             // debounced query actually sent
-  const [field, setField] = useState("all");
-  const [mode, setMode] = useState("");
+  const [mode, setMode] = useState("visitor");
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [reload, setReload] = useState(0);
+  const { user } = useAuth();
+  // pilots may delete their own runs (the account they flew under), admins any run
+  const canDelete = (e) => !!user && (user.role === "admin" || (e.user_id && e.user_id === user.id));
+
+  async function remove(e) {
+    if (!confirm(`Delete ${e.pilot}'s score of ${e.total} on ${e.circuit || "this circuit"}? This can't be undone.`)) return;
+    try {
+      await api.deleteLeaderboardEntry(e.id);
+      // last row on a later page gone: step back a page
+      if (rows.length === 1 && page > 1) setPage(page - 1);
+      else setReload((n) => n + 1);
+    } catch (x) {
+      alert(`Couldn't delete it: ${x.detail || x.message}`);
+    }
+  }
 
   useEffect(() => {
     const t = setTimeout(() => { setQ(query.trim()); setPage(1); }, 300);
@@ -56,33 +70,29 @@ export function LeaderboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    api.leaderboard({ q, field, mode, page, pageSize: PAGE_SIZE })
+    api.leaderboard({ q, mode, page, pageSize: PAGE_SIZE })
       .then((d) => { if (!cancelled) { setData(d); setErr(null); } })
       .catch((e) => { if (!cancelled) setErr(e.detail || e.message); });
     return () => { cancelled = true; };
-  }, [q, field, mode, page]);
+  }, [q, mode, page, reload]);
 
   const rows = data?.rows || [];
   const total = data?.total || 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const anyDeletable = rows.some(canDelete);
 
   return (
-    <GuidePage title="Leaderboard" sub="Every circuit posted from MAVIS, ranked by basic score." wide>
+    <GuidePage title="Leaderboard" sub="Every circuit posted from MAVIS, ranked by score." wide>
       <div className="mg-tabs">
-        <div className="mg-search">
-          <select value={field} onChange={(e) => { setField(e.target.value); setPage(1); }} aria-label="Search in">
-            {SEARCH_FIELDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder={field === "all" ? "Search pilot, circuit or aircraft…" : `Search ${field}…`} />
-        </div>
         <div className="mg-seg">
           {MODES.map(([v, l]) => (
             <button key={v} type="button" className={mode === v ? "is-on" : ""}
               onClick={() => { setMode(v); setPage(1); }}>{l}</button>
           ))}
         </div>
+        <input type="search" className="mg-search" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name, circuit or aircraft…" aria-label="Search the leaderboard" />
       </div>
 
       {err ? (
@@ -95,10 +105,7 @@ export function LeaderboardPage() {
         <div className="mg-table-wrap">
           <table className="mg-lb">
             <thead>
-              <tr>
-                <th>Rank</th><th>Name</th><th>Circuit</th><th>Aircraft</th>
-                <th className="num">Basic score</th><th className="num">Expert pilot score</th><th>Mode</th>
-              </tr>
+              <tr><th>Rank</th><th>Name</th><th>Circuit</th><th>Aircraft</th><th className="num">Score</th>{anyDeletable && <th />}</tr>
             </thead>
             <tbody>
               {rows.map((e) => (
@@ -107,12 +114,15 @@ export function LeaderboardPage() {
                   <td>{e.pilot}</td>
                   <td>{e.circuit || "–"}</td>
                   <td>{e.aircraft || "–"}</td>
-                  <td className="num mg-tot">{e.total ?? "–"}{e.grade ? ` · ${e.grade}` : ""}</td>
-                  <td className="num" title={e.expert_reference ? `vs ${e.expert_reference}` : "Flown against the planned circuit"}>
-                    {e.expert_total ?? "–"}
-                    {e.expert_reference && <div className="mg-sub">{e.expert_reference}</div>}
-                  </td>
-                  <td><span className={`mg-mode mg-mode--${e.mode}`}>{cap(e.mode)}</span></td>
+                  <td className="num mg-tot">{e.total ?? "–"}</td>
+                  {anyDeletable && (
+                    <td className="num">
+                      {canDelete(e) && (
+                        <button type="button" className="mg-del" onClick={() => remove(e)}
+                          title="Delete this score" aria-label={`Delete ${e.pilot}'s score`}>Delete</button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

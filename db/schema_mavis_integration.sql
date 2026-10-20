@@ -119,6 +119,10 @@ alter table leaderboard_entries add column if not exists aircraft text;
 alter table leaderboard_entries add column if not exists expert_total integer;
 alter table leaderboard_entries add column if not exists expert_reference text;  -- e.g. "Maverick - Smooth final"
 create index if not exists leaderboard_entries_rank on leaderboard_entries (total desc, retries, scored_at);
+-- deleted from the board (kept so the bridge doesn't save the run again)
+alter table leaderboard_entries add column if not exists deleted_at timestamptz;
+-- user_id (the IRIS account that flew it, references users) is added by the
+-- backend at startup, after db/schema_auth.sql has created users.
 
 -- ---------------------------------------------------------------------
 -- flight_events: start/end time of each graded event in a session -- one

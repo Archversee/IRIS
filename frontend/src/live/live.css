@@ -599,22 +599,16 @@
 .mg-lb tr.is-top-3 .mg-rank { color: #cd7f32; }
 .mg-tot { font-weight: 800; color: var(--accent); }
 .mg-empty { padding: 28px; text-align: center; font-style: italic; color: var(--muted); }
-.mg-sub { font-size: 11px; font-weight: 500; color: var(--muted); }
-.mg-mode {
-  display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
-  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+.mg-search {
+  flex: 1 1 260px; min-width: 0; height: 36px; padding: 0 12px; border-radius: 9px;
+  font-size: 13.5px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border);
 }
-.mg-mode--trainee { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.mg-mode--pilot { color: var(--text); border-color: var(--text); }
-
-.mg-search { display: flex; flex: 1 1 320px; min-width: 0; }
-.mg-search select, .mg-search input {
-  height: 36px; font-size: 13.5px; color: var(--text); background: var(--panel-2);
-  border: 1px solid var(--border);
+.mg-search:focus { outline: none; border-color: var(--accent); }
+.mg-del {
+  padding: 4px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
 }
-.mg-search select { padding: 0 10px; border-radius: 9px 0 0 9px; border-right: none; }
-.mg-search input { flex: 1; min-width: 0; padding: 0 12px; border-radius: 0 9px 9px 0; }
-.mg-search input:focus, .mg-search select:focus { outline: none; border-color: var(--accent); }
+.mg-del:hover { color: #e5484d; border-color: #e5484d; }
 
 .mg-pager {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;

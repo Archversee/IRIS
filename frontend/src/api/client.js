@@ -106,8 +106,10 @@ export const api = {
   // Smart Eye, flight logging); IRIS only ever views here.
   listRunningSessions: () => req(`/sessions/running`),
   // All-time leaderboard (Postgres, routers/leaderboard.py): {rows, total, page, page_size}
-  leaderboard: ({ q = "", field = "all", mode = "", page = 1, pageSize = 20 } = {}) =>
-    req(`/leaderboard?${new URLSearchParams({ q, field, mode, page, page_size: pageSize })}`),
+  leaderboard: ({ mode = "visitor", q = "", page = 1, pageSize = 20 } = {}) =>
+    req(`/leaderboard?${new URLSearchParams({ mode, q, page, page_size: pageSize })}`),
+  // the pilot who flew it, or an admin
+  deleteLeaderboardEntry: (id) => req(`/leaderboard/${id}`, { method: "DELETE" }),
   // Live Monitor's screens, grabbed by window title on the sim PC
   // (backend routers/capture.py). `nonce` forces a fresh connection.
   captureStatus: () => req(`/capture/status`),
