@@ -731,3 +731,54 @@
 .rc-judge input { flex: 1; min-width: 140px; }
 .rc-signoff textarea { width: 100%; resize: vertical; }
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---- incident view: 30 s before / after a broken rule (IncidentView.jsx) ---- */
+.rc-vgroup { display: inline-flex; gap: 2px; }
+.rc-vbtn--why { border-color: var(--rev-cyan); color: var(--rev-cyan); }
+.inc-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, .55); display: grid; place-items: center; padding: 16px; }
+.inc {
+  width: min(1100px, 100%); max-height: 100%; overflow-y: auto; border-radius: 12px; padding: 16px 18px 20px;
+  background: var(--rev-panel); border: 1px solid var(--rev-line); color: var(--rev-text);
+  font-family: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px;
+}
+.inc-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.inc-head h2 { margin: 2px 0; font-size: 20px; }
+.inc-head .spacer { flex: 1; }
+.inc-crumb { color: var(--rev-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.inc-sub { color: var(--rev-muted); }
+.inc-watch { display: flex; gap: 8px; }
+.inc-loading { color: var(--rev-muted); padding: 30px 0; text-align: center; }
+.inc-body { display: grid; gap: 12px; }
+.inc-findings { display: grid; gap: 6px; }
+.inc-finding { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px; border-left: 3px solid; background: var(--rev-panel-2); }
+.inc-finding.bad { border-left-color: #ff5c5c; }
+.inc-finding.warn { border-left-color: var(--rev-amber); }
+.inc-finding.info { border-left-color: var(--rev-cyan); }
+.inc-finding.good { border-left-color: var(--rev-green); }
+.inc-finding.muted { border-left-color: var(--rev-line); color: var(--rev-muted); }
+.inc-kind { flex: none; width: 92px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--rev-muted); }
+.inc-chart { background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px; padding: 8px 10px; }
+.inc-chart h3, .inc-calls h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--rev-muted); }
+.inc-strip { position: relative; height: 22px; margin: 4px 16px 4px 44px; background: var(--rev-bg); border-radius: 4px; overflow: hidden; }
+.inc-strip > span { position: absolute; top: 0; bottom: 0; }
+.inc-strip__breach, .inc-strip__onset { position: absolute; top: 0; bottom: 0; width: 2px; }
+.inc-strip__breach { background: #ff5c5c; }
+.inc-strip__onset { background: repeating-linear-gradient(#f5a623 0 4px, transparent 4px 7px); }
+.inc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 0 44px; font-size: 12px; color: var(--rev-muted); }
+.inc-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.inc-numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.inc-num { background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; }
+.inc-num span { color: var(--rev-muted); font-size: 12px; }
+.inc-calls { font-size: 13px; }
+.inc-quote { margin: 0; padding-left: 10px; border-left: 2px solid var(--rev-line); color: var(--rev-muted); }
+.inc-tip { background: var(--rev-panel); border: 1px solid var(--rev-line); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.inc-legend--marks i { width: 12px; height: 2px; vertical-align: 3px; }
+.inc-legend--marks i.dash { height: 0; background: none; border-top: 2px dashed; }
+.inc-explain { background: var(--rev-panel-2); border: 1px solid var(--rev-cyan); border-radius: 8px; padding: 10px 12px; }
+.inc-explain__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inc-explain__head h3 { margin: 0; font-size: 14px; }
+.inc-explain__head .spacer { flex: 1; }
+.inc-explain__text { margin: 8px 0 0; line-height: 1.5; font-size: 15px; }
+.inc-explain__warn { margin-top: 6px; color: var(--rev-amber); font-size: 13px; }
+.inc-explain__rate { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.rc-btn.is-on { border-color: var(--rev-cyan); color: var(--rev-cyan); }

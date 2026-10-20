@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client.js";
 import { sopApi } from "../../sop/sopApi.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
+import IncidentView from "./IncidentView.jsx";
 
 // SOP / handbook rule checks of one session (MAVIS sop/evaluate.py, stored by
 // sop/results.py; instructor verdicts via backend/app/routers/rule_results.py).
@@ -77,6 +78,7 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
   }));
 
   const toT = (epoch) => (flightStartMs ? epoch - flightStartMs / 1000 : 0);
+  const [incident, setIncident] = useState(null);     // {resultId, index}: the ±30 s view
   const results = evaluation?.results || [];
   const grouped = useMemo(() => {
     const g = { fail: [], instructor: [], pass: [], other: [] };
@@ -86,6 +88,11 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
   }, [results]);
 
   return (
+    <>
+    {incident && (
+      <IncidentView resultId={incident.resultId} index={incident.index} onClose={() => setIncident(null)}
+        onWatch={(epoch) => { setIncident(null); seekTo(Math.max(0, toT(epoch))); }} />
+    )}
     <div className="rc-drawer" role="dialog" aria-label="SOP rule checks">
       <div className="rc-head">
         <h2>SOP rule checks</h2>
@@ -198,7 +205,8 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
           <h3>{g.title} <span className="rc-muted">({grouped[g.key].length})</span></h3>
           {grouped[g.key].map((r) => (
             <RuleRow key={r.id} r={r} isInstructor={isInstructor}
-              seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload} />
+              seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
+              onAnalyse={(index) => setIncident({ resultId: r.id, index })} />
           ))}
         </section>
       ))}
@@ -223,6 +231,7 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -233,7 +242,7 @@ function fmtPreset(k, v) {
   return `${v} s`;
 }
 
-function RuleRow({ r, isInstructor, seek, onSaved }) {
+function RuleRow({ r, isInstructor, seek, onSaved, onAnalyse }) {
   const [open, setOpen] = useState(false);
   const [verdict, setVerdict] = useState(r.instructor_verdict || "");
   const [note, setNote] = useState(r.instructor_note || "");
@@ -268,10 +277,14 @@ function RuleRow({ r, isInstructor, seek, onSaved }) {
       {(r.violations || []).length > 0 && (
         <div className="rc-viol">
           {r.violations.slice(0, 12).map((x, i) => (
-            <button key={i} className="rc-vbtn" onClick={() => seek(x.t0)}
-              title={`${x.phase || ""} · jump to this moment`}>
-              ▶ {x.phase ? `${x.phase.toLowerCase().replace(/_/g, " ")} · ` : ""}{x.dur_s.toFixed(0)} s · {x.peak_text}
-            </button>
+            <span key={i} className="rc-vgroup">
+              <button className="rc-vbtn" onClick={() => seek(x.t0)}
+                title={`${x.phase || ""} · jump to this moment`}>
+                ▶ {x.phase ? `${x.phase.toLowerCase().replace(/_/g, " ")} · ` : ""}{x.dur_s.toFixed(0)} s · {x.peak_text}
+              </button>
+              <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
+                title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+            </span>
           ))}
           {r.violations.length > 12 && <span className="rc-muted">+{r.violations.length - 12} more</span>}
         </div>

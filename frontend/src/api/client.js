@@ -153,6 +153,11 @@ export const api = {
   // SOP / handbook rule checks of a session (backend/app/routers/rule_results.py).
   // MAVIS computes them (sopApi.evaluate); the instructor's verdicts and sign-off go here.
   ruleResults: (id) => req(`/sessions/${id}/rule-results`),
+  // the 30 s before and after one broken rule (backend app/incidents.py)
+  incident: (resultId, index) => req(`/rule-results/${resultId}/incidents/${index}`),
+  // reasoning-model explanation of it (instructors); {rating: helpful|not_helpful|null, note}
+  explainIncident: (resultId, index) => req(`/rule-results/${resultId}/incidents/${index}/explain`, { method: "POST" }),
+  rateExplanation: (id, body) => req(`/incident-explanations/${id}`, json("PATCH", body)),
   setRuleVerdict: (resultId, body) => req(`/rule-results/${resultId}`, json("PATCH", body)),
   signOffRules: (id, body) => req(`/sessions/${id}/rule-results/sign-off`, json("POST", body)),
   getRuleStrictness: (userId) => req(`/users/${userId}/rule-strictness`),

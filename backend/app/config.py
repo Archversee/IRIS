@@ -7,6 +7,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _adapter_python() -> str:
+    """The adapter's own venv (where launch_all.ps1's setup hint installs
+    obsws-python + websocket-client), else whatever `python` is on PATH.
+    Auto-launching with a python that lacks those packages crashes the
+    adapter on import -- and with it all Smart Eye logging."""
+    adapter_dir = _REPO_ROOT / "Sim_Data_Adapter"
+    for venv_python in (adapter_dir / ".venv" / "Scripts" / "python.exe", adapter_dir / ".venv" / "bin" / "python"):
+        if venv_python.is_file():
+            return str(venv_python)
+    return "python"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -28,7 +40,7 @@ class Settings(BaseSettings):
     # the backend runs on the same machine as MSFS/OBS/SEP, which is the
     # assumed topology (see LiveAdapter.py's own docstring).
     adapter_script_path: str = str(_REPO_ROOT / "Sim_Data_Adapter" / "LiveAdapter.py")
-    adapter_python_path: str = "python"
+    adapter_python_path: str = _adapter_python()   # ADAPTER_PYTHON_PATH in .env overrides
 
     # mavis_bridge connects here as a WS client to pull MAVIS's live state
     # feed into Postgres -- see docs/INTEGRATION_PLAN.md §1b.
@@ -41,6 +53,12 @@ class Settings(BaseSettings):
     # First admin account, created at startup only if no admin exists yet
     # (see app/auth.py). Change the password from Profile after signing in,
     # or set ADMIN_USERNAME / ADMIN_PASSWORD in .env before first start.
+    # Post-flight incident explanations (app/incident_explain.py): a local Ollama
+    # reasoning model. Empty = MAVIS's own SOP model from its config.yaml.
+    explain_ollama_url: str = ""
+    explain_model: str = ""
+    explain_timeout_s: float = 240.0
+
     admin_username: str = "admin"
     admin_password: str = "admin"
 

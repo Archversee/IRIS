@@ -6,6 +6,7 @@ eye_tracking_data). One shared layout across all sessions.
 from fastapi import APIRouter, HTTPException
 
 from .. import db
+from ..aoi_roles import role_of
 from ..schemas import AoiZone, AoiZoneCreate
 
 router = APIRouter(prefix="/aoi-zones", tags=["aoi-zones"])
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/aoi-zones", tags=["aoi-zones"])
 async def list_zones():
     async with db.acquire() as conn:
         rows = await conn.fetch("select id, name, x1, y1, x2, y2 from aoi_zones order by id")
-    return [dict(r) for r in rows]
+    return [{**dict(r), "role": role_of(r["name"])} for r in rows]
 
 
 @router.post("", response_model=AoiZone)
@@ -26,7 +27,7 @@ async def create_zone(body: AoiZoneCreate):
             "returning id, name, x1, y1, x2, y2",
             body.name, body.x1, body.y1, body.x2, body.y2,
         )
-    return dict(row)
+    return {**dict(row), "role": role_of(row["name"])}
 
 
 @router.delete("/{zone_id}")

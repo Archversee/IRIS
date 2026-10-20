@@ -467,7 +467,84 @@ def _parse_packet(data: bytes) -> dict:
     return fields
 
 
-def _build_sample(fields: dict):
+# ----------------------------------------------------------------------
+# Eye <-> flight clock sync. Smart Eye stamps each sample with ITS PC's
+# clock (RealTimeClock); IRIS's flight data is stamped by MAVIS, on THIS PC
+# (launch_all.ps1 runs MAVIS, IRIS and this adapter together). On a LAN a
+# packet arrives within a few ms, so (arrival time here - Smart Eye's
+# stamp) measures how far the two clocks disagree. A low percentile of the
+# recent values ignores packets that were delayed. Samples are re-stamped
+# onto this PC's clock before they're stored, so a +/-30 s window around a
+# rule breach lines eye and flight data up; the measured offset is also
+# reported to IRIS (sessions.eye_clock_*) so Review can show it.
+# ----------------------------------------------------------------------
+CORRECT_EYE_CLOCK = True          # False: store Smart Eye's own timestamps unchanged
+_CLOCK_WINDOW = 300               # recent packets the estimate uses
+_CLOCK_MIN_SAMPLES = 5            # correct from the 5th packet on (the estimate sharpens as more arrive)
+_CLOCK_REPORT_EVERY_S = 30.0
+_CLOCK_WARN_S = 0.1               # say so when the clocks differ by more than this
+
+
+class ClockSync:
+    def __init__(self):
+        from collections import deque
+        self._d = deque(maxlen=_CLOCK_WINDOW)
+        self.offset: float | None = None      # seconds to ADD to Smart Eye's time
+        self.spread: float | None = None
+        self._last_report = 0.0
+        self._last_warned: float | None = None
+
+    def observe(self, sep_epoch: float, arrival: float) -> None:
+        self._d.append(arrival - sep_epoch)
+        if len(self._d) < _CLOCK_MIN_SAMPLES:
+            return
+        vals = sorted(self._d)
+        self.offset = vals[len(vals) // 10]                       # 10th percentile: least-delayed packets
+        self.spread = vals[(len(vals) * 9) // 10] - vals[len(vals) // 10]
+        if abs(self.offset) > _CLOCK_WARN_S and (self._last_warned is None
+                                                 or abs(self.offset - self._last_warned) > _CLOCK_WARN_S):
+            self._last_warned = self.offset
+            print(f"[eye] Smart Eye's clock is {abs(self.offset):.2f} s "
+                  f"{'behind' if self.offset > 0 else 'ahead of'} this PC's -- "
+                  f"{'correcting the eye timestamps' if CORRECT_EYE_CLOCK else 'NOT correcting (CORRECT_EYE_CLOCK=False)'}. "
+                  f"Turn on 'Set time automatically' on both PCs to fix it at the source.")
+
+    def correct(self, sep_epoch: float) -> float:
+        if CORRECT_EYE_CLOCK and self.offset is not None:
+            return sep_epoch + self.offset
+        return sep_epoch
+
+    def maybe_report(self, session_id: str | None) -> None:
+        now = time.time()
+        if self.offset is None or not session_id or now - self._last_report < _CLOCK_REPORT_EVERY_S:
+            return
+        self._last_report = now
+        body = {"offset_s": round(self.offset, 4), "spread_s": round(self.spread or 0.0, 4),
+                "samples": len(self._d), "corrected": CORRECT_EYE_CLOCK}
+        threading.Thread(target=_post_clock, args=(session_id, body), daemon=True).start()
+
+
+def _post_clock(session_id: str, body: dict) -> None:
+    req = urllib.request.Request(f"{API_BASE_URL}/sessions/{session_id}/eye-clock",
+                                 data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception as e:      # older IRIS without the endpoint, or IRIS down: the data still flows
+        print(f"[eye] couldn't report the clock offset to IRIS ({e})")
+
+
+_clock = ClockSync()
+
+
+def _sep_epoch(ticks: int) -> float:
+    return (ticks - _FILETIME_EPOCH_DELTA) / 1e7
+
+
+def _build_sample(fields: dict, epoch_s: float | None = None):
+    """epoch_s: the sample's time on THIS PC's clock (ClockSync); default:
+    Smart Eye's own RealTimeClock, unchanged."""
     if "RealTimeClock" not in fields:
         return None  # can't timestamp it -- drop rather than guess
 
@@ -483,7 +560,8 @@ def _build_sample(fields: dict):
         return v * 1000 if v is not None else None
 
     return {
-        "ts": _filetime_to_iso(fields["RealTimeClock"]),
+        "ts": (datetime.fromtimestamp(epoch_s, tz=timezone.utc).isoformat() if epoch_s is not None
+               else _filetime_to_iso(fields["RealTimeClock"])),
         "gaze_origin_x": gaze_origin[0] if gaze_origin else None,
         "gaze_origin_y": gaze_origin[1] if gaze_origin else None,
         "gaze_origin_z": gaze_origin[2] if gaze_origin else None,
@@ -535,6 +613,7 @@ def _forward_worker():
                     continue
                 try:
                     wsapp.send(json.dumps(sample))
+                    _eye_stats["sent"] += 1
                 except Exception:
                     pass  # transient -- on_close will stop this loop once the connection is actually dead
 
@@ -561,6 +640,43 @@ def _forward_worker():
         # loop straight back around and pick up the new SESSION_ID, no delay.
 
 
+# What IRIS needs from each Smart Eye field -- checked on the first packet,
+# so a field missing from SEP's Output Data selection is reported once,
+# loudly, instead of silently producing empty screens in IRIS.
+_NEEDED_FOR = {
+    "RealTimeClock": "EVERY sample is dropped without it (it's the timestamp)",
+    "FilteredClosestWorldIntersection": "no gaze on the OTW / Instruments screens, no AOIs or scan path",
+    "FilteredLeftPupilDiameter": "no Workload line on the timeline (needs a pupil diameter)",
+    "FilteredRightPupilDiameter": "no Workload line on the timeline (needs a pupil diameter)",
+}
+# IRIS's Review / Live Monitor draw the gaze dot only for these world-model
+# object names (frontend useSessionData.js lookingAtOtw / lookingAtInstruments)
+_SCREEN_AOIS = ("OTW", "Instruments")
+_EYE_STATUS_EVERY_S = 30.0
+_NO_PACKET_HINT_AFTER_S = 30.0
+
+_eye_stats = {"packets": 0, "no_clock": 0, "parse_errors": 0, "queued": 0, "queue_full": 0, "sent": 0}
+
+
+def _report_first_packet(fields: dict) -> None:
+    have = sorted(fields)
+    print(f"[eye] fields in Smart Eye's packets: {', '.join(have) or 'NONE of the ones we decode'}")
+    missing = [f for f in _NEEDED_FOR if f not in fields]
+    for f in missing:
+        print(f"[eye] WARNING: {f} is missing from SEP's output -> {_NEEDED_FOR[f]}. "
+              f"Add it to the UDP stream's Output Data in SEP's Communication Settings.")
+    if not missing:
+        print("[eye] all the fields IRIS needs are present")
+
+
+def _no_packet_watchdog(stop: threading.Event) -> None:
+    if stop.wait(_NO_PACKET_HINT_AFTER_S):
+        return
+    print(f"[eye] WARNING: no UDP packets from Smart Eye after {_NO_PACKET_HINT_AFTER_S:.0f}s on port "
+          f"{UDP_LISTEN_PORT}. Check: SEP is tracking; SEP's Communication Settings send UDP to THIS PC's "
+          f"LAN IP, port {UDP_LISTEN_PORT}; Windows Firewall allows inbound UDP {UDP_LISTEN_PORT} for python.")
+
+
 def eye_main():
     """Best-effort eye-tracking bridge -- runs on its own daemon thread from
     main() below, and just stops with the process rather than getting its
@@ -570,16 +686,38 @@ def eye_main():
     threading.Thread(target=_forward_worker, daemon=True).start()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
+    try:
+        sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
+    except OSError as e:
+        print(f"[eye] ERROR: can't listen on UDP {UDP_LISTEN_PORT} ({e}) -- another program (an older adapter, "
+              f"or SEP's own receiver?) already has it. No eye data will reach IRIS until it's free.")
+        return
     print(f"[eye] listening for Smart Eye UDP packets on :{UDP_LISTEN_PORT}")
+    got_packet = threading.Event()
+    threading.Thread(target=_no_packet_watchdog, args=(got_packet,), daemon=True).start()
 
     got_first_packet = False
+    seen_aois: set[str] = set()
+    last_status = time.time()
     try:
         while True:
             data, _addr = sock.recvfrom(65536)
+            _eye_stats["packets"] += 1
+            if time.time() - last_status >= _EYE_STATUS_EVERY_S:
+                last_status = time.time()
+                s = _eye_stats
+                print(f"[eye] status: {s['packets']} packets, {s['queued']} samples queued, {s['sent']} sent to IRIS, "
+                      f"{s['no_clock']} dropped (no RealTimeClock), {s['parse_errors']} unparseable, "
+                      f"{s['queue_full']} dropped (IRIS not keeping up / not connected)")
             if not got_first_packet:
                 got_first_packet = True
+                got_packet.set()
+                last_status = time.time()       # first status line 30 s after data starts flowing
                 print(f"[eye] first UDP packet received from {_addr[0]} ({len(data)} bytes)")
+                try:
+                    _report_first_packet(_parse_packet(data))
+                except Exception as e:
+                    print(f"[eye] first packet couldn't be decoded: {e}")
             # Parsing/decoding errors used to be uncaught here -- one
             # unexpected packet shape would raise something other than
             # OSError, which the except below doesn't catch, silently
@@ -588,15 +726,31 @@ def eye_main():
             # Drop just that packet and keep going instead.
             try:
                 fields = _parse_packet(data)
-                sample = _build_sample(fields)
+                epoch = None
+                if "RealTimeClock" in fields:
+                    sep = _sep_epoch(fields["RealTimeClock"])
+                    _clock.observe(sep, time.time())
+                    epoch = _clock.correct(sep)
+                    _clock.maybe_report(SESSION_ID)
+                sample = _build_sample(fields, epoch)
             except Exception as e:
+                _eye_stats["parse_errors"] += 1
                 print(f"[eye] dropped a packet we couldn't parse: {e}")
                 continue
             if sample is None:
+                _eye_stats["no_clock"] += 1
                 continue
+            aoi = sample.get("aoi")
+            if aoi and aoi not in seen_aois and len(seen_aois) < 20:
+                seen_aois.add(aoi)
+                note = "" if aoi in _SCREEN_AOIS else \
+                    f" (IRIS only draws gaze on the screens for objects named {' / '.join(_SCREEN_AOIS)})"
+                print(f"[eye] gaze on Smart Eye object '{aoi}'{note}")
             try:
                 _forward_queue.put_nowait(sample)
+                _eye_stats["queued"] += 1
             except queue.Full:
+                _eye_stats["queue_full"] += 1
                 pass  # backend/network can't keep up -- drop rather than pile up unbounded
     except OSError:
         pass  # socket closed out from under us at process exit -- fine, daemon thread
