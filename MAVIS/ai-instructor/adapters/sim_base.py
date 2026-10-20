@@ -34,6 +34,9 @@ class Telemetry:
     elevator_trim_pct: float | None = None  # -100..100, + nose up
     rudder_trim_pct: float | None = None    # -100..100, + nose right (aircraft with no rudder trim read 0)
     aileron_trim_pct: float | None = None   # -100..100, + right wing down (ditto)
+    # nose (centre) wheel touching the ground; None when an adapter doesn't
+    # read it (users then estimate it from the pitch)
+    nose_on_ground: bool | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)

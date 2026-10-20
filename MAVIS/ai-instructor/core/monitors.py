@@ -123,6 +123,9 @@ class Monitors:
         # the crosswind turn is also called on position (approaching the planned
         # corner), once at least this high -- whichever comes first.
         self._xwind_min_agl = float(pat.get("crosswind_turn_min_agl_ft", 400))
+        # Take-off lesson: straight ahead to end_at_agl_ft and done -- no turn
+        # is ever called (heads-up, turn or roll-out)
+        self._no_turns = lesson.get("segment") == "takeoff"
         # sat-nav style heads-up ("in 500 metres, get ready to turn left")
         # this many seconds before each turn call; 0 = off
         self._pre_turn_s = float(pat.get("turn_precue_s", 12.0))
@@ -319,7 +322,7 @@ class Monitors:
         # ---- proactive turn cues (NOT gated by phase settle-in, must beat phase advance) ----
         d = {"dir": self.turn_word, "xwind": int(self.xwind_agl)}
         v = max(tel.ias, 50.0) * 0.5144          # m/s, for "seconds to the turn"
-        if phase == "CLIMB_OUT":
+        if phase == "CLIMB_OUT" and not self._no_turns:
             # position: one turn lead before the planned crosswind line, but
             # never before the runway end (+ margin)
             line_at = max(self._up_a - self.turn_lead_m(tel.ias), self._turn_crosswind_along_min)

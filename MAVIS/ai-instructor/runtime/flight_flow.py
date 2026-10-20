@@ -30,6 +30,34 @@ def build_flight_flow(rt):
             return ""
         return block.get(rt.session.get("jargon", "layman")) or block.get("layman") or ""
 
+    def _rolling() -> bool:
+        """The trainee has started the take-off (or is already flying)."""
+        tel = rt.state.get("tel") or {}
+        if not tel:
+            return False
+        if not tel.get("on_ground", True):
+            return True
+        return tel.get("ias", 0.0) > 15 or tel.get("throttle", 0.0) > 0.8
+
+    async def _brief(text: str) -> bool:
+        """Speak one briefing line; False (and the line cut off) as soon as
+        the trainee starts the take-off -- the lesson then starts at once."""
+        if not text:
+            return True
+        line = asyncio.create_task(rt.coach.say(text))
+        while not line.done():
+            if _rolling():
+                line.cancel()                  # waiting to speak, or speaking: either way, not any more
+                rt.stop_speech()
+                try:
+                    await line
+                except asyncio.CancelledError:
+                    pass
+                log.info("briefing cut short: the take-off has started")
+                return False
+            await asyncio.sleep(0.2)
+        return True
+
     async def _briefing_lines():
         own = _lesson_text(rt.lesson.get("briefing"))
         if is_familiarization(rt.lesson):
@@ -37,14 +65,16 @@ def build_flight_flow(rt):
             await rt.coach.say(own.replace("{alt}", f"{alt:,}"))
             rt.engine.start_flying()
             return
-        if rt.session.get("reference_recording"):
-            await rt.coach.say(phrases.render("BRIEFING_1_REF", {}))
-        elif own:
-            await rt.coach.say(own)
-        else:
-            await rt.coach.say(phrases.render("BRIEFING_1", {}))
+        # ground starts: if the trainee rolls during the briefing, the rest of
+        # it is skipped and the lesson picks up where the aircraft is
+        brief = rt.coach.say if rt.lesson.get("airborne_start") else _brief
+        lines = [phrases.render("BRIEFING_1_REF", {}) if rt.session.get("reference_recording")
+                 else own or phrases.render("BRIEFING_1", {})]
         if not rt.lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own
-            await rt.coach.say(phrases.render("BRIEFING_2", {}))
+            lines.append(phrases.render("BRIEFING_2", {}))
+        for text in lines:
+            if await brief(text) is False:
+                break
         if rt.lesson.get("airborne_start"):
             await _set_frozen(False)          # held on final through the briefing
         rt.engine.start_flying()

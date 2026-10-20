@@ -36,6 +36,12 @@ export function useInstructorVoice(audio, active) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  // MAVIS withdrew the line it was saying (stop_speech: the lesson moved on,
+  // the briefing was cut short, a restart) -- stop it here too.
+  useEffect(() => {
+    if (!audio?.url) voiceRef.current?.pause();
+  }, [audio?.url]);
+
   useEffect(() => {
     const voice = voiceRef.current;
     if (!active || !voice || !audio?.url || audio.seq === lastSeqRef.current) return;

@@ -105,7 +105,7 @@
           "subtitle": "Rejected landing · power · flap sequence",
           "available": true,
           "duration_min": 18,
-          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit; on final MAVIS calls go around at an unannounced height. Full power, flaps up in stages, climb to 1,000 ft, then you're put back on the runway."
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit and come down to land; MAVIS calls go around somewhere below 300 ft. Full power, flaps up in stages, climb straight ahead to 1,000 ft, and the lesson ends."
         },
         {
           "id": "lesson08_short",
@@ -113,7 +113,7 @@
           "subtitle": "Stabilised approach · spot landing",
           "available": true,
           "duration_min": 20,
-          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit, then a 61-knot approach onto the aim point 150 m past the threshold, and stop before the red line on the map."
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit, then a 61-knot approach onto the big white aiming-point markings about 400 m in, and stop within 450 m. MAVIS counts the distance down."
         },
         {
           "id": "lesson09_soft",

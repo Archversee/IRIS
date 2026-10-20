@@ -35,6 +35,10 @@ total_circuits: 1
 
 climb_speed_band_kt: [70, 90]
 say:
+  # the call says where to go: straight ahead, and how high (go_around.end_agl_ft)
+  PHASE_ENTER_GO_AROUND:
+    layman: "Go around! Full power, nose up to the horizon, flaps to 20. Then climb straight ahead to 1,000 feet."
+    pilot: "Go around. Full power, pitch for the climb, flaps 20. Climb runway heading to one thousand feet."
   PHASE_ENTER_CLIMB_OUT:
     layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
     pilot: "Airborne. Climb at 70 to 90 knots, wings level."
@@ -61,22 +65,51 @@ targets:
 
 briefing:
   layman: >-
-    Go-around practice. We'll fly the same rectangle as before, from runway 02.
-    On the way down to land, I'll call "go around" at some point. When I do:
-    throttle all the way forward, nose up to the horizon, and flaps up one
-    notch. I'll talk you through the rest.
+    Go-around practice. We'll fly the same rectangle as before, from runway 02,
+    and come down to land as normal. Keep flying the approach until I call
+    "go around". It could come any time below about 300 feet. When I call it:
+    throttle all the way forward, nose up to the horizon, flaps up one notch,
+    then climb straight ahead along the runway to 1,000 feet. No turns. At
+    1,000 feet the lesson's done, and I'll put us back on the runway.
   pilot: >-
-    Go-around exercise, runway 02, one circuit. On final, expect a go-around
-    call. Full power, pitch for the climb, flaps 20; positive climb, flaps 10;
-    flaps up above 300 feet; climb straight ahead to one thousand feet.
+    Go-around exercise, runway 02, one circuit. Fly a normal approach until
+    the go-around call, somewhere below 300 feet. Full power, pitch for the
+    climb, flaps 20; positive climb, flaps 10; flaps up above 300 feet. Climb
+    runway heading to one thousand feet, no turns. Exercise ends at one
+    thousand feet.
 
 phase_notes:
   FINAL:
     layman: >-
-      Fly a normal approach, but keep your hand on the throttle. If I call go
-      around, it's full power straight away.
+      Keep flying down toward the runway as if you're landing, hand on the
+      throttle. When I call go around, it's full power straight away, then
+      straight ahead to 1,000 feet.
     pilot: >-
-      Normal approach, hand on the throttle. Be ready for the go-around call.
+      Continue the approach, hand on the throttle. On the call: full power,
+      runway heading, climb to one thousand feet.
+
+# To-do list in the pilot view: what's coming, and how far to climb once
+# the go-around is called.
+todo_steps:
+  - phases: [PRE_TAKEOFF, TAKEOFF_ROLL, CLIMB_OUT, CROSSWIND, DOWNWIND, BASE]
+    title: Fly the circuit
+    todo:
+      - "Same rectangle as Your First Circuit"
+      - "MAVIS calls each turn"
+  - phases: [FINAL]
+    title: Approach, ready to go around
+    todo:
+      - "Fly down toward the runway as if landing"
+      - "Hand on the throttle: the call comes below about 300 ft"
+    meters: [height]
+  - phases: [GO_AROUND]
+    title: Go around, climb to 1,000 ft
+    todo:
+      - "Full power, nose up to the horizon"
+      - "Flaps 20, then 10, then up, as MAVIS calls"
+      - "Straight ahead along the runway, no turns"
+    meters: [height_to]
+todo_done: "Go-around complete. After your score you're put back on the runway."
 
 closing:
   layman: >-

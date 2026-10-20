@@ -140,12 +140,17 @@ class GoAround(Variation):
             out.append(_ev("VAR_GA_SLOW", {"ias": round(ias)}, cooldown_s=5, urgent=True))
         elif full and dt >= 4 and vs < -100 and not self.positive:
             out.append(_ev("VAR_GA_PITCH", cooldown_s=5, urgent=True))
-        if full and flaps > 25 and self.t_power is not None and t - self.t_power >= 1.5:
+        if full and flaps > 25 and self.t_power is not None and t - self.t_power >= 4.0:
             out += self._once("VAR_GA_FLAPS_20", urgent=True)
         if self.positive and ias >= 60 and 15 < flaps <= 25:
             out += self._once("VAR_GA_FLAPS_10", urgent=True)
         if agl >= 300 and ias >= 65 and 5 < flaps <= 15:
             out += self._once("VAR_GA_FLAPS_UP", {"vy": self.v["vy"]}, urgent=True)
+        # where it ends: climbing straight ahead to end_agl_ft (the lesson's end)
+        end = float(self.cfg.get("end_agl_ft", 1000))
+        half = round(end / 2, -2)
+        if self.positive and end >= 600 and half <= agl < end - 100:
+            out += self._once("VAR_GA_HALFWAY", {"agl": int(half), "end": f"{int(end):,}"})
         return out
 
     def scores(self, f: float = 1.0):
@@ -174,8 +179,8 @@ class ShortField(Variation):
 
     def reset(self) -> None:
         super().reset()
-        self.aim = float(self.cfg.get("aim_point_m", 150))
-        self.stop_by = float(self.cfg.get("stop_by_m", 750))
+        self.aim = float(self.cfg.get("aim_point_m", 400))
+        self.stop_by = float(self.cfg.get("stop_by_m", 850))
         self.td_along = None
         self.stop_along = None
         self.airborne_seen = False
@@ -202,16 +207,20 @@ class ShortField(Variation):
                 out.append(_ev("VAR_SF_HIGH", {"off": round(diff, -1)}, cooldown_s=10))
             elif diff < -50:
                 out.append(_ev("VAR_SF_LOW", {"off": round(-diff, -1)}, cooldown_s=10))
-        if phase in ("FINAL", "FLARE_TOUCHDOWN") and -60 <= along and agl < 60:
-            out += self._once("VAR_SF_OVER_FENCE", urgent=True)
         if self.td_along is not None and "VAR_SF_TOUCHDOWN" not in self._said:
             d = self.td_along - self.aim
             out += self._once("VAR_SF_TOUCHDOWN",
                               {"dist": abs(round(d / 10) * 10), "where": "past" if d >= 0 else "short of"},
                               urgent=True)
-        if (self.td_along is not None and self.stop_along is None and ias > 20
-                and along > self.stop_by - 200):
-            out.append(_ev("VAR_SF_BRAKE", cooldown_s=4, urgent=True))
+        # Nothing on the runway marks the stop point, so MAVIS counts it down:
+        # 200 and 100 m to go ("brake firmly" while still fast)
+        if self.td_along is not None and self.stop_along is None and ias > 8:
+            left = self.stop_by - along
+            for mark in (200, 100):
+                if mark - 60 < left <= mark and f"left{mark}" not in self._said:
+                    self._said.add(f"left{mark}")
+                    code = "VAR_SF_LEFT_FAST" if ias > 30 and mark <= 200 else "VAR_SF_LEFT"
+                    out.append(_ev(code, {"left": mark}, urgent=True))
         if self.stop_along is not None:
             m = self.stop_by - self.stop_along
             out += self._once("VAR_SF_STOPPED_OK" if m >= 0 else "VAR_SF_STOPPED_OVER",
@@ -257,13 +266,22 @@ class SoftField(Variation):
         self.nose_down_t = None
         self.max_brake = 0.0
 
+    def _nose_down(self, tel: dict) -> bool:
+        """Nose wheel on the ground: read from the sim where it reports it,
+        else estimated from the pitch (mock / replay)."""
+        n = tel.get("nose_on_ground")
+        if n is not None:
+            return bool(n)
+        return tel.get("pitch", 0.0) < self.nose_up
+
     def observe(self, tel, along, cross, phase):
         ground = bool(tel.get("on_ground", True))
-        ias, pitch, agl = tel.get("ias", 0.0), tel.get("pitch", 0.0), tel.get("alt_agl", 0.0)
+        ias, agl = tel.get("ias", 0.0), tel.get("alt_agl", 0.0)
+        nose_down = self._nose_down(tel)
         if self.stage == "ground" and phase == "TAKEOFF_ROLL":
             self.stage = "roll"
         if self.stage == "roll":
-            if ground and self.nose_ias is None and pitch >= self.nose_up and ias > 5:
+            if ground and self.nose_ias is None and not nose_down and ias > 5:
                 self.nose_ias = ias
             if not ground and self._prev_ground:
                 self.liftoff_ias = ias
@@ -276,37 +294,35 @@ class SoftField(Variation):
                 self.stage = "climb"         # climbed away early: no "now climb" call
         elif self.stage == "climb" and phase in ("FINAL", "FLARE_TOUCHDOWN", "ROLLOUT"):
             if ground and self._prev_ground is False:
-                self.td = {"ias": ias, "pitch": pitch, "sink": max(0.0, -tel.get("vs", 0.0)),
+                self.td = {"ias": ias, "pitch": tel.get("pitch", 0.0), "sink": max(0.0, -tel.get("vs", 0.0)),
                            "throttle": tel.get("throttle", 0.0), "t": tel["t"]}
                 self.stage = "landed"
         if self.stage == "landed":
-            if self.nose_down_t is None and pitch < 1.5:
+            if self.nose_down_t is None and nose_down:
                 self.nose_down_t = tel["t"]
             self.max_brake = max(self.max_brake, tel.get("brake_left", 0.0), tel.get("brake_right", 0.0))
         self._prev_ground = ground
 
     def cues(self, tel, along, cross, phase):
+        """Only four calls, three of them only when something's wrong -- the
+        take-off roll and the flare are no time to be talked at. (Flaps 10
+        is in the briefing; power in the flare and light brakes are in the
+        flare / rollout calls, and still scored.)"""
         out: list[CoachEvent] = []
         ground = bool(tel.get("on_ground", True))
-        ias, pitch, agl = tel.get("ias", 0.0), tel.get("pitch", 0.0), tel.get("alt_agl", 0.0)
-        if phase == "PRE_TAKEOFF" and ground and not 5 <= tel.get("flaps_deg", 0.0) <= 15:
-            out += self._once("VAR_SOFT_FLAPS", severity="info")
-        if self.stage == "roll" and ground and ias > 20 and pitch < self.nose_up:
+        ias, agl = tel.get("ias", 0.0), tel.get("alt_agl", 0.0)
+        # not holding the stick back (elevator < 0 = stick back, as ROTATE_LATE)
+        stick_back = tel.get("elevator", 0.0) <= -0.5
+        if self.stage == "roll" and ground and ias > 20 and self._nose_down(tel) and not stick_back:
             out.append(_ev("VAR_SOFT_NOSE_UP", cooldown_s=6, urgent=True))
-        if self.stage == "roll" and self.nose_ias is not None and ias > 30:
-            out += self._once("VAR_SOFT_HOLD", severity="info")
         if self.stage == "ground_effect":
             if agl > self.ge_agl + 15 and ias < self.accel_to - 3:
                 out.append(_ev("VAR_SOFT_STAY_LOW", cooldown_s=5, urgent=True))
         if self.stage == "climb" and self.accelerated:
             out += self._once("VAR_SOFT_CLIMB", {"kt": round(self.accel_to)}, urgent=True)
-        if phase == "FLARE_TOUCHDOWN" and not ground and agl < 25 and tel.get("throttle", 0.0) < 0.05:
-            out.append(_ev("VAR_SOFT_POWER", cooldown_s=6, urgent=True))
         if self.stage == "landed" and self.td and tel["t"] - self.td["t"] < self.hold_s:
-            if pitch < 2.0 and ias > 15:
-                out.append(_ev("VAR_SOFT_NOSE_OFF", cooldown_s=4, urgent=True))
-            if max(tel.get("brake_left", 0.0), tel.get("brake_right", 0.0)) > 0.5:
-                out.append(_ev("VAR_SOFT_BRAKES", cooldown_s=6))
+            if self._nose_down(tel) and ias > 15:
+                out += self._once("VAR_SOFT_NOSE_OFF", urgent=True)
         return out
 
     def scores(self, f: float = 1.0):

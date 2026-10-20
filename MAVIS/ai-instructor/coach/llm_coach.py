@@ -100,6 +100,8 @@ class Coach:
         self._last_turn_spoken = 0.0
         self._working = False   # True while run() is processing a dequeued event
         self._speaking_rank: int | None = None   # rank of the line being spoken now
+        self._speaking_phase: str | None = None  # the leg / step that line belongs to
+        self._skip_gap = False                   # next line without the usual pause (new_phase)
         self.interrupt = None   # fn() that cuts off the line being spoken (rt.stop_speech)
 
     @property
@@ -119,6 +121,34 @@ class Coach:
                 and r > self._speaking_rank):
             log.info("%s cuts off a less important line", ev.code)
             self.interrupt()
+
+    def new_phase(self, phase: str | None) -> None:
+        """The trainee got ahead (took off, turned, landed before MAVIS was
+        through): whatever is left of an earlier leg / step no longer applies.
+        Queued lines tagged with another phase are dropped and a line from an
+        earlier phase that's still being spoken is cut off, so the new leg's
+        call comes straight away. Safety calls and untagged lines (briefing,
+        night switch, answers) are never dropped."""
+        if not phase:
+            return
+        kept = []
+        while not self.queue.empty():
+            try:
+                item = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            ev = item[2]
+            if ev.severity == "safety" or ev.data.get("phase") in (None, phase):
+                kept.append(item)
+            else:
+                log.info("%s dropped: the lesson has moved on to %s", ev.code, phase)
+        for item in kept:
+            self.queue.put_nowait(item)
+        if (self.interrupt and self._speaking_rank is not None and self._speaking_rank < RANK_SAFETY
+                and self._speaking_phase not in (None, phase)):
+            log.info("cut short: the lesson has moved on to %s", phase)
+            self.interrupt()
+            self._skip_gap = True        # the new leg's call goes now, no breathing gap
 
     def _outranked(self, r: int) -> bool:
         """True if something more important than rank r is waiting."""
@@ -217,7 +247,8 @@ class Coach:
                     continue
                 if text:
                     await self.say(text, who="instructor", phase=ev.data.get("phase"), rank=r)
-                self._last_spoken = time.time()
+                self._last_spoken = 0.0 if self._skip_gap else time.time()
+                self._skip_gap = False
                 if ev.code.startswith("TURN_"):
                     self._last_turn_spoken = self._last_spoken
             finally:
@@ -228,10 +259,12 @@ class Coach:
             self.transcript.append({"who": who, "text": text, "t": time.time(), "phase": phase})
             if who == "instructor" and speak:   # speak=False: shown in chat only
                 self._speaking_rank = rank      # (e.g. lines voiced by the intro video)
+                self._speaking_phase = phase
                 try:
                     await self.speak_fn(text)
                 finally:
                     self._speaking_rank = None
+                    self._speaking_phase = None
 
     # ---------- phrasing ----------
     async def phrase(self, ev: CoachEvent) -> str:

@@ -1,14 +1,17 @@
 name: "Short-Field Landing"
 # Circuit Variations. Same circuit as Lesson 1, from runway 02 at Paya Lebar,
 # finishing with a short-field landing. Paya Lebar's runway is 3.8 km, so the
-# lesson treats it as short: an aim point short_field.aim_point_m past the
-# threshold, and a "runway ends here" line at short_field.stop_by_m (both on
-# the map). Scored on landing on the aim point and stopping before the line
+# lesson treats it as short. The aim point is something the trainee can see
+# in the sim: the runway's aiming-point markings (two big solid white
+# rectangles, ~400 m in on a runway this long -- short_field.aim_point_m).
+# Nothing marks the stop point (short_field.stop_by_m), so after touchdown
+# MAVIS counts the distance down aloud. Both are also drawn on the map.
+# Scored on landing on the aim point and stopping in time
 # (core/variations.py ShortField), plus a tight approach speed.
 variation: short_field
 short_field:
-  aim_point_m: 150          # touch down here (metres past the threshold)
-  stop_by_m: 750            # ...and be stopped before this line
+  aim_point_m: 400          # touch down here: the aiming-point markings (metres past the threshold)
+  stop_by_m: 850            # ...and be stopped by here (450 m later; counted down aloud)
 airport:
   icao: WSAP
   name: Paya Lebar Air Base
@@ -41,8 +44,8 @@ say:
   # short-field technique replaces the standard flare / rollout calls ("gentle
   # brakes" would contradict "brake firmly"); the touchdown call covers the rollout
   PHASE_ENTER_FLARE_TOUCHDOWN:
-    layman: "Only a short float. Put it down firmly on the aim point."
-    pilot: "Minimal float, positive touchdown on the aim point."
+    layman: "Throttle closed. Only a short float, put it down firmly on the white rectangles."
+    pilot: "Power idle, minimal float, positive touchdown on the aim point."
   PHASE_ENTER_ROLLOUT:
     layman: ""
     pilot: ""
@@ -72,23 +75,26 @@ targets:
 briefing:
   layman: >-
     Short-field landing. We'll fly the same rectangle from runway 02, but we'll
-    pretend the runway is short. On the map there's an aim point just past
-    the start of the runway, and a red line where the runway "ends". Land on
-    the aim point, then stop before the line.
+    pretend the runway is short. Your aim point is painted on the runway: the
+    two big solid white rectangles, about 400 metres in. Touch down on them,
+    then brake firmly. There's no line painted where you have to stop, so
+    after touchdown I'll count the distance down for you.
   pilot: >-
     Short-field landing, runway 02, one circuit. Simulated short runway: aim
-    point 150 metres past the threshold, stop before the line at 750 metres.
-    Full flaps, 61 knots on final, plus or minus five.
+    point is the aiming-point markings, about 400 metres in; stop within 450
+    metres of them, I'll call the distance remaining. Full flaps, 61 knots on
+    final, plus or minus five.
 
 phase_notes:
   FINAL:
     layman: >-
-      Hold that speed tighter than usual, within five knots. Look at the aim
-      point and keep it still in the windscreen: if it moves up, you're
-      dropping short; if it moves down, you'll land long.
+      Hold that speed tighter than usual, within five knots. Look for the two
+      big white rectangles on the runway and keep them still in the
+      windscreen: if they move up, you're dropping short; if they move down,
+      you'll land long.
     pilot: >-
-      Plus or minus five knots. Fix the aim point; power for the path, pitch
-      for the speed.
+      Plus or minus five knots. Aim point is the aiming-point markings; keep
+      them fixed. Power for the path, pitch for the speed.
 
 closing:
   layman: >-
@@ -99,8 +105,8 @@ closing:
 
 debrief_summary: >-
   short-field landing (a circuit from runway 02, then a tight 61-knot
-  approach onto an aim point 150 metres past the threshold, a firm touchdown
-  on it, and stopping before a line 750 metres in)
+  approach onto the aiming-point markings about 400 metres in, a firm
+  touchdown on them, and stopping within 450 metres)
 
 scoring:
   weights:    { track: 15, speed: 15, altitude: 10, landing: 15, smoothness: 5,

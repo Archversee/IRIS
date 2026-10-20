@@ -48,8 +48,16 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
     for ev in events:
         if force_redo and ev.code.startswith("PHASE_ENTER_"):
             continue   # don't announce the new leg; we're reverting
+        if rt.session.get("free_flight") and ev.severity != "safety":
+            # Free Flight has no lesson to coach: the circuit detector of the
+            # lesson loaded underneath still runs (events, scoring), but none
+            # of its calls -- turns, "go around", "rotate" -- are spoken
+            continue
         if ev.code == "PHASE_ENTER_DEBRIEF":
             continue   # finish_lesson/_await_spoken_close owns this line
+        if ev.code.startswith("PHASE_ENTER_"):
+            # the trainee may be ahead of MAVIS: what's left of the old leg goes
+            rt.coach.new_phase(ev.data.get("phase"))
         if (not allow_coach_event(pol, ev.code, ev.severity)
                 and ev.code not in (rt.lesson.get("always_say") or [])
                 # "now come back" calls: every mode but Exam (silent)
@@ -79,6 +87,8 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                 # mock student: fly the step even when the mode
                 # filters out its PHASE_ENTER announcement
                 rt.sim.comply(f"PHASE_ENTER_{ev.data.get('phase')}", ev.data)
+        # every call belongs to the leg / step it was made in (coach.new_phase)
+        ev.data.setdefault("phase", rt.engine.phase)
         rt.coach.submit(ev)
         if hasattr(rt.sim, "comply"):   # mock student obeys callouts
             rt.sim.comply(ev.code, ev.data)

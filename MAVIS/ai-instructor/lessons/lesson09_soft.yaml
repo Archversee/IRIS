@@ -7,7 +7,7 @@ name: "Soft-Field Technique"
 # nose wheel off, light brakes.
 variation: soft_field
 soft_field:
-  nose_up_pitch_deg: 4      # nose wheel counts as off above this pitch (on the ground)
+  nose_up_pitch_deg: 4      # nose wheel off above this pitch -- only where the sim doesn't report the nose wheel
   liftoff_max_kt: 52        # lift off at or below this
   ground_effect_agl_ft: 20  # stay this low after lift-off...
   accelerate_to_kt: 62      # ...until this speed (Vx), then climb
@@ -15,6 +15,8 @@ soft_field:
   hold_nose_s: 4            # nose wheel held off this long after touchdown
 # no "rotate now" call: the stick is back from the start of the roll
 no_rotate_call: true
+# Calls kept to four, three only when something's wrong (core/variations.py
+# SoftField.cues): stick back, stay low, now climb away, keep the nose wheel off.
 airport:
   icao: WSAP
   name: Paya Lebar Air Base
@@ -44,9 +46,10 @@ say:
   PHASE_ENTER_FLARE_TOUCHDOWN:
     layman: "Hold it off just above the runway, nose up, with a little power in. Let it settle on gently."
     pilot: "Hold it off, nose high, power on, settle on."
+  # (holding the nose wheel off is asked for only if it comes down too soon)
   PHASE_ENTER_ROLLOUT:
-    layman: "We're down. Keep the stick back to hold the nose wheel off, and go easy on the brakes."
-    pilot: "Full back elevator, nose wheel off as long as possible, minimum braking."
+    layman: "We're down. Keep it straight, and go easy on the brakes."
+    pilot: "Centreline, minimum braking."
   PHASE_ENTER_CLIMB_OUT:
     layman: "Lovely, climbing away. Flaps up once we're above 200 feet, then 70 to 90 knots."
     pilot: "Positive climb. Flaps up above 200 feet, then 70 to 90 knots."
@@ -73,9 +76,10 @@ targets:
 briefing:
   layman: >-
     Soft-field technique. Imagine the runway is soft grass, where the nose
-    wheel could dig in. For take-off: flaps ten, full power, stick all the way
-    back to lift the nose wheel early, then stay just above the runway until
-    the speed builds before you climb. We'll fly the rectangle, and for the
+    wheel could dig in. Before we start, move the flap lever down one notch,
+    to ten degrees. For take-off: full power, stick all the way back to lift
+    the nose wheel early, then stay just above the runway until the speed
+    builds before you climb. We'll fly the rectangle, and for the
     landing, touch down as slowly as you can, nose high, and keep the nose
     wheel off.
   pilot: >-
