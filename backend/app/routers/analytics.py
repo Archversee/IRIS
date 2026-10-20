@@ -11,6 +11,13 @@ from .. import db
 
 router = APIRouter(prefix="/sessions/{session_id}/analytics", tags=["analytics"])
 
+# MAVIS's own demonstration flying (flight event kind "demo") isn't the
+# trainee's: left out of every figure, as the Review page leaves it out.
+_NOT_DEMO = """
+    and not exists (select 1 from flight_events e
+                    where e.session_id = $1 and e.kind = 'demo'
+                      and {t}.ts >= e.start_ts and {t}.ts < coalesce(e.end_ts, 'infinity'))"""
+
 
 @router.get("")
 async def analytics_overview(session_id: UUID):
@@ -36,8 +43,8 @@ async def analytics_overview(session_id: UUID):
                 avg((airspeed_kt < 55)::int)::float as low_airspeed_fraction,
                 -- steep-bank exposure
                 avg((abs(bank_deg) > 45)::int)::float as steep_bank_fraction
-            from flight_data
-            where session_id = $1
+            from flight_data d
+            where session_id = $1""" + _NOT_DEMO.format(t="d") + """
             """,
             session_id,
         )
@@ -49,8 +56,8 @@ async def analytics_overview(session_id: UUID):
                 avg(gaze_quality)              as avg_quality,
                 avg(blink::int)::float         as blink_fraction,
                 avg(pupil_diam_left_mm)        as avg_pupil_left_mm
-            from eye_tracking_data
-            where session_id = $1
+            from eye_tracking_data d
+            where session_id = $1""" + _NOT_DEMO.format(t="d") + """
             """,
             session_id,
         )
@@ -59,8 +66,8 @@ async def analytics_overview(session_id: UUID):
         aoi = await conn.fetch(
             """
             select coalesce(aoi, 'unlabelled') as aoi, count(*) as samples
-            from eye_tracking_data
-            where session_id = $1
+            from eye_tracking_data d
+            where session_id = $1""" + _NOT_DEMO.format(t="d") + """
             group by aoi
             order by samples desc
             """,

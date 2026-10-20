@@ -105,6 +105,7 @@ def build_session(rt):
         intro_shown.clear()
         rt.checkpoints.clear()
         rt.state["track"] = [[]]
+        rt.state["demo_track"] = []
         rt.state["look_at"] = None
         rt.transcript.clear()
         if is_familiarization(rt.lesson):
@@ -194,7 +195,7 @@ def build_session(rt):
         rt.state.update(
             phase=rt.engine.phase, circuit=1,
             total_circuits=int(rt.lesson.get("total_circuits", 1)),
-            track=[[]], scorecard=None, speaking=False, look_at=None, demo=None,
+            track=[[]], demo_track=[], scorecard=None, speaking=False, look_at=None, demo=None,
             lesson_id=rt.lesson_id,
             active_lesson=meta,
             reference_track=None,
@@ -244,6 +245,7 @@ def build_session(rt):
         rt.scorer.reset()
         rt.checkpoints.clear()
         rt.state["track"] = [[]]
+        rt.state["demo_track"] = []
         rt.transcript.clear()
         rt.started.clear()
         rt.state["lesson_running"] = False

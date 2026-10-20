@@ -167,7 +167,7 @@ async def amain(cfg):
                    "flight_events": [],
                    "flights": [],
                    "transcript": [],
-                   "speaking": False, "night": False, "track": [[]],
+                   "speaking": False, "night": False, "track": [[]], "demo_track": [],
                    "demo": None,       # {phase, title} while MAVIS is flying a demo
                    "theme": cfg["web"].get("theme", {}),
                    "monitor": cfg["web"].get("monitor_sources", []),

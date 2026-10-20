@@ -65,6 +65,9 @@ export default function MapCanvas({ state }) {
     // Flown track -- one segment per attempt (MAVIS keeps the whole flight)
     let segs = state?.track || [];
     if (segs.length && typeof segs[0][0] === "number") segs = [segs];
+    // MAVIS's own demonstration flight (airborne lessons): dotted, under the
+    // trainee's track, never part of it
+    const demoTrk = state?.demo_track || [];
 
     // View centred on the planned circuit; unzoomed it widens (symmetrically)
     // to keep the aircraft and the entire flown track in view, like IRIS's
@@ -82,6 +85,7 @@ export default function MapCanvas({ state }) {
       };
       if (acA != null) fit(acA, acC);
       segs.forEach((trk) => trk.forEach((p) => fit(...en(p[0], p[1]))));
+      demoTrk.forEach((p) => fit(...en(p[0], p[1])));
     }
     halfA /= zoom; halfC /= zoom;
     cA += pan.a; cC += pan.c;
@@ -170,6 +174,21 @@ export default function MapCanvas({ state }) {
       ctx.fillText("aim", ax - 10, ay - 10);
     }
 
+    // MAVIS's demonstration: a dotted line
+    if (demoTrk.length > 1) {
+      ctx.strokeStyle = "rgba(205, 217, 236, 0.75)";
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.setLineDash([2, 6]);
+      ctx.beginPath();
+      demoTrk.forEach((p, i) => {
+        const [q, r] = px(...en(p[0], p[1]));
+        i ? ctx.lineTo(q, r) : ctx.moveTo(q, r);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Flown track -- old attempts dim/dashed
     segs.forEach((trk, si) => {
       if (trk.length < 2) return;
@@ -210,7 +229,7 @@ export default function MapCanvas({ state }) {
       ctx.fill();
       ctx.restore();
     }
-  }, [state?.tel, state?.track, state?.lesson, state?.night, state?.phase, zoom, pan]);
+  }, [state?.tel, state?.track, state?.demo_track, state?.lesson, state?.night, state?.phase, zoom, pan]);
 
   function patternToLatLon(along, cross) {
     const proj = projRef.current;

@@ -150,7 +150,17 @@ def append_track(rt, tel, t0, spike, last_track):
     # the older part is halved, so the full path stays on the map
     # (just coarser at the start) and the payload stays bounded.
     if not rt.scored["done"] and t0 - last_track > 1.0 and not spike \
-            and abs(tel.lat) > 0.01 and not rt.state.get("demo"):
+            and abs(tel.lat) > 0.01 and rt.state.get("demo"):
+        # MAVIS flying the demonstration: its own line (dotted on the map),
+        # never part of the trainee's track
+        demo = rt.state.setdefault("demo_track", [])
+        if not demo or abs(tel.lat - demo[-1][0]) + abs(tel.lon - demo[-1][1]) > 2e-5:
+            demo.append([tel.lat, tel.lon])
+            if len(demo) > TRACK_MAX:
+                demo[:] = demo[:-TRACK_KEEP_FULL:2] + demo[-TRACK_KEEP_FULL:]
+        return t0
+    if not rt.scored["done"] and t0 - last_track > 1.0 and not spike \
+            and abs(tel.lat) > 0.01:
         seg = rt.state["track"][-1]
         d = (abs(tel.lat - seg[-1][0]) + abs(tel.lon - seg[-1][1])) if seg else 1.0
         if d >= 0.02:     # real reposition (> ~2 km/sample): new segment, no false line across the jump
