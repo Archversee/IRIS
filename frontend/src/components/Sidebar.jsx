@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, TrendIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -37,6 +37,7 @@ const SECTIONS = [
     links: [
       { to: "/monitor", path: "/monitor", label: "Live Monitor", icon: <PulseIcon /> },
       { to: "/sessions", path: "/sessions", label: "Sessions", icon: <ListIcon /> },
+      { to: "/progress", path: "/progress", label: "Progress", icon: <TrendIcon /> },
     ],
   },
 ];

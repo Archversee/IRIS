@@ -322,11 +322,11 @@ class MavisBridge:
         async with db.acquire() as conn:
             await conn.execute(
                 """
-                insert into sessions (id, name, lesson_id, mode, sim_source, source, started_at)
-                values ($1, $2, $3, $4, 'MSFS', 'mavis', now())
+                insert into sessions (id, name, pilot_name, lesson_id, mode, sim_source, source, started_at)
+                values ($1, $2, $5, $3, $4, 'MSFS', 'mavis', now())
                 on conflict (id) do nothing
                 """,
-                session_id, name, state.get("lesson_id"), sess.get("mode"),
+                session_id, name, state.get("lesson_id"), sess.get("mode"), who or None,
             )
 
     async def _write_flight_events(self, session_id: UUID, rows: list[tuple]) -> None:

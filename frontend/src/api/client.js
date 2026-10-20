@@ -153,6 +153,10 @@ export const api = {
   // SOP / handbook rule checks of a session (backend/app/routers/rule_results.py).
   // MAVIS computes them (sopApi.evaluate); the instructor's verdicts and sign-off go here.
   ruleResults: (id) => req(`/sessions/${id}/rule-results`),
+  // Progress across flights (post-flight trends)
+  progressPilots: () => req("/progress/pilots"),
+  progressPilot: (name) => req(`/progress/pilot?name=${encodeURIComponent(name)}`),
+  progressCohort: () => req("/progress/cohort"),
   // the 30 s before and after one broken rule (backend app/incidents.py)
   incident: (resultId, index) => req(`/rule-results/${resultId}/incidents/${index}`),
   // reasoning-model explanation of it (instructors); {rating: helpful|not_helpful|null, note}
