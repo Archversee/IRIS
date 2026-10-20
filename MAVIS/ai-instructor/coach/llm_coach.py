@@ -148,7 +148,9 @@ class Coach:
                 and self._speaking_phase not in (None, phase)):
             log.info("cut short: the lesson has moved on to %s", phase)
             self.interrupt()
-            self._skip_gap = True        # the new leg's call goes now, no breathing gap
+            # the new leg's call goes now, no breathing gap (a line from the
+            # queue: run() sets the gap; direct lines don't count toward it)
+            self._skip_gap = self._working
 
     def _outranked(self, r: int) -> bool:
         """True if something more important than rank r is waiting."""

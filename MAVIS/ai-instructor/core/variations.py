@@ -28,6 +28,13 @@ def _curve(err: float, scale: float) -> float:
     return 100.0 * math.exp(-(max(0.0, err) / scale) ** 2) if scale > 0 else 0.0
 
 
+def _rolling_kt(tel: dict) -> float:
+    """Speed over the ground (kt) where the sim reports it, else airspeed --
+    on the ground the airspeed shows the wind, never 0 into a headwind."""
+    gs = tel.get("gs")
+    return gs if gs is not None else tel.get("ias", 0.0)
+
+
 def _ev(code: str, data: dict | None = None, severity: str = "correction",
         cooldown_s: float = 0.0, urgent: bool = False) -> CoachEvent:
     d = dict(data or {})
@@ -193,7 +200,7 @@ class ShortField(Variation):
         if (self.td_along is None and landing and self.airborne_seen
                 and ground and self._prev_ground is False):
             self.td_along = along
-        if self.td_along is not None and self.stop_along is None and ground and tel.get("ias", 0.0) < 3:
+        if self.td_along is not None and self.stop_along is None and ground and _rolling_kt(tel) < 3:
             self.stop_along = along
         self._prev_ground = ground
 
@@ -214,7 +221,7 @@ class ShortField(Variation):
                               urgent=True)
         # Nothing on the runway marks the stop point, so MAVIS counts it down:
         # 200 and 100 m to go ("brake firmly" while still fast)
-        if self.td_along is not None and self.stop_along is None and ias > 8:
+        if self.td_along is not None and self.stop_along is None and _rolling_kt(tel) > 8:
             left = self.stop_by - along
             for mark in (200, 100):
                 if mark - 60 < left <= mark and f"left{mark}" not in self._said:
@@ -311,9 +318,9 @@ class SoftField(Variation):
         out: list[CoachEvent] = []
         ground = bool(tel.get("on_ground", True))
         ias, agl = tel.get("ias", 0.0), tel.get("alt_agl", 0.0)
-        # not holding the stick back (elevator < 0 = stick back, as ROTATE_LATE)
-        stick_back = tel.get("elevator", 0.0) <= -0.5
-        if self.stage == "roll" and ground and ias > 20 and self._nose_down(tel) and not stick_back:
+        # nose wheel still down at 35 kt: with the stick fully back it would be
+        # off by now (it can't come up earlier, so no call before that)
+        if self.stage == "roll" and ground and ias > 35 and self._nose_down(tel):
             out.append(_ev("VAR_SOFT_NOSE_UP", cooldown_s=6, urgent=True))
         if self.stage == "ground_effect":
             if agl > self.ge_agl + 15 and ias < self.accel_to - 3:

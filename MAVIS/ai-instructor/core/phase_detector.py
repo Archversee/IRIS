@@ -90,7 +90,7 @@ class PhaseDetector:
         away = g.cross > 250                                  # displaced to pattern side
 
         # lesson-over safety net: parked and quiet -> debrief, from any late phase
-        if p in ("FINAL", "FLARE_TOUCHDOWN", "ROLLOUT") and tel.on_ground and tel.ias < self._still_kt:
+        if p in ("FINAL", "FLARE_TOUCHDOWN", "ROLLOUT") and tel.on_ground and tel.rolling_kt < self._still_kt:
             if self._still_since is None:
                 self._still_since = _time.time()
             elif _time.time() - self._still_since > 6:
@@ -131,7 +131,7 @@ class PhaseDetector:
         if p == "FLARE_TOUCHDOWN" and tel.on_ground:
             return self.advance("ROLLOUT")
         if p in ("ROLLOUT", "FLARE_TOUCHDOWN"):
-            if p == "ROLLOUT" and self.circuit >= self.total_circuits and tel.ias < self.rollout_end_kt:
+            if p == "ROLLOUT" and self.circuit >= self.total_circuits and tel.rolling_kt < self.rollout_end_kt:
                 return self.advance("DEBRIEF")
             if (not tel.on_ground and tel.alt_agl > 50
                     and self.circuit < self.total_circuits):   # touch-and-go (multi-circuit only)

@@ -37,9 +37,17 @@ class Telemetry:
     # nose (centre) wheel touching the ground; None when an adapter doesn't
     # read it (users then estimate it from the pitch)
     nose_on_ground: bool | None = None
+    # speed over the ground, kt; None when an adapter doesn't read it. On the
+    # ground the airspeed shows the wind, so "stopped" is judged on this.
+    gs: float | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+    @property
+    def rolling_kt(self) -> float:
+        """How fast the aircraft is actually moving (ground speed, else airspeed)."""
+        return self.gs if self.gs is not None else self.ias
 
 
 @runtime_checkable

@@ -37,7 +37,9 @@ def build_flight_flow(rt):
             return False
         if not tel.get("on_ground", True):
             return True
-        return tel.get("ias", 0.0) > 15 or tel.get("throttle", 0.0) > 0.8
+        # actually moving -- not just the throttle forward (parking brake on)
+        gs = tel.get("gs")
+        return (gs if gs is not None else tel.get("ias", 0.0)) > 8
 
     async def _brief(text: str) -> bool:
         """Speak one briefing line; False (and the line cut off) as soon as
@@ -67,7 +69,9 @@ def build_flight_flow(rt):
             return
         # ground starts: if the trainee rolls during the briefing, the rest of
         # it is skipped and the lesson picks up where the aircraft is
-        brief = rt.coach.say if rt.lesson.get("airborne_start") else _brief
+        # (not the mock: its autopilot starts rolling straight away)
+        brief = (rt.coach.say if rt.lesson.get("airborne_start") or rt.cfg["sim"]["adapter"] == "mock"
+                 else _brief)
         lines = [phrases.render("BRIEFING_1_REF", {}) if rt.session.get("reference_recording")
                  else own or phrases.render("BRIEFING_1", {})]
         if not rt.lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own

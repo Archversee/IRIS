@@ -87,8 +87,11 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                 # mock student: fly the step even when the mode
                 # filters out its PHASE_ENTER announcement
                 rt.sim.comply(f"PHASE_ENTER_{ev.data.get('phase')}", ev.data)
-        # every call belongs to the leg / step it was made in (coach.new_phase)
-        ev.data.setdefault("phase", rt.engine.phase)
+        # every call belongs to the leg / step it was made in (coach.new_phase),
+        # except the end-of-turn call: the next leg often starts while it's
+        # being said, and it must never be dropped as stale
+        if ev.code != "ROLL_OUT_LEG":
+            ev.data.setdefault("phase", rt.engine.phase)
         rt.coach.submit(ev)
         if hasattr(rt.sim, "comply"):   # mock student obeys callouts
             rt.sim.comply(ev.code, ev.data)
