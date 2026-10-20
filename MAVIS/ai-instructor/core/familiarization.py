@@ -1056,5 +1056,5 @@ class FamiliarizationScorer:
                 grade = g
                 break
         return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, grade, capped, True,
+                         self.retries, total, grade, capped, practice,
                          incomplete=not self.reached)
