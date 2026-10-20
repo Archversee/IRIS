@@ -31,14 +31,24 @@ const s1 = (v) => (v == null ? "–" : `${v > 0 ? "+" : ""}${v.toFixed(1)} s`);
 const rel = (v) => (v == null ? "–" : Math.abs(v) < 0.05 ? "as the limit was crossed"
   : `${Math.abs(v).toFixed(1)} s ${v < 0 ? "before" : "after"} the limit`);
 
+// The window the viewer last chose (seconds before / after), kept for the next incident.
+const WIN_KEY = "incidentWindow";
+function loadWin() {
+  try { return JSON.parse(localStorage.getItem(WIN_KEY)) || null; } catch { return null; }
+}
+function saveWin(w) {
+  try { w ? localStorage.setItem(WIN_KEY, JSON.stringify(w)) : localStorage.removeItem(WIN_KEY); } catch { /* private mode */ }
+}
+
 export default function IncidentView({ resultId, index, onClose, onWatch }) {
   const [a, setA] = useState(null);
   const [err, setErr] = useState("");
+  const [win, setWin] = useState(loadWin);           // null = the backend's default
 
   useEffect(() => {
     setA(null); setErr("");
-    api.incident(resultId, index).then(setA).catch((e) => setErr(e.detail || e.message));
-  }, [resultId, index]);
+    api.incident(resultId, index, win).then(setA).catch((e) => setErr(e.detail || e.message));
+  }, [resultId, index, win]);
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -65,7 +75,7 @@ export default function IncidentView({ resultId, index, onClose, onWatch }) {
       <div className="inc" role="dialog" aria-modal="true" aria-label="What happened around this broken rule">
         <header className="inc-head">
           <div>
-            <div className="inc-crumb">30 s before and after</div>
+            <WindowPicker win={a?.window_s} onApply={(w) => { saveWin(w); setWin(w); }} />
             <h2>{a?.rule?.title || "Loading…"}</h2>
             {a && (
               <div className="inc-sub">
@@ -91,7 +101,7 @@ export default function IncidentView({ resultId, index, onClose, onWatch }) {
 
         {a && (
           <div className="inc-body">
-            <Explanation a={a} onChange={(explanation) => setA((x) => ({ ...x, explanation }))} />
+            <Explanation a={a} win={win} onChange={(explanation) => setA((x) => ({ ...x, explanation }))} />
 
             <section className="inc-findings">
               {a.findings.length === 0 && <div className="rc-muted">Nothing stood out.</div>}
@@ -192,9 +202,38 @@ export default function IncidentView({ resultId, index, onClose, onWatch }) {
   );
 }
 
+// How far before the breach and after the recovery to look. Typing -15 / +20 works too.
+function WindowPicker({ win, onApply }) {
+  const [before, setBefore] = useState("");
+  const [after, setAfter] = useState("");
+  useEffect(() => {
+    if (win) { setBefore(String(win.before)); setAfter(String(win.after)); }
+  }, [win?.before, win?.after]); // eslint-disable-line react-hooks/exhaustive-deps
+  const parse = (v) => {
+    const n = Math.abs(parseFloat(String(v).replace(/[^\d.\-+]/g, "")));
+    return isFinite(n) ? Math.min(120, Math.max(10, n)) : null;
+  };
+  const apply = () => {
+    const b = parse(before), f = parse(after);
+    if (b != null && f != null) onApply({ before: b, after: f });
+  };
+  return (
+    <div className="inc-crumb inc-win">
+      <input aria-label="Seconds before" value={before} onChange={(e) => setBefore(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && apply()} />
+      <span>s before ·</span>
+      <input aria-label="Seconds after" value={after} onChange={(e) => setAfter(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && apply()} />
+      <span>s after</span>
+      <button className="rc-btn inc-win__go" onClick={apply} title="Look at this window (10-120 s each side)">Apply</button>
+      <button className="rc-btn inc-win__go" onClick={() => onApply(null)} title="Back to the default window">Default</button>
+    </div>
+  );
+}
+
 // Plain-words debrief from the local reasoning model (backend app/incident_explain.py),
 // built only from the measured facts above; numbers it couldn't back up are flagged.
-function Explanation({ a, onChange }) {
+function Explanation({ a, win, onChange }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [busy, setBusy] = useState(false);
@@ -203,7 +242,7 @@ function Explanation({ a, onChange }) {
 
   async function generate() {
     setBusy(true); setErr("");
-    try { onChange(await api.explainIncident(a.result_id, a.index)); }
+    try { onChange(await api.explainIncident(a.result_id, a.index, win)); }
     catch (x) { setErr(x.detail || x.message); }
     finally { setBusy(false); }
   }
@@ -226,6 +265,10 @@ function Explanation({ a, onChange }) {
       </div>
       {err && <div className="rc-err">{err}</div>}
       {e && <p className="inc-explain__text">{e.text}</p>}
+      {e && e.pre_s != null && (Math.abs(e.pre_s - a.window_s.before) > 0.5 || Math.abs(e.post_s - a.window_s.after) > 0.5) && (
+        <div className="rc-muted">Written for {e.pre_s} s before / {e.post_s} s after (you're looking at {a.window_s.before} / {a.window_s.after}).</div>
+      )}
+      {e?.requested_by === "auto" && <div className="rc-muted">Written automatically when the session was saved.</div>}
       {e?.unsupported_numbers?.length > 0 && (
         <div className="inc-explain__warn">
           Check these numbers, they aren't in the measured facts: {e.unsupported_numbers.join(", ")}

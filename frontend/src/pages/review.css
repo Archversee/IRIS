@@ -795,3 +795,27 @@
 .inc-item__meta { font-size: 12px; margin: 2px 0 4px; }
 .inc-item__findings { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 3px; }
 .inc-item__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.inc-win { display: flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; }
+.inc-win input { width: 38px; font: inherit; font-size: 12px; padding: 1px 4px; background: var(--rev-bg); color: var(--rev-text);
+  border: 1px solid var(--rev-line); border-radius: 4px; text-align: center; }
+.inc-win__go { padding: 1px 8px; font-size: 11px; }
+
+/* ---- Debrief drawer (components/session/DebriefPanel.jsx) ---- */
+.db-job { background: var(--rev-panel-2); border: 1px solid var(--rev-cyan); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.db-spin { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%;
+  border: 2px solid var(--rev-cyan); border-right-color: transparent; animation: db-spin 0.9s linear infinite; vertical-align: -1px; }
+@keyframes db-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .db-spin { animation: none; } }
+.db-summary { background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
+.db-sec + .db-sec { margin-top: 10px; }
+.db-sec h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--rev-muted); }
+.db-points { margin: 0; padding-left: 18px; }
+.db-points li + li { margin-top: 3px; }
+.db-p { margin: 0 0 4px; line-height: 1.45; }
+.db-meta { font-size: 12px; margin-top: 10px; }
+.db-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.db-tile { background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; }
+.db-tile span { font-size: 11px; color: var(--rev-muted); }
+.db-prev { margin-top: 8px; font-size: 13px; }
+.db-raw { margin-top: 8px; font-size: 12px; }
+.db-raw pre { max-height: 260px; overflow: auto; background: var(--rev-bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; }

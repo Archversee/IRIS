@@ -8,8 +8,8 @@ anything it made up is flagged to the reader. Explanations are stored, and an
 instructor can mark each one helpful / not helpful (incident_explanations),
 which is the record for improving the prompt or the model later.
 
-Model: settings.explain_ollama_url / explain_model, else MAVIS's own SOP
-model (MAVIS/ai-instructor/config.yaml `sop:`), else its coach model.
+Model: debrief_settings() -- backend/.env EXPLAIN_*, else MAVIS's config.yaml
+`debrief:` block, else its SOP model, else its coach model.
 """
 from __future__ import annotations
 
@@ -61,20 +61,42 @@ STRICT RULES:
 - Calm, specific, encouraging. No blame."""
 
 
-def _mavis_llm() -> tuple[str, str]:
-    """(url, model) from MAVIS's config.yaml: the SOP model, else the coach's."""
+def _mavis_cfg() -> dict:
     try:
-        cfg = yaml.safe_load((Path(settings.mavis_lessons_dir).parent / "config.yaml").read_text(encoding="utf-8")) or {}
+        return yaml.safe_load((Path(settings.mavis_lessons_dir).parent / "config.yaml").read_text(encoding="utf-8")) or {}
     except Exception:
-        cfg = {}
-    sop, coach = cfg.get("sop") or {}, cfg.get("coach") or {}
-    return (sop.get("ollama_url") or coach.get("ollama_url") or "http://localhost:11434",
-            sop.get("model") or coach.get("model") or "")
+        return {}
+
+
+def debrief_settings() -> dict:
+    """The debrief model and options: backend/.env EXPLAIN_* > MAVIS config.yaml `debrief:` > `sop:` > `coach:`.
+    Read on every call, so editing config.yaml needs no restart."""
+    cfg = _mavis_cfg()
+    d, sop, coach = cfg.get("debrief") or {}, cfg.get("sop") or {}, cfg.get("coach") or {}
+
+    def num(key, default, lo=None, hi=None):
+        try:
+            v = float(d.get(key, default))
+        except (TypeError, ValueError):
+            v = default
+        return min(max(v, lo), hi) if lo is not None else v
+    return {
+        "url": (settings.explain_ollama_url or d.get("ollama_url") or sop.get("ollama_url") or coach.get("ollama_url")
+                or "http://localhost:11434").rstrip("/"),
+        "model": settings.explain_model or d.get("model") or sop.get("model") or coach.get("model") or "",
+        "think": d.get("think", True) is not False,
+        "timeout_s": num("timeout_s", settings.explain_timeout_s),
+        "num_ctx": int(num("num_ctx", 16384)),
+        "auto_on_save": d.get("auto_on_save", True) is not False,
+        "max_auto_notes": int(num("max_auto_notes", 15)),
+        "window_before_s": num("window_before_s", 30.0, 10.0, 120.0),
+        "window_after_s": num("window_after_s", 30.0, 10.0, 120.0),
+    }
 
 
 def llm_target() -> tuple[str, str]:
-    url, model = _mavis_llm()
-    return (settings.explain_ollama_url or url).rstrip("/"), settings.explain_model or model
+    d = debrief_settings()
+    return d["url"], d["model"]
 
 
 def facts_for_llm(a: dict) -> dict:
@@ -132,13 +154,15 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
     return bad
 
 
-def _call_ollama(url: str, model: str, messages: list[dict]) -> dict:
-    body = {"model": model, "messages": messages, "stream": False, "think": True,
-            "options": {"temperature": 0.3, "num_ctx": 8192}}
+def _call_ollama(url: str, model: str, messages: list[dict], think: bool = True, num_ctx: int = 16384,
+                 timeout_s: float | None = None) -> dict:
+    body = {"model": model, "messages": messages, "stream": False, "think": think,
+            "options": {"temperature": 0.3, "num_ctx": num_ctx}}
+    timeout = timeout_s or settings.explain_timeout_s
     req = urllib.request.Request(f"{url}/api/chat", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=settings.explain_timeout_s) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")[:300]
@@ -146,25 +170,31 @@ def _call_ollama(url: str, model: str, messages: list[dict]) -> dict:
             body["think"] = False
             req = urllib.request.Request(f"{url}/api/chat", data=json.dumps(body).encode(),
                                          headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=settings.explain_timeout_s) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read())
         raise RuntimeError(f"Ollama answered {e.code}: {detail}") from e
 
 
-async def explain(a: dict) -> dict:
-    url, model = llm_target()
-    if not model:
-        raise RuntimeError("No model set: set EXPLAIN_MODEL in backend/.env, or sop.model in MAVIS's config.yaml")
-    messages = build_messages(a)
+async def ask_model(messages: list[dict]) -> tuple[str, str, bool]:
+    """-> (answer text, model, whether it reasoned first). RuntimeError with a readable reason."""
+    d = debrief_settings()
+    if not d["model"]:
+        raise RuntimeError("No model set: set debrief.model in MAVIS's config.yaml (or EXPLAIN_MODEL in backend/.env)")
     try:
-        resp = await asyncio.to_thread(_call_ollama, url, model, messages)
+        resp = await asyncio.to_thread(_call_ollama, d["url"], d["model"], messages, d["think"], d["num_ctx"],
+                                       d["timeout_s"])
     except Exception as e:
-        raise RuntimeError(f"The explanation model at {url} ({model}) isn't reachable: {e}") from e
+        raise RuntimeError(f"The debrief model at {d['url']} ({d['model']}) isn't reachable: {e}") from e
     msg = resp.get("message") or {}
     text = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
     if not text:
         raise RuntimeError("The model returned an empty answer")
-    return {"text": text, "model": model, "reasoned": bool(msg.get("thinking")),
+    return text, d["model"], bool(msg.get("thinking"))
+
+
+async def explain(a: dict) -> dict:
+    text, model, reasoned = await ask_model(build_messages(a))
+    return {"text": text, "model": model, "reasoned": reasoned,
             "unsupported_numbers": unsupported_numbers(text, facts_for_llm(a)), "prompt_version": PROMPT_VERSION}
 
 
@@ -185,7 +215,9 @@ create table if not exists incident_explanations (
     rated_by       text,
     rated_at       timestamptz
 );
-create index if not exists incident_explanations_result on incident_explanations (result_id, idx, created_at desc)
+create index if not exists incident_explanations_result on incident_explanations (result_id, idx, created_at desc);
+alter table incident_explanations add column if not exists pre_s real;
+alter table incident_explanations add column if not exists post_s real
 """
 
 

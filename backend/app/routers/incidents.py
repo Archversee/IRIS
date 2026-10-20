@@ -4,6 +4,7 @@
                                                             first, with what its analysis found (cached)
   GET   /rule-results/{result_id}/incidents/{index}           the analysis + its latest explanation
   POST  /rule-results/{result_id}/incidents/{index}/explain   ask the reasoning model (instructors)
+      ?before=20&after=15: the window in seconds (10-120); default from config.yaml `debrief:`
   PATCH /incident-explanations/{id}                         instructor: {rating: helpful|not_helpful, note}
       index = which time the rule was broken (rule_results.violations[index]).
       Reading: any signed-in user, like the rule results themselves.
@@ -20,8 +21,8 @@ from pydantic import BaseModel, Field
 
 from .. import db
 from ..auth import current_user
-from ..incident_explain import explain
-from ..incidents import POST_S, PRE_S, analyse
+from ..incident_explain import debrief_settings, explain
+from ..incidents import MAX_WINDOW_S, MIN_WINDOW_S, analyse
 from .rule_results import require_instructor
 
 log = logging.getLogger(__name__)
@@ -61,7 +62,15 @@ def _ts(epoch: float) -> datetime:
     return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
-async def load_incident(result_id: int, index: int) -> dict:
+def window(before: float | None = None, after: float | None = None) -> tuple[float, float]:
+    """(seconds before the breach, seconds after the recovery), clamped; defaults from config.yaml."""
+    d = debrief_settings()
+    clamp = lambda v, dflt: round(min(max(float(v), MIN_WINDOW_S), MAX_WINDOW_S), 1) if v is not None else dflt  # noqa: E731
+    return clamp(before, d["window_before_s"]), clamp(after, d["window_after_s"])
+
+
+async def load_incident(result_id: int, index: int, before: float | None = None, after: float | None = None) -> dict:
+    pre_s, post_s = window(before, after)
     async with db.acquire() as conn:
         rr = await conn.fetchrow("select * from rule_results where id=$1", result_id)
         if rr is None:
@@ -78,7 +87,7 @@ async def load_incident(result_id: int, index: int) -> dict:
             raise HTTPException(409, "The rule this result was checked against isn't in the check's snapshot")
         v = violations[index]
         sid = rr["session_id"]
-        lo, hi = _ts(float(v["t0"]) - PRE_S - 1), _ts(float(v["t1"]) + POST_S + 1)
+        lo, hi = _ts(float(v["t0"]) - pre_s - 1), _ts(float(v["t1"]) + post_s + 1)
         try:
             flight = await conn.fetch(f"select {_FLIGHT_COLS}{_FLIGHT_MAVIS} from flight_data "
                                       "where session_id=$1 and ts between $2 and $3 order by ts", sid, lo, hi)
@@ -110,8 +119,9 @@ async def load_incident(result_id: int, index: int) -> dict:
                   [dict(x) for x in coaching], strictness=ev["strictness"] if ev else None,
                   elevation_ft=ev["elevation_ft"] if ev else None,
                   pupil_baseline_mm=round(baseline, 3) if baseline else None, clock=clock,
-                  other_violations=[x for i, x in enumerate(violations) if i != index])
+                  other_violations=[x for i, x in enumerate(violations) if i != index], pre_s=pre_s, post_s=post_s)
     out["result_id"], out["index"], out["session_id"] = result_id, index, str(sid)
+    out["window_s"] = {"before": pre_s, "after": post_s}
     return out
 
 
@@ -124,14 +134,29 @@ def _expl(row) -> dict | None:
     return d
 
 
-async def _latest_explanation(result_id: int, index: int):
+async def _latest_explanation(result_id: int, index: int, pre_s: float | None = None, post_s: float | None = None):
+    """The latest note, preferring one written for this window."""
     try:
         async with db.acquire() as conn:
             return _expl(await conn.fetchrow(
-                "select * from incident_explanations where result_id=$1 and idx=$2 order by created_at desc limit 1",
-                result_id, index))
+                "select * from incident_explanations where result_id=$1 and idx=$2 "
+                "order by (abs(coalesce(pre_s, 30) - $3) < 0.5 and abs(coalesce(post_s, 30) - $4) < 0.5) desc, "
+                "created_at desc limit 1", result_id, index, pre_s or 30.0, post_s or 30.0))
     except Exception:          # table not there yet
         return None
+
+
+async def write_note(result_id: int, index: int, before: float | None, after: float | None, by: str) -> dict:
+    """Ask the model for a debrief note on one broken-rule moment and store it. RuntimeError if it can't."""
+    a = await load_incident(result_id, index, before, after)
+    e = await explain(a)
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "insert into incident_explanations (result_id, idx, model, prompt_version, reasoned, text, "
+            "unsupported_numbers, requested_by, pre_s, post_s) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *",
+            result_id, index, e["model"], e["prompt_version"], e["reasoned"], e["text"], e["unsupported_numbers"],
+            by, a["window_s"]["before"], a["window_s"]["after"])
+    return _expl(row)
 
 
 async def cached_findings(conn, result_id: int, idx: int, budget: list[int]) -> tuple[list[dict] | None, bool]:
@@ -184,26 +209,20 @@ async def session_incidents(session_id: UUID, user: dict = Depends(current_user)
 
 
 @router.get("/rule-results/{result_id}/incidents/{index}")
-async def incident(result_id: int, index: int, user: dict = Depends(current_user)):
-    out = await load_incident(result_id, index)
-    out["explanation"] = await _latest_explanation(result_id, index)
+async def incident(result_id: int, index: int, before: float | None = None, after: float | None = None,
+                   user: dict = Depends(current_user)):
+    out = await load_incident(result_id, index, before, after)
+    out["explanation"] = await _latest_explanation(result_id, index, out["window_s"]["before"], out["window_s"]["after"])
     return out
 
 
 @router.post("/rule-results/{result_id}/incidents/{index}/explain")
-async def explain_incident(result_id: int, index: int, user: dict = Depends(require_instructor)):
-    a = await load_incident(result_id, index)
+async def explain_incident(result_id: int, index: int, before: float | None = None, after: float | None = None,
+                           user: dict = Depends(require_instructor)):
     try:
-        e = await explain(a)
+        return await write_note(result_id, index, before, after, user.get("full_name") or user.get("username"))
     except RuntimeError as err:
         raise HTTPException(503, str(err))
-    async with db.acquire() as conn:
-        row = await conn.fetchrow(
-            "insert into incident_explanations (result_id, idx, model, prompt_version, reasoned, text, "
-            "unsupported_numbers, requested_by) values ($1,$2,$3,$4,$5,$6,$7,$8) returning *",
-            result_id, index, e["model"], e["prompt_version"], e["reasoned"], e["text"], e["unsupported_numbers"],
-            user.get("full_name") or user.get("username"))
-    return _expl(row)
 
 
 class RatingIn(BaseModel):

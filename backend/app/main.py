@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth, db, eye_clock, incident_explain, mavis_bridge, videos
 from .config import settings
-from .routers import (accounts, adapter, aoi_zones, analytics, data, incidents, ingest, progress, routes,
-                      rule_results, sessions, stream)
+from .routers import (accounts, adapter, aoi_zones, analytics, data, debrief, incidents, ingest, progress,
+                      routes, rule_results, sessions, stream)
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
         await incident_explain.ensure_schema()  # explanations of broken-rule moments (+ instructor ratings)
         await incidents.ensure_schema()  # cached findings of each broken-rule moment
         await progress.ensure_schema()  # Progress page: cached per-flight statistics, expert reference flights
+        await debrief.ensure_schema()  # whole-flight AI summaries (Review → Debrief)
     except Exception as e:  # e.g. sessions table not created yet -- never block startup
         logging.getLogger(__name__).warning("rule results schema not applied: %s", e)
     await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)
@@ -60,6 +61,7 @@ app.include_router(videos.router)
 app.include_router(eye_clock.router)
 app.include_router(incidents.router)
 app.include_router(progress.router)
+app.include_router(debrief.router)
 
 app.mount("/videos", StaticFiles(directory=settings.video_dir), name="videos")
 

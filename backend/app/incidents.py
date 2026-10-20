@@ -23,8 +23,9 @@ from datetime import datetime
 
 from .aoi_roles import METRIC_ROLES, ROLE_LABELS, role_of
 
-PRE_S = 30.0            # look this far back before the breach ...
+PRE_S = 30.0            # look this far back before the breach ... (defaults: each view can choose)
 POST_S = 30.0           # ... and this far past the recovery
+MIN_WINDOW_S, MAX_WINDOW_S = 10.0, 120.0     # what a view may choose
 LOOK_GAP_S = 10.0       # no look at the instrument for this long before the breach = not monitored
 FIXATION_S = 5.0        # one unbroken look this long at something else = attention stuck
 SLOW_ACTION_S = 2.0     # corrective input this long after noticing = slow to act
@@ -142,7 +143,9 @@ def _fmt(v, metric):
 def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zones: list[dict],
             coaching: list[dict] | None = None, *, strictness: str | None = None,
             elevation_ft: float | None = None, pupil_baseline_mm: float | None = None,
-            clock: dict | None = None, other_violations: list[dict] | None = None) -> dict:
+            clock: dict | None = None, other_violations: list[dict] | None = None,
+            pre_s: float = PRE_S, post_s: float = POST_S) -> dict:
+    """pre_s / post_s: how far before the breach and after the recovery to look (default ±30 s)."""
     metric = rule.get("metric")
     t0, t1 = float(violation["t0"]), float(violation["t1"])
     lo, hi = rule_bounds(rule, strictness)
@@ -152,13 +155,13 @@ def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zo
                  "bounds": {"lo": lo, "hi": hi, "unit": _UNIT.get(metric, "")},
                  "breach": {"t0": t0, "t1": t1, "dur_s": round(t1 - t0, 1), "phase": violation.get("phase"),
                             "peak": violation.get("peak"), "peak_text": violation.get("peak_text")},
-                 "window": {"from_s": -PRE_S, "to_s": round(t1 - t0 + POST_S, 1)}}
+                 "window": {"from_s": -pre_s, "to_s": round(t1 - t0 + post_s, 1)}}
 
     # ---------------------------------------------------------------- flight series
     pts = []
     for r in flight:
         t = _t(r["ts"]) - t0
-        if -PRE_S - 1 <= t <= (t1 - t0) + POST_S + 1:
+        if -pre_s - 1 <= t <= (t1 - t0) + post_s + 1:
             pts.append({"t": round(t, 2), "v": metric_value(r, metric, elevation_ft), "phase": r.get("phase"),
                         **{c: _num(r.get(col)) for c, col in _CONTROL_COL.items()},
                         "bank": _num(r.get("bank_deg")), "flaps": _num(r.get("flaps_deg"))})
@@ -226,7 +229,7 @@ def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zo
             overshoot = max(p["v"] for p in post)
     resp["overshoot"] = overshoot
     resp["rebreached_s"] = next((round(float(v["t0"]) - t0, 1) for v in (other_violations or [])
-                                 if 0 < float(v["t0"]) - t1 <= POST_S), None)
+                                 if 0 < float(v["t0"]) - t1 <= post_s), None)
     out["response"] = resp
 
     # ---------------------------------------------------------------- gaze
@@ -237,12 +240,12 @@ def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zo
     zone_roles = {role_of(z["name"]) for z in zones}
     gaze: dict = {"primary_role": primary, "primary_label": ROLE_LABELS.get(primary) if primary else None,
                   "primary_zone_drawn": primary in zone_roles or primary in ("outside", "instruments")}
-    win = [s for s in segs if s["t1"] >= -PRE_S and s["t0"] <= 0]
-    covered = sum(min(s["t1"], 0) - max(s["t0"], -PRE_S) for s in win)
-    gaze["coverage"] = round(max(0.0, covered) / PRE_S, 2) if eye else 0.0
+    win = [s for s in segs if s["t1"] >= -pre_s and s["t0"] <= 0]
+    covered = sum(min(s["t1"], 0) - max(s["t0"], -pre_s) for s in win)
+    gaze["coverage"] = round(max(0.0, covered) / pre_s, 2) if eye else 0.0
     share: dict[str, float] = {}
     for s in win:
-        share[s["name"]] = share.get(s["name"], 0.0) + max(0.0, min(s["t1"], 0) - max(s["t0"], -PRE_S))
+        share[s["name"]] = share.get(s["name"], 0.0) + max(0.0, min(s["t1"], 0) - max(s["t0"], -pre_s))
     tot = sum(share.values()) or 1.0
     gaze["share_before"] = sorted(({"name": k, "role": role_of(k), "share": round(v / tot, 3)} for k, v in share.items()),
                                   key=lambda x: -x["share"])
@@ -251,15 +254,15 @@ def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zo
     gaze["last_look_before_s"] = round(-min(last_before, 0), 1) if last_before is not None else None
     first_after = min((max(s["t0"], onset) for s in looks if s["t1"] >= onset), default=None)
     gaze["first_look_after_onset_s"] = round(first_after, 1) if first_after is not None else None
-    longest = max(win, key=lambda s: min(s["t1"], 0) - max(s["t0"], -PRE_S), default=None)
+    longest = max(win, key=lambda s: min(s["t1"], 0) - max(s["t0"], -pre_s), default=None)
     if longest:
         gaze["longest_look"] = {"name": longest["name"], "role": longest["role"],
-                                "dur_s": round(min(longest["t1"], 0) - max(longest["t0"], -PRE_S), 1)}
+                                "dur_s": round(min(longest["t1"], 0) - max(longest["t0"], -pre_s), 1)}
     out["gaze"] = gaze
 
     # ---------------------------------------------------------------- workload
     pup = [(_num(e.get("pupil_diam_left_mm")), _num(e.get("pupil_diam_right_mm"))) for e in eye
-           if -PRE_S <= _t(e["ts"]) - t0 <= 0 and not e.get("blink")]
+           if -pre_s <= _t(e["ts"]) - t0 <= 0 and not e.get("blink")]
     pup = [sum(x for x in p if x is not None) / len([x for x in p if x is not None]) for p in pup if any(x is not None for x in p)]
     wl = {"pupil_mm": round(sum(pup) / len(pup), 2) if pup else None, "baseline_mm": pupil_baseline_mm}
     wl["vs_baseline"] = (round(wl["pupil_mm"] / pupil_baseline_mm - 1, 3)
@@ -277,7 +280,7 @@ def analyse(rule: dict, violation: dict, flight: list[dict], eye: list[dict], zo
     flap_change = bool(flaps) and max(flaps) - min(flaps) >= 5
     phase_change = next((ph for ph in phases[1:] if onset - 10 <= ph["t"] <= 0), None)
     calls = [{"t": round(_t(c["ts"]) - t0, 1), "who": c.get("who"), "code": c.get("code"), "message": c.get("message")}
-             for c in (coaching or []) if -PRE_S <= _t(c["ts"]) - t0 <= (t1 - t0) + POST_S]
+             for c in (coaching or []) if -pre_s <= _t(c["ts"]) - t0 <= (t1 - t0) + post_s]
     out["context"] = {"phases": phases, "turning": turning, "flap_change": flap_change,
                       "phase_change": phase_change, "callouts": calls}
     out["clock"] = clock or {}

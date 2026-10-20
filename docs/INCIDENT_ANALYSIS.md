@@ -31,13 +31,34 @@ It runs after the flight only. Nothing here runs live.
 
 **Eye and flight clocks in step.** The adapter measures how far the Smart Eye PC's clock is from this PC's: each packet's arrival time minus Smart Eye's own timestamp, a few ms on a LAN. It re-stamps the eye samples onto this PC's clock (`CORRECT_EYE_CLOCK = True`) and reports the offset to IRIS every 30 s. The analysis shows the clock state and warns when it wasn't measured. This assumes the adapter runs on the same PC as MAVIS (as `launch_all.ps1` does). Turning on *Set time automatically* on both PCs still fixes it at the source.
 
-**A model for the debrief note.** By default, MAVIS's own SOP model from `MAVIS/ai-instructor/config.yaml` (`sop.ollama_url`, `sop.model`). A reasoning model (e.g. Qwen3) is used with thinking on; others work without it. Override in `backend/.env`:
+**A model for the debrief notes.** Set in MAVIS's `config.yaml` under `debrief:` (IRIS reads it; no restart needed after editing). On the PC that runs Ollama:
 
 ```
-EXPLAIN_OLLAMA_URL=http://192.168.0.107:11434
-EXPLAIN_MODEL=qwen3.6:27b
-EXPLAIN_TIMEOUT_S=240
+ollama pull qwen3:14b
 ```
+
+```yaml
+debrief:
+  ollama_url: http://localhost:11434     # or the laptop: http://192.168.0.107:11434
+  model: qwen3:14b                       # 24 GB+ GPU: qwen3:32b · 8 GB GPU: qwen3:8b · or the SOP model
+  think: true
+  auto_on_save: true                     # write the summary + every note when a session is saved
+  max_auto_notes: 15
+  window_before_s: 30                    # default close-up window
+  window_after_s: 30
+```
+
+`EXPLAIN_OLLAMA_URL` / `EXPLAIN_MODEL` / `EXPLAIN_TIMEOUT_S` in `backend/.env` still override it. With no `debrief:` block, MAVIS's SOP model (`sop:`) is used.
+
+## Window
+
+The close-up shows 30 s before the breach and 30 s after the recovery by default (`debrief.window_before_s` / `window_after_s`). Each view can type its own, e.g. 15 before and 20 after (or "-15" / "+20"), 10-120 s each side; the choice is remembered for the next incident. The findings are worked out again for that window. A note says which window it was written for.
+
+## Written automatically
+
+Saving a session (Save → Next) starts a background job on the backend: first the whole-flight summary (Review → **Debrief**), then a note for each broken-rule moment that has none (up to `max_auto_notes`), one model call at a time. It waits up to 2 minutes for MAVIS's rule check. Review → Debrief shows the progress; instructors can rewrite the summary, write any missing notes, and rate both. A backend restart forgets a running job (what was already written is kept; press the button again).
+
+The **Debrief** summary has four parts (overview, what went well, what to work on, next flight), written only from the flight's measured facts (rules, each broken-rule moment and its findings, scan and handling per phase, final approach, touchdown, MAVIS's callouts, the pilot's previous flight). Its numbers are checked the same way. `backend/app/flight_summary.py` holds its prompt and facts; `backend/app/routers/debrief.py` the job and API.
 
 ## How the findings are worked out
 
