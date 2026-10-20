@@ -12,9 +12,9 @@ import "./review.css";
 
 // Pure viewer now -- MAVIS is the only thing that ever starts, stops, or
 // logs a session (see mavis_bridge.py/LiveAdapter.py), so this page never
-// mints or ends anything. It just lists whichever MAVIS sessions are
-// currently in progress (GET /sessions/running, i.e. source='mavis' with
-// no ended_at yet) and lets you watch one -- same viewer layout as
+// mints or ends anything. It polls the MAVIS sessions currently in
+// progress (GET /sessions/running, i.e. source='mavis' with no ended_at
+// yet) and opens straight onto the live one -- same viewer layout as
 // Review.jsx (via the shared useSessionData hook), just fed live instead
 // of from a finished DB record. Screen capture uses the browser's own
 // getDisplayMedia() picker per screen (see ScreensPanel), not a server-run
@@ -27,7 +27,6 @@ const POLL_INTERVAL_MS = 3000;
 
 export default function LiveSession() {
   const nav = useNavigate();
-  const [running, setRunning] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [listErr, setListErr] = useState(null);
   const [listLoaded, setListLoaded] = useState(false); // first poll done (skeleton until then)
@@ -37,6 +36,8 @@ export default function LiveSession() {
   // SOP rule checks come straight from MAVIS's live state (not through the
   // IRIS bridge); only shown when MAVIS is flying the session being watched.
   const mavis = useMavisState();
+  const mavisSessionRef = useRef(null);
+  useEffect(() => { mavisSessionRef.current = mavis?.session_id ?? null; });
 
   const { err, summary, flight, flightLoaded, screens, timeline, liveState, followingLive } =
     useSessionData({ id: sessionId, live: true });
@@ -47,12 +48,18 @@ export default function LiveSession() {
       try {
         const rows = await api.listRunningSessions();
         if (cancelled) return;
-        setRunning(rows);
         setListErr(null);
         setListLoaded(true);
-        // The session being watched ended (or was never in the list) --
-        // drop back to the picker rather than keep polling a dead session.
-        if (sessionId && !rows.some((r) => r.id === sessionId)) setSessionId(null);
+        // No picking: jump straight into whichever session is live --
+        // the one MAVIS is flying right now if it's listed, else the
+        // newest (rows come back started_at desc). Keep the current one
+        // while it's still running; once it ends, move to the next live
+        // one, or fall back to the "waiting for a flight" screen.
+        setSessionId((cur) => {
+          if (cur && rows.some((r) => r.id === cur)) return cur;
+          const flying = rows.find((r) => r.id === mavisSessionRef.current);
+          return (flying || rows[0])?.id ?? null;
+        });
       } catch (e) {
         if (!cancelled) { setListErr(e.message); setListLoaded(true); }
       }
@@ -63,7 +70,7 @@ export default function LiveSession() {
       cancelled = true;
       clearInterval(pollRef.current);
     };
-  }, [sessionId]);
+  }, []);
 
   // Browser screen-capture for the two live monitors -- an in-progress OBS
   // recording isn't a seekable/playable file, so the live view captures
@@ -92,7 +99,7 @@ export default function LiveSession() {
   if (err) return <div className="rev-error">Couldn't load this session.<br />{err}</div>;
 
   if (!sessionId) {
-    return <LiveSessionPicker running={running} loaded={listLoaded} error={listErr} onPick={setSessionId} />;
+    return <LiveSessionPicker loaded={listLoaded} error={listErr} />;
   }
 
   const waitingForData = summary && flightLoaded && flight.length === 0;
