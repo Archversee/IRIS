@@ -16,9 +16,11 @@ import "./review.css";
 // progress (GET /sessions/running, i.e. source='mavis' with no ended_at
 // yet) and opens straight onto the live one -- same viewer layout as
 // Review.jsx (via the shared useSessionData hook), just fed live instead
-// of from a finished DB record. Screen capture uses the browser's own
-// getDisplayMedia() picker per screen (see ScreensPanel), not a server-run
-// recording -- that's OBS's job now, owned entirely by MAVIS/LiveAdapter.py.
+// of from a finished DB record. The screens come from the backend grabbing
+// the OTW/instrument windows by title (routers/capture.py); each screen's
+// Capture button still opens the browser's own getDisplayMedia() picker as
+// a manual override. Neither is a recording -- that's OBS's job, owned
+// entirely by MAVIS/LiveAdapter.py.
 //
 // Layout: OTW | Instruments | Ground track, then a read-only session
 // timeline (trend only -- it always follows the live edge), then flight
@@ -71,6 +73,38 @@ export default function LiveSession() {
       clearInterval(pollRef.current);
     };
   }, []);
+
+  // Auto screens: the backend grabs the OTW/instrument windows by title
+  // (routers/capture.py), so they show up without anyone picking them.
+  // Polled so a window opened (or reopened) mid-session gets picked up;
+  // each time one (re)appears it gets a fresh nonce = a fresh connection.
+  const [feeds, setFeeds] = useState({ otw: null, instrument: null });
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    async function check() {
+      try {
+        const st = await api.captureStatus();
+        if (cancelled) return;
+        setFeeds((cur) => {
+          const next = { ...cur };
+          for (const s of ["otw", "instrument"]) {
+            if (!st[s]?.available) next[s] = null;
+            else if (!cur[s]) next[s] = Date.now();
+          }
+          return next.otw === cur.otw && next.instrument === cur.instrument ? cur : next;
+        });
+      } catch {
+        if (!cancelled) setFeeds({ otw: null, instrument: null });
+      }
+    }
+    check();
+    const t = setInterval(check, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [sessionId]);
+  // Feed broke (window closed, backend restarted) -- drop it; the next
+  // status poll brings it back if the window is still there.
+  const dropFeed = (s) => setFeeds((cur) => ({ ...cur, [s]: null }));
 
   // Browser screen-capture for the two live monitors -- an in-progress OBS
   // recording isn't a seekable/playable file, so the live view captures
@@ -129,6 +163,10 @@ export default function LiveSession() {
             click would leave the view stuck paused off the live edge. */}
         <ScreensPanel {...screens} live
           onGroundMouseDown={undefined} onGroundMouseMove={undefined} onGroundMouseUp={undefined}
+          otwFeed={feeds.otw && api.captureFeedUrl("otw", feeds.otw)}
+          onOtwFeedError={() => dropFeed("otw")}
+          instrumentFeed={feeds.instrument && api.captureFeedUrl("instrument", feeds.instrument)}
+          onInstrumentFeedError={() => dropFeed("instrument")}
           otwStream={otwStream}
           onCaptureOtw={() => captureScreen(otwStream, setOtwStream)}
           onStopOtw={() => { stopStream(otwStream); setOtwStream(null); }}

@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth, db, mavis_bridge, videos
 from .config import settings
-from .routers import (accounts, adapter, aoi_zones, analytics, data, ingest, routes, rule_results, sessions,
-                      stream)
+from .routers import (accounts, adapter, aoi_zones, analytics, capture, data, ingest, routes, rule_results,
+                      sessions, stream)
 
 os.makedirs(settings.video_dir, exist_ok=True)
 
@@ -52,6 +52,7 @@ app.include_router(data.router)
 app.include_router(analytics.router)
 app.include_router(rule_results.router)
 app.include_router(stream.router)
+app.include_router(capture.router)
 app.include_router(videos.router)
 
 app.mount("/videos", StaticFiles(directory=settings.video_dir), name="videos")

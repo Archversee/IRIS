@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # (routers/routes.py) are built from these.
     mavis_lessons_dir: str = str(_REPO_ROOT / "MAVIS" / "ai-instructor" / "lessons")
 
+    # Live Monitor's screens (routers/capture.py) grab these windows by title
+    # (case-insensitive substring), so nobody has to pick them by hand.
+    # Override with CAPTURE_OTW_TITLE / CAPTURE_INSTRUMENT_TITLE in .env.
+    capture_otw_title: str = "Microsoft Flight Simulator"
+    capture_instrument_title: str = "Cessna 172"
+
     # First admin account, created at startup only if no admin exists yet
     # (see app/auth.py). Change the password from Profile after signing in,
     # or set ADMIN_USERNAME / ADMIN_PASSWORD in .env before first start.

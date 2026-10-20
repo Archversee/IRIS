@@ -23,7 +23,7 @@ import httpx
 import websockets
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -81,7 +81,34 @@ async def _proxy_http(request, target_base: str, strip_prefix: str) -> Response:
     return Response(content=upstream.content, status_code=upstream.status_code, headers=resp_headers)
 
 
+async def _proxy_stream(request, target_base: str, strip_prefix: str) -> Response:
+    """Endless responses (the Live Monitor's MJPEG screen feeds) can't be
+    buffered like _proxy_http does -- pass them through chunk by chunk, and
+    close the upstream when the viewer goes away."""
+    url = target_base.rstrip("/") + request.url.path[len(strip_prefix):]
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
+    try:
+        upstream = await _client.send(
+            _client.build_request("GET", url, headers=headers, timeout=httpx.Timeout(None, connect=5.0)),
+            stream=True)
+    except httpx.ConnectError:
+        return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend unavailable"}, status_code=502)
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    resp_headers = {k: v for k, v in upstream.headers.items()
+                    if k.lower() not in _HOP_BY_HOP and k.lower() != "content-length"}
+    return StreamingResponse(body(), status_code=upstream.status_code, headers=resp_headers)
+
+
 async def api_proxy(request):
+    if request.method == "GET" and request.url.path.startswith("/api/capture/") and request.url.path.endswith(".mjpg"):
+        return await _proxy_stream(request, IRIS_BACKEND, "/api")
     return await _proxy_http(request, IRIS_BACKEND, "/api")
 
 
