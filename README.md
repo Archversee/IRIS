@@ -92,9 +92,10 @@ cp .env.example .env
 
 #PYTHON 3.12.10
 
-```bash
+```powershell
 cd backend
-py -m venv .venv && source .venv/bin/activate
+py -m venv .venv
+.venv\Scripts\Activate.ps1      # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
