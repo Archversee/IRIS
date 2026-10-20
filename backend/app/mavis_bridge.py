@@ -202,6 +202,9 @@ class MavisBridge:
     def __init__(self, ws_url: str):
         self.ws_url = ws_url
         self._sessions: dict[str, _SessionCursor] = {}
+        # the session MAVIS is on right now (its latest state push); None while
+        # MAVIS is down or hasn't started one -- what "running" means (current_session_id)
+        self.current_session: str | None = None
         self._leaderboard_sig = None   # (count, last ts) of MAVIS's posted runs already saved
         self._last_flush = 0.0
         self._task: asyncio.Task | None = None
@@ -242,6 +245,7 @@ class MavisBridge:
             except Exception as e:
                 log.warning("mavis_bridge: connection to %s lost/unavailable (%s) -- retrying in %.0fs",
                              self.ws_url, e, delay)
+            self.current_session = None      # however the connection ended, nothing is live now
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, _MAX_RECONNECT_DELAY_S)
 
@@ -249,6 +253,7 @@ class MavisBridge:
         # before the session check: a score can be posted after the session is cleared
         await self._sync_leaderboard(state)
         raw_sid = state.get("session_id")
+        self.current_session = raw_sid or None
         if not raw_sid:
             return  # nothing minted yet (pre-Start) -- nothing to attach data to
         session_id = UUID(raw_sid)
@@ -443,6 +448,14 @@ async def stop() -> None:
     if _bridge is not None:
         await _bridge.stop()
         _bridge = None
+
+
+def current_session_id() -> str | None:
+    """The session MAVIS is on right now, or None (MAVIS down / none started).
+    Only this one can really be in progress: MAVIS flies one session at a
+    time, so any other session left without an ended_at (a crash, a closed
+    tab) is stale, not live."""
+    return _bridge.current_session if _bridge is not None else None
 
 
 def mark_ended(session_id) -> None:
