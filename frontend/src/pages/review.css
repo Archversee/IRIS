@@ -782,3 +782,16 @@
 .inc-explain__warn { margin-top: 6px; color: var(--rev-amber); font-size: 13px; }
 .inc-explain__rate { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .rc-btn.is-on { border-color: var(--rev-cyan); color: var(--rev-cyan); }
+
+/* ---- Incidents drawer (components/session/IncidentsPanel.jsx) ---- */
+.inc-list-sub { margin-bottom: 10px; }
+.inc-list-pending { color: var(--rev-amber); margin-bottom: 8px; }
+.inc-item { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: var(--rev-panel); cursor: pointer; }
+.inc-item:hover { background: var(--rev-panel-2); }
+.inc-item__head { display: flex; gap: 8px; align-items: center; }
+.inc-item__time { font-variant-numeric: tabular-nums; color: var(--rev-muted); min-width: 38px; }
+.inc-item__ai { font-size: 11px; color: var(--rev-violet); border: 1px solid var(--rev-violet); border-radius: 4px; padding: 0 4px; }
+.inc-item__go { color: var(--rev-muted); font-size: 18px; line-height: 1; }
+.inc-item__meta { font-size: 12px; margin: 2px 0 4px; }
+.inc-item__findings { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.inc-item__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }

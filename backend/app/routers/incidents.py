@@ -1,5 +1,7 @@
 """The 30 s before and after a broken rule (app/incidents.py does the analysis).
 
+  GET   /sessions/{id}/incidents                             every broken-rule moment of the flight, oldest
+                                                            first, with what its analysis found (cached)
   GET   /rule-results/{result_id}/incidents/{index}           the analysis + its latest explanation
   POST  /rule-results/{result_id}/incidents/{index}/explain   ask the reasoning model (instructors)
   PATCH /incident-explanations/{id}                         instructor: {rating: helpful|not_helpful, note}
@@ -9,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -21,7 +24,28 @@ from ..incident_explain import explain
 from ..incidents import POST_S, PRE_S, analyse
 from .rule_results import require_instructor
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["incidents"])
+
+MAX_NEW_FINDINGS = 20      # analyses worked out per request; `pending` says how many are left
+
+FINDINGS_SCHEMA = """
+create table if not exists incident_findings (
+    result_id    bigint not null references rule_results(id) on delete cascade,
+    idx          int not null,
+    findings     jsonb,                  -- [{code, kind, text}], or null when it couldn't be analysed
+    computed_at  timestamptz not null default now(),
+    primary key (result_id, idx)
+)
+"""
+
+
+async def ensure_schema() -> None:
+    try:
+        async with db.acquire() as conn:
+            await conn.execute(FINDINGS_SCHEMA)
+    except Exception as e:      # rule_results not created yet
+        log.warning("incident_findings not created: %s", e)
 
 _FLIGHT_COLS = ("ts, airspeed_kt, altitude_ft, vertical_speed_fpm, heading_true_deg, pitch_deg, bank_deg, "
                 "throttle_pct, elevator_position, rudder_position, flaps_handle_pct")
@@ -108,6 +132,55 @@ async def _latest_explanation(result_id: int, index: int):
                 result_id, index))
     except Exception:          # table not there yet
         return None
+
+
+async def cached_findings(conn, result_id: int, idx: int, budget: list[int]) -> tuple[list[dict] | None, bool]:
+    """A broken-rule moment's findings, from the cache or worked out now if
+    budget[0] allows. -> (findings, or None if it couldn't be analysed; still_pending)"""
+    row = await conn.fetchrow("select findings from incident_findings where result_id=$1 and idx=$2", result_id, idx)
+    if row:
+        return _j(row["findings"]), False
+    if budget[0] <= 0:
+        return None, True
+    budget[0] -= 1
+    try:
+        a = await load_incident(result_id, idx)
+        found = [{"code": f["code"], "kind": f["kind"], "text": f["text"]} for f in a["findings"]]
+    except Exception as e:      # rule snapshot missing etc.: remember it, don't retry every time
+        log.info("incident %s/%s not analysed: %s", result_id, idx, e)
+        found = None
+    await conn.execute("insert into incident_findings (result_id, idx, findings) values ($1,$2,$3) "
+                       "on conflict do nothing", result_id, idx, json.dumps(found) if found is not None else None)
+    return found, False
+
+
+@router.get("/sessions/{session_id}/incidents")
+async def session_incidents(session_id: UUID, user: dict = Depends(current_user)):
+    budget, pending, out = [MAX_NEW_FINDINGS], 0, []
+    async with db.acquire() as conn:
+        ev = await conn.fetchrow("select id from flight_evaluations where session_id=$1 "
+                                 "order by created_at desc limit 1", session_id)
+        if ev is None:
+            return {"checked": False, "incidents": [], "pending": 0}
+        try:
+            explained = {(r["result_id"], r["idx"]) for r in await conn.fetch(
+                "select distinct e.result_id, e.idx from incident_explanations e "
+                "join rule_results r on r.id = e.result_id where r.evaluation_id=$1", ev["id"])}
+        except Exception:      # table not there yet
+            explained = set()
+        for r in await conn.fetch("select id, title, severity, verdict, instructor_verdict, violations "
+                                  "from rule_results where evaluation_id=$1 order by sort_order, id", ev["id"]):
+            if (r["instructor_verdict"] or r["verdict"]) != "fail":
+                continue
+            for idx, v in enumerate(_j(r["violations"]) or []):
+                found, p = await cached_findings(conn, r["id"], idx, budget)
+                pending += int(p)
+                out.append({"result_id": r["id"], "index": idx, "title": r["title"], "severity": r["severity"],
+                            "t0": v.get("t0"), "t1": v.get("t1"), "dur_s": v.get("dur_s"), "phase": v.get("phase"),
+                            "peak_text": v.get("peak_text"), "pending": p, "findings": found,
+                            "explained": (r["id"], idx) in explained})
+    out.sort(key=lambda x: x["t0"] or 0)
+    return {"checked": True, "incidents": out, "pending": pending}
 
 
 @router.get("/rule-results/{result_id}/incidents/{index}")

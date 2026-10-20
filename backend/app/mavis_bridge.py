@@ -121,17 +121,19 @@ def map_telemetry_fields(state: dict) -> dict | None:
 
 def map_coaching_events(session_id: UUID, transcript: list[dict], start_idx: int) -> list[tuple]:
     """Pure mapping: transcript entries beyond `start_idx` -> coaching_events
-    rows. MAVIS's WS feed carries only {who, text, t, phase} per transcript
-    entry (not the underlying CoachEvent's code/severity/data), so those
-    three columns are left null here -- see coaching_events' comment in
-    db/schema_mavis_integration.sql."""
+    rows. Each transcript entry is {who, text, t, phase}, plus the
+    CoachEvent's {code, severity, data} for lines that voice one (MAVIS
+    coach/llm_coach.py); those three stay null for other lines (lesson
+    script, chat answers) and for MAVIS versions that don't send them."""
     rows = []
     for entry in transcript[start_idx:]:
         ts = _to_utc(entry.get("t")) or datetime.now(timezone.utc)
         text = entry.get("text") or ""
         if not text:
             continue
-        rows.append((session_id, ts, None, None, entry.get("who"), entry.get("phase"), text, None))
+        data = entry.get("data")
+        rows.append((session_id, ts, entry.get("code"), entry.get("severity"), entry.get("who"), entry.get("phase"),
+                     text, json.dumps(data) if data else None))
     return rows
 
 

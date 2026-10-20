@@ -214,16 +214,23 @@ class Coach:
                     put_back((neg_r, seq, ev))
                     continue
                 if text:
-                    await self.say(text, who="instructor", phase=ev.data.get("phase"), rank=r)
+                    await self.say(text, who="instructor", phase=ev.data.get("phase"), rank=r, event=ev)
                 self._last_spoken = time.time()
                 if ev.code.startswith("TURN_"):
                     self._last_turn_spoken = self._last_spoken
             finally:
                 self._working = False
 
-    async def say(self, text: str, who="instructor", phase=None, speak=True, rank=SAY_RANK):
+    async def say(self, text: str, who="instructor", phase=None, speak=True, rank=SAY_RANK,
+                  event: CoachEvent | None = None):
+        """event: the CoachEvent this line voices; its code / severity / data
+        go into the transcript so IRIS can tell which callouts got a response."""
         async with self._speech_lock:      # serialize: finish speaking before the next line
-            self.transcript.append({"who": who, "text": text, "t": time.time(), "phase": phase})
+            entry = {"who": who, "text": text, "t": time.time(), "phase": phase}
+            if event is not None:
+                entry.update(code=event.code, severity=event.severity,
+                             data={k: v for k, v in event.data.items() if isinstance(v, (str, int, float, bool))})
+            self.transcript.append(entry)
             if who == "instructor" and speak:   # speak=False: shown in chat only
                 self._speaking_rank = rank      # (e.g. lines voiced by the intro video)
                 try:

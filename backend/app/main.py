@@ -23,7 +23,8 @@ async def lifespan(app: FastAPI):
     try:
         await rule_results.ensure_schema()  # SOP rule checks of flights (db/schema_rule_results.sql)
         await incident_explain.ensure_schema()  # explanations of broken-rule moments (+ instructor ratings)
-        await progress.ensure_schema()  # cached scan stats / breach causes for the Progress page
+        await incidents.ensure_schema()  # cached findings of each broken-rule moment
+        await progress.ensure_schema()  # Progress page: cached per-flight statistics, expert reference flights
     except Exception as e:  # e.g. sessions table not created yet -- never block startup
         logging.getLogger(__name__).warning("rule results schema not applied: %s", e)
     await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)

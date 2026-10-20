@@ -206,7 +206,11 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
           {grouped[g.key].map((r) => (
             <RuleRow key={r.id} r={r} isInstructor={isInstructor}
               seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
-              onAnalyse={(index) => setIncident({ resultId: r.id, index })} />
+              onAnalyse={(index) => {          // the video jumps there too, a few seconds early
+                const v = r.violations?.[index];
+                if (v?.t0 != null) seekTo(Math.max(0, toT(v.t0) - 5));
+                setIncident({ resultId: r.id, index });
+              }} />
           ))}
         </section>
       ))}

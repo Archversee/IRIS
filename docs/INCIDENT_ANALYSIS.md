@@ -1,6 +1,6 @@
 # Incident analysis: the 30 s around a broken rule
 
-After a flight, every time an SOP rule was broken (Review → SOP drawer) has an **Analyse** button. It opens the 30 seconds before and after that moment, built from the flight data, the eye tracker, the AOI zones and MAVIS's callouts:
+After a flight, Review's **Incidents** button lists every time an SOP rule was broken, in order, with what the analysis found. Click one: the videos and timeline jump to a few seconds before it and the 30 seconds before and after open, built from the flight data, the eye tracker, the AOI zones and MAVIS's callouts. (The **Analyse** button next to each breach in the SOP drawer does the same.)
 
 - **The value against its limits**, marked with: when it started heading for the limit, when the limit was crossed, the first control input, the return within limits, and MAVIS's callouts.
 - **Where the pilot was looking**: one coloured bar per look, by AOI zone.
@@ -17,12 +17,13 @@ It runs after the flight only. Nothing here runs live.
 |---|---|
 | `backend/app/incidents.py` | The analysis. Pure: data in, facts and findings out |
 | `backend/app/incidents_selftest.py` | `python -m app.incidents_selftest` (from `backend/`): made-up flights, checks the story each one tells |
-| `backend/app/routers/incidents.py` | `GET /rule-results/{id}/incidents/{n}`, `POST …/explain` (instructors), `PATCH /incident-explanations/{id}` (rating) |
+| `backend/app/routers/incidents.py` | `GET /sessions/{id}/incidents` (the list, findings cached in `incident_findings`), `GET /rule-results/{id}/incidents/{n}`, `POST …/explain` (instructors), `PATCH /incident-explanations/{id}` (rating) |
 | `backend/app/incident_explain.py` | Prompt, the instructor-editable guide (`KNOWLEDGE`), number check, Ollama call, `incident_explanations` table |
 | `backend/app/aoi_roles.py` | AOI zone name → instrument ("Airspeed", "ASI", "IAS" → airspeed) and which instruments show each value |
 | `backend/app/eye_clock.py` | `POST /sessions/{id}/eye-clock`, `sessions.eye_clock_*` |
 | `Sim_Data_Adapter/LiveAdapter.py` | `ClockSync`: measures and corrects the Smart Eye clock |
-| `frontend/src/components/session/IncidentView.jsx` | The view |
+| `frontend/src/components/session/IncidentsPanel.jsx` | Review → Incidents: the list |
+| `frontend/src/components/session/IncidentView.jsx` | The ±30 s view |
 
 ## What it needs
 
