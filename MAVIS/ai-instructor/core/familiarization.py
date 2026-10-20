@@ -23,6 +23,7 @@ from .monitors import Monitors, roll_out_lead
 from .phase_detector import PhaseDetector, hdg_diff
 from .scoring import DEFAULTS, ScoreCard, _curve
 from .meters import standard_all
+from . import standards
 
 log = logging.getLogger(__name__)
 
@@ -1016,8 +1017,9 @@ class FamiliarizationScorer:
             self._add("smoothness", abs(roll - self._prev_ctrl[0]) + abs(pitch - self._prev_ctrl[1]))
         self._prev_ctrl = (roll, pitch)
 
-    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
-                 score_caps: bool | None = None) -> ScoreCard:
+    def _scores_total(self, f: float) -> tuple[dict, int, bool]:
+        """Scores, total and whether it was capped, at tolerance factor f
+        (core/standards.py: 1 = the lesson's own scales)."""
         scale = {"altitude": self.s["altitude"], "bank": self.s["bank"],
                  "climb_speed": self.s["speed"], "speed": self.s["speed"],
                  "level_off": self.s["altitude"], "smoothness": self.s["smoothness"]}
@@ -1027,7 +1029,7 @@ class FamiliarizationScorer:
                                if attempted else None)
         for k, (tot, n) in self._acc.items():
             if k in self.metrics:
-                scores[k] = round(_curve(tot / n, scale[k])) if n else None
+                scores[k] = round(_curve(tot / n, scale[k] * f)) if n else None
         flown = {k: v for k, v in scores.items() if v is not None}
         wsum = sum(self.WEIGHTS[k] for k in flown) or 1
         total = round(sum(v * self.WEIGHTS[k] for k, v in flown.items()) / wsum) if flown else 0
@@ -1037,11 +1039,20 @@ class FamiliarizationScorer:
         capped = n_skipped > 0 and total > 95 - 10 * n_skipped
         if capped:
             total = 95 - 10 * n_skipped
-        grade = "F"
+        return scores, total, capped
+
+    def _grade(self, total: int) -> str:
         for thr, g in self.grade_bands:
             if total >= thr:
-                grade = g
-                break
-        return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, grade, capped, True,
-                         incomplete=not self.reached)
+                return g
+        return "F"
+
+    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
+                 score_caps: bool | None = None) -> ScoreCard:
+        scores, total, capped = self._scores_total(standards.factor(mode))
+        card = ScoreCard(name or "", mode, lesson_name, time.time(), scores,
+                         self.retries, total, self._grade(total), capped, True,
+                         incomplete=not self.reached, level=standards.label(mode))
+        _, cr_total, _ = self._scores_total(standards.CHECKRIDE)
+        card.checkride = {"total": cr_total, "grade": self._grade(cr_total)}
+        return card

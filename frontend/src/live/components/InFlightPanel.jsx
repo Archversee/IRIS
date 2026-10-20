@@ -37,7 +37,7 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, o
         </div>
       </div>
 
-      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} onMainMenu={onMainMenu} onDiscard={onDiscard} onFlyAgain={onFlyAgain} />}
+      {state?.scorecard && <ScorecardOverlay scorecard={state.scorecard} references={state?.references} onMainMenu={onMainMenu} onDiscard={onDiscard} onFlyAgain={onFlyAgain} />}
     </div>
   );
 }

@@ -525,6 +525,11 @@
 @keyframes mavis-diamond-shine { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 .mavis-score-total { font-size: 0.9rem; color: var(--muted); margin: 4px 0 16px; }
 .mavis-score-total b { color: var(--text); font-size: 1.05rem; }
+.mavis-score-checkride {
+  margin: -10px 0 16px; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem;
+  color: var(--muted); background: rgba(255, 255, 255, 0.05);
+}
+.mavis-score-checkride b { color: var(--text); }
 .mavis-score-metrics { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .mavis-score-metric { display: grid; grid-template-columns: 90px 1fr 32px; align-items: center; gap: 8px; }
 .mavis-score-metric__label { font-size: 12px; color: var(--muted); text-transform: capitalize; }
@@ -533,6 +538,19 @@
 .mavis-score-metric__val { font-size: 12px; text-align: right; font-weight: 600; }
 /* Buttons sized so each label stays on one line; they wrap as whole
    buttons (not mid-label) only if the screen is very narrow. */
+/* scorecard: compare against an expert's flight / instructor save */
+.mavis-compare { margin: 6px 0 14px; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.mavis-compare__pick { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+.mavis-compare__pick select { flex: 1; min-width: 0; }
+.mavis-compare__result { margin-top: 10px; }
+.mavis-compare__headline { margin-bottom: 8px; }
+.mavis-compare__headline b { font-size: 1.2rem; color: var(--text); }
+.mavis-compare__notes { margin: 8px 0 4px; padding-left: 18px; font-size: 0.85rem; line-height: 1.5; }
+.mavis-compare__err { color: #ff9f43; font-size: 0.85rem; }
+.mavis-compare__ok { color: #3ddc84; font-size: 0.85rem; }
+.mavis-compare__save-link { background: none; border: 0; padding: 0; color: var(--muted); font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
+.mavis-compare__save { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 0.85rem; }
+.mavis-compare__save input { width: 140px; }
 .mavis-score-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
 .mavis-score-btns button {
   flex: 1 1 auto; min-width: max-content; white-space: nowrap;

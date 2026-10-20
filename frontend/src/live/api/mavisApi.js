@@ -40,6 +40,11 @@ export const mavisApi = {
   // the up-front demonstration of an airborne lesson (MAVIS flying it first)
   skipDemo: () => postJson("/demo/skip_demo"),
   chat: (text) => postJson("/chat", { text }),
+  // Scorecard: the finished flight compared with an expert reference
+  // -> {ok, name, similarity, scores, notes, demo} or {ok: false, error}
+  compareReference: (reference) => postJson("/score/compare", { reference }),
+  // Scorecard (instructor): save the finished flight as an expert reference
+  saveReference: (pin, display_name = "") => postJson("/score/save_reference", { pin, display_name }),
   // Push-to-talk: WAV blob -> Whisper on MAVIS -> same handler as typed chat.
   // -> {ok, text} or {ok: false, reason}
   voicePtt: (blob, name = "", signal) => {

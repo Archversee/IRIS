@@ -12,6 +12,8 @@ from pathlib import Path
 
 from coach import phrases
 from coach.llm_coach import clip_spoken
+from adapters.sim_base import Telemetry
+from core import compare, standards
 from core.familiarization import is_familiarization
 from core.modes import policy_for, allow_coach_event
 from runtime.bootstrap import HERE
@@ -34,6 +36,9 @@ def build_scoring_flow(rt):
                 "scored_reference": ref_id,
                 "scored_reference_name": prof.display_name if prof else "Planned circuit",
                 "lesson_type": "familiarization" if is_familiarization(rt.lesson) else "circuit",
+                "level": card.level, "checkride": card.checkride,
+                # expert comparison / save-as-reference: whole-circuit lessons only
+                "can_compare": not (is_familiarization(rt.lesson) or rt.lesson.get("segment")),
                 "posted": posted, "debrief": card.debrief, "debrief_pending": debrief_pending}
 
     def _limit_name_mentions(text: str, name: str, max_count: int = 1) -> str:
@@ -218,7 +223,12 @@ def build_scoring_flow(rt):
         card.name = (name or "").strip()[:24] or "Anonymous"
         card.given = (given or "").strip()[:32]
         card.family = (family or "").strip()[:32]
-        rt.board.add(card.to_entry())
+        entry = card.to_entry()
+        # which expert the run was flown against ("Fly like"), if not the planned circuit
+        ref_id = rt.session.get("reference", "planned")
+        if ref_id != "planned":
+            entry["reference"] = rt.refs.get(ref_id).display_name
+        rt.board.add(entry)
         rt.pending["posted"] = True
         rt.state["leaderboard"] = rt.board.snapshot()
         rt.state["scorecard"] = _card_state(card, posted=True)
@@ -234,6 +244,52 @@ def build_scoring_flow(rt):
     async def score_submit(name: str, given: str = "", family: str = ""):
         _post_card(name, given, family)
 
+    def _comparable() -> str | None:
+        """Why the finished flight can't be compared / saved, or None."""
+        if not rt.pending.get("recording") or not rt.state.get("scorecard"):
+            return "No finished flight to compare."
+        if is_familiarization(rt.lesson) or rt.lesson.get("segment") or not hasattr(rt.scorer, "w"):
+            return "Expert comparison is for circuit lessons."
+        return None
+
+    def _geometry(lat: float, lon: float) -> tuple[float, float]:
+        g = rt.engine.detector.geometry(Telemetry(lat=lat, lon=lon, hdg=0.0))
+        return g.along, g.cross
+
+    async def compare_reference(ref_id: str) -> dict:
+        """Scorecard "Compare against": the finished flight (held recording)
+        against an expert's, at the session's level (core/compare.py)."""
+        why = _comparable()
+        if why:
+            return {"ok": False, "error": why}
+        ref = rt.refs.get(ref_id)
+        if ref.id == "planned":
+            return {"ok": False, "error": "Choose an expert flight to compare against."}
+        res = await rt.loop.run_in_executor(None, lambda: compare.compare(
+            rt.pending["recording"], ref, _geometry, rt.scorer.s, rt.scorer.w,
+            standards.factor(rt.session.get("mode"))))
+        return {"ok": True, "reference": ref.id, "name": ref.display_name, "callsign": ref.callsign,
+                "demo": ref.demo, **res}
+
+    async def save_reference(pin: str, display_name: str = "") -> dict:
+        """An instructor saves the flight just finished as an expert reference
+        for this lesson (PIN-checked; named after the instructor)."""
+        inst = rt.instructors.verify_pin(pin)
+        if not inst:
+            return {"ok": False, "error": "Wrong instructor PIN."}
+        why = _comparable()
+        if why:
+            return {"ok": False, "error": why}
+        prof = rt.refs.save_flight(rt.pending["recording"], inst.get("callsign") or "Instructor",
+                                   display_name, aircraft=Path(rt.cfg["aircraft_profile"]).stem)
+        if not prof:
+            return {"ok": False, "error": "Not enough of the circuit was flown to save it as a reference."}
+        rt._sync_refs_to_state()
+        log.info("saved reference %s (%s) from the finished flight", prof.id, prof.display_name)
+        return {"ok": True, "id": prof.id, "name": prof.display_name}
+
     rt._discard_card = _discard_card
     rt.finish_lesson = finish_lesson
     rt.score_submit = score_submit
+    rt.compare_reference = compare_reference
+    rt.save_reference = save_reference

@@ -8,6 +8,8 @@ deletes them after PIN unlock.
 from __future__ import annotations
 import json
 import math
+import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -189,6 +191,9 @@ class ReferenceProfile:
     demo: bool = False
     targets: dict[str, dict] = field(default_factory=dict)
     turn_points: dict[str, dict] = field(default_factory=dict)
+    # a reference saved from a real flight: a point every ~30 m around the
+    # circuit (leg, along, cross, ias, alt) -- core/compare.py
+    samples: list[dict] = field(default_factory=list, repr=False)
     path: Path | None = field(default=None, repr=False)
 
     def target_ias(self, phase: str, default: float | None = None) -> float | None:
@@ -211,6 +216,7 @@ class ReferenceProfile:
             "run_no": self.run_no,
             "recorded_at": self.recorded_at,
             "lesson": self.lesson,
+            "demo": self.demo,
         }
 
     def to_admin(self) -> dict:
@@ -260,6 +266,7 @@ class ReferenceRegistry:
             demo=bool(data.get("demo")),
             targets=dict(targets),
             turn_points=dict(turn_points),
+            samples=list(data.get("samples") or []),
             path=path,
         )
 
@@ -338,6 +345,33 @@ class ReferenceRegistry:
 
     def tracks(self) -> dict[str, list[list[float]] | None]:
         return {pid: p.track for pid, p in self._profiles.items()}
+
+    def save_flight(self, rec: dict, callsign: str, display_name: str = "",
+                    aircraft: str = "c172sp_g1000") -> ReferenceProfile | None:
+        """An instructor's recorded flight (core/recorder.py to_dict) saved as
+        a reference for this lesson: profiles/experts/<callsign>_run<n>.json."""
+        from .compare import reference_from_recording
+        ref = reference_from_recording(rec)
+        if len(ref["samples"]) < 20 or len(ref["track"]) < 20:
+            return None                       # not enough of a circuit flown
+        slug = re.sub(r"[^a-z0-9]+", "_", callsign.lower()).strip("_") or "instructor"
+        lesson = self.shared_from or self.lesson_id
+        runs = [p.run_no for p in self._profiles.values() if p.callsign.lower() == callsign.lower()]
+        run_no = max(runs, default=0) + 1
+        pid = f"{slug}_run{run_no}"
+        while (EXPERTS_DIR / f"{pid}.json").exists():
+            run_no += 1
+            pid = f"{slug}_run{run_no}"
+        data = {
+            "id": pid, "callsign": callsign, "lesson": lesson, "aircraft": aircraft,
+            "display_name": (display_name or "").strip()[:64] or f"{callsign} run {run_no}",
+            "run_no": run_no, "recorded_at": time.strftime("%Y-%m-%d"), "demo": False,
+            "note": "Recorded instructor flight.", **ref,
+        }
+        path = EXPERTS_DIR / f"{pid}.json"
+        path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        self.reload()
+        return self._profiles.get(pid)
 
     def rename(self, ref_id: str, display_name: str) -> bool:
         prof = self._profiles.get(ref_id)

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from .monitors import final_speed_band
 from .variations import make_variation
+from . import standards
 
 M_PER_NM = 1852.0
 
@@ -66,6 +67,8 @@ class ScoreCard:
     given: str = ""
     family: str = ""
     incomplete: bool | None = None   # None = circuit rule (no landing scored)
+    level: str = ""                  # the standard it was judged at (Visitor / Trainee / Check-ride)
+    checkride: dict | None = None    # the same flight at the check-ride standard: {total, grade}
 
     def to_entry(self) -> dict:
         e = {"name": self.name, "mode": self.mode, "lesson": self.lesson,
@@ -188,13 +191,13 @@ class Scorer:
             return abs(tel.get("alt_agl", 0.0) - ideal_agl)
         return None
 
-    def _landing_score(self) -> float | None:
+    def _landing_score(self, f: float = 1.0) -> float | None:
         if not self._landings:
             return None
         L = self._landings[-1]
-        return (0.5 * _curve(L["sink"], self.s["land_sink"])
-                + 0.3 * _curve(L["center"], self.s["land_center"])
-                + 0.2 * _curve(L["speed_err"], self.s["land_speed"]))
+        return (0.5 * _curve(L["sink"], self.s["land_sink"] * f)
+                + 0.3 * _curve(L["center"], self.s["land_center"] * f)
+                + 0.2 * _curve(L["speed_err"], self.s["land_speed"] * f))
 
     def _grade(self, total: float, scores: dict | None = None, incomplete: bool = False) -> str:
         # Hidden top tier, never listed in the public grade-band table.
@@ -207,39 +210,53 @@ class Scorer:
                 return g
         return "F"
 
-    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
-                 score_caps: bool | None = None) -> ScoreCard:
+    def _scores(self, f: float) -> dict:
+        """Every metric at tolerance factor f (core/standards.py: 1 = the
+        lesson's own scales, bigger = more forgiving)."""
         def mean(key):
             a = self._acc[key]
             return a[0] / a[1] if a[1] else 0.0
 
-        landing_raw = self._landing_score()
+        landing_raw = self._landing_score(f)
         scores = {
-            "track": round(_curve(mean("track"), self.s["track"])),
-            "speed": round(_curve(mean("speed"), self.s["speed"])),
-            "altitude": round(_curve(mean("altitude"), self.s["altitude"])),
+            "track": round(_curve(mean("track"), self.s["track"] * f)),
+            "speed": round(_curve(mean("speed"), self.s["speed"] * f)),
+            "altitude": round(_curve(mean("altitude"), self.s["altitude"] * f)),
             "landing": round(landing_raw) if landing_raw is not None else None,
-            "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"])),
-            **(self.variation.scores() if self.variation else {}),
+            "smoothness": round(_curve(mean("smoothness"), self.s["smoothness"] * f)),
+            **(self.variation.scores(f) if self.variation else {}),
         }
         # a metric this lesson doesn't weigh (weight 0) isn't on its card --
         # the take-off lesson has no landing, no circuit height
-        scores = {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
-        incomplete = (not self.reached) if self.segment == "takeoff" else landing_raw is None
-        v_inc = self.variation.incomplete() if self.variation else None
-        if v_inc is not None:
-            incomplete = v_inc
+        return {k: v for k, v in scores.items() if self.w.get(k, 0) > 0}
+
+    def _total(self, scores: dict, score_caps: bool) -> tuple[int, bool]:
         wsum = sum(w for k, w in self.w.items() if k in scores) or 1
         total = sum((scores.get(k) or 0) * self.w[k] for k in self.w) / wsum
         capped = False
-        # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.
-        if score_caps is None:
-            score_caps = mode in ("trainee", "pilot", "serious")
         if score_caps and self.retries > 0:
             cap = self.retry_caps.get(self.retries, self.retry_cap_floor)
             if total > cap:
                 total, capped = cap, True
-        total = round(total)
-        return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
+        return round(total), capped
+
+    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
+                 score_caps: bool | None = None) -> ScoreCard:
+        f = standards.factor(mode)
+        scores = self._scores(f)
+        incomplete = (not self.reached) if self.segment == "takeoff" else self._landing_score() is None
+        v_inc = self.variation.incomplete() if self.variation else None
+        if v_inc is not None:
+            incomplete = v_inc
+        # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.
+        if score_caps is None:
+            score_caps = mode in ("trainee", "pilot", "serious")
+        total, capped = self._total(scores, score_caps)
+        card = ScoreCard(name or "", mode, lesson_name, time.time(), scores,
                          self.retries, total, self._grade(total, scores, incomplete), capped, practice,
-                         incomplete=incomplete)
+                         incomplete=incomplete, level=standards.label(mode))
+        # the same flight at the check-ride standard (the line under the grade)
+        cr_scores = self._scores(standards.CHECKRIDE)
+        cr_total, _ = self._total(cr_scores, score_caps)
+        card.checkride = {"total": cr_total, "grade": self._grade(cr_total, cr_scores, incomplete)}
+        return card

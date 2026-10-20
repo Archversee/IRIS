@@ -61,7 +61,8 @@ class Variation:
     def cues(self, tel: dict, along: float, cross: float, phase: str) -> list[CoachEvent]:
         return []
 
-    def scores(self) -> dict:
+    def scores(self, f: float = 1.0) -> dict:
+        """0-100 per metric; f scales every tolerance (core/standards.py)."""
         return {}
 
     def incomplete(self) -> bool | None:
@@ -147,7 +148,7 @@ class GoAround(Variation):
             out += self._once("VAR_GA_FLAPS_UP", {"vy": self.v["vy"]}, urgent=True)
         return out
 
-    def scores(self):
+    def scores(self, f: float = 1.0):
         if self.t0 is None:
             return {"reaction": None, "height_loss": None, "flaps": None, "climb_speed": None}
         react = (self.t_power - self.t0) if self.t_power is not None else 10.0
@@ -158,10 +159,10 @@ class GoAround(Variation):
         if self.ended_flaps is not None and self.ended_flaps > 5:
             pen -= 20.0                       # still not cleaned up at the end
         n = self.speed_err[1]
-        return {"reaction": round(_curve(react - 1.0, 2.0)),
-                "height_loss": round(_curve(loss - 20.0, 60.0)),
+        return {"reaction": round(_curve(react - 1.0, 2.0 * f)),
+                "height_loss": round(_curve(loss - 20.0, 60.0 * f)),
                 "flaps": max(0, round(pen)),
-                "climb_speed": round(_curve(self.speed_err[0] / n, 8.0)) if n else None}
+                "climb_speed": round(_curve(self.speed_err[0] / n, 8.0 * f)) if n else None}
 
     def incomplete(self):
         return self.t0 is None                # never went around
@@ -217,7 +218,7 @@ class ShortField(Variation):
                               {"margin": abs(round(m / 10) * 10)}, severity="info")
         return out
 
-    def scores(self):
+    def scores(self, f: float = 1.0):
         if self.td_along is None:
             return {"touchdown": None, "stop": None}
         # up to 30 m past the aim point is fine; short of it counts double
@@ -225,10 +226,10 @@ class ShortField(Variation):
         # short of the runway is never fine
         d = self.td_along - self.aim
         err = max(0.0, d - 30.0) if d >= 0 else -2.0 * d
-        td = 0.0 if self.td_along < 0 else _curve(err, 60.0)
+        td = 0.0 if self.td_along < 0 else _curve(err, 60.0 * f)
         stop = None
         if self.stop_along is not None:
-            stop = 100.0 if self.stop_along <= self.stop_by else _curve(self.stop_along - self.stop_by, 80.0)
+            stop = 100.0 if self.stop_along <= self.stop_by else _curve(self.stop_along - self.stop_by, 80.0 * f)
         return {"touchdown": round(td), "stop": round(stop) if stop is not None else None}
 
 
@@ -308,22 +309,22 @@ class SoftField(Variation):
                 out.append(_ev("VAR_SOFT_BRAKES", cooldown_s=6))
         return out
 
-    def scores(self):
+    def scores(self, f: float = 1.0):
         out = {"soft_takeoff": None, "soft_landing": None}
         if self.liftoff_ias is not None:
-            nose = _curve((self.nose_ias if self.nose_ias is not None else self.liftoff_ias) - 30.0, 15.0)
-            lift = _curve(self.liftoff_ias - self.liftoff_max, 8.0)
-            ge = _curve(self.ge_max_agl - self.ge_agl, 40.0)
+            nose = _curve((self.nose_ias if self.nose_ias is not None else self.liftoff_ias) - 30.0, 15.0 * f)
+            lift = _curve(self.liftoff_ias - self.liftoff_max, 8.0 * f)
+            ge = _curve(self.ge_max_agl - self.ge_agl, 40.0 * f)
             out["soft_takeoff"] = round(0.3 * nose + 0.35 * lift + 0.35 * ge)
         if self.td is not None:
             held = ((self.nose_down_t if self.nose_down_t is not None else self.td["t"] + self.hold_s)
                     - self.td["t"])
             out["soft_landing"] = round(
-                0.3 * _curve(self.td["ias"] - self.td_max, 6.0)
-                + 0.2 * _curve(self.nose_up - self.td["pitch"], 3.0)
-                + 0.15 * _curve(self.td["sink"] - 150.0, 200.0)
-                + 0.2 * _curve(self.hold_s - held, 3.0)
-                + 0.15 * _curve(self.max_brake - 0.5, 0.3))
+                0.3 * _curve(self.td["ias"] - self.td_max, 6.0 * f)
+                + 0.2 * _curve(self.nose_up - self.td["pitch"], 3.0 * f)
+                + 0.15 * _curve(self.td["sink"] - 150.0, 200.0 * f)
+                + 0.2 * _curve(self.hold_s - held, 3.0 * f)
+                + 0.15 * _curve(self.max_brake - 0.5, 0.3 * f))
         return out
 
     def incomplete(self):
