@@ -55,7 +55,7 @@ say:
     layman: "That's flying speed. Gently ease the stick back and let her lift off."
     pilot: "Rotate."
   PHASE_ENTER_CLIMB_OUT:
-    layman: "Lovely, we're airborne. Wings level, and keep climbing straight ahead."
+    layman: "Lovely, we're airborne. Wings level, nose just above the horizon, and keep climbing straight ahead."
     pilot: "Airborne. Positive climb, wings level, runway heading."
 
 # To-do list in the pilot view: one row per stage, with live readouts.
@@ -90,16 +90,8 @@ briefing:
     Take-off, runway 02. Full power, centreline with rudder, rotate on my
     call, climb out on the runway heading to one thousand feet AGL.
 
-# Teaching point for each leg, spoken after the standard phase call (or on its
-# own in Trainee/Pilot modes).
-# (No tip during the take-off roll: the lift-off call must not wait behind one.)
-phase_notes:
-  CLIMB_OUT:
-    layman: >-
-      We're flying. Keep the wings level and the nose just above the horizon.
-      Straight ahead, nice and steady.
-    pilot: >-
-      Positive climb, wings level, runway heading.
+# No teaching points: the climb-out call above says it all (and nothing may
+# wait in front of the lift-off call during the roll).
 
 closing:
   layman: >-

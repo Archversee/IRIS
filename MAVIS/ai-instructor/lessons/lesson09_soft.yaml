@@ -39,6 +39,14 @@ say:
   PHASE_ENTER_TAKEOFF_ROLL:
     layman: "Full power, stick all the way back, keep it straight with your feet."
     pilot: "Full power, full back elevator, centreline."
+  # soft-field technique replaces the standard flare / rollout calls
+  # ("throttle back", "gentle brakes")
+  PHASE_ENTER_FLARE_TOUCHDOWN:
+    layman: "Hold it off just above the runway, nose up, with a little power in. Let it settle on gently."
+    pilot: "Hold it off, nose high, power on, settle on."
+  PHASE_ENTER_ROLLOUT:
+    layman: "We're down. Keep the stick back to hold the nose wheel off, and go easy on the brakes."
+    pilot: "Full back elevator, nose wheel off as long as possible, minimum braking."
   PHASE_ENTER_CLIMB_OUT:
     layman: "Lovely, climbing away. Flaps up once we're above 200 feet, then 70 to 90 knots."
     pilot: "Positive climb. Flaps up above 200 feet, then 70 to 90 knots."
@@ -79,21 +87,11 @@ briefing:
 phase_notes:
   FINAL:
     layman: >-
-      Soft-field landing coming up. Full flaps, {speed} knots. Keep a little
-      power on through the flare, and touch down as slowly as you can.
+      This one's a soft-field landing: keep a little power on through the
+      flare, and touch down as slowly as you can.
     pilot: >-
-      Full flaps, {speed} knots. Carry power through the flare, minimum-speed
+      Soft-field landing: carry power through the flare, minimum-speed
       touchdown, nose high.
-  FLARE_TOUCHDOWN:
-    layman: >-
-      Hold it off, nose up, a little power. Let it settle on gently.
-    pilot: >-
-      Hold it off, nose high, power on, settle on.
-  ROLLOUT:
-    layman: >-
-      Keep the stick back to hold the nose wheel off, and go easy on the brakes.
-    pilot: >-
-      Full back elevator, nose wheel off as long as possible, minimum braking.
 
 closing:
   layman: >-

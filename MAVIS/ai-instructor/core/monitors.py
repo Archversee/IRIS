@@ -51,7 +51,7 @@ class Monitors:
         self._rotate_call = not lesson.get("no_rotate_call")
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
-                          "FINAL": float(lesson.get("final_speed_kt") or v["final"])}
+                          "FINAL": round(float(lesson.get("final_speed_kt") or v["final"]))}
         self.tgt_flaps = {"DOWNWIND": f["downwind"], "BASE": f["base"], "FINAL": f["final"]}
         # legs flown without a speed to hold (the Take-off lesson's climb-out):
         # no speed shown, called or nudged there
@@ -455,7 +455,9 @@ class Monitors:
             self._abeam_prev = abeam_ready
 
         fl = self.tgt_flaps.get(phase)
-        if fl and phase in ("BASE", "FINAL") and tel.flaps_deg < fl - 6:
+        # a reminder only: the leg's own call has just asked for these flaps
+        if (fl and phase in ("BASE", "FINAL") and tel.flaps_deg < fl - 6
+                and now - self._phase_t > 15):
             E(CoachEvent("FLAPS_REMINDER", "nudge", {"flaps": fl}, cooldown_s=25))
 
         if not tel.on_ground and abs(tel.bank) > 32:

@@ -38,6 +38,14 @@ touchdown_speed_kt: 55
 slow_down_below_agl_ft: 50
 min_speed_kt: 50
 say:
+  # short-field technique replaces the standard flare / rollout calls ("gentle
+  # brakes" would contradict "brake firmly"); the touchdown call covers the rollout
+  PHASE_ENTER_FLARE_TOUCHDOWN:
+    layman: "Only a short float. Put it down firmly on the aim point."
+    pilot: "Minimal float, positive touchdown on the aim point."
+  PHASE_ENTER_ROLLOUT:
+    layman: ""
+    pilot: ""
   PHASE_ENTER_CLIMB_OUT:
     layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
     pilot: "Airborne. Climb at 70 to 90 knots, wings level."
@@ -75,17 +83,12 @@ briefing:
 phase_notes:
   FINAL:
     layman: >-
-      Full flaps, and hold {speed} knots, tighter than usual. Look at the aim
+      Hold that speed tighter than usual, within five knots. Look at the aim
       point and keep it still in the windscreen: if it moves up, you're
       dropping short; if it moves down, you'll land long.
     pilot: >-
-      Full flaps, {speed} knots, stabilised. Fix the aim point; power for the
-      path, pitch for the speed.
-  FLARE_TOUCHDOWN:
-    layman: >-
-      Only a short float. Put it down firmly on the aim point.
-    pilot: >-
-      Minimal float, positive touchdown on the aim point.
+      Plus or minus five knots. Fix the aim point; power for the path, pitch
+      for the speed.
 
 closing:
   layman: >-

@@ -59,9 +59,17 @@ TEMPLATES = {
     "PHASE_ENTER_TAKEOFF_ROLL": ["Here we go. Push the throttle lever all the way forward, nice and smooth."],
     "PHASE_ENTER_CLIMB_OUT": ["Lovely, we're airborne. Hold {speed} knots and keep climbing straight ahead."],
     "PHASE_ENTER_CROSSWIND": ["Beautiful turn. Keep climbing up to {alt} feet. That's our circuit height."],
+    # (variants: what the aircraft is already doing -- core/lesson_engine.py _leg_variant)
+    "PHASE_ENTER_CROSSWIND__level": ["Beautiful turn. We're at circuit height, {alt} feet. Level off and hold it."],
+    "PHASE_ENTER_CROSSWIND__high": ["Beautiful turn. We're above circuit height. Ease down to {alt} feet."],
     "PHASE_ENTER_DOWNWIND": ["Nicely done. Level off at {alt} feet and settle at {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__level": ["Nicely done. Hold {alt} feet and settle at {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__climb": ["Nicely done. Keep climbing to {alt} feet, then level off at {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__high": ["Nicely done. Ease down to {alt} feet and settle at {speed} knots."],
     "PHASE_ENTER_BASE": ["Good, fourth side of the rectangle. Second notch of flaps when you're ready, and let it descend."],
+    "PHASE_ENTER_BASE__flapsset": ["Good, fourth side of the rectangle. Let it descend gently."],
     "PHASE_ENTER_FINAL": ["There's your runway. Full flaps, the last notch, {speed} knots, small corrections only."],
+    "PHASE_ENTER_FINAL__flapsset": ["There's your runway. {speed} knots, small corrections only."],
     "PHASE_ENTER_FLARE_TOUCHDOWN": ["Pull the throttle gently back, eyes to the end of the runway, let it settle."],
     "PHASE_ENTER_ROLLOUT": ["You did it. Let it roll, gentle brakes, take a breath."],
     # touch-and-go (multi-circuit lessons only)
@@ -74,7 +82,7 @@ TEMPLATES = {
     # proactive turn cues: told BEFORE the turn so the trainee knows to bank,
     # {dir} is left/right from the pattern side
     "TURN_CROSSWIND": ["Ease into a gentle {dir} turn now, we're at {xwind} feet."],
-    "TURN_DOWNWIND": ["Now roll {dir} again onto the long leg, and level off around {alt} feet."],
+    "TURN_DOWNWIND": ["Now turn {dir} again, onto the long leg."],
     "TURN_BASE": ["Time to turn {dir} now, onto the short leg before the runway."],
     "TURN_FINAL": ["Turn gently {dir} to line up with the runway ahead of you."],
     # sat-nav style heads-up before a turn call
@@ -92,7 +100,7 @@ TEMPLATES = {
     "VAR_GA_FLAPS_UP": ["Flaps all the way up. Climb at {vy} knots, straight ahead."],
     "VAR_SF_HIGH": ["A little high for the aim point. Ease the throttle back a touch."],
     "VAR_SF_LOW": ["Getting low for the aim point. A touch more power."],
-    "VAR_SF_OVER_FENCE": ["Over the threshold. Throttle closed, let it settle onto the aim point."],
+    "VAR_SF_OVER_FENCE": ["Over the threshold. Throttle closed."],
     "VAR_SF_TOUCHDOWN": ["Down, {dist} metres {where} the aim point. Flaps up, stick back, brake firmly."],
     "VAR_SF_BRAKE": ["Brakes! Firmly now, the line's coming up."],
     "VAR_SF_STOPPED_OK": ["Stopped, {margin} metres before the line. Nicely done."],
@@ -184,16 +192,23 @@ PILOT_TEMPLATES = {
     "PHASE_ENTER_TAKEOFF_ROLL": ["Cleared for take-off."],
     "PHASE_ENTER_CLIMB_OUT": ["Airborne. Climb at {speed} knots, Vy, wings level."],
     "PHASE_ENTER_CROSSWIND": ["Crosswind leg. Continue the climb to circuit altitude, {alt} feet."],
+    "PHASE_ENTER_CROSSWIND__level": ["Crosswind leg. Level at circuit altitude, {alt} feet."],
+    "PHASE_ENTER_CROSSWIND__high": ["Crosswind leg. Above circuit altitude, descend to {alt} feet."],
     "PHASE_ENTER_DOWNWIND": ["Downwind. Level at {alt} feet, {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__level": ["Downwind. Maintain {alt} feet, {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__climb": ["Downwind. Continue the climb to {alt} feet, then {speed} knots."],
+    "PHASE_ENTER_DOWNWIND__high": ["Downwind. Descend to {alt} feet, {speed} knots."],
     "PHASE_ENTER_BASE": ["Base leg. Reduce power, flaps as required, {speed} knots on descent."],
+    "PHASE_ENTER_BASE__flapsset": ["Base leg. Reduce power, {speed} knots on descent."],
     "PHASE_ENTER_FINAL": ["Final. Full flaps, {speed} knots on approach, hold the centreline."],
+    "PHASE_ENTER_FINAL__flapsset": ["Final. {speed} knots on approach, hold the centreline."],
     "PHASE_ENTER_FLARE_TOUCHDOWN": ["Over the threshold. Power to idle, flare, and hold it off."],
     "PHASE_ENTER_ROLLOUT": ["Touchdown. Centreline with rudder, brakes as required."],
     "PHASE_ENTER_ROLLOUT_TG": ["Touch and go. Flaps set for take-off, full power, rotate at Vr."],
     "ROTATE_NOW": ["Vr, {vr} knots. Rotate."],
     "ROTATE_LATE": ["Rotate now. Ease back on the yoke."],
     "TURN_CROSSWIND": ["Turn {dir} onto crosswind now, maintain the climb."],
-    "TURN_DOWNWIND": ["Turn {dir} onto downwind, level at {alt} feet."],
+    "TURN_DOWNWIND": ["Turn {dir} onto downwind."],
     "TURN_BASE": ["Turn {dir} onto base."],
     "TURN_FINAL": ["Turn {dir} onto final, line up with the centreline."],
     "ROLL_OUT_LEG": ["Roll out on {leg}, wings level."],
@@ -206,7 +221,7 @@ PILOT_TEMPLATES = {
     "VAR_GA_FLAPS_UP": ["Flaps up, Vy {vy} knots, runway heading."],
     "VAR_SF_HIGH": ["High on the aim point, reduce power."],
     "VAR_SF_LOW": ["Low on the aim point, add power."],
-    "VAR_SF_OVER_FENCE": ["Over the threshold, power idle, land on the aim point."],
+    "VAR_SF_OVER_FENCE": ["Over the threshold, power idle."],
     "VAR_SF_TOUCHDOWN": ["Touchdown {dist} metres {where} the aim point. Flaps up, full back elevator, maximum braking."],
     "VAR_SF_BRAKE": ["Maximum braking."],
     "VAR_SF_STOPPED_OK": ["Stopped, {margin} metres to spare."],
@@ -438,13 +453,26 @@ _NOT_TARGETS = {"", "falling", "rising", "watch it roll", "watch it rise", "watc
                 "slowly up", "middle", "on the path", "settle on", "stop the sink", "stopped"}
 
 
-def spoken_targets(meters: list[dict] | None) -> str:
+def _numbers(text: str) -> set[str]:
+    import re
+    return {n.replace(",", "") for n in re.findall(r"\d[\d,]*", text)}
+
+
+def spoken_targets(meters: list[dict] | None, said: str = "") -> str:
     """The to-do list's targets for a step, as one spoken sentence:
-    "Target: steady 10 seconds, bank under 5 degrees." ("" if none)."""
+    "Target: steady 10 seconds." ("" if none). Leaves out a target that's
+    already met (nothing to do) and one whose numbers the instruction just
+    said (`said`) -- so nothing is asked for twice, or asked for when it's
+    already done."""
     parts = []
+    said_nums = _numbers(said)
     for m in meters or []:
         tgt = (m.get("target") or "").strip()
-        if tgt.lower() in _NOT_TARGETS:
+        if tgt.lower() in _NOT_TARGETS or m.get("ok") is True:
+            continue
+        nums = _numbers(tgt)
+        label = (m.get("label") or "").lower()
+        if (nums & said_nums) or (not nums and label and label in said.lower()):
             continue
         label = m.get("label", "")
         if label and not any(w[:1].isupper() for w in label.split()[1:]):
@@ -472,10 +500,12 @@ def render(code: str, data: dict) -> str:
             pass
         # ...followed by the step's targets from the to-do list, when the
         # step's instructions are given (not in the up-front demo)
-        if d.get("say_targets"):
-            txt = f"{txt} {d['say_targets']}".strip()
-        return txt
+        extra = (spoken_targets(d["say_meters"], said=f"{d.get('said_before', '')} {txt}")
+                 if d.get("say_meters") else d.get("say_targets") or "")
+        return f"{txt} {extra}".strip()
     opts = TEMPLATES.get(code)
+    if d.get("variant") and TEMPLATES.get(f"{code}__{d['variant']}"):
+        opts = TEMPLATES[f"{code}__{d['variant']}"]
     if not opts:
         return ""
     # lap 1's rollout is a touch-and-go when circuit < total_circuits

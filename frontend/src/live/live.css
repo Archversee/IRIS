@@ -374,19 +374,21 @@
   background: rgba(74, 168, 255, 0.15); color: #bfe0ff;
 }
 .mavis-todo__meters { display: grid; gap: 4px; margin-top: 6px; }
+/* every readout row the same: label | now / target | one status mark */
 .mavis-todo__meter {
-  display: grid; grid-template-columns: 70px 1fr 44px; align-items: center; gap: 6px;
+  display: grid; grid-template-columns: 84px 1fr 18px; align-items: center; gap: 6px;
   padding: 3px 8px; border-radius: 6px; font-size: 13px; background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid transparent;
 }
+.mavis-todo__meter.is-ok { border-left-color: #3ddc84; }
+.mavis-todo__meter.is-off { border-left-color: #ff9f43; }
 .mavis-todo__meter-label { color: #9fb2cf; }
 .mavis-todo__meter-val b { font-weight: 700; font-variant-numeric: tabular-nums; }
 .mavis-todo__meter-of { color: #9fb2cf; }
-.mavis-todo__bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
-.mavis-todo__bar i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
-.mavis-todo__meter.is-ok .mavis-todo__bar i { background: #3ddc84; }
-.mavis-todo__dot { justify-self: end; width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.25); }
-.mavis-todo__meter.is-ok .mavis-todo__dot { background: #3ddc84; }
-.mavis-todo__meter.is-off .mavis-todo__dot { background: #ff9f43; }
+.mavis-todo__meter-hint { color: #9fb2cf; font-style: italic; }
+.mavis-todo__status { justify-self: end; font-weight: 700; text-align: center; }
+.mavis-todo__meter.is-ok .mavis-todo__status { color: #3ddc84; }
+.mavis-todo__meter.is-off .mavis-todo__status { color: #ff9f43; }
 .mavis-todo__done { margin-top: 10px; font-size: 13px; color: #3ddc84; }
 @media (max-width: 1000px) {
   .mavis-hud__mapwrap { flex-direction: column; }

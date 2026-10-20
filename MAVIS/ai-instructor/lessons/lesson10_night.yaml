@@ -72,10 +72,9 @@ phase_notes:
   CLIMB_OUT:
     layman: >-
       It's dark out there, so there's no horizon to look at. Keep the wings
-      level using the screen in front of you, and climb straight ahead.
+      level using the screen in front of you.
     pilot: >-
-      No visual horizon. Wings level on the attitude indicator, positive rate,
-      and hold 70 to 90 knots on the tape.
+      No visual horizon. Wings level on the attitude indicator.
   DOWNWIND:
     layman: >-
       Look left. That line of white lights is the runway. Keep it sitting in

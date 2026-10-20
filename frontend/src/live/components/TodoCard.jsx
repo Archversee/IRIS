@@ -6,20 +6,23 @@
 // task out of MAVIS's spoken explanation. Driven by state.fam_todo
 // (FamiliarizationEngine.todo(), or LessonEngine.todo() for lessons with
 // todo_steps).
+// Every readout row is drawn the same way (MAVIS core/meters.py): label,
+// "now / target", and one status mark -- ✓ target met, • not yet, nothing
+// for a reference reading. A hint ("falling", "watch it rise") is shown muted.
 function Meter({ m }) {
-  const hasBar = typeof m.pct === "number";
-  const state = hasBar ? (m.pct >= 1 ? " is-ok" : "") : m.ok === true ? " is-ok" : m.ok === false ? " is-off" : "";
+  const state = m.ok === true ? " is-ok" : m.ok === false ? " is-off" : "";
   return (
     <div className={"mavis-todo__meter" + state}>
       <span className="mavis-todo__meter-label">{m.label}</span>
       <span className="mavis-todo__meter-val">
-        <b>{m.now}</b>{m.target ? <span className="mavis-todo__meter-of"> / {m.target}</span> : null}
+        <b>{m.now}</b>
+        {m.target ? <span className="mavis-todo__meter-of"> / {m.target}</span> : null}
+        {m.hint ? <span className="mavis-todo__meter-hint"> · {m.hint}</span> : null}
       </span>
-      {hasBar ? (
-        <span className="mavis-todo__bar"><i style={{ width: `${Math.round(m.pct * 100)}%` }} /></span>
-      ) : (
-        <span className="mavis-todo__dot" aria-label={m.ok ? "in range" : "out of range"} />
-      )}
+      <span className="mavis-todo__status"
+        aria-label={m.ok === true ? "target met" : m.ok === false ? "not yet" : undefined}>
+        {m.ok === true ? "✓" : m.ok === false ? "•" : ""}
+      </span>
     </div>
   );
 }

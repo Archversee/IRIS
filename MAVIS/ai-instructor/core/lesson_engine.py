@@ -10,7 +10,8 @@ from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
 from .monitors import Monitors, final_speed_band
-from coach.phrases import spoken_targets
+from .meters import standard_all
+from coach import phrases
 from .phase_detector import PhaseDetector
 from .variations import make_variation
 
@@ -137,10 +138,15 @@ class LessonEngine:
                     "total_circuits": self.detector.total_circuits,
                     **{k: v for k, v in
                        self.monitors.targets_for(new_phase).items() if v}}
+            variant = self._leg_variant(new_phase, tel)
+            if variant:
+                data["variant"] = variant
             out.append(CoachEvent(f"PHASE_ENTER_{new_phase}", "info", data, cooldown_s=0))
             note = self.phase_notes.get(new_phase)
             if note:
-                note = {**note, "say_targets": self._spoken_targets(new_phase)}
+                note = {**note, "say_meters": self._step_meters(new_phase),
+                        # the leg call just before it: its targets aren't repeated
+                        "said_before": phrases.render(f"PHASE_ENTER_{new_phase}", data)}
                 # same severity as the phase call, queued after it, so it is
                 # spoken as the follow-on teaching point for this leg
                 out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
@@ -154,6 +160,24 @@ class LessonEngine:
                 if self._cooled(ev):
                     out.append(ev)
         return out
+
+    def _leg_variant(self, phase: str, tel: Telemetry) -> str | None:
+        """Which wording of a leg's call fits what the aircraft is already
+        doing, so MAVIS never says "keep climbing" when we're at circuit
+        height, or "full flaps" when they're already down (coach.phrases
+        PHASE_ENTER_<leg>__<variant>)."""
+        if phase in ("CROSSWIND", "DOWNWIND"):
+            dv = tel.alt_msl - self.monitors.pattern_alt
+            if dv > 100:
+                return "high"
+            if dv >= -100:
+                return "level"
+            return "climb"
+        if phase == "BASE" and tel.flaps_deg >= 15:
+            return "flapsset"
+        if phase == "FINAL" and tel.flaps_deg >= 25:
+            return "flapsset"
+        return None
 
     def targets(self) -> dict:
         return self.monitors.targets_for(self.detector.phase)
@@ -173,16 +197,15 @@ class LessonEngine:
                    "status": "done" if i < cur else ("active" if i == cur else "todo")}
             if i == cur:
                 row["lines"] = list(st.get("todo") or [])
-                row["meters"] = [m for m in (self._meter(k) for k in st.get("meters") or []) if m]
+                row["meters"] = standard_all(self._meter(k) for k in st.get("meters") or [])
             steps.append(row)
         return {"steps": steps, "complete": phase == "DEBRIEF", "done_text": self.todo_done}
 
-    def _spoken_targets(self, phase: str) -> str:
-        """The to-do targets of the step this phase belongs to, spoken."""
+    def _step_meters(self, phase: str) -> list[dict]:
+        """The to-do readouts of the step this phase belongs to (read out after
+        the leg's teaching point -- coach.phrases.spoken_targets)."""
         st = next((s for s in self.todo_steps if phase in s.get("phases", [])), None)
-        if not st:
-            return ""
-        return spoken_targets([m for m in (self._meter(k) for k in st.get("meters") or []) if m])
+        return standard_all(self._meter(k) for k in st.get("meters") or []) if st else []
 
     def _meter(self, kind: str) -> dict | None:
         """One live "now / target" row. No target speed on the take-off: it
@@ -223,7 +246,7 @@ class LessonEngine:
             return {"label": "Glidepath", "now": now, "target": "on the path", "ok": abs(diff) < 60}
         if kind == "flaps":
             want = self.monitors.tgt_flaps.get("FINAL", 30)
-            return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": f"full ({want}°)",
+            return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": "full",
                     "ok": tel.flaps_deg >= want - 6}
         if kind == "height":
             return {"label": "Height", "now": f"{agl:,.0f} ft", "target": ""}

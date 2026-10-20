@@ -107,7 +107,7 @@ class Scorer:
         self._lesson, self._v = lesson, v
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
-                          "FINAL": float(lesson.get("final_speed_kt") or v["final"])}
+                          "FINAL": round(float(lesson.get("final_speed_kt") or v["final"]))}
         # Circuit Variations: their own measurements (reaction, touchdown point, ...)
         self.variation = make_variation(lesson, aircraft)
         b = lesson.get("climb_speed_band_kt")      # climb legs flown to a band

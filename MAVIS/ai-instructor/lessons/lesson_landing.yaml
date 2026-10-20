@@ -92,29 +92,25 @@ briefing:
     path. Full flaps, stabilised approach, flare, touchdown on the centreline,
     roll out to a stop.
 
-# Teaching point for each leg, spoken after the standard phase call (or on its
-# own in Trainee/Pilot modes). {speed} comes from the targets above.
+# This lesson's own flare and rollout calls (one line each, not the standard
+# call plus a tip saying the same thing).
+say:
+  PHASE_ENTER_FLARE_TOUCHDOWN:
+    layman: "Throttle all the way back. Look at the far end of the runway and slowly raise the nose to stop it sinking. Let it settle on."
+    pilot: "Power idle, flare, hold it off, main wheels first."
+  PHASE_ENTER_ROLLOUT:
+    layman: "We're down. Keep it straight with your feet and brake gently to a stop."
+    pilot: "Centreline with rudder, brakes as required, roll out to a stop."
+
+# Teaching point after the standard final call (which already says full flaps
+# and the speed).
 phase_notes:
   FINAL:
     layman: >-
-      Put the flaps all the way down. Then the nose controls your speed, keep
-      it at {speed} knots, and the throttle controls your height: a little
-      more if you're getting low, a little less if you're high.
+      The nose controls your speed, and the throttle controls your height: a
+      little more if you're getting low, a little less if you're high.
     pilot: >-
-      Full flaps, {speed} knots. Pitch for speed, power for the glidepath, hold
-      the centreline.
-  FLARE_TOUCHDOWN:
-    layman: >-
-      Throttle all the way back. Look at the far end of the runway and slowly
-      raise the nose to stop it sinking. Let it settle on.
-    pilot: >-
-      Power idle, flare, hold it off, main wheels first.
-  ROLLOUT:
-    layman: >-
-      We're down. Keep it straight with your feet and use the brakes gently
-      to stop.
-    pilot: >-
-      Centreline with rudder, brakes as required, roll out to a stop.
+      Pitch for speed, power for the glidepath.
 
 closing:
   layman: >-
