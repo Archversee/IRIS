@@ -16,6 +16,7 @@ import SaveSession from "./pages/SaveSession.jsx";
 import { useAuth } from "./auth/AuthContext.jsx";
 import SopNew from "./sop/SopNew.jsx";
 import SopRules from "./sop/SopRules.jsx";
+import ServiceBanner from "./components/ServiceBanner.jsx";
 
 export default function App() {
   const { user, checking } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
     <div className="shell">
       {!isLanding && <Sidebar />}
       <main className="shell__main">
+        <ServiceBanner />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Navigate to="/" replace />} />

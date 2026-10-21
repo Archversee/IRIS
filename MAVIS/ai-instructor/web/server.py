@@ -97,6 +97,11 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
     else:
         log.warning("media dir %s not found - avatar videos won't load", mp)
 
+    @app.get("/health")
+    async def health():
+        """Tiny liveness check (IRIS's dashboard polls it for its "MAVIS is down" banner)."""
+        return {"ok": True}
+
     @app.get("/")
     async def index():
         # Always revalidate, tablet UI is edited in place during development
