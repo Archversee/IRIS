@@ -805,6 +805,7 @@
 .db-spin { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%;
   border: 2px solid var(--rev-cyan); border-right-color: transparent; animation: db-spin 0.9s linear infinite; vertical-align: -1px; }
 @keyframes db-spin { to { transform: rotate(360deg); } }
+.db-spin--chip { width: 8px; height: 8px; margin: 0 0 0 6px; }
 @media (prefers-reduced-motion: reduce) { .db-spin { animation: none; } }
 .db-summary { background: var(--rev-panel-2); border: 1px solid var(--rev-line); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
 .db-sec + .db-sec { margin-top: 10px; }

@@ -41,9 +41,14 @@ ollama pull qwen3:14b
 debrief:
   ollama_url: http://localhost:11434     # or the laptop: http://192.168.0.107:11434
   model: qwen3:14b                       # 24 GB+ GPU: qwen3:32b · 8 GB GPU: qwen3:8b · or the SOP model
-  think: true
-  auto_on_save: true                     # write the summary + every note when a session is saved
-  max_auto_notes: 15
+  think: false                           # true = reason first: better, but minutes per note on a big model
+  timeout_s: 300                         # give up if the model sends nothing for this long (incl. loading)
+  max_total_s: 900                       # ... or one answer takes longer than this in all
+  num_ctx: 8192                          # keep it equal to sop.num_ctx so Ollama doesn't reload the model
+  num_predict: 1500                      # answer length cap (thinking included)
+  keep_alive: 30m                        # keep the model loaded between notes
+  auto_on_save: true                     # write the summary + every note after each flight
+  max_auto_notes: -1                     # -1 = every broken-rule moment
   window_before_s: 30                    # default close-up window
   window_after_s: 30
 ```
@@ -56,7 +61,9 @@ The close-up shows 30 s before the breach and 30 s after the recovery by default
 
 ## Written automatically
 
-Saving a session (Save → Next) starts a background job on the backend: first the whole-flight summary (Review → **Debrief**), then a note for each broken-rule moment that has none (up to `max_auto_notes`), one model call at a time. It waits up to 2 minutes for MAVIS's rule check. Review → Debrief shows the progress; instructors can rewrite the summary, write any missing notes, and rate both. A backend restart forgets a running job (what was already written is kept; press the button again).
+Nobody has to press anything. The backend starts a background job when the flight ends (`ended_at` set: End Session, the lesson finishing, Save → Next) and again whenever Review is opened with something missing (e.g. after a backend restart, or for an uploaded flight). It writes the whole-flight summary (Review → **Debrief**) first, then a note for every broken-rule moment that has none (`max_auto_notes`, -1 = all), one model call at a time across the backend (an instructor's *Explain again* waits its turn instead of timing the job out). It waits up to 2 minutes for MAVIS's rule check; if the check arrives later, or the pilot pressed *Fly again*, the summary is written again on the next Review. A note that fails is tried once more and then skipped, the rest are still written; if the model can't be reached at all the job stops and is tried again the next time Review is opened (at most every 5 minutes). The Debrief chip shows the progress (`3/12`), Incidents shows "AI note" as each one lands. Instructors can still rewrite the summary, write missing notes, and rate both.
+
+**Time-outs.** The model's answer is streamed, so a long answer is fine as long as the model keeps writing: `timeout_s` is how long it may stay silent (loading the model and reading the prompt count), `max_total_s` the whole answer. Thinking is off by default (`think: false`); with it on, an answer that runs out of time or tokens while thinking is asked again once without thinking. The facts are sent as compact JSON (fewer tokens to read), and `num_ctx` matches `sop.num_ctx` so the model isn't reloaded between MAVIS and IRIS.
 
 The **Debrief** summary has four parts (overview, what went well, what to work on, next flight), written only from the flight's measured facts (rules, each broken-rule moment and its findings, scan and handling per phase, final approach, touchdown, MAVIS's callouts, the pilot's previous flight). Its numbers are checked the same way. `backend/app/flight_summary.py` holds its prompt and facts; `backend/app/routers/debrief.py` the job and API.
 

@@ -106,5 +106,21 @@ sop:
   aircraft_override: ""    # force the SOP of this profile id (e.g. c172sp_g1000) instead of
                            # detecting the aircraft loaded in the sim at lesson start
 
+# Post-flight AI debrief in IRIS (Review -> Debrief, and a note per broken rule). IRIS reads
+# this block on every call (no restart). Written by itself when a flight ends / Review is opened.
+debrief:
+  ollama_url: http://192.168.0.107:11434   # same Ollama as sop: above
+  model: qwen3.6:27b       # a 14B model (e.g. qwen3:14b) writes a note several times faster
+  think: false             # true = reason first: better notes, but minutes each on a 27B model
+  timeout_s: 300           # give up if the model sends nothing for this long (incl. loading it)
+  max_total_s: 900         # ... or one answer takes longer than this in all
+  num_ctx: 8192            # same as sop: so Ollama doesn't reload the model (raised by itself if needed)
+  num_predict: 1500        # answer length cap (thinking included)
+  keep_alive: 30m          # keep the model loaded between notes
+  auto_on_save: true       # write the summary + every broken-rule note after each flight
+  max_auto_notes: -1       # -1 = a note for every broken-rule moment
+  window_before_s: 30
+  window_after_s: 30
+
 instructor:
   pin: "123456"            # bootstrap PIN for first-run Iceman seed (see data/instructors.json)

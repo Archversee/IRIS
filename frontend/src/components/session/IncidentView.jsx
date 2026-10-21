@@ -40,7 +40,7 @@ function saveWin(w) {
   try { w ? localStorage.setItem(WIN_KEY, JSON.stringify(w)) : localStorage.removeItem(WIN_KEY); } catch { /* private mode */ }
 }
 
-export default function IncidentView({ resultId, index, onClose, onWatch }) {
+export default function IncidentView({ resultId, index, onClose, onWatch, debriefJob }) {
   const [a, setA] = useState(null);
   const [err, setErr] = useState("");
   const [win, setWin] = useState(loadWin);           // null = the backend's default
@@ -49,6 +49,13 @@ export default function IncidentView({ resultId, index, onClose, onWatch }) {
     setA(null); setErr("");
     api.incident(resultId, index, win).then(setA).catch((e) => setErr(e.detail || e.message));
   }, [resultId, index, win]);
+  // the background job may write this moment's note while it's open: pick it up
+  const hasNote = !!a?.explanation;
+  useEffect(() => {
+    if (!debriefJob?.done || hasNote) return;
+    api.incident(resultId, index, win).then((x) => x.explanation && setA((p) => p && ({ ...p, explanation: x.explanation })))
+      .catch(() => {});
+  }, [debriefJob?.done, debriefJob?.state]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -101,7 +108,7 @@ export default function IncidentView({ resultId, index, onClose, onWatch }) {
 
         {a && (
           <div className="inc-body">
-            <Explanation a={a} win={win} onChange={(explanation) => setA((x) => ({ ...x, explanation }))} />
+            <Explanation a={a} win={win} job={debriefJob} onChange={(explanation) => setA((x) => ({ ...x, explanation }))} />
 
             <section className="inc-findings">
               {a.findings.length === 0 && <div className="rc-muted">Nothing stood out.</div>}
@@ -233,7 +240,7 @@ function WindowPicker({ win, onApply }) {
 
 // Plain-words debrief from the local reasoning model (backend app/incident_explain.py),
 // built only from the measured facts above; numbers it couldn't back up are flagged.
-function Explanation({ a, win, onChange }) {
+function Explanation({ a, win, job, onChange }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [busy, setBusy] = useState(false);
@@ -250,7 +257,8 @@ function Explanation({ a, win, onChange }) {
     try { onChange(await api.rateExplanation(e.id, { rating: e.rating === rating ? null : rating })); }
     catch (x) { setErr(x.detail || x.message); }
   }
-  if (!e && !isInstructor) return null;
+  const writing = !e && job && job.state !== "done" && job.state !== "error";
+  if (!e && !isInstructor && !writing) return null;
   return (
     <section className="inc-explain">
       <div className="inc-explain__head">
@@ -268,7 +276,8 @@ function Explanation({ a, win, onChange }) {
       {e && e.pre_s != null && (Math.abs(e.pre_s - a.window_s.before) > 0.5 || Math.abs(e.post_s - a.window_s.after) > 0.5) && (
         <div className="rc-muted">Written for {e.pre_s} s before / {e.post_s} s after (you're looking at {a.window_s.before} / {a.window_s.after}).</div>
       )}
-      {e?.requested_by === "auto" && <div className="rc-muted">Written automatically when the session was saved.</div>}
+      {writing && !busy && <div className="rc-muted">Being written in the background ({job.state})…</div>}
+      {e?.requested_by === "auto" && <div className="rc-muted">Written automatically after the flight.</div>}
       {e?.unsupported_numbers?.length > 0 && (
         <div className="inc-explain__warn">
           Check these numbers, they aren't in the measured facts: {e.unsupported_numbers.join(", ")}
@@ -282,7 +291,7 @@ function Explanation({ a, win, onChange }) {
           {e.rated_by && <span className="rc-muted">rated by {e.rated_by}</span>}
         </div>
       )}
-      {!e && isInstructor && !busy && (
+      {!e && isInstructor && !busy && !writing && (
         <div className="rc-muted">Writes a short note for the student from the facts below, with a local reasoning model.</div>
       )}
     </section>

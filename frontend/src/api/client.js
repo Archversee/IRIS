@@ -162,8 +162,9 @@ export const api = {
   // MAVIS computes them (sopApi.evaluate); the instructor's verdicts and sign-off go here.
   ruleResults: (id) => req(`/sessions/${id}/rule-results`),
   sessionIncidents: (id) => req(`/sessions/${id}/incidents`),
-  // Whole-flight AI debrief (written in the background when a session is saved)
+  // Whole-flight AI debrief (written in the background when a flight ends / Review is opened)
   debrief: (id) => req(`/sessions/${id}/debrief`),
+  debriefStatus: (id) => req(`/sessions/${id}/debrief/status`),
   runDebrief: (id, body) => req(`/sessions/${id}/debrief/run`, json("POST", body)),
   rateSummary: (summaryId, body) => req(`/flight-summaries/${summaryId}`, json("PATCH", body)),
   // Progress across flights (post-flight trends)

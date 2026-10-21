@@ -94,6 +94,10 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         # state push from MAVIS (which otherwise keeps polling/broadcasting
         # telemetry regardless of whether a lesson was quit).
         mavis_bridge.mark_ended(session_id)
+        # the flight is over: write the AI debrief (summary + a note per broken rule) in the
+        # background, so it's ready when Review is opened (routers/debrief.py)
+        from .debrief import on_session_ended   # here: debrief imports half the routers
+        on_session_ended(session_id)
     elif "ended_at" in fields:
         # cleared (null): "Fly again" after a lesson ended on its own --
         # flying again under the same session, LiveAdapter.py records again

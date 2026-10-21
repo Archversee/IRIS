@@ -1,18 +1,41 @@
 // Review → Debrief: the whole flight in a few lines, written by the local
 // reasoning model from measured facts only, plus those facts at a glance.
-// Written automatically when the session is saved (with a note for each
-// broken rule); instructors can rewrite it and rate it.
+// Written automatically when the flight ends or Review is first opened (with a
+// note for each broken rule); instructors can rewrite it and rate it.
 // Backend: app/routers/debrief.py, prompt in app/flight_summary.py.
 import { useEffect, useState } from "react";
 import { api } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 
-const RUNNING = (job) => job && job.state !== "done" && job.state !== "error";
+export const RUNNING = (job) => !!job && job.state !== "done" && job.state !== "error";
 
-export function DebriefChip({ onClick }) {
+// Opening Review starts the background debrief job if anything is missing (the
+// backend decides; nothing to click), then follows its progress.
+export function useDebriefJob(sessionId) {
+  const [job, setJob] = useState(null);
+  useEffect(() => {
+    let alive = true, timer;
+    const poll = () => api.debriefStatus(sessionId)
+      .then((x) => {
+        if (!alive) return;
+        setJob(x.job);
+        if (RUNNING(x.job)) timer = setTimeout(poll, 4000);
+      })
+      .catch(() => {});
+    api.runDebrief(sessionId, { auto: true }).catch(() => {}).finally(poll);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [sessionId]);
+  return job;
+}
+
+export function DebriefChip({ onClick, job }) {
+  const running = RUNNING(job);
   return (
-    <button className="rc-chip" onClick={onClick} title="The whole flight: AI debrief and the facts behind it">
+    <button className="rc-chip" onClick={onClick}
+      title={running ? `AI debrief: ${job.state}` : "The whole flight: AI debrief and the facts behind it"}>
       Debrief
+      {running && <span className="db-spin db-spin--chip" aria-hidden="true" />}
+      {running && job.total ? ` ${job.done}/${job.total}` : ""}
     </button>
   );
 }
@@ -65,14 +88,15 @@ export default function DebriefPanel({ sessionId, onClose }) {
             <div className="db-job">
               <span className="db-spin" aria-hidden="true" />
               {job.state[0].toUpperCase() + job.state.slice(1)}
-              {job.total ? ` · ${job.done} of ${job.total} done` : ""}
+              {job.total ? ` · ${job.done} of ${job.total} done` : ""}{job.failed ? ` · ${job.failed} failed` : ""}
               <div className="rc-muted">{d.model} on the debrief PC. Each one can take a minute; you can keep reviewing.</div>
             </div>
           )}
           {job?.state === "error" && (
             <div className="rc-why">
-              Couldn't write the debrief: {job.error}
-              <div className="rc-muted">The model is set in MAVIS's config.yaml under <code>debrief:</code>.</div>
+              {job.total && job.done ? `Wrote ${job.done} of ${job.total}. ` : "Couldn't write the debrief: "}{job.error}
+              <div className="rc-muted">The model is set in MAVIS's config.yaml under <code>debrief:</code>. It's tried again
+                the next time Review is opened.</div>
             </div>
           )}
 
@@ -88,7 +112,7 @@ export default function DebriefPanel({ sessionId, onClose }) {
                 <div className="inc-explain__warn">Check these numbers, they aren't in the measured facts: {s.unsupported_numbers.join(", ")}</div>
               )}
               <div className="rc-muted db-meta">
-                {s.requested_by === "auto" ? "Written automatically when the session was saved" : `Written for ${s.requested_by}`}
+                {s.requested_by === "auto" ? "Written automatically after the flight" : `Written for ${s.requested_by}`}
                 {" · "}{s.model}{s.reasoned ? " · reasoned" : ""} · {new Date(s.created_at).toLocaleString()}
               </div>
               {isInstructor && (
@@ -103,7 +127,7 @@ export default function DebriefPanel({ sessionId, onClose }) {
           ) : !running && (
             <div className="rc-empty">
               No debrief written for this flight yet.
-              {!isInstructor && <div className="rc-muted">Your instructor can write it.</div>}
+              {!isInstructor && <div className="rc-muted">It's written automatically after the flight; your instructor can also write it.</div>}
             </div>
           )}
 

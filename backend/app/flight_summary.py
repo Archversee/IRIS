@@ -7,9 +7,7 @@ number in its answer is checked against them.
 """
 from __future__ import annotations
 
-import json
-
-from .incident_explain import KNOWLEDGE
+from .incident_explain import KNOWLEDGE, compact_json
 from .progress import CAUSES, coaching_summary
 
 PROMPT_VERSION = "1"
@@ -122,7 +120,7 @@ STRICT RULES:
 
 def build_messages(facts: dict) -> list[dict]:
     user = (f"Background for reading the facts:\n{KNOWLEDGE}\nFACTS (JSON):\n"
-            f"{json.dumps(facts, ensure_ascii=False, indent=1)}\n\nWrite the flight debrief now.")
+            f"{compact_json(facts)}\n\nWrite the flight debrief now.")
     return [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": user}]
 
 

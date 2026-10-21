@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client.js";
 import IncidentView from "./IncidentView.jsx";
+import { RUNNING } from "./DebriefPanel.jsx";
 
 const LEAD_S = 5;      // start the video this long before the limit was crossed
 const KIND_COLOR = {
@@ -28,7 +29,7 @@ function mmss(s) {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 }
 
-export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStartMs, onCount }) {
+export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStartMs, onCount, debriefJob }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);     // {resultId, index}
@@ -45,7 +46,8 @@ export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStart
       .catch((e) => alive && setErr(e.detail || e.message));
     go();
     return () => { alive = false; clearTimeout(timer); };
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // debriefJob.done: a note was just written in the background -> refresh the "AI note" badges
+  }, [sessionId, debriefJob?.done, debriefJob?.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toT = (epoch) => (flightStartMs ? epoch - flightStartMs / 1000 : null);
   const pick = (i) => {
@@ -57,7 +59,7 @@ export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStart
   return (
     <>
       {open && (
-        <IncidentView resultId={open.resultId} index={open.index} onClose={() => setOpen(null)}
+        <IncidentView resultId={open.resultId} index={open.index} onClose={() => setOpen(null)} debriefJob={debriefJob}
           onWatch={(epoch) => { setOpen(null); seekTo(Math.max(0, toT(epoch) ?? 0)); }} />
       )}
       <div className="rc-drawer" role="dialog" aria-label="Incidents">
@@ -74,6 +76,7 @@ export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStart
         {d && !d.checked && <div className="rc-empty">This flight hasn't been checked against its SOP rules yet (see the SOP chip).</div>}
         {d?.checked && d.incidents.length === 0 && <div className="rc-empty">No rules broken in this flight.</div>}
         {d?.pending > 0 && <div className="inc-list-pending">Analysing {d.pending} more…</div>}
+        {RUNNING(debriefJob) && <div className="inc-list-pending">AI notes: {debriefJob.state}…</div>}
         {d?.incidents.map((i) => {
           const shown = (i.findings || []).filter((f) => f.kind !== "data");
           return (

@@ -17,6 +17,8 @@ import asyncio
 import json
 import logging
 import re
+import socket
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -84,11 +86,16 @@ def debrief_settings() -> dict:
         "url": (settings.explain_ollama_url or d.get("ollama_url") or sop.get("ollama_url") or coach.get("ollama_url")
                 or "http://localhost:11434").rstrip("/"),
         "model": settings.explain_model or d.get("model") or sop.get("model") or coach.get("model") or "",
-        "think": d.get("think", True) is not False,
-        "timeout_s": num("timeout_s", settings.explain_timeout_s),
-        "num_ctx": int(num("num_ctx", 16384)),
+        # thinking makes a 27B model take minutes per note (the usual cause of time-outs): off unless asked for
+        "think": d.get("think", False) is True,
+        # no token for this long = stuck (the first one includes loading the model and reading the prompt)
+        "timeout_s": num("timeout_s", settings.explain_timeout_s, 30.0, 3600.0),
+        "max_total_s": num("max_total_s", 900.0, 60.0, 7200.0),     # one answer, start to finish
+        "num_ctx": int(num("num_ctx", sop.get("num_ctx") or 8192, 2048, 131072)),
+        "num_predict": int(num("num_predict", 1500, 200, 32768)),  # answer (+ thinking) length cap
+        "keep_alive": str(d.get("keep_alive", "30m")),             # keep it loaded between notes
         "auto_on_save": d.get("auto_on_save", True) is not False,
-        "max_auto_notes": int(num("max_auto_notes", 15)),
+        "max_auto_notes": int(num("max_auto_notes", -1)),          # -1 = every broken-rule moment
         "window_before_s": num("window_before_s", 30.0, 10.0, 120.0),
         "window_after_s": num("window_after_s", 30.0, 10.0, 120.0),
     }
@@ -127,8 +134,19 @@ def facts_for_llm(a: dict) -> dict:
 def build_messages(a: dict) -> list[dict]:
     facts = facts_for_llm(a)
     user = (f"Background for reading the facts:\n{KNOWLEDGE}\nFACTS (JSON):\n"
-            f"{json.dumps(facts, ensure_ascii=False, indent=1)}\n\nWrite the debrief note now.")
+            f"{compact_json(facts)}\n\nWrite the debrief note now.")
     return [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": user}]
+
+
+def compact_json(facts: dict) -> str:
+    """Facts as JSON without the empty bits and whitespace: fewer tokens to read = a faster answer."""
+    def prune(v):
+        if isinstance(v, dict):
+            return {k: p for k, p in ((k, prune(x)) for k, x in v.items()) if p not in (None, [], {}, "")}
+        if isinstance(v, list):
+            return [prune(x) for x in v]
+        return v
+    return json.dumps(prune(facts), ensure_ascii=False, separators=(",", ":"))
 
 
 _NUM = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?")
@@ -154,42 +172,112 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
     return bad
 
 
-def _call_ollama(url: str, model: str, messages: list[dict], think: bool = True, num_ctx: int = 16384,
-                 timeout_s: float | None = None) -> dict:
-    body = {"model": model, "messages": messages, "stream": False, "think": think,
-            "options": {"temperature": 0.3, "num_ctx": num_ctx}}
-    timeout = timeout_s or settings.explain_timeout_s
-    req = urllib.request.Request(f"{url}/api/chat", data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"}, method="POST")
+class ModelTimeout(RuntimeError):
+    pass
+
+
+def _ctx_for(messages: list[dict], num_ctx: int, num_predict: int) -> int:
+    """num_ctx, raised (in 4k steps) only if the prompt + answer wouldn't fit: a
+    different num_ctx makes Ollama reload the model, so keep the configured one when it fits."""
+    need = sum(len(m["content"]) for m in messages) // 3 + num_predict + 256     # ~3 chars a token, to be safe
+    while num_ctx < need:
+        num_ctx += 4096
+    return num_ctx
+
+
+def _call_ollama(url: str, model: str, messages: list[dict], think: bool = False, num_ctx: int = 8192,
+                 timeout_s: float | None = None, max_total_s: float = 900.0, num_predict: int = 1500,
+                 keep_alive: str = "30m") -> dict:
+    """Streamed, so a long answer never times out while the model is still writing:
+    timeout_s is how long it may go without sending anything, max_total_s the whole answer.
+    -> {"message": {"content", "thinking"}}"""
+    body = {"model": model, "messages": messages, "stream": True, "think": think, "keep_alive": keep_alive,
+            "options": {"temperature": 0.3, "num_ctx": _ctx_for(messages, num_ctx, num_predict),
+                        "num_predict": num_predict}}
+    idle = timeout_s or settings.explain_timeout_s
+
+    def post(b):
+        req = urllib.request.Request(f"{url}/api/chat", data=json.dumps(b).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        return urllib.request.urlopen(req, timeout=idle)
+    content, thinking, t_end = [], [], time.monotonic() + max_total_s
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="replace")[:300]
-        if e.code == 400 and "think" in detail:          # not a reasoning model: ask again without thinking
-            body["think"] = False
-            req = urllib.request.Request(f"{url}/api/chat", data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(r.read())
-        raise RuntimeError(f"Ollama answered {e.code}: {detail}") from e
+        try:
+            r = post(body)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            if e.code == 400 and "think" in detail:          # old Ollama / not a reasoning model: no think flag
+                body.pop("think")
+                r = post(body)
+            else:
+                raise RuntimeError(f"Ollama answered {e.code}: {detail}") from e
+        with r:
+            for line in r:
+                if not line.strip():
+                    continue
+                part = json.loads(line)
+                if part.get("error"):
+                    raise RuntimeError(f"Ollama: {part['error']}")
+                m = part.get("message") or {}
+                content.append(m.get("content") or "")
+                thinking.append(m.get("thinking") or "")
+                if part.get("done"):
+                    break
+                if time.monotonic() > t_end:
+                    raise ModelTimeout(f"no complete answer after {max_total_s:.0f} s")
+    except (socket.timeout, TimeoutError) as e:
+        raise ModelTimeout(f"nothing from the model for {idle:.0f} s") from e
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, (socket.timeout, TimeoutError)):
+            raise ModelTimeout(f"nothing from the model for {idle:.0f} s") from e
+        raise
+    return {"message": {"content": "".join(content), "thinking": "".join(thinking)}}
+
+
+# one model call at a time across the whole backend (one GPU): the background job
+# and an instructor's "Explain again" queue here instead of timing each other out
+_model_lock: asyncio.Lock | None = None
+
+
+def model_lock() -> asyncio.Lock:
+    global _model_lock
+    if _model_lock is None:
+        _model_lock = asyncio.Lock()
+    return _model_lock
 
 
 async def ask_model(messages: list[dict]) -> tuple[str, str, bool]:
-    """-> (answer text, model, whether it reasoned first). RuntimeError with a readable reason."""
+    """-> (answer text, model, whether it reasoned first). RuntimeError with a readable reason
+    (ModelTimeout if it was too slow). A thinking answer that runs out of time or tokens
+    is asked again once without thinking."""
     d = debrief_settings()
     if not d["model"]:
         raise RuntimeError("No model set: set debrief.model in MAVIS's config.yaml (or EXPLAIN_MODEL in backend/.env)")
-    try:
-        resp = await asyncio.to_thread(_call_ollama, d["url"], d["model"], messages, d["think"], d["num_ctx"],
-                                       d["timeout_s"])
-    except Exception as e:
-        raise RuntimeError(f"The debrief model at {d['url']} ({d['model']}) isn't reachable: {e}") from e
-    msg = resp.get("message") or {}
-    text = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
-    if not text:
-        raise RuntimeError("The model returned an empty answer")
-    return text, d["model"], bool(msg.get("thinking"))
+    think = d["think"]
+    async with model_lock():
+        while True:
+            try:
+                resp = await asyncio.to_thread(_call_ollama, d["url"], d["model"], messages, think, d["num_ctx"],
+                                               d["timeout_s"], d["max_total_s"], d["num_predict"], d["keep_alive"])
+            except ModelTimeout as e:
+                if think:
+                    log.info("debrief model too slow while thinking (%s): asking again without thinking", e)
+                    think = False
+                    continue
+                raise ModelTimeout(f"The debrief model ({d['model']} at {d['url']}) was too slow: {e}. "
+                                   "Raise debrief.timeout_s / max_total_s or pick a smaller model.") from e
+            except RuntimeError:
+                raise
+            except Exception as e:
+                raise RuntimeError(f"The debrief model at {d['url']} ({d['model']}) isn't reachable: {e}") from e
+            msg = resp.get("message") or {}
+            text = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
+            if not text and think:          # spent its whole budget thinking
+                think = False
+                continue
+            if not text:
+                raise RuntimeError("The model returned an empty answer")
+            return text, d["model"], bool(msg.get("thinking"))
 
 
 async def explain(a: dict) -> dict:
