@@ -37,6 +37,8 @@ def force_redo_due(rt, pol, prev_phase, tel) -> bool:
               and not rt.session.get("free_flight")
               and not rt.session.get("reference_recording")
               and rt.engine.phase != prev_phase
+              # the go-around IS the exercise: final ending in one is never re-flown
+              and rt.engine.phase != "GO_AROUND"
               and prev_phase in GATED
               and not rt.phase_passed(prev_phase, tel)
               and rt.attempts.get(prev_phase, 0) < MAX_ATTEMPTS)

@@ -94,6 +94,7 @@ def build_session(rt):
         rt.event_log.restart_attempt(rt._sim_now())
         rt._publish_events()
         rt.scored["done"] = False
+        rt.coach.pause()        # clears anything still queued from the run being restarted
         rt.coach.resume()
         rt.session.pop("reference_recording", None)
         rt.engine.detector.total_circuits = int(rt.lesson.get("total_circuits", 1))

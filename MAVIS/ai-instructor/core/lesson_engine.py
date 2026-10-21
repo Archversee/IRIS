@@ -97,7 +97,13 @@ class LessonEngine:
         self.monitors._rotate_called = False
         self.monitors._phase_prev = None       # fresh settle-in grace period
         self.monitors.reset_turn_cues()
-        self._arm_variation()
+        # a re-flown leg keeps what the variation has measured so far (the
+        # soft-field take-off, ...); only the go-around gets a new call height
+        if self.variation and self.detector.go_around:
+            import random
+            lo, hi = (self.variation.cfg.get("call_agl_ft") or [150, 300])
+            self.variation.call_agl = random.uniform(float(lo), float(hi))
+            self.detector.go_around_agl = self.variation.call_agl
 
     def wants_night_switch(self) -> bool:
         """Mid-flight day->night reveal. A lesson flown at night from the start
