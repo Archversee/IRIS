@@ -39,7 +39,13 @@ _HOP_BY_HOP = {
     "te", "trailers", "transfer-encoding", "upgrade", "host",
 }
 
-_client = httpx.AsyncClient()
+# Idle connections to the backends are dropped after 2 s: uvicorn closes an
+# idle keep-alive connection after 5 s, and reusing one just as it closes
+# failed the request with httpx.ReadError (an intermittent 500 on any page).
+_client = httpx.AsyncClient(limits=httpx.Limits(keepalive_expiry=2.0))
+# A request that dies on a dropped connection is retried once if it's safe to
+# send again; anything that changes data isn't (it may already have run).
+_RETRY_SAFE = {"GET", "HEAD", "OPTIONS"}
 _STREAM_ABOVE_BYTES = 8 * 1024 * 1024      # request bodies larger than this are streamed to the backend
 _UPLOAD_TIMEOUT_S = 900.0                  # ...and given this long
 _SOP_TIMEOUT_S = 180.0                     # saving / re-checking SOP rules (everything else: 30 s)
@@ -71,12 +77,20 @@ async def _proxy_http(request, target_base: str, strip_prefix: str) -> Response:
             # saving a rule set writes a whole document to the database: if the proxy gave up first, the
             # page said "took too long" although MAVIS finished the save a moment later
             slow = _SOP_TIMEOUT_S if path.startswith("/sop/") and request.method != "GET" else 30.0
-            upstream = await _client.request(request.method, url, headers=headers, content=await request.body(),
-                                             timeout=slow)
+            body = await request.body()
+            try:
+                upstream = await _client.request(request.method, url, headers=headers, content=body, timeout=slow)
+            except (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError):
+                if request.method not in _RETRY_SAFE:
+                    raise
+                upstream = await _client.request(request.method, url, headers=headers, content=body, timeout=slow)
     except httpx.ConnectError:
         return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend unavailable"}, status_code=502)
     except httpx.TimeoutException:
         return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend took too long to answer"}, status_code=504)
+    except httpx.TransportError as e:   # connection dropped mid-request: a clean 502, never a crash
+        return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend connection dropped ({type(e).__name__}) "
+                                       "-- please try again"}, status_code=502)
     resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _HOP_BY_HOP}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=resp_headers)
 
@@ -91,7 +105,7 @@ async def _proxy_stream(request, target_base: str, strip_prefix: str) -> Respons
         upstream = await _client.send(
             _client.build_request("GET", url, headers=headers, timeout=httpx.Timeout(None, connect=5.0)),
             stream=True)
-    except httpx.ConnectError:
+    except httpx.TransportError:
         return JSONResponse({"detail": f"{strip_prefix.strip('/')} backend unavailable"}, status_code=502)
 
     async def body():
