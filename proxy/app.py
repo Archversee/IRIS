@@ -212,11 +212,18 @@ class SPAStaticFiles(StaticFiles):
 
     async def get_response(self, path, scope):
         try:
-            return await super().get_response(path, scope)
+            resp = await super().get_response(path, scope)
         except HTTPException as e:
             if e.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
-                return await super().get_response("index.html", scope)
-            raise
+                resp = await super().get_response("index.html", scope)
+            else:
+                raise
+        # index.html names the current build's assets/index-<hash>.js: a browser
+        # reusing a cached copy after a rebuild kept running the old app until
+        # a manual refresh. Always revalidate it; the hashed assets can cache.
+        if (resp.media_type or "").startswith("text/html") or resp.headers.get("content-type", "").startswith("text/html"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
 
 
 if FRONTEND_DIST.exists():

@@ -17,6 +17,7 @@ import { useAuth } from "./auth/AuthContext.jsx";
 import SopNew from "./sop/SopNew.jsx";
 import SopRules from "./sop/SopRules.jsx";
 import ServiceBanner from "./components/ServiceBanner.jsx";
+import UpdateNotice from "./components/UpdateNotice.jsx";
 
 export default function App() {
   const { user, checking } = useAuth();
@@ -38,6 +39,7 @@ export default function App() {
       {!isLanding && <Sidebar />}
       <main className="shell__main">
         <ServiceBanner />
+        <UpdateNotice />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Navigate to="/" replace />} />

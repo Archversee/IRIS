@@ -428,3 +428,9 @@ th { color: var(--muted); font-weight: 600; }
   background: color-mix(in srgb, var(--good) 16%, var(--panel));
   border-bottom-color: var(--good);
 }
+.svc-banner--update {
+  display: flex; align-items: center; gap: 10px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border-bottom-color: var(--accent);
+}
+.svc-banner--update button { padding: 3px 12px; font-size: 12px; font-weight: 700; border-radius: 6px; }
