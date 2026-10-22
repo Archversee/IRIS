@@ -187,7 +187,7 @@ export default function LiveSession() {
         />
         <SessionTimeline {...timeline} readOnly />
 
-        <FlightTelemetryCard {...liveState} altMax={altMax}
+        <FlightTelemetryCard {...liveState} altMax={altMax} live
           bands={mavisHere ? mavis?.bands : null} />
       </div>
     </div>

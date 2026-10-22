@@ -49,7 +49,7 @@ function bandText(band, unit = "") {
 
 const NBSP = "\u00a0";
 
-function Tape({ label, unit, value, min, max, title, band }) {
+function Tape({ label, unit, value, min, max, title, band, live }) {
   const v = num(value);
   const at = (x) => clamp01((x - min) / (max - min)) * 100;
   const pct = at(v ?? min);
@@ -78,7 +78,7 @@ function Tape({ label, unit, value, min, max, title, band }) {
         <b className="ft-tape__mn">{min}</b>
       </div>
       <div className={"ft-tape__val" + (ok === false ? " is-out" : ok ? " is-ok" : "")}>{v == null ? "--" : Math.round(v)}</div>
-      <div className="ft-band-txt">{bandText(band) || NBSP}</div>
+      {live && <div className="ft-band-txt">{bandText(band) || NBSP}</div>}
     </div>
   );
 }
@@ -308,7 +308,9 @@ function withDerived(row) {
   return { ...row, flaps_handle_pct: clamp01(row.flaps_deg / FLAPS_FULL_DEG) * 100 };
 }
 
-export default function FlightTelemetryCard({ cur: rawCur, altMax, bands }) {
+// `live` (Live Monitor): the bank + heading dials, the step's allowed ranges
+// (`bands`) and the tighter layout. Review leaves it off: the plain card.
+export default function FlightTelemetryCard({ cur: rawCur, altMax, bands, live = false }) {
   const cur = withDerived(rawCur);
   const [view, setView] = useState("gauges");
   // Height tape: 0 .. a bit over the highest point; while the step asks for a
@@ -322,10 +324,10 @@ export default function FlightTelemetryCard({ cur: rawCur, altMax, bands }) {
   }
 
   return (
-    <div className="rev-card ft-card">
+    <div className={"rev-card ft-card" + (live ? " ft-card--live" : "")}>
       <div className="card-head">
         <h3>Flight telemetry</h3>
-        {bands && view === "gauges" && (
+        {live && bands && view === "gauges" && (
           <span className="ft-legend" title="From the lesson step being flown right now">
             <i className="ft-legend__ok" />allowed <i className="ft-legend__tgt" />target <i className="ft-legend__bad" />limit
           </span>
@@ -344,18 +346,18 @@ export default function FlightTelemetryCard({ cur: rawCur, altMax, bands }) {
       ) : (
         <div className="ft-gauges">
           <div className="ft-group">
-            <Tape label="SPEED" unit="knots" value={cur.airspeed_kt} min={0} max={SPEED_MAX} band={bands?.speed}
+            <Tape label="SPEED" unit="knots" value={cur.airspeed_kt} min={0} max={SPEED_MAX} band={bands?.speed} live={live}
               title="How fast the aircraft is flying, in knots." />
-            <Tape label="HEIGHT" unit="feet" value={cur.altitude_ft} min={altMin} max={altTop} band={bands?.alt}
+            <Tape label="HEIGHT" unit="feet" value={cur.altitude_ft} min={altMin} max={altTop} band={bands?.alt} live={live}
               title="Altitude above sea level, in feet." />
             <Tape label="CLIMB ▲▼" unit="ft/min" value={cur.vertical_speed_fpm} min={-CLIMB_MAX} max={CLIMB_MAX}
-              band={bands?.vs}
+              band={bands?.vs} live={live}
               title="Climbing (up) or descending (down), in feet per minute. Middle line = level." />
           </div>
-          <div className="ft-group ft-group--dials">
+          <div className={"ft-group" + (live ? " ft-group--dials" : "")}>
             <Attitude pitch={cur.pitch_deg} bank={cur.bank_deg} heading={cur.heading_true_deg} />
-            <BankDial bank={cur.bank_deg} band={bands?.bank} />
-            <Compass heading={cur.heading_true_deg} />
+            {live && <BankDial bank={cur.bank_deg} band={bands?.bank} />}
+            {live && <Compass heading={cur.heading_true_deg} />}
           </div>
           <div className="ft-group ft-group--controls">
             <VBar label="ENGINE POWER" value={num(cur.throttle_pct) == null ? null : cur.throttle_pct / 100}
