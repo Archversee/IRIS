@@ -39,7 +39,10 @@ function bandText(band, unit = "") {
     else if (band.lo != null) parts.push(`min ${n(band.lo)}`);
     else if (band.hi != null) parts.push(`max ${n(band.hi)}`);
   } else if (band.lo != null && band.hi != null) {
-    parts.push(`${n(band.lo)}–${n(band.hi)}`);
+    const half = (band.hi - band.lo) / 2;
+    // symmetric about the target: "aim 3000 ±200" reads quicker than "aim 3000 · 2800–3200"
+    if (band.target != null && Math.abs(band.lo + half - band.target) < 0.5) parts[0] += ` ±${Math.round(half)}${unit}`;
+    else parts.push(`${n(band.lo)}–${n(band.hi)}`);
   }
   return parts.join(" · ") || null;
 }

@@ -435,9 +435,9 @@
   padding: 8px 10px; border-radius: 10px;
   background: var(--rev-panel-2); border: 1px solid var(--rev-line);
 }
-.ft-group:first-child { flex: 1; }
-.ft-group--dials { flex: 1.6; }
-.ft-group--controls { flex: 1.5; }
+.ft-group:first-child { flex: 0 0 auto; }
+.ft-group--dials { flex: 1.5; }
+.ft-group--controls { flex: 2.2; }
 
 .ft-tape__label {
   font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--rev-muted);
@@ -445,9 +445,9 @@
 }
 .ft-tape__label small { font-weight: 400; font-size: 10px; letter-spacing: 0; }
 
-.ft-tape { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 56px; max-width: 110px; }
+.ft-tape { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; width: 74px; }
 .ft-tape__bar {
-  position: relative; width: min(100%, 58px); flex: 1; min-height: 90px;
+  position: relative; width: 34px; flex: 1; min-height: 90px;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
 .ft-tape__ptr {
@@ -474,7 +474,7 @@
 .ft-tape__tgt { position: absolute; left: -2px; right: -2px; height: 2px; margin-bottom: -1px; background: #fff; opacity: .85; }
 .ft-band-txt {
   font-size: 10px; line-height: 1.2; color: var(--rev-muted); text-align: center;
-  font-variant-numeric: tabular-nums; min-height: 12px; white-space: nowrap;
+  font-variant-numeric: tabular-nums; min-height: 24px; max-width: 100%;
 }
 
 .ft-legend { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; margin-right: 10px; font-size: 11px; color: var(--rev-muted); }
@@ -508,7 +508,9 @@
 .ft-att__vals { display: flex; gap: 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ft-att__vals small { font-size: 10px; font-weight: 400; color: var(--rev-muted); }
 
-.ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 56px; max-width: 130px; }
+.ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 52px; max-width: 120px; }
+.ft-ctl:has(.ft-hbar) { min-width: 96px; }
+.ft-ctl--stick { flex: 0 0 auto; min-width: 124px; }
 .ft-ctl__cap { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--rev-muted); text-align: center; line-height: 1.2; max-width: 64px; }
 .ft-ctl__val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -521,7 +523,7 @@
 .ft-vbar__mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border-strong); }
 
 .ft-hbar {
-  position: relative; width: min(100%, 110px); height: 28px; margin: auto 0;
+  position: relative; width: 92px; flex: none; height: 28px; margin: auto 0;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
 .ft-hbar__fill { position: absolute; top: 0; bottom: 0; background: var(--rev-cyan); transition: width .2s linear; }
@@ -543,7 +545,7 @@
 
 /* Wrap by the card's own width, so it works full-width (Live Monitor) and
    in Review's bottom-row column alike. */
-@container (max-width: 1100px) {
+@container (max-width: 1240px) {   /* the three groups need ~1220px side by side */
   .ft-gauges { flex-wrap: wrap; }
   .ft-group { flex: 1 1 300px; }
   .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
