@@ -1,12 +1,39 @@
 """Local TTS behind one interface. engine: auto tries kokoro -> pyttsx3 -> console.
-All engines run fully offline. speak() is blocking; call via executor."""
+All engines run fully offline. speak() is blocking; call via executor.
+
+Latency (voice: in config.yaml):
+  tts_device       auto | cuda | cpu  -- Kokoro is small (82M): on a modern CPU it still runs
+                   several times faster than real time, which leaves the GPU to MSFS + the LLM
+  tts_cpu_threads  torch threads for Kokoro on the CPU (0 = torch's default)
+A warm-up line is synthesised at start-up (the first real line would otherwise pay for it),
+and split_sentences() lets the caller start playing the first sentence while the rest is made."""
 from __future__ import annotations
 import logging
 import re
 import subprocess
 import tempfile
 
+from voice.units import spoken_units
+
 log = logging.getLogger(__name__)
+
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])")
+
+
+def split_sentences(text: str, min_chars: int = 40) -> list[str]:
+    """Sentences to synthesise one by one; short ones are joined to the next so a
+    line isn't chopped into tiny clips (each one costs a little gap)."""
+    out: list[str] = []
+    for s in _SENTENCE.split((text or "").strip()):
+        if out and len(out[-1]) < min_chars:
+            out[-1] = f"{out[-1]} {s}"
+        else:
+            out.append(s)
+    if len(out) > 1 and len(out[-1]) < min_chars // 2:      # a short tail rides with the one before
+        tail = out.pop()
+        out[-1] = f"{out[-1]} {tail}"
+    return [s for s in out if s.strip()]
+
 
 # Aviation speed symbols, spoken as letter names, not one syllable.
 _AVIATION_TTS = (
@@ -21,13 +48,14 @@ def prepare_for_speech(text: str) -> str:
     out = text
     for pat, repl in _AVIATION_TTS:
         out = pat.sub(repl, out)
-    return out
+    return spoken_units(out)       # "70kt" -> "70 knots", "25°" -> "25 degrees", "rpm" -> "R P M"
 
 
 class TTS:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.engine = None
+        self.device = None
         want = cfg.get("engine", "auto")
         primary = [] if want in ("auto", None) else [want]
         order = primary + [x for x in ("kokoro", "piper", "pyttsx3") if x not in primary]
@@ -45,14 +73,43 @@ class TTS:
     # ---- kokoro (preferred: near-human, local, GPU/CPU) ----
     def _init_kokoro(self):
         from kokoro import KPipeline           # pip install kokoro soundfile
-        self._kokoro = KPipeline(lang_code="a")
+        device = str(self.cfg.get("tts_device") or "auto").lower()
+        device = None if device == "auto" else device
+        if device == "cpu" and int(self.cfg.get("tts_cpu_threads") or 0) > 0:
+            import torch
+            torch.set_num_threads(int(self.cfg["tts_cpu_threads"]))
+        try:
+            self._kokoro = KPipeline(lang_code="a", device=device)
+        except TypeError:                      # kokoro < 0.9: no device argument
+            self._kokoro = KPipeline(lang_code="a")
+        except RuntimeError as e:              # asked for cuda, none there
+            log.warning("Kokoro on %s failed (%s): using the CPU", device, e)
+            self._kokoro = KPipeline(lang_code="a", device="cpu")
         self._voice = self.cfg.get("kokoro_voice", "af_heart")
+        model = getattr(self._kokoro, "model", None)
+        self.device = str(getattr(model, "device", "cpu"))
+        # the first synthesis loads the voice and warms the kernels (seconds): pay it now
+        import time
+        t0 = time.perf_counter()
+        for _ in self._kokoro("Ready.", voice=self._voice):
+            pass
+        log.info("Kokoro on %s, warm-up %.2fs", self.device, time.perf_counter() - t0)
+
+    def _kokoro_audio(self, text: str):
+        import numpy as np
+        chunks = [a.cpu().numpy() if hasattr(a, "cpu") else a for _, _, a in self._kokoro(text, voice=self._voice)]
+        return np.concatenate(chunks) if chunks else None
 
     def _speak_kokoro(self, text: str):
-        import numpy as np
         import sounddevice as sd
-        chunks = [audio for _, _, audio in self._kokoro(text, voice=self._voice)]
-        sd.play(np.concatenate(chunks), 24000, blocking=True)
+        # play each sentence as soon as it's made; the next one is made while this one plays
+        for part in split_sentences(text):
+            audio = self._kokoro_audio(part)
+            if audio is None:
+                continue
+            sd.wait()
+            sd.play(audio, 24000)
+        sd.wait()
 
     # ---- piper (very fast, lighter voices) ----
     def _init_piper(self):
@@ -104,10 +161,11 @@ class TTS:
         text = prepare_for_speech(text)
         try:
             if self.engine == "kokoro":
-                import numpy as np
                 import soundfile as sf
-                chunks = [a for _, _, a in self._kokoro(text, voice=self._voice)]
-                sf.write(out_path, np.concatenate(chunks), 24000)
+                audio = self._kokoro_audio(text)
+                if audio is None:
+                    return False
+                sf.write(out_path, audio, 24000)
                 return True
             if self.engine == "piper":
                 subprocess.run(["piper", "--model", self._piper_model,

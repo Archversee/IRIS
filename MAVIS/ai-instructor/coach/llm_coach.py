@@ -9,6 +9,7 @@ import time
 import httpx
 
 from core.events import CoachEvent
+from voice.units import standard_units
 from . import phrases
 
 log = logging.getLogger(__name__)
@@ -83,6 +84,9 @@ class Coach:
         self.model = cfg["model"]
         self._think: bool | None = False   # see _ollama
         self.timeout = cfg.get("timeout_s", 1.5)
+        # where Ollama runs the model: num_gpu = layers on the GPU (-1/unset all that fit, 0 = CPU only),
+        # num_thread = CPU threads. Sent with every request AND the warm-up, so the model never reloads.
+        self.options = {k: int(cfg[k]) for k in ("num_gpu", "num_thread", "num_ctx") if cfg.get(k) not in (None, "")}
         self.min_gap = cfg.get("min_speak_interval_s", 8)
         self.aircraft = aircraft
         self.speak_fn = speak_fn          # async fn(text) -> plays TTS
@@ -225,6 +229,8 @@ class Coach:
                   event: CoachEvent | None = None):
         """event: the CoachEvent this line voices; its code / severity / data
         go into the transcript so IRIS can tell which callouts got a response."""
+        if who != "trainee":               # one way of writing units: "knots", "degrees", "feet"
+            text = standard_units(text)
         async with self._speech_lock:      # serialize: finish speaking before the next line
             entry = {"who": who, "text": text, "t": time.time(), "phase": phase}
             if event is not None:
@@ -317,7 +323,7 @@ class Coach:
                    "eyes up and keep flying, you're doing great.")
         import re
         out = re.sub(r",?\s*please\.?$", "", out, flags=re.I).strip()
-        out = clip_spoken(out, 30)
+        out = standard_units(clip_spoken(out, 30))
         await self.say(out)
         return out
 
@@ -368,7 +374,7 @@ class Coach:
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "keep_alive": -1,   # pin the model in VRAM, no mid-lesson reloads
-            "options": {"temperature": 0.7, "num_predict": 200},
+            "options": {"temperature": 0.7, "num_predict": 200, **self.options},
         }
         if self._think is not None:
             body["think"] = self._think
@@ -415,7 +421,7 @@ class Coach:
         try:
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cli:
                 r = await cli.post(f"{self.url}/api/generate",
-                                   json={"model": self.model, "keep_alive": -1})
+                                   json={"model": self.model, "keep_alive": -1, "options": self.options})
                 r.raise_for_status()
             log.info("LLM %s loaded", self.model)
         except Exception as e:

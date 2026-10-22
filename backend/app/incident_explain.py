@@ -27,6 +27,7 @@ import yaml
 
 from . import db
 from .config import settings
+from .units import standard_units
 
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "1"
@@ -58,6 +59,8 @@ STRICT RULES:
   heights or instruments.
 - If the facts say eye data or the clock is unreliable, say gaze timings are uncertain and don't build on them.
 - 4 to 7 sentences, no headings, no bullet lists, no markdown.
+- Units in full words: knots (never kt), feet (never ft), degrees (never deg or °), feet per minute
+  (never fpm), seconds, percent.
 - Structure: what happened -> the most likely reason (perceive / comprehend / act / handling) -> what went
   well, if anything -> one concrete thing to practise.
 - Calm, specific, encouraging. No blame."""
@@ -277,7 +280,7 @@ async def ask_model(messages: list[dict]) -> tuple[str, str, bool]:
                 continue
             if not text:
                 raise RuntimeError("The model returned an empty answer")
-            return text, d["model"], bool(msg.get("thinking"))
+            return standard_units(text), d["model"], bool(msg.get("thinking"))
 
 
 async def explain(a: dict) -> dict:

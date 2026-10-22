@@ -114,6 +114,8 @@ STRICT RULES:
   "- ", naming the likely reason (seeing it, acting on it, handling) where the facts show it.
 - Next flight: one concrete thing to focus on.
 - If there is a previous flight in the facts, say what got better or worse (only from those facts).
+- Units in full words: knots (never kt), feet (never ft), degrees (never deg or °), feet per minute
+  (never fpm), seconds, percent.
 - About 120-220 words in all. Plain text, no markdown other than the "- " points. Calm, specific,
   encouraging. No blame."""
 

@@ -46,18 +46,31 @@ coach:
   timeout_s: 1.0           # fall back to template phrase beyond this
   min_speak_interval_s: 3  # gentleness vs latency: nudges wait at most this long
                            # (corrections/turn cues jump ahead at ~2 s)
+  # Where Ollama runs the coach model. Keep the LLM on the GPU: on the CPU a 7B model
+  # needs several seconds just to read the prompt. If MSFS leaves too little VRAM,
+  # `ollama ps` shows e.g. "40%/60% CPU/GPU" and every answer slows down -- then use a
+  # smaller model (qwen2.5:3b-instruct) or the laptop's Ollama, rather than the CPU.
+  # num_gpu: -1            # layers on the GPU: -1 = all that fit, 0 = CPU only
+  # num_thread: 8          # CPU threads, if num_gpu is 0
 
 voice:
   engine: auto             # auto | kokoro | piper | pyttsx3 | none (auto falls back)
+  # Splitting the work: MSFS + the LLM need the GPU most; Kokoro is small (82M) and
+  # still several times faster than real time on the CPU, and MAVIS now plays each
+  # sentence as soon as it's made. Set cuda if the log's "Kokoro on cpu, warm-up" is slow.
+  tts_device: cpu          # auto | cuda | cpu
+  tts_cpu_threads: 4       # 0 = torch default (all cores; leaves none for Whisper/the sim)
   output: tablet           # tablet (voice plays in the browser) | sim_pc (PC speakers)
   kokoro_voice: af_heart   # female MAVIS voice (Kokoro)
   piper_model: ""          # path to .onnx if using piper
   rate: 175                # pyttsx3 words/min
   sapi_voice: zira|female  # pyttsx3 fallback: prefer female Windows voice
   # --- STT / speaker enrolment (local; tablet mic) ---
-  stt_model: medium         # faster-whisper size: tiny|base|small|medium|large-v3
-  stt_device: auto         # auto | cuda (keep on GPU, CPU is too slow for live PTT)
-  stt_compute: auto        # auto | float16 | int8 | float32
+  stt_model: small.en      # faster-whisper: base.en | small.en (fast, English) | medium | large-v3
+                           # small.en ~0.2 s on the GPU, ~1-2 s on the CPU; medium ~10 s on the CPU
+  stt_device: auto         # auto | cuda | cpu (falls back to cpu if the GPU fails)
+  stt_compute: auto        # auto | float16 | int8 | float32  (auto: float16 GPU, int8 CPU)
+  stt_cpu_threads: 4       # when on the CPU (0 = all cores)
   stt_initial_prompt: >-
     Student pilot asking questions during circuit training.
     Flaps, rudder, throttle, ailerons, stick, yoke, downwind, base leg,

@@ -2,6 +2,9 @@
 
 One TTS worker thread (tts_pool) so coaching lines never overlap; speak_gen
 bumps on stop_speech() so a line queued before a stop / restart is dropped.
+A line of several sentences is made and played a sentence at a time: the
+tablet starts on the first while the next is being made. Lines said before
+(scripted callouts: "Turn base now") come from a cache, with no synthesis.
 Reading checklists use their own worker + cache so they never queue behind
 live coaching. No TTS engine: lines go to the log / transcript instead."""
 from __future__ import annotations
@@ -10,10 +13,11 @@ import concurrent.futures
 import logging
 import tempfile
 import wave
+from collections import OrderedDict
 from pathlib import Path
 
 from runtime.bootstrap import READING_LESSONS
-from voice.tts import TTS
+from voice.tts import TTS, split_sentences
 
 log = logging.getLogger("main")     # same logger name as before the move: log lines unchanged
 
@@ -39,6 +43,31 @@ def build_speech(rt):
     reading_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mavis-tts-reading")
     reading_audio_cache: dict[tuple[str, str], str] = {}
     to_tablet = rt.cfg["voice"].get("output", "tablet") == "tablet"
+    # text -> wav already made for it (most callouts are scripted and repeat every circuit)
+    said: OrderedDict[str, Path] = OrderedDict()
+    SAID_MAX = 300
+    GAP_S = 0.25          # between the sentences of one line (the tablet hears each one a moment late)
+
+    async def make_wav(text: str) -> Path | None:
+        wav = said.get(text)
+        if wav is not None and wav.exists():
+            said.move_to_end(text)
+            return wav
+        tts_seq["n"] += 1
+        wav = tts_dir / f"say_{tts_seq['n']}.wav"
+        try:
+            ok = await asyncio.wait_for(rt.loop.run_in_executor(tts_pool, rt.tts.synth, text, str(wav)),
+                                        timeout=25.0)
+        except asyncio.TimeoutError:
+            log.warning("TTS synth timed out: %s", text[:80])
+            return None
+        if not ok:
+            return None
+        said[text] = wav
+        while len(said) > SAID_MAX:
+            _, old = said.popitem(last=False)
+            old.unlink(missing_ok=True)
+        return wav
 
     async def init_tts():
         """Voice engines (Kokoro) can take a minute to load - do it in the
@@ -59,29 +88,34 @@ def build_speech(rt):
         rt.state["speaking"] = True
         try:
             if to_tablet:
-                tts_seq["n"] += 1
-                wav = tts_dir / f"say_{tts_seq['n']}.wav"
-                try:
-                    ok = await asyncio.wait_for(
-                        rt.loop.run_in_executor(tts_pool, rt.tts.synth, text, str(wav)),
-                        timeout=25.0)
-                except asyncio.TimeoutError:
-                    log.warning("TTS synth timed out: %s", text[:80])
-                    ok = False
-                if gen != rt.speak_gen["n"]:
-                    return
-                if ok:
+                parts = split_sentences(text) or [text]
+                t0 = rt.loop.time()
+                nxt = asyncio.ensure_future(make_wav(parts[0]))
+                for i in range(len(parts)):
+                    wav = await nxt
+                    if gen != rt.speak_gen["n"]:
+                        return
+                    # start making the next sentence while this one plays
+                    nxt = asyncio.ensure_future(make_wav(parts[i + 1])) if i + 1 < len(parts) else None
+                    if wav is None:
+                        log.warning("TTS synth failed. No audio: %s", parts[i][:80])
+                        await asyncio.sleep(min(6.0, 0.4 + len(parts[i]) / 15))  # console mode
+                        continue
                     dur = _wav_seconds(wav)
-                    log.info("TTS -> tablet %s (%.1fs)", wav.name, dur)
+                    tts_seq["n"] += 1
+                    if i == 0:
+                        log.info("TTS -> tablet %s (%.1fs audio, ready after %.2fs%s)", wav.name, dur,
+                                 rt.loop.time() - t0, f", {len(parts)} parts" if len(parts) > 1 else "")
                     rt.state["audio"] = {"url": f"/tts/{wav.name}", "seq": tts_seq["n"]}
-                    # wait out the line, unless stop_speech() cuts it off (the
+                    # wait out the sentence, unless stop_speech() cuts it off (the
                     # tablet switches to the next published line straight away)
-                    end = rt.loop.time() + dur + 0.3
+                    end = rt.loop.time() + dur + (GAP_S if nxt else 0.3)
                     while rt.loop.time() < end and gen == rt.speak_gen["n"]:
                         await asyncio.sleep(min(0.1, end - rt.loop.time()))
-                else:
-                    log.warning("TTS synth failed. No audio: %s", text[:80])
-                    await asyncio.sleep(min(6.0, 0.4 + len(text) / 15))  # console mode
+                    if gen != rt.speak_gen["n"]:
+                        if nxt:
+                            nxt.cancel()
+                        return
             else:
                 await rt.loop.run_in_executor(None, rt.tts.speak, text)
         finally:
