@@ -13,8 +13,8 @@ pattern:
   altitude_msl_ft: 1100    # 65 ft elev + ~1000 AGL, rounded
   downwind_offset_nm: 0.8
   crosswind_turn_agl_ft: 600
-  # Crosswind-turn cue: past runway end (m along from threshold). Default = length_m + 120.
-  # crosswind_turn_min_along_m: 3900
+  # Crosswind-turn cue: not before here (m along from threshold). Default = length_m (runway end).
+  # crosswind_turn_min_along_m: 3796
   centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
   # Distance past abeam threshold (along runway axis) before the base turn.
   # 1100 m, ~100 m past mock geometry; grey planned circuit + MSFS use base_turn_past_abeam_m.

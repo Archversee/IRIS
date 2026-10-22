@@ -133,7 +133,10 @@ export default function MapCanvas({ state }) {
       ctx.strokeStyle = ACC + "55";
       ctx.lineWidth = 2;
       ctx.setLineDash([7, 7]);
-      drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px, 220, sc);
+      // turns as wide as a real aircraft flies them (pattern.corner_radius_m;
+      // the same shape the track score and IRIS's Review route use)
+      drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px,
+        pat.corner_radius_m || 400, sc);
       ctx.stroke();
       ctx.setLineDash([]);
     }

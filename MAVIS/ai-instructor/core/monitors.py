@@ -68,7 +68,8 @@ class Monitors:
         self._runway_length_m = rw_len
         # Crosswind turn is after the runway ends, height + position (not mid-runway).
         self._turn_crosswind_along_min = float(
-            lesson["pattern"].get("crosswind_turn_min_along_m", rw_len + 120.0))
+            # (the departure end: the planned circuit's rounded crosswind turn starts there)
+            lesson["pattern"].get("crosswind_turn_min_along_m", rw_len))
         self.vy = float(aircraft["v_speeds"]["vy"])
         self.turn_word = "left" if lesson["pattern"].get("side", "left") == "left" else "right"
         # circuit turns: left traffic turns left (heading offset decreasing)

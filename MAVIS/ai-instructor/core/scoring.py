@@ -44,6 +44,34 @@ def _seg_dist(px, py, ax, ay, bx, by) -> float:
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
+# Planned circuit corner radius (m) when the lesson doesn't set one: a C172 at
+# circuit speeds (~80 kt) in a normal ~23-degree bank. The map (MapCanvas.jsx),
+# IRIS's Review route (backend routes.py) and the track score all use it.
+CORNER_RADIUS_M = 400.0
+
+
+def rounded_path(corners: list[tuple[float, float]], radius: float, n: int = 12) -> list[tuple[float, float]]:
+    """The corners of a polyline replaced by smooth turns: each interior
+    corner becomes a curve starting `radius` metres before it and ending
+    `radius` metres after it along the two legs (the same curve the map
+    draws). The first and last points are kept as they are."""
+    out = [corners[0]]
+    for i in range(1, len(corners) - 1):
+        p0, p1, p2 = corners[i - 1], corners[i], corners[i + 1]
+        v1 = (p0[0] - p1[0], p0[1] - p1[1])
+        v2 = (p2[0] - p1[0], p2[1] - p1[1])
+        l1, l2 = math.hypot(*v1) or 1.0, math.hypot(*v2) or 1.0
+        r = min(radius, l1 / 2, l2 / 2)
+        t1 = (p1[0] + v1[0] / l1 * r, p1[1] + v1[1] / l1 * r)
+        t2 = (p1[0] + v2[0] / l2 * r, p1[1] + v2[1] / l2 * r)
+        for k in range(n + 1):
+            u = k / n
+            out.append(((1 - u) ** 2 * t1[0] + 2 * (1 - u) * u * p1[0] + u ** 2 * t2[0],
+                        (1 - u) ** 2 * t1[1] + 2 * (1 - u) * u * p1[1] + u ** 2 * t2[1]))
+    out.append(corners[-1])
+    return out
+
+
 def _curve(err: float, scale: float) -> float:
     """0-100: 100 at zero error, smooth Gaussian decay by `scale`."""
     if scale <= 0:
@@ -96,7 +124,9 @@ class Scorer:
         off = p.get("downwind_offset_nm", 0.8) * M_PER_NM
         fin = float(p.get("base_turn_past_abeam_m")
                     or cfg.get("final_length_m", DEFAULTS["final_length_m"]))
-        self.poly = [(0.0, 0.0), (upA, 0.0), (upA, off), (-fin, off), (-fin, 0.0), (0.0, 0.0)]
+        # the planned circuit, with turns a real aircraft can fly (not square corners)
+        self.poly = rounded_path([(0.0, 0.0), (upA, 0.0), (upA, off), (-fin, off), (-fin, 0.0), (0.0, 0.0)],
+                                 float(p.get("corner_radius_m", CORNER_RADIUS_M)))
         # Take-off / Landing lessons fly one piece of the circuit: the ideal
         # track is the runway centreline (extended out along the final approach)
         self.segment = lesson.get("segment")

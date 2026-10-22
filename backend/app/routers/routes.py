@@ -27,7 +27,9 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["routes"])
 
 M_PER_DEG = 111320.0
-CORNER_RADIUS_M = 220  # matches MapCanvas.jsx's drawRoundedPattern radius
+# Turn radius when the lesson doesn't set pattern.corner_radius_m: a C172 at
+# circuit speeds in a normal bank -- the same as MAVIS's map and track score.
+CORNER_RADIUS_M = 400
 
 
 def _reciprocal(rw: dict) -> dict:
@@ -72,7 +74,7 @@ def _circuit(lesson: dict, rw: dict) -> dict:
         v1 = (p0[0] - p1[0], p0[1] - p1[1])
         v2 = (p2[0] - p1[0], p2[1] - p1[1])
         l1, l2 = math.hypot(*v1) or 1, math.hypot(*v2) or 1
-        r = min(CORNER_RADIUS_M, l1 / 2, l2 / 2)
+        r = min(float(pat.get("corner_radius_m", CORNER_RADIUS_M)), l1 / 2, l2 / 2)
         t1 = (p1[0] + v1[0] / l1 * r, p1[1] + v1[1] / l1 * r)
         t2 = (p1[0] + v2[0] / l2 * r, p1[1] + v2[1] / l2 * r)
         for k in range(9):
