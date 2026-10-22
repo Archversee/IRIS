@@ -427,13 +427,16 @@
 }
 .ft-toggle button.on { background: var(--rev-cyan); color: #04121c; }
 
-.ft-gauges { flex: 1; min-height: 190px; display: flex; gap: 14px; align-items: stretch; }
+/* The instruments grow to fill their group (flex: 1 1 0, capped) instead of
+   the group spreading a few narrow ones out with grey space in between. */
+.ft-gauges { flex: 1; min-height: 200px; display: flex; gap: 10px; align-items: stretch; }
 .ft-group {
-  display: flex; gap: 14px; justify-content: space-around; align-items: stretch;
-  padding: 10px 12px; border-radius: 10px;
+  display: flex; gap: 8px; justify-content: space-evenly; align-items: stretch;
+  padding: 8px 10px; border-radius: 10px;
   background: var(--rev-panel-2); border: 1px solid var(--rev-line);
 }
-.ft-group:first-child { flex: 1.1; }
+.ft-group:first-child { flex: 1; }
+.ft-group--dials { flex: 1.6; }
 .ft-group--controls { flex: 1.5; }
 
 .ft-tape__label {
@@ -442,9 +445,9 @@
 }
 .ft-tape__label small { font-weight: 400; font-size: 10px; letter-spacing: 0; }
 
-.ft-tape { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 56px; }
+.ft-tape { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 56px; max-width: 110px; }
 .ft-tape__bar {
-  position: relative; width: 38px; flex: 1; min-height: 90px;
+  position: relative; width: min(100%, 58px); flex: 1; min-height: 90px;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
 .ft-tape__ptr {
@@ -460,19 +463,57 @@
 .ft-tape__mx { top: 2px; }
 .ft-tape__mn { bottom: 2px; }
 .ft-tape__val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ft-tape__val.is-ok { color: var(--ft-good); }
+.ft-tape__val.is-out { color: var(--ft-warn); }
+.ft-tape__ptr.is-out { background: var(--ft-warn); box-shadow: 0 0 8px rgba(245, 158, 11, .7); }
 
-.ft-att { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.ft-att__svg { flex: 1; min-height: 100px; max-height: 170px; aspect-ratio: 1; }
+/* allowed range (green) / past a safety limit (red) / target tick */
+.ft-tape__zone { position: absolute; left: 0; right: 0; }
+.ft-tape__zone--ok { background: color-mix(in srgb, var(--ft-good) 26%, transparent); border-block: 1px solid var(--ft-good); }
+.ft-tape__zone--bad { background: color-mix(in srgb, var(--danger, #ef4444) 22%, transparent); }
+.ft-tape__tgt { position: absolute; left: -2px; right: -2px; height: 2px; margin-bottom: -1px; background: #fff; opacity: .85; }
+.ft-band-txt {
+  font-size: 10px; line-height: 1.2; color: var(--rev-muted); text-align: center;
+  font-variant-numeric: tabular-nums; min-height: 12px; white-space: nowrap;
+}
+
+.ft-legend { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; margin-right: 10px; font-size: 11px; color: var(--rev-muted); }
+.ft-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+.ft-legend__ok { background: color-mix(in srgb, var(--ft-good) 45%, transparent); border: 1px solid var(--ft-good); }
+.ft-legend__tgt { height: 2px !important; background: #fff; }
+.ft-legend__bad { background: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent); }
+
+/* round dials: bank and heading */
+.ft-dial { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 92px; max-width: 190px; }
+.ft-dial__svg { flex: 1; width: 100%; min-height: 70px; max-height: 150px; }
+.ft-dial__track { fill: none; stroke: var(--inset); stroke-width: 7; }
+.ft-dial__zone { fill: none; stroke-width: 7; }
+.ft-dial__zone--ok { stroke: color-mix(in srgb, var(--ft-good) 70%, transparent); }
+.ft-dial__zone--bad { stroke: color-mix(in srgb, var(--danger, #ef4444) 60%, transparent); }
+.ft-dial__tick { stroke: var(--rev-muted); stroke-width: 1; }
+.ft-dial__tgt { stroke: #fff; stroke-width: 2; }
+.ft-dial__needle { stroke: var(--rev-cyan); stroke-width: 2.6; stroke-linecap: round; transition: all .2s linear; }
+.ft-dial__needle.is-out { stroke: var(--ft-warn); }
+.ft-dial__hub { fill: var(--rev-text, #e6edf3); }
+.ft-dial__face { fill: var(--inset); stroke: var(--rev-line); stroke-width: 1.5; }
+.ft-dial__lubber { fill: #ffb64d; }
+.ft-compass__card { transition: transform .2s linear; }
+.ft-compass__lbl { fill: var(--rev-muted); font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.ft-compass__lbl.is-n { fill: #ff6b6b; }
+.ft-compass__plane { fill: #ffb64d; }
+
+.ft-att { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 110px; max-width: 200px; }
+.ft-att__svg { flex: 1; width: 100%; min-height: 100px; max-height: 160px; aspect-ratio: 1; }
 .ft-att__svg g { transition: transform .2s linear; }
 .ft-att__vals { display: flex; gap: 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ft-att__vals small { font-size: 10px; font-weight: 400; color: var(--rev-muted); }
 
-.ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 56px; }
+.ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 56px; max-width: 130px; }
 .ft-ctl__cap { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--rev-muted); text-align: center; line-height: 1.2; max-width: 64px; }
 .ft-ctl__val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .ft-vbar {
-  position: relative; width: 28px; flex: 1; min-height: 90px;
+  position: relative; width: min(100%, 40px); flex: 1; min-height: 90px;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
 .ft-vbar__fill { position: absolute; bottom: 0; left: 0; right: 0; transition: height .2s linear; }
@@ -480,7 +521,7 @@
 .ft-vbar__mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border-strong); }
 
 .ft-hbar {
-  position: relative; width: 84px; height: 28px; margin: auto 0;
+  position: relative; width: min(100%, 110px); height: 28px; margin: auto 0;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
 .ft-hbar__fill { position: absolute; top: 0; bottom: 0; background: var(--rev-cyan); transition: width .2s linear; }
@@ -502,9 +543,9 @@
 
 /* Wrap by the card's own width, so it works full-width (Live Monitor) and
    in Review's bottom-row column alike. */
-@container (max-width: 860px) {
+@container (max-width: 1100px) {
   .ft-gauges { flex-wrap: wrap; }
-  .ft-group { flex: 1 1 260px; }
+  .ft-group { flex: 1 1 300px; }
   .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
 }
 

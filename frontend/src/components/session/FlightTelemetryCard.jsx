@@ -5,6 +5,11 @@ import { fmt } from "./utils.js";
 // panel does it (vertical speed/height/climb tapes, stick-style control bars)
 // plus an attitude indicator, with a toggle to the raw numbers.
 //
+// On the Live Monitor, `bands` (MAVIS's state.bands, for the step being
+// flown) adds what's allowed: a green zone for the range the lesson asks
+// for (kind "band") or red past a safety limit (kind "limit"), a tick at the
+// target, and the reading turns amber when it's outside.
+//
 // Units (flight_data, see db/schema.sql + backend/app/mavis_bridge.py):
 // aileron/elevator/rudder are SimConnect "Position" (-1..1; + elevator =
 // stick back / nose up, - aileron = left), throttle/flaps are 0..100 %,
@@ -17,20 +22,149 @@ const CLIMB_MAX = 1200;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const num = (v) => (v == null || Number.isNaN(+v) ? null : +v);
 
-function Tape({ label, unit, value, min, max, title }) {
+// Is v inside the band? null when there's no band (or no reading) to judge by.
+function inBand(v, band) {
+  if (v == null || !band || (band.lo == null && band.hi == null)) return null;
+  return (band.lo == null || v >= band.lo) && (band.hi == null || v <= band.hi);
+}
+
+// "aim 80 · 70–90" / "max 900" -- the band in words, under a reading.
+function bandText(band, unit = "") {
+  if (!band) return null;
+  const n = (x) => `${Math.round(x)}${unit}`;
+  const parts = [];
+  if (band.target != null) parts.push(`aim ${n(band.target)}`);
+  if (band.kind === "limit") {
+    if (band.lo != null && band.hi != null) parts.push(`limit ${n(band.lo)}…${n(band.hi)}`);
+    else if (band.lo != null) parts.push(`min ${n(band.lo)}`);
+    else if (band.hi != null) parts.push(`max ${n(band.hi)}`);
+  } else if (band.lo != null && band.hi != null) {
+    parts.push(`${n(band.lo)}–${n(band.hi)}`);
+  }
+  return parts.join(" · ") || null;
+}
+
+const NBSP = "\u00a0";
+
+function Tape({ label, unit, value, min, max, title, band }) {
   const v = num(value);
-  const pct = clamp01(((v ?? min) - min) / (max - min)) * 100;
-  const zeroPct = min < 0 ? clamp01((0 - min) / (max - min)) * 100 : null;
+  const at = (x) => clamp01((x - min) / (max - min)) * 100;
+  const pct = at(v ?? min);
+  const zeroPct = min < 0 ? at(0) : null;
+  const ok = inBand(v, band);
+  // "band": green between lo and hi; "limit": red beyond lo / hi
+  const zones = [];
+  if (band?.kind === "limit") {
+    if (band.lo != null) zones.push({ cls: "bad", from: 0, to: at(band.lo) });
+    if (band.hi != null) zones.push({ cls: "bad", from: at(band.hi), to: 100 });
+  } else if (band && (band.lo != null || band.hi != null)) {
+    zones.push({ cls: "ok", from: at(band.lo ?? min), to: at(band.hi ?? max) });
+  }
   return (
     <div className="ft-tape" title={title}>
       <div className="ft-tape__label">{label}<small>{unit}</small></div>
       <div className="ft-tape__bar">
+        {zones.map((z, i) => (
+          <div key={i} className={`ft-tape__zone ft-tape__zone--${z.cls}`}
+            style={{ bottom: `${z.from}%`, height: `${Math.max(0, z.to - z.from)}%` }} />
+        ))}
         <b className="ft-tape__mx">{max}</b>
         {zeroPct != null && <div className="ft-tape__zero" style={{ bottom: `${zeroPct}%` }} />}
-        <div className="ft-tape__ptr" style={{ bottom: `${pct}%` }} />
+        {band?.target != null && <div className="ft-tape__tgt" style={{ bottom: `${at(band.target)}%` }} />}
+        <div className={"ft-tape__ptr" + (ok === false ? " is-out" : "")} style={{ bottom: `${pct}%` }} />
         <b className="ft-tape__mn">{min}</b>
       </div>
-      <div className="ft-tape__val">{v == null ? "--" : Math.round(v)}</div>
+      <div className={"ft-tape__val" + (ok === false ? " is-out" : ok ? " is-ok" : "")}>{v == null ? "--" : Math.round(v)}</div>
+      <div className="ft-band-txt">{bandText(band) || NBSP}</div>
+    </div>
+  );
+}
+
+// Point on a dial: angle in degrees clockwise from straight up.
+const polar = (r, deg) => [r * Math.sin((deg * Math.PI) / 180), -r * Math.cos((deg * Math.PI) / 180)];
+function arc(r, a0, a1) {
+  const [x0, y0] = polar(r, a0), [x1, y1] = polar(r, a1);
+  return `M${x0} ${y0} A${r} ${r} 0 ${Math.abs(a1 - a0) > 180 ? 1 : 0} 1 ${x1} ${y1}`;
+}
+
+// Bank words: 45° L / 38–52° L (bank + = right, - = left).
+function bankText(band) {
+  if (!band) return null;
+  const side = (x) => (Math.round(x) === 0 ? "0°" : `${Math.abs(Math.round(x))}°${x < 0 ? " L" : " R"}`);
+  const parts = [];
+  if (band.target != null) parts.push(`aim ${side(band.target)}`);
+  if (band.lo != null && band.hi != null) {
+    if (band.kind === "limit" && band.lo === -band.hi) parts.push(`max ${Math.round(band.hi)}°`);
+    else if (band.lo === -band.hi) parts.push(`within ${Math.round(band.hi)}°`);
+    else if (band.lo < 0 && band.hi <= 0) parts.push(`${Math.round(-band.hi)}–${Math.round(-band.lo)}° L`);
+    else if (band.lo >= 0) parts.push(`${Math.round(band.lo)}–${Math.round(band.hi)}° R`);
+  }
+  return parts.join(" · ") || null;
+}
+
+// Bank: a top-half dial, 0 at the top, right bank clockwise, with the step's
+// bank band or the steep-bank limit.
+const BANK_MAX = 60;
+function BankDial({ bank, band }) {
+  const b = num(bank);
+  const ang = (x) => Math.max(-BANK_MAX, Math.min(BANK_MAX, x)) * (90 / BANK_MAX);
+  const ok = inBand(b, band);
+  const zones = [];
+  if (band?.kind === "limit") {
+    if (band.lo != null) zones.push(["bad", -BANK_MAX, band.lo]);
+    if (band.hi != null) zones.push(["bad", band.hi, BANK_MAX]);
+  } else if (band && band.lo != null && band.hi != null) {
+    zones.push(["ok", band.lo, band.hi]);
+  }
+  const [nx, ny] = polar(38, ang(b ?? 0));
+  const tick = (d, r0, r1) => { const [x0, y0] = polar(r0, ang(d)), [x1, y1] = polar(r1, ang(d)); return { x1: x0, y1: y0, x2: x1, y2: y1 }; };
+  return (
+    <div className="ft-dial" title="Bank angle: how far the wings are tilted. Right bank swings the needle right.">
+      <div className="ft-tape__label">BANK<small>degrees</small></div>
+      <svg viewBox="-50 -50 100 62" className="ft-dial__svg">
+        <path d={arc(40, -90, 90)} className="ft-dial__track" />
+        {zones.map(([cls, lo, hi], i) => (
+          <path key={i} d={arc(40, ang(lo), ang(hi))} className={`ft-dial__zone ft-dial__zone--${cls}`} />
+        ))}
+        {[-60, -45, -30, -15, 0, 15, 30, 45, 60].map((d) => (
+          <line key={d} {...tick(d, 44, d % 30 ? 47 : 49)} className="ft-dial__tick" />
+        ))}
+        {band?.target != null && <line {...tick(band.target, 33, 46)} className="ft-dial__tgt" />}
+        <line x1="0" y1="0" x2={nx} y2={ny} className={"ft-dial__needle" + (ok === false ? " is-out" : "")} />
+        <circle r="3" className="ft-dial__hub" />
+      </svg>
+      <div className={"ft-tape__val" + (ok === false ? " is-out" : ok ? " is-ok" : "")}>
+        {b == null ? "--" : `${Math.abs(Math.round(b))}°${Math.round(b) ? (b < 0 ? " L" : " R") : ""}`}
+      </div>
+      <div className="ft-band-txt">{bankText(band) || NBSP}</div>
+    </div>
+  );
+}
+
+// Heading: a compass card that turns under a fixed lubber line.
+function Compass({ heading }) {
+  const h = num(heading);
+  return (
+    <div className="ft-dial" title="Heading: which way the nose points (true degrees).">
+      <div className="ft-tape__label">HEADING<small>degrees</small></div>
+      <svg viewBox="-50 -50 100 100" className="ft-dial__svg ft-dial__svg--round">
+        <circle r="46" className="ft-dial__face" />
+        <g transform={`rotate(${h == null ? 0 : -h})`} className="ft-compass__card">
+          {Array.from({ length: 36 }, (_, i) => i * 10).map((d) => {
+            const [x0, y0] = polar(46, d), [x1, y1] = polar(d % 30 ? 42 : 38, d);
+            return <line key={d} x1={x0} y1={y0} x2={x1} y2={y1} className="ft-dial__tick" />;
+          })}
+          {[["N", 0], ["E", 90], ["S", 180], ["W", 270]].map(([t, d]) => {
+            const [x, y] = polar(29, d);
+            return <text key={t} x={x} y={y} className={"ft-compass__lbl" + (t === "N" ? " is-n" : "")}
+              transform={`rotate(${d} ${x} ${y})`}>{t}</text>;
+          })}
+        </g>
+        <path d="M0 -47 L-4 -38 H4 Z" className="ft-dial__lubber" />
+        <path d="M0 -14 L-6 10 L0 6 L6 10 Z" className="ft-compass__plane" />
+      </svg>
+      <div className="ft-tape__val">{h == null ? "--" : `${String(Math.round(h) % 360).padStart(3, "0")}°`}</div>
+      <div className="ft-band-txt">{NBSP}</div>
     </div>
   );
 }
@@ -171,15 +305,28 @@ function withDerived(row) {
   return { ...row, flaps_handle_pct: clamp01(row.flaps_deg / FLAPS_FULL_DEG) * 100 };
 }
 
-export default function FlightTelemetryCard({ cur: rawCur, altMax }) {
+export default function FlightTelemetryCard({ cur: rawCur, altMax, bands }) {
   const cur = withDerived(rawCur);
   const [view, setView] = useState("gauges");
-  const altTop = Math.max(2000, Math.ceil(((altMax ?? 0) * 1.1) / 500) * 500);
+  // Height tape: 0 .. a bit over the highest point; while the step asks for a
+  // height band, zoomed to the band (+/- 600 ft) so a 200 ft band is readable.
+  const ab = bands?.alt;
+  let altMin = 0;
+  let altTop = Math.max(2000, Math.ceil((Math.max(altMax ?? 0, ab?.hi ?? 0, ab?.target ?? 0) * 1.1) / 500) * 500);
+  if (ab && ab.lo != null && ab.hi != null) {
+    altMin = Math.max(0, Math.floor((ab.lo - 600) / 100) * 100);
+    altTop = Math.ceil((ab.hi + 600) / 100) * 100;
+  }
 
   return (
     <div className="rev-card ft-card">
       <div className="card-head">
         <h3>Flight telemetry</h3>
+        {bands && view === "gauges" && (
+          <span className="ft-legend" title="From the lesson step being flown right now">
+            <i className="ft-legend__ok" />allowed <i className="ft-legend__tgt" />target <i className="ft-legend__bad" />limit
+          </span>
+        )}
         <div className="ft-toggle" role="tablist">
           <button type="button" role="tab" aria-selected={view === "gauges"}
             className={view === "gauges" ? "on" : ""} onClick={() => setView("gauges")}>Gauges</button>
@@ -194,15 +341,18 @@ export default function FlightTelemetryCard({ cur: rawCur, altMax }) {
       ) : (
         <div className="ft-gauges">
           <div className="ft-group">
-            <Tape label="SPEED" unit="knots" value={cur.airspeed_kt} min={0} max={SPEED_MAX}
+            <Tape label="SPEED" unit="knots" value={cur.airspeed_kt} min={0} max={SPEED_MAX} band={bands?.speed}
               title="How fast the aircraft is flying, in knots." />
-            <Tape label="HEIGHT" unit="feet" value={cur.altitude_ft} min={0} max={altTop}
+            <Tape label="HEIGHT" unit="feet" value={cur.altitude_ft} min={altMin} max={altTop} band={bands?.alt}
               title="Altitude above sea level, in feet." />
             <Tape label="CLIMB ▲▼" unit="ft/min" value={cur.vertical_speed_fpm} min={-CLIMB_MAX} max={CLIMB_MAX}
+              band={bands?.vs}
               title="Climbing (up) or descending (down), in feet per minute. Middle line = level." />
           </div>
-          <div className="ft-group">
+          <div className="ft-group ft-group--dials">
             <Attitude pitch={cur.pitch_deg} bank={cur.bank_deg} heading={cur.heading_true_deg} />
+            <BankDial bank={cur.bank_deg} band={bands?.bank} />
+            <Compass heading={cur.heading_true_deg} />
           </div>
           <div className="ft-group ft-group--controls">
             <VBar label="ENGINE POWER" value={num(cur.throttle_pct) == null ? null : cur.throttle_pct / 100}
