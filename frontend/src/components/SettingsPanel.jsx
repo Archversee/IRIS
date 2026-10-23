@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTheme, setTheme } from "../theme.js";
-import { TrophyIcon, ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
+import { ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
 
 // Settings drawer, opened from the sidebar's gear. Only Theme is wired up;
 // everything else is a placeholder (selectable, but not saved or applied
@@ -113,11 +113,6 @@ export default function SettingsPanel({ onClose }) {
           <section className="set-section">
             <h3>MAVIS</h3>
             <nav className="set-links">
-              <Link to="/leaderboard" className="set-link" onClick={onClose}>
-                <TrophyIcon />
-                <span>Leaderboard</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
               <Link to="/scoring" className="set-link" onClick={onClose}>
                 <ChecklistIcon />
                 <span>Scoring Guide</span>

@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon, PodiumIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -16,8 +16,8 @@ import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon
 // Curriculum defaults to Preflight & Cockpit (the walk-around) rather than
 // the bare mode-selection screen -- that's the natural first stop before
 // "Basic Flight", matching how the curriculum is meant to be entered.
-// Leaderboard, Scoring Guide, Upload and AOI Zones are reached from the
-// Settings drawer.
+// Scoring Guide, Upload and AOI Zones are reached from the Settings drawer;
+// the Leaderboard is the podium icon on the Settings row, flush right.
 // SOP Upload / SOP Rules (turning an aircraft SOP or training handbook into
 // flight rules) are instructor tools: they sit under IRIS and only
 // instructors and admins see them (`roles`); App.jsx guards the routes too.
@@ -44,7 +44,7 @@ const SECTIONS = [
 ];
 
 // Pages opened from the Settings drawer -- the gear lights up on these.
-const SETTINGS_PATHS = ["/leaderboard", "/scoring", "/upload", "/aoi-zones"];
+const SETTINGS_PATHS = ["/scoring", "/upload", "/aoi-zones"];
 
 // Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
 // icon-only; otherwise it stays at the dragged width and shows full names.
@@ -159,12 +159,17 @@ export default function Sidebar() {
             <RoleTag role={user.role} small />
           </span>
         </NavLink>
-        <button type="button" className={"sidebar__link sidebar__settings"
-          + (settingsOpen || SETTINGS_PATHS.some((p) => pathname.startsWith(p)) ? " active" : "")}
-          title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>
-          <GearIcon />
-          <span className="sidebar__text">Settings</span>
-        </button>
+        <div className="sidebar__settings-row">
+          <button type="button" className={"sidebar__link sidebar__settings"
+            + (settingsOpen || SETTINGS_PATHS.some((p) => pathname.startsWith(p)) ? " active" : "")}
+            title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>
+            <GearIcon />
+            <span className="sidebar__text">Settings</span>
+          </button>
+          <NavLink to="/leaderboard" className="sidebar__link sidebar__lb" title="Leaderboard" aria-label="Leaderboard">
+            <PodiumIcon />
+          </NavLink>
+        </div>
       </div>
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       <div

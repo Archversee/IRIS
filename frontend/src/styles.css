@@ -197,6 +197,12 @@ th { color: var(--muted); font-weight: 600; }
 
 /* ---- Settings drawer (sidebar gear) ---- */
 .sidebar__settings { width: 100%; border: 0; border-radius: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+/* Settings and the Leaderboard (podium icon, flush right) share one row;
+   collapsed, the sidebar is too narrow for both, so they stack. */
+.sidebar__settings-row { display: flex; align-items: stretch; }
+.sidebar__settings-row .sidebar__settings { flex: 1; min-width: 0; }
+.sidebar__lb { flex: none; padding-left: 14px; padding-right: 14px; }
+.sidebar.is-collapsed .sidebar__settings-row { flex-direction: column; }
 
 .set-backdrop {
   position: fixed; inset: 0; z-index: 100;
