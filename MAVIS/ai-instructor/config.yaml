@@ -40,8 +40,8 @@ input:
     - profiles/devices/virpil_rudder.yaml
 
 coach:
-  ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
-  #ollama_url: http://192.168.0.107:11434 # Ollama on another PC (unreachable from this one)
+  #ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
+  ollama_url: http://192.168.0.100:11434 # Ollama on another PC (unreachable from this one)
   model: qwen2.5:7b-instruct
   timeout_s: 1.0           # fall back to template phrase beyond this
   min_speak_interval_s: 3  # gentleness vs latency: nudges wait at most this long
@@ -104,7 +104,7 @@ database:
 # SOP upload -> rules (sop/, docs/sop-rules.md). All local: Ollama + Tesseract.
 sop:
   #ollama_url: http://localhost:11434   # Ollama on this machine or WSL port-forward
-  ollama_url: http://192.168.0.107:11434 # CHANGE to LLM running the alptop
+  ollama_url: http://192.168.0.100:11434 # CHANGE to LLM running the alptop
   model: qwen3.6:27b
   llm_timeout_s: 300       # per section; a 14B model on a 5090 takes ~20-60 s
   num_ctx: 8192            # context window for parsing (Ollama default 2048 is too small)
@@ -122,7 +122,7 @@ sop:
 # Post-flight AI debrief in IRIS (Review -> Debrief, and a note per broken rule). IRIS reads
 # this block on every call (no restart). Written by itself when a flight ends / Review is opened.
 debrief:
-  ollama_url: http://192.168.0.107:11434   # same Ollama as sop: above
+  ollama_url: http://192.168.0.100:11434   # same Ollama as sop: above
   model: qwen3.6:27b       # a 14B model (e.g. qwen3:14b) writes a note several times faster
   think: false             # true = reason first: better notes, but minutes each on a 27B model
   timeout_s: 300           # give up if the model sends nothing for this long (incl. loading it)
