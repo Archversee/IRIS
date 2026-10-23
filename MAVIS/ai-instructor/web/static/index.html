@@ -2333,8 +2333,9 @@ function render(){
       lastAudioGen=S.audio.gen;
     }
     const clips=S.audio.clips||(S.audio.url?[{seq:S.audio.seq,url:S.audio.url}]:[]);
-    /* just (re)entered a lesson: only the newest line, as before */
-    const fresh=lastAudioSeq<=0?clips.slice(-1):clips.filter(c=>c.seq>lastAudioSeq);
+    /* just (re)entered a lesson: MAVIS lists only what it's saying now, so all of it
+       (an older MAVIS without gen keeps its last line listed: just that one, as before) */
+    const fresh=lastAudioSeq<=0?(S.audio.gen!=null?clips:clips.slice(-1)):clips.filter(c=>c.seq>lastAudioSeq);
     if(fresh.length){
       lastAudioSeq=fresh[fresh.length-1].seq;
       voiceQueue.push(...fresh.map(c=>c.url));

@@ -10,7 +10,10 @@ What the tablet gets: state["audio"] = {gen, clips: [{seq, url}, ...], seq, url}
 It plays every clip it hasn't played yet, in order, one after the other (so a
 sentence is never cut off by the next one arriving, however late the tablet
 hears about it); gen changes only when stop_speech() cuts MAVIS off, and then
-it stops and forgets what it had queued. seq/url = the newest clip (old clients).
+it stops and forgets what it had queued. clips holds only what is being said
+now (a clip leaves the list once it has had time to play), so a tablet that
+starts listening -- a lesson just started, the scorecard just closed -- plays
+everything in it. seq/url = the newest clip (old clients).
 Reading checklists use their own worker + cache so they never queue behind
 live coaching. No TTS engine: lines go to the log / transcript instead."""
 from __future__ import annotations
@@ -52,21 +55,27 @@ def build_speech(rt):
     # text -> wav already made for it (most callouts are scripted and repeat every circuit)
     said: OrderedDict[str, Path] = OrderedDict()
     SAID_MAX = 300
-    LAG_S = 0.6           # the tablet hears of a clip up to 0.2 s late, then fetches it: allow for that
-    CLIPS_KEPT = 12       # recent clips in state["audio"], so a tablet that missed an update still plays them
+    LAG_S = 0.3           # pause after a line (the tablet hears of a clip up to 0.2 s late)
+    KEEP_S = 1.5          # a clip stays listed this long after it should have finished playing
 
-    def publish(wav: Path) -> None:
-        tts_seq["n"] += 1
+    def current_clips(now: float) -> list[dict]:
         a = rt.state.get("audio") or {}
-        clips = [c for c in a.get("clips") or [] if a.get("gen") == rt.speak_gen["n"]]
-        clips = (clips + [{"seq": tts_seq["n"], "url": f"/tts/{wav.name}"}])[-CLIPS_KEPT:]
-        rt.state["audio"] = {"gen": rt.speak_gen["n"], "clips": clips, **clips[-1]}
+        if a.get("gen") != rt.speak_gen["n"]:
+            return []
+        return [c for c in a.get("clips") or [] if c["until"] + KEEP_S > now]
 
-    async def make_wav(text: str) -> Path | None:
-        wav = said.get(text)
-        if wav is not None and wav.exists():
-            said.move_to_end(text)
-            return wav
+    def set_clips(clips: list[dict]) -> None:
+        rt.state["audio"] = {"gen": rt.speak_gen["n"], "clips": clips,
+                             **({"seq": clips[-1]["seq"], "url": clips[-1]["url"]} if clips else {})}
+
+    def publish(wav: Path, until: float) -> None:
+        tts_seq["n"] += 1
+        set_clips(current_clips(rt.loop.time())
+                  + [{"seq": tts_seq["n"], "url": f"/tts/{wav.name}", "until": until}])
+
+    making: dict[str, asyncio.Future] = {}     # text -> its synthesis in progress (prewarm or a line)
+
+    async def _synth(text: str) -> Path | None:
         tts_seq["n"] += 1
         wav = tts_dir / f"say_{tts_seq['n']}.wav"
         try:
@@ -82,6 +91,30 @@ def build_speech(rt):
             _, old = said.popitem(last=False)
             old.unlink(missing_ok=True)
         return wav
+
+    async def make_wav(text: str) -> Path | None:
+        wav = said.get(text)
+        if wav is not None and wav.exists():
+            said.move_to_end(text)
+            return wav
+        fut = making.get(text)
+        if fut is None:                     # nobody is making it yet
+            fut = making[text] = asyncio.ensure_future(_synth(text))
+            fut.add_done_callback(lambda _f, t=text: making.pop(t, None))
+        return await asyncio.shield(fut)    # a cut-off line doesn't cancel a clip a prewarm also wants
+
+    def prewarm_speech(texts: list[str]) -> None:
+        """Make these lines now (e.g. the briefing, while the intro video plays), so
+        they play at once when said. Same text as speak() will get: units normalised."""
+        if not to_tablet or not rt.tts or not rt.tts.engine:
+            return
+        from voice.units import standard_units
+
+        async def go():
+            for t in texts:
+                for part in split_sentences(standard_units(t)):
+                    await make_wav(part)
+        asyncio.ensure_future(go())
 
     async def init_tts():
         """Voice engines (Kokoro) can take a minute to load - do it in the
@@ -118,13 +151,17 @@ def build_speech(rt):
                     if i == 0:
                         log.info("TTS -> tablet %s (%.1fs audio, ready after %.2fs%s)", wav.name, dur,
                                  rt.loop.time() - t0, f", {len(parts)} parts" if len(parts) > 1 else "")
-                    publish(wav)
                     done_at = max(done_at, rt.loop.time()) + dur
+                    publish(wav, done_at)
                 # wait until the tablet has said it all, unless stop_speech() cuts it off: the
                 # coach's next line (and its "is something more urgent waiting" check) comes after
                 end = done_at + LAG_S
                 while rt.loop.time() < end and gen == rt.speak_gen["n"]:
                     await asyncio.sleep(min(0.1, end - rt.loop.time()))
+                if gen == rt.speak_gen["n"]:
+                    # said: off the list soon, so a tablet that starts listening later won't replay it
+                    rt.loop.call_later(KEEP_S + 0.1, lambda: gen == rt.speak_gen["n"]
+                                       and set_clips(current_clips(rt.loop.time())))
             else:
                 await rt.loop.run_in_executor(None, rt.tts.speak, text)
         finally:
@@ -167,6 +204,7 @@ def build_speech(rt):
     rt.init_tts = init_tts
     rt.reading_say = reading_say
     rt.speak = speak
+    rt.prewarm_speech = prewarm_speech
     rt.stop_speech = stop_speech
     rt.tts_dir = tts_dir
     rt.tts_pool = tts_pool

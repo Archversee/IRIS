@@ -5,9 +5,9 @@ import { useEffect, useRef } from "react";
 // WAVs and publishes state.audio = {gen, clips: [{seq, url}, ...]} (backend:
 // MAVIS runtime/speech.py). The browser plays every clip it hasn't played yet,
 // in order and back to back -- a clip that arrives while another is playing
-// waits for it instead of cutting it off. gen changes only when MAVIS is cut
-// off (a more urgent callout, stop): then playback stops and the queue is
-// dropped. URLs are MAVIS-origin paths, re-based through the /mavis proxy.
+// waits for it instead of cutting it off. clips lists only what MAVIS is
+// saying now. gen changes only when MAVIS is cut off (a more urgent callout,
+// a new session, stop): then playback stops and the queue is dropped. URLs are MAVIS-origin paths, re-based through the /mavis proxy.
 const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
 const MAX_QUEUE = 10;     // far behind (tablet asleep, network stall): skip to the newest
 
@@ -66,12 +66,14 @@ export function useInstructorVoice(audio, active) {
     voiceRef.current?.pause();
   };
 
-  // Entering a lesson: whatever is already published is from before, so only
-  // newer clips get played. Leaving: stop.
+  // Starting to listen (lesson started, scorecard closed): MAVIS lists only
+  // what it is saying right now, so play all of it -- the first lines of a
+  // lesson are often already listed by the time the scorecard has cleared.
+  // (An older MAVIS keeps its last line listed forever: skip that one.) Leaving: stop.
   useEffect(() => {
     if (active) {
       const clips = clipsOf(audio);
-      lastSeqRef.current = clips.length ? clips[clips.length - 1].seq : null;
+      lastSeqRef.current = audio?.gen == null && clips.length ? clips[clips.length - 1].seq : null;
       genRef.current = audio?.gen ?? null;
     } else stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
