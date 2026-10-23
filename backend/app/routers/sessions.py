@@ -17,12 +17,18 @@ async def list_running_sessions():
     the only thing that logs anything; IRIS only views). A session counts
     as "still running" until it is ended: End Session / Main menu, or a
     lesson finishing on its own, PATCHes ended_at (see LiveCoach.jsx). Fly
-    again then starts a new session; Restart stays in the same one."""
+    again then starts a new session; Restart stays in the same one.
+
+    Only the session MAVIS is on right now counts (mavis_bridge): one left
+    without an ended_at by a crash or a closed tab is stale, and would
+    otherwise sit here -- and get opened by the Live Monitor -- forever."""
+    current = mavis_bridge.current_session_id()
+    if not current:
+        return []
     async with db.acquire() as conn:
         rows = await conn.fetch(
-            "select * from sessions where source = 'mavis' and ended_at is null "
-            "order by started_at desc nulls last, created_at desc"
-        )
+            "select * from sessions where source = 'mavis' and ended_at is null and id::text = $1",
+            current)
     return [dict(r) for r in rows]
 
 

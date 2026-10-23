@@ -27,8 +27,17 @@ def build_sop_live(rt):
         sop_rt = None
     rt.state["sop"] = None
 
+    def _publish_aircraft(ident: dict | None) -> None:
+        """The aircraft loaded in the sim (MSFS TITLE, e.g. "Cessna Skyhawk G1000
+        Asobo"), else the configured profile's name -- IRIS stores it on the
+        session and the leaderboard entry."""
+        ident = ident or {}
+        rt.state["sim_aircraft"] = (ident.get("title") or ident.get("atc_model")
+                                    or rt.aircraft.get("name") or None)
+
     async def _load_sop():
         if sop_rt is None:
+            _publish_aircraft(None)
             rt.state["sop_live"] = _rules_off("SOP rules are disabled in MAVIS (see the startup log).")
             return
         ident = None
@@ -37,6 +46,7 @@ def build_sop_live(rt):
                 ident = await rt.loop.run_in_executor(None, rt.sim.aircraft_ident)
             except Exception as e:
                 log.info("aircraft ident failed: %s", e)
+        _publish_aircraft(ident)
         rt.state["sop"] = await sop_rt.load(ident)
         log.info("SOP for this flight: %s", rt.state["sop"])
         try:

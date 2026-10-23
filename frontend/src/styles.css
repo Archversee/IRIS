@@ -197,6 +197,12 @@ th { color: var(--muted); font-weight: 600; }
 
 /* ---- Settings drawer (sidebar gear) ---- */
 .sidebar__settings { width: 100%; border: 0; border-radius: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+/* Settings and the Leaderboard (podium icon, flush right) share one row;
+   collapsed, the sidebar is too narrow for both, so they stack. */
+.sidebar__settings-row { display: flex; align-items: stretch; }
+.sidebar__settings-row .sidebar__settings { flex: 1; min-width: 0; }
+.sidebar__lb { flex: none; padding-left: 14px; padding-right: 14px; }
+.sidebar.is-collapsed .sidebar__settings-row { flex-direction: column; }
 
 .set-backdrop {
   position: fixed; inset: 0; z-index: 100;
@@ -416,3 +422,21 @@ th { color: var(--muted); font-weight: 600; }
 .xc__matrix thead th { height: 92px; vertical-align: bottom; padding-bottom: 6px; color: var(--muted); font-weight: 600; }
 .xc__matrix thead th span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
 .xc__self { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--panel-2) 4px 8px); }
+
+/* ---- "service unavailable" banner (components/ServiceBanner.jsx) ---- */
+.svc-banner {
+  position: sticky; top: 0; z-index: 50;
+  padding: 8px 16px; font-size: 13px; font-weight: 600; line-height: 1.5;
+  color: var(--text); background: color-mix(in srgb, var(--danger) 18%, var(--panel));
+  border-bottom: 1px solid var(--danger);
+}
+.svc-banner--ok {
+  background: color-mix(in srgb, var(--good) 16%, var(--panel));
+  border-bottom-color: var(--good);
+}
+.svc-banner--update {
+  display: flex; align-items: center; gap: 10px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border-bottom-color: var(--accent);
+}
+.svc-banner--update button { padding: 3px 12px; font-size: 12px; font-weight: 700; border-radius: 6px; }

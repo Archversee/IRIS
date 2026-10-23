@@ -147,6 +147,8 @@ def build_session(rt):
         rt.state["reference"] = {"id": prof.id, "name": prof.display_name}
         rt.state["reference_track"] = prof.track
         rt.engine.monitors.apply_reference(prof)
+        if hasattr(rt.scorer, "set_reference"):    # circuit lessons: expert score alongside the basic one
+            rt.scorer.set_reference(prof)
 
     async def _announce_reference_change(prof) -> None:
         if prof.id == "planned":
@@ -211,7 +213,7 @@ def build_session(rt):
                                 reference_recording: bool = False,
                                 trainee_name: str = "",
                                 tone: str = "warm", free_flight: bool = False,
-                                strictness: str = ""):
+                                strictness: str = "", pilot_user_id: str = ""):
         rt.stop_speech()
         rt.coach.pause()
         if is_familiarization(rt.lesson):
@@ -228,6 +230,7 @@ def build_session(rt):
         rt.session["reference_recording"] = bool(reference_recording)
         rt.session["free_flight"] = bool(free_flight)
         rt.session["name"] = (trainee_name or "").strip()[:48]
+        rt.session["pilot_user_id"] = (pilot_user_id or "").strip()[:64]
         # rule-check strictness chosen for this session; empty = the trainee's, else the mode's
         rt.session["strictness"] = strictness if strictness in ("lenient", "standard", "strict") else None
         tc = int(rt.lesson.get("total_circuits", 1))

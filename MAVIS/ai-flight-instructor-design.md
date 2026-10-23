@@ -425,8 +425,8 @@ The trainee's *actual* flying (post-teleport reps) is what's scored; retries the
 ### 14.6 Visitor / Trainee / Pilot · Session vs All-time · data model
 
 - **Separate boards** for Visitor, Trainee, and Pilot (Exam runs are `practice=True` and never posted).
-- Legacy `casual` / `serious` rows in `leaderboard.json` map to Visitor / Pilot when reading.
-- **Session** board = in-memory, wiped on server restart. **All-time** board = persisted to a local file `data/leaderboard.json` (fully local/offline).
+- Legacy `casual` / `serious` modes map to Visitor / Pilot.
+- MAVIS keeps posted runs **in memory only** (its pop-up board shows runs since it started) and publishes them in `state["leaderboard_posts"]`. The **all-time** board is IRIS's: its bridge saves each posted run to Postgres (`leaderboard_entries`) and IRIS's Leaderboard page serves it, paged and searchable. Each entry carries a **basic score** (vs the planned circuit) and, when an expert reference was flown, an **expert pilot score** (the same run scored against that expert's track, speeds and downwind height).
 - Entry schema:
 
 ```
@@ -459,7 +459,7 @@ A `core/scoring.py::Scorer`, driven by a `scoring:` block in the lesson YAML (we
 ### 14.10 Integration points (for the build)
 
 - **`main.py` ticker**: call `scorer.sample(...)` each non-spike tick; `scorer.note_retry(...)` in the retry/force-redo paths; on transition to `DEBRIEF`, `finalize()` → post + set `state["scorecard"]`.
-- **`web/server.py`**: `POST /finish` (Back → practice summary, no post) and the leaderboard is pushed in `state` (session in memory, all-time from `data/leaderboard.json`). A tiny store module handles load/append/save.
+- **`web/server.py`**: `POST /finish` (Back → practice summary, no post) and the leaderboard is pushed in `state` (runs posted since MAVIS started, in memory; IRIS stores the all-time board in Postgres).
 - **`index.html`**: a scorecard popup (buttons: Fly again / View leaderboard / Scoring guide / Main menu), plus **leaderboard** and **scoring-guide** popups that close on outside-click (reuse the controls-guide overlay pattern — no buttons inside them); a Back button on the lesson view wired to the confirm dialog; **Leaderboard** and **Scoring guide** entries on the main menu.
 
 ### 14.11 Build slices & future hooks

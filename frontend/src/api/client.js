@@ -113,6 +113,15 @@ export const api = {
   // MAVIS mints session_id and owns starting/stopping everything (OBS,
   // Smart Eye, flight logging); IRIS only ever views here.
   listRunningSessions: () => req(`/sessions/running`),
+  // All-time leaderboard (Postgres, routers/leaderboard.py): {rows, total, page, page_size}
+  leaderboard: ({ mode = "visitor", q = "", page = 1, pageSize = 20 } = {}) =>
+    req(`/leaderboard?${new URLSearchParams({ mode, q, page, page_size: pageSize })}`),
+  // the pilot who flew it, or an admin
+  deleteLeaderboardEntry: (id) => req(`/leaderboard/${id}`, { method: "DELETE" }),
+  // Live Monitor's screens, grabbed by window title on the sim PC
+  // (backend routers/capture.py). `nonce` forces a fresh connection.
+  captureStatus: () => req(`/capture/status`),
+  captureFeedUrl: (screen, nonce) => `${BASE}/capture/${screen}.mjpg?n=${nonce}`,
 
   ingest: (id, kind, file) => {
     const fd = new FormData();

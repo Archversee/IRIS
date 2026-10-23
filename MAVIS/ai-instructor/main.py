@@ -129,9 +129,8 @@ async def amain(cfg):
         state["flights"] = event_log.flights()
     rt._publish_events = _publish_events
 
-    board = Leaderboard(HERE / "data" / "leaderboard.json")
+    board = Leaderboard()            # in memory; IRIS keeps the all-time board in Postgres
     rt.board = board
-    board.seed_demo_if_empty()
     rt.lesson_id = Path(cfg["lesson"]).stem
     catalog = load_catalog()
     rt.catalog = catalog
@@ -166,6 +165,7 @@ async def amain(cfg):
                    "lesson_running": False,
                    "flight_events": [],
                    "flights": [],
+                   "sim_aircraft": None,   # aircraft loaded in the sim, read at lesson start (sop_live)
                    "transcript": [],
                    "speaking": False, "night": False, "track": [[]],
                    "demo": None,       # {phase, title} while MAVIS is flying a demo
@@ -177,7 +177,7 @@ async def amain(cfg):
                    "scales": {"speed_max": aircraft["v_speeds"].get("vne", 163),
                               "alt_max": alt_scale_max(rt.lesson)},
                    "flaps_style": flap_style, "session": session,
-                   "scorecard": None, "leaderboard": board.snapshot(),
+                   "scorecard": None, "leaderboard": board.snapshot(), "leaderboard_posts": [],
                    "lesson_id": rt.lesson_id,
                    "lesson_catalog": catalog,
                    "app_version": APP_VERSION,
@@ -243,7 +243,7 @@ async def amain(cfg):
                "chat": chat, "mute": rt.mute, "intro": rt.intro, "retry": retry,
                "configure_session": rt.configure_session,
                "select_lesson": rt.select_lesson,
-               "quit": rt.quit_lesson, "score_submit": rt.score_submit,
+               "quit": rt.quit_lesson, "score_submit": rt.score_submit, "score_drop": rt.score_drop,
                "set_reference": rt.set_reference,
                "reading_say": rt.reading_say,
                "instructor_unlock": rt.instructor_unlock,

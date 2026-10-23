@@ -72,6 +72,14 @@ export default function Review() {
           <span className="spacer" />
           {/* which curriculum the session came from: top right, inside the title bar so the
               page grid keeps its four rows (an extra row squeezes the video screens) */}
+          {/* pilot, score, grade, curriculum -- left to right */}
+          {summary.pilot && <span className="rev-curriculum" title="Pilot"><small>Pilot</small> {summary.pilot}</span>}
+          {summary.score?.total != null && (
+            <span className="rev-curriculum" title="Score"><small>Score</small> {summary.score.total}</span>
+          )}
+          {summary.score?.grade && (
+            <span className="rev-curriculum" title="Grade"><small>Grade</small> {summary.score.grade}</span>
+          )}
           {curriculum && <span className="rev-curriculum" title="Curriculum"><small>Curriculum</small> {curriculum}</span>}
           <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
             onClick={() => openOnly("rules")} />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import ModeCards from "./ModeCards.jsx";
 import { mavisApi, mediaUrl } from "../api/mavisApi.js";
+import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
 
 // Mirrors the original app's proceed(): configure the session, then start
 // flying immediately (the original also plays an intro video first --
@@ -8,6 +9,7 @@ import { mavisApi, mediaUrl } from "../api/mavisApi.js";
 // Lesson browsing lives in the persistent sidebar (LessonTree) now, not
 // duplicated here -- this screen is just "who's flying, at what level".
 export default function MainMenu({ state, onStarting }) {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [media, setMedia] = useState(null);
@@ -30,6 +32,7 @@ export default function MainMenu({ state, onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
+        ...pilotIdentity(user),
       });
       await mavisApi.start();
       onStarting();

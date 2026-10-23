@@ -508,6 +508,72 @@
   .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
 }
 
+/* ---- Live Monitor only (.ft-card--live): bank + heading dials, the
+   step's allowed ranges on the tapes/dials, and a tighter layout -- narrow
+   tapes, the controls get the room. Review keeps the plain card above. ---- */
+.ft-card--live .ft-gauges { min-height: 200px; gap: 10px; }
+.ft-card--live .ft-group { gap: 8px; justify-content: space-evenly; padding: 8px 10px; }
+.ft-card--live .ft-group:first-child { flex: 0 0 auto; }
+.ft-card--live .ft-group--dials { flex: 1.5; }
+.ft-card--live .ft-group--controls { flex: 2.2; }
+
+.ft-card--live .ft-tape { gap: 5px; flex: 0 0 auto; width: 74px; min-width: 0; }
+.ft-card--live .ft-tape__bar { width: 34px; }
+.ft-tape__val.is-ok { color: var(--ft-good); }
+.ft-tape__val.is-out { color: var(--ft-warn); }
+.ft-tape__ptr.is-out { background: var(--ft-warn); box-shadow: 0 0 8px rgba(245, 158, 11, .7); }
+
+/* allowed range (green) / past a safety limit (red) / target tick */
+.ft-tape__zone { position: absolute; left: 0; right: 0; }
+.ft-tape__zone--ok { background: color-mix(in srgb, var(--ft-good) 26%, transparent); border-block: 1px solid var(--ft-good); }
+.ft-tape__zone--bad { background: color-mix(in srgb, var(--danger, #ef4444) 22%, transparent); }
+.ft-tape__tgt { position: absolute; left: -2px; right: -2px; height: 2px; margin-bottom: -1px; background: #fff; opacity: .85; }
+.ft-band-txt {
+  font-size: 10px; line-height: 1.2; color: var(--rev-muted); text-align: center;
+  font-variant-numeric: tabular-nums; min-height: 24px; max-width: 100%;
+}
+
+.ft-legend { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; margin-right: 10px; font-size: 11px; color: var(--rev-muted); }
+.ft-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+.ft-legend__ok { background: color-mix(in srgb, var(--ft-good) 45%, transparent); border: 1px solid var(--ft-good); }
+.ft-legend__tgt { height: 2px !important; background: #fff; }
+.ft-legend__bad { background: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent); }
+
+/* round dials: bank and heading */
+.ft-dial { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1 1 0; min-width: 92px; max-width: 190px; }
+.ft-dial__svg { flex: 1; width: 100%; min-height: 70px; max-height: 150px; }
+.ft-dial__track { fill: none; stroke: var(--inset); stroke-width: 7; }
+.ft-dial__zone { fill: none; stroke-width: 7; }
+.ft-dial__zone--ok { stroke: color-mix(in srgb, var(--ft-good) 70%, transparent); }
+.ft-dial__zone--bad { stroke: color-mix(in srgb, var(--danger, #ef4444) 60%, transparent); }
+.ft-dial__tick { stroke: var(--rev-muted); stroke-width: 1; }
+.ft-dial__tgt { stroke: #fff; stroke-width: 2; }
+.ft-dial__needle { stroke: var(--rev-cyan); stroke-width: 2.6; stroke-linecap: round; transition: all .2s linear; }
+.ft-dial__needle.is-out { stroke: var(--ft-warn); }
+.ft-dial__hub { fill: var(--rev-text, #e6edf3); }
+.ft-dial__face { fill: var(--inset); stroke: var(--rev-line); stroke-width: 1.5; }
+.ft-dial__lubber { fill: #ffb64d; }
+.ft-compass__card { transition: transform .2s linear; }
+.ft-compass__lbl { fill: var(--rev-muted); font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.ft-compass__lbl.is-n { fill: #ff6b6b; }
+.ft-compass__plane { fill: #ffb64d; }
+
+.ft-card--live .ft-att { gap: 5px; flex: 1 1 0; min-width: 110px; max-width: 200px; }
+.ft-card--live .ft-att__svg { width: 100%; max-height: 160px; }
+
+/* controls: nothing shrinks below what it draws, so nothing overlaps */
+.ft-card--live .ft-ctl { flex: 1 1 0; min-width: 52px; max-width: 120px; }
+.ft-card--live .ft-ctl:has(.ft-hbar) { min-width: 96px; }
+.ft-card--live .ft-ctl--stick { flex: 0 0 auto; min-width: 124px; }
+.ft-card--live .ft-vbar { width: min(100%, 40px); }
+.ft-card--live .ft-hbar { width: 92px; flex: none; }
+
+/* the three groups need ~1220px side by side: below that, wrap */
+@container (max-width: 1240px) {
+  .ft-card--live .ft-gauges { flex-wrap: wrap; }
+  .ft-card--live .ft-group { flex: 1 1 300px; }
+}
+
 /* ---- Live Monitor: session picker ---- */
 .lsp {
   --lsp-panel: var(--panel); --lsp-panel-2: var(--panel-2); --lsp-line: var(--border);
@@ -641,9 +707,9 @@
 @media (prefers-reduced-motion: reduce) { .scan-trail__dot, .scan-trail__link, .scan-trail__now circle { animation: none; transition: none; } }
 
 /* ---- Ground track: MAVIS reference route (drawn under the flown path) ---- */
-.route-select {
-  margin-left: auto; max-width: 62%; padding: 2px 6px; font-size: 11px; border-radius: 6px;
-  background: #0f2a29; color: #cfe9e6; border: 1px solid #2f5b57;
+.route-label {
+  margin-left: auto; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: #f5c27a;
 }
 /* A wide, soft band (not a thin line) so it stays visible even where the
    flight path runs right on top of it. */

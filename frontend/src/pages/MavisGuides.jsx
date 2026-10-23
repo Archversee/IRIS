@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { useMavisState, useMavisStatus } from "../live/hooks/useMavisSocket.js";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api/client.js";
+import { useAuth } from "../auth/AuthContext.jsx";
 import { ScoringGuideContent } from "../live/components/ScoringGuide.jsx";
 import "../live/live.css";
 
@@ -21,68 +23,131 @@ function GuidePage({ title, sub, wide, children }) {
   );
 }
 
-// ---- Leaderboard: MAVIS's own board (state.leaderboard[mode][scope]) ----
+// ---- Leaderboard: every posted run, from IRIS's Postgres (routers/leaderboard.py) ----
+// One board per mode; the search matches name, curriculum or aircraft.
 const MODES = [["visitor", "Visitor"], ["trainee", "Trainee"], ["pilot", "Pilot"]];
-const SCOPES = [["session", "This session"], ["all", "All-time"]];
+const PAGE_SIZE = 20;
 
-function lbName(e) {
-  const giv = (e.given || "").trim(), fam = (e.family || "").trim();
-  if (giv || fam) return [giv, fam].filter(Boolean).join(" ");
-  return e.name || "-";
+// 1 … 4 5 [6] 7 8 … 20
+function pageList(page, pages) {
+  const want = new Set([1, pages, page - 2, page - 1, page, page + 1, page + 2]);
+  const out = [];
+  for (let p = 1; p <= pages; p++) {
+    if (!want.has(p)) continue;
+    if (out.length && p - out[out.length - 1] > 1) out.push("…");
+    out.push(p);
+  }
+  return out;
 }
 
 export function LeaderboardPage() {
-  const state = useMavisState();
-  const status = useMavisStatus();
+  const [query, setQuery] = useState("");
+  const [q, setQ] = useState("");             // debounced query actually sent
   const [mode, setMode] = useState("visitor");
-  const [scope, setScope] = useState("all");
-  const rows = state?.leaderboard?.[mode]?.[scope] || [];
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [reload, setReload] = useState(0);
+  const { user } = useAuth();
+  // pilots may delete their own runs (the account they flew under), admins any run
+  const canDelete = (e) => !!user && (user.role === "admin" || (e.user_id && e.user_id === user.id));
+
+  async function remove(e) {
+    if (!confirm(`Delete ${e.pilot}'s score of ${e.total} on ${e.circuit || "this curriculum"}? This can't be undone.`)) return;
+    try {
+      await api.deleteLeaderboardEntry(e.id);
+      // last row on a later page gone: step back a page
+      if (rows.length === 1 && page > 1) setPage(page - 1);
+      else setReload((n) => n + 1);
+    } catch (x) {
+      alert(`Couldn't delete it: ${x.detail || x.message}`);
+    }
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => { setQ(query.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.leaderboard({ q, mode, page, pageSize: PAGE_SIZE })
+      .then((d) => { if (!cancelled) { setData(d); setErr(null); } })
+      .catch((e) => { if (!cancelled) setErr(e.detail || e.message); });
+    return () => { cancelled = true; };
+  }, [q, mode, page, reload]);
+
+  const rows = data?.rows || [];
+  const total = data?.total || 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  // action column: View (rows linked to a session) and Delete (own runs / admin)
+  const anyActions = rows.some((e) => e.session_id || canDelete(e));
 
   return (
-    <GuidePage title="Leaderboard" sub="Best circuits flown with MAVIS, per experience level." wide>
+    <GuidePage title="Leaderboard" sub="Every flight posted from MAVIS, ranked by score." wide>
       <div className="mg-tabs">
         <div className="mg-seg">
           {MODES.map(([v, l]) => (
-            <button key={v} type="button" className={mode === v ? "is-on" : ""} onClick={() => setMode(v)}>{l}</button>
+            <button key={v} type="button" className={mode === v ? "is-on" : ""}
+              onClick={() => { setMode(v); setPage(1); }}>{l}</button>
           ))}
         </div>
-        <div className="mg-seg">
-          {SCOPES.map(([v, l]) => (
-            <button key={v} type="button" className={scope === v ? "is-on" : ""} onClick={() => setScope(v)}>{l}</button>
-          ))}
-        </div>
+        <input type="search" className="mg-search" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name, curriculum or aircraft…" aria-label="Search the leaderboard" />
       </div>
 
-      {!state ? (
-        <div className="mg-empty">{status === "open" ? "Loading…" : "Waiting for MAVIS… the leaderboard comes from the MAVIS server."}</div>
+      {err ? (
+        <div className="mg-empty">Couldn't load the leaderboard: {err}</div>
+      ) : !data ? (
+        <div className="mg-empty">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="mg-empty">No scores yet — be the first!</div>
+        <div className="mg-empty">{q ? `Nothing matches “${q}”.` : "No scores yet — be the first!"}</div>
       ) : (
         <div className="mg-table-wrap">
           <table className="mg-lb">
             <thead>
-              <tr><th>#</th><th>Name</th><th>Track</th><th>Speed</th><th>Alt</th><th>Landing</th><th>Smooth</th><th>Retries</th><th>Total</th></tr>
+              <tr><th>Rank</th><th>Name</th><th>Curriculum</th><th>Aircraft</th><th className="num">Score</th><th>Grade</th>{anyActions && <th />}</tr>
             </thead>
             <tbody>
-              {rows.map((e, i) => {
-                const s = e.scores || {};
-                return (
-                  <tr key={i} className={i < 3 ? `is-top is-top-${i + 1}` : ""}>
-                    <td className="mg-rank">{i + 1}</td>
-                    <td>{lbName(e)}</td>
-                    <td>{s.track ?? "–"}</td>
-                    <td>{s.speed ?? "–"}</td>
-                    <td>{s.altitude ?? "–"}</td>
-                    <td>{s.landing ?? "–"}</td>
-                    <td>{s.smoothness ?? "–"}</td>
-                    <td>{e.retries || 0}</td>
-                    <td className="mg-tot">{e.total}{e.grade ? ` · ${e.grade}` : ""}</td>
-                  </tr>
-                );
-              })}
+              {rows.map((e) => (
+                <tr key={e.id} className={e.rank <= 3 ? `is-top is-top-${e.rank}` : ""}>
+                  <td className="mg-rank">{e.rank}</td>
+                  <td>{e.pilot}</td>
+                  <td>{e.circuit || "–"}</td>
+                  <td>{e.aircraft || "–"}</td>
+                  <td className="num mg-tot">{e.total ?? "–"}</td>
+                  <td>{e.grade ? <span className={`mg-grade mg-grade--${e.grade}`}>{e.grade}</span> : "–"}</td>
+                  {anyActions && (
+                    <td className="num"><div className="mg-actions">
+                      {e.session_id && (
+                        <Link to={`/sessions/${e.session_id}/review`} className="mg-act"
+                          title="Open this session's review">View</Link>
+                      )}
+                      {canDelete(e) && (
+                        <button type="button" className="mg-act mg-act--del" onClick={() => remove(e)}
+                          title="Delete this score" aria-label={`Delete ${e.pilot}'s score`}>Delete</button>
+                      )}
+                    </div></td>
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {total > 0 && (
+        <nav className="mg-pager" aria-label="Leaderboard pages">
+          <span className="mg-pager__info">{first}–{first + rows.length - 1} of {total}</span>
+          <div className="mg-pager__btns">
+            <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>‹ Prev</button>
+            {pageList(page, pages).map((p, i) => p === "…"
+              ? <span key={`gap${i}`} className="mg-pager__gap">…</span>
+              : <button key={p} type="button" className={p === page ? "is-on" : ""} onClick={() => setPage(p)}>{p}</button>)}
+            <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next ›</button>
+          </div>
+        </nav>
       )}
     </GuidePage>
   );

@@ -2,15 +2,22 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 
+const POLL_INTERVAL_MS = 5000;
+
 export default function Sessions() {
   const [sessions, setSessions] = useState([]);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
+  // `quiet` refreshes in place (background poll) without the Loading… flash.
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true);
     try {
-      setSessions(await api.listSessions());
+      // Sessions MAVIS is still flying belong to Live Monitor, not here --
+      // they show up in this list once they've ended.
+      const [all, running] = await Promise.all([api.listSessions(), api.listRunningSessions()]);
+      const live = new Set(running.map((r) => r.id));
+      setSessions(all.filter((s) => !live.has(s.id)));
       setErr(null);
     } catch (e) {
       setErr(e.message);
@@ -19,8 +26,12 @@ export default function Sessions() {
     }
   }
 
+  // Re-check every few seconds so a session MAVIS ends (and its save
+  // details) shows up here without a reload.
   useEffect(() => {
     load();
+    const t = setInterval(() => load({ quiet: true }), POLL_INTERVAL_MS);
+    return () => clearInterval(t);
   }, []);
 
   async function remove(id) {
