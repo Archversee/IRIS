@@ -1355,6 +1355,16 @@ const PHASES=["BRIEFING","PRE_TAKEOFF","TAKEOFF_ROLL","CLIMB_OUT","CROSSWIND",
 let S=null, lastMsgCount=0, muted=false, lastAudioSeq=0, lastPhase=null,
     themeApplied=false, lastUiCmd=0;
 const voice=new Audio();   // instructor voice plays HERE, on the tablet
+let voiceQueue=[], voicePlaying=false, lastAudioGen=null;
+function voiceNext(){
+  const url=voiceQueue.shift();
+  if(!url){voicePlaying=false;return;}
+  voicePlaying=true;
+  playInstructorVoice(url);
+}
+function stopVoiceQueue(){voiceQueue=[];voicePlaying=false;voice.pause();}
+voice.addEventListener("ended",()=>{if(voicePlaying)voiceNext();});
+voice.addEventListener("error",()=>{if(voicePlaying)voiceNext();});   /* a clip that won't load: carry on */
 let voiceUnlocked=false;
 /** Browsers block Audio.play() unless primed during a user gesture, re-run on each tap. */
 function unlockVoicePlayback(){
@@ -1366,7 +1376,7 @@ function unlockVoicePlayback(){
   }).catch(()=>{voiceUnlocked=false;});
 }
 async function playInstructorVoice(url){
-  if(muted||!url)return;
+  if(muted||!url){voicePlaying=false;voiceQueue=[];return;}
   voice.src=url;
   try{
     await voice.play();
@@ -1378,6 +1388,7 @@ async function playInstructorVoice(url){
       await voice.play();
     }catch(e2){
       console.warn("Instructor voice still blocked:",e2);
+      voicePlaying=false;voiceQueue=[];
       const st=$("pttStatus");
       if(st&&!st.textContent)st.textContent="Voice blocked. Tap mic or Send once.";
     }
@@ -2310,14 +2321,26 @@ function render(){
       $("muteBtn").classList.toggle("active",muted);}
   }
   if(window.joyPtt&&S.ctrl)window.joyPtt(!!S.ctrl.ptt);   /* joystick push-to-talk */
-  if(scoreOpen){voice.pause();voice.currentTime=0;}
+  if(scoreOpen&&(voicePlaying||!voice.paused)){stopVoiceQueue();voice.currentTime=0;}
 
   if(S.phase!=="BRIEFING")$("startOverlay").style.display="none";
 
-  /* instructor voice -> tablet speakers */
-  if(document.body.classList.contains("inlesson")&&S.audio&&S.audio.seq!==lastAudioSeq&&!scoreOpen){
-    lastAudioSeq=S.audio.seq;
-    playInstructorVoice(S.audio.url);
+  /* instructor voice -> tablet speakers: every clip not played yet, in order, back to back
+     (S.audio = {gen, clips:[{seq,url}]}, runtime/speech.py); a new gen = MAVIS was cut off */
+  if(document.body.classList.contains("inlesson")&&S.audio&&!scoreOpen){
+    if(S.audio.gen!=null&&S.audio.gen!==lastAudioGen){
+      if(lastAudioGen!=null)stopVoiceQueue();
+      lastAudioGen=S.audio.gen;
+    }
+    const clips=S.audio.clips||(S.audio.url?[{seq:S.audio.seq,url:S.audio.url}]:[]);
+    /* just (re)entered a lesson: MAVIS lists only what it's saying now, so all of it
+       (an older MAVIS without gen keeps its last line listed: just that one, as before) */
+    const fresh=lastAudioSeq<=0?(S.audio.gen!=null?clips:clips.slice(-1)):clips.filter(c=>c.seq>lastAudioSeq);
+    if(fresh.length){
+      lastAudioSeq=fresh[fresh.length-1].seq;
+      voiceQueue.push(...fresh.map(c=>c.url));
+      if(!voicePlaying)voiceNext();
+    }
   }
 
   /* chat-driven UI commands (e.g. "show me the controls guide") */
@@ -2722,7 +2745,7 @@ function sessionTraineeName(){
   return fmtName()||(settings.traineeFirstName||"").trim();
 }
 function stopLessonMedia(){
-  voice.pause();voice.currentTime=0;voice.removeAttribute("src");
+  stopVoiceQueue();voice.currentTime=0;voice.removeAttribute("src");
   lastAudioSeq=-1;
   stateStopVoice();
   stopTraineeVideo();

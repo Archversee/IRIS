@@ -29,7 +29,7 @@ class Runtime:
         "_flight_phase", "_publish_events", "_sim_now",
         # provided by runtime/flight_flow.py
         "night_sequence", "skip_demo", "_airborne_start", "_apply_lesson_clock",
-        "_briefing_lines", "_connect_msfs_with_retries", "_demos_wanted", "_fam_finish",
+        "_briefing_lines", "_briefing_texts", "_connect_msfs_with_retries", "_demos_wanted", "_fam_finish",
         "_fam_freezes", "_fam_instruct", "_fam_opening", "_lesson_text",
         "_orient_lesson_to_aircraft", "_set_frozen", "_speakable", "_to_runway_start",
         # provided by runtime/instructor_admin.py
@@ -44,5 +44,5 @@ class Runtime:
         # provided by runtime/sop_live.py
         "live_rules", "_check_rules_live", "_finish_rule_checks", "_load_sop",
         # provided by runtime/speech.py
-        "init_tts", "reading_say", "speak", "stop_speech", "tts_dir", "tts_pool",
+        "init_tts", "prewarm_speech", "reading_say", "speak", "stop_speech", "tts_dir", "tts_pool",
     )

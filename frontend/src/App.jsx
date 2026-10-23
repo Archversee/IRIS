@@ -6,6 +6,7 @@ import Upload from "./pages/Upload.jsx";
 import Review from "./pages/Review.jsx";
 import LiveSession from "./pages/LiveSession.jsx";
 import Analytics from "./pages/Analytics.jsx";
+import Progress from "./pages/Progress.jsx";
 import AoiEditor from "./pages/AoiEditor.jsx";
 import LiveCoach from "./live/LiveCoach.jsx";
 import { LeaderboardPage, ScoringGuidePage, ControlsGuidePage } from "./pages/MavisGuides.jsx";
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/sop/rules" element={SOP_ROLES.includes(user.role) ? <SopRules /> : <Navigate to="/" replace />} />
           <Route path="/monitor" element={<LiveSession />} />
           <Route path="/sessions" element={<div className="container"><Sessions /></div>} />
+          <Route path="/progress" element={<div className="container"><Progress /></div>} />
           <Route path="/upload" element={<div className="container"><Upload /></div>} />
           <Route path="/sessions/:id/save" element={<SaveSession />} />
           <Route path="/sessions/:id/review" element={<Review />} />

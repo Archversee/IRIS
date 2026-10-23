@@ -70,6 +70,14 @@ async function reqWithProgress(path, onProgress) {
   return JSON.parse(await new Blob(chunks).text());
 }
 
+function winQuery(win) {
+  if (!win) return "";
+  const q = new URLSearchParams();
+  if (win.before != null) q.set("before", win.before);
+  if (win.after != null) q.set("after", win.after);
+  return q.toString() ? `?${q}` : "";
+}
+
 export const api = {
   // ---- accounts (backend/app/routers/accounts.py) ----
   login: (username, password) => req("/auth/login", json("POST", { username, password })),
@@ -162,6 +170,25 @@ export const api = {
   // SOP / handbook rule checks of a session (backend/app/routers/rule_results.py).
   // MAVIS computes them (sopApi.evaluate); the instructor's verdicts and sign-off go here.
   ruleResults: (id) => req(`/sessions/${id}/rule-results`),
+  sessionIncidents: (id) => req(`/sessions/${id}/incidents`),
+  // Whole-flight AI debrief (written in the background when a flight ends / Review is opened)
+  debrief: (id) => req(`/sessions/${id}/debrief`),
+  debriefStatus: (id) => req(`/sessions/${id}/debrief/status`),
+  runDebrief: (id, body) => req(`/sessions/${id}/debrief/run`, json("POST", body)),
+  rateSummary: (summaryId, body) => req(`/flight-summaries/${summaryId}`, json("PATCH", body)),
+  // Progress across flights (post-flight trends)
+  progressPilots: () => req("/progress/pilots"),
+  progressPilot: (name) => req(`/progress/pilot?name=${encodeURIComponent(name)}`),
+  progressCohort: () => req("/progress/cohort"),
+  progressExpertFlights: () => req("/progress/expert-flights"),
+  setExpertFlight: (id, expert) => req(`/progress/expert-flights/${id}`, json("PUT", { expert })),
+  // the 30 s before and after one broken rule (backend app/incidents.py)
+  // win: {before, after} seconds (optional; the backend's default is config.yaml `debrief:`)
+  incident: (resultId, index, win) => req(`/rule-results/${resultId}/incidents/${index}${winQuery(win)}`),
+  // reasoning-model explanation of it (instructors); {rating: helpful|not_helpful|null, note}
+  explainIncident: (resultId, index, win) =>
+    req(`/rule-results/${resultId}/incidents/${index}/explain${winQuery(win)}`, { method: "POST" }),
+  rateExplanation: (id, body) => req(`/incident-explanations/${id}`, json("PATCH", body)),
   setRuleVerdict: (resultId, body) => req(`/rule-results/${resultId}`, json("PATCH", body)),
   signOffRules: (id, body) => req(`/sessions/${id}/rule-results/sign-off`, json("POST", body)),
   getRuleStrictness: (userId) => req(`/users/${userId}/rule-strictness`),

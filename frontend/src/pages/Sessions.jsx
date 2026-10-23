@@ -74,7 +74,6 @@ export default function Sessions() {
                 <td>{s.started_at ? new Date(s.started_at).toLocaleString() : "—"}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <Link to={`/sessions/${s.id}/review`}>Review</Link>{" · "}
-                  <Link to={`/sessions/${s.id}/analytics`}>Analytics</Link>{" · "}
                   <a href="#" onClick={(e) => { e.preventDefault(); remove(s.id); }}>
                     Delete
                   </a>

@@ -317,6 +317,7 @@ async def amain(cfg):
         device=str(voice_cfg.get("stt_device", "auto")),
         compute_type=str(voice_cfg.get("stt_compute", "auto")),
         initial_prompt=voice_cfg.get("stt_initial_prompt"),
+        cpu_threads=int(voice_cfg.get("stt_cpu_threads") or 0),
     )
     app = build_app(state, actions, str(media_path), tts_dir=str(rt.tts_dir),
                     voice_store=voice_store, stt=stt, voice_cfg=voice_cfg, app_cfg=cfg)
