@@ -250,10 +250,13 @@ def build_session(rt):
         intro_shown.clear()
         rt.coach.resume()
         _apply_reference(reference or "planned")
-        # make the opening lines now, while the menu closes and the intro video plays:
+        # make the briefing now, while the menu closes and the intro video plays:
         # the first thing MAVIS says then needs no synthesis
         try:
-            rt.prewarm_speech(rt._briefing_texts())
+            # only when start() will say the briefing: otherwise it would just hold up the first real line
+            if ((is_familiarization(rt.lesson) and rt._demos_wanted())
+                    or policy.get("coaching") == "turn_by_turn"):
+                rt.prewarm_speech(rt._briefing_texts())
         except Exception as e:                # never let this stop a session starting
             log.info("speech prewarm skipped: %s", e)
         log.info("session configured: mode=%s jargon=%s tone=%s guidance=%s coaching=%s "
