@@ -1,6 +1,6 @@
 """MAVIS preset routes (planned circuits) for the Review ground track.
 
-  GET /routes  -> [{key, lesson_id, label, runway_ident, path: [[lat, lon], ...],
+  GET /routes  -> [{key, lesson_id, lesson_ids, label, runway_ident, path: [[lat, lon], ...],
                     runway: [[lat, lon], [lat, lon]]}]
 
 Read straight from MAVIS's lesson files (MAVIS/ai-instructor/lessons/*.yaml +
@@ -10,8 +10,9 @@ MapCanvas.jsx): runway-relative along/cross corners, rounded turns, then
 converted to lat/lon. Each lesson is offered from both runway ends (e.g. RWY
 02 and RWY 20), as MAVIS flips the lesson to whichever end you take off from.
 Only full circuits are offered (not the airborne exercises, nor Take-off /
-Landing, which fly one piece of it), and a lesson that flies the very same
-circuit as one already listed (e.g. the Night Circuit) is left out.
+Landing, which fly one piece of it). A lesson that flies the very same circuit
+as one already listed (e.g. the Night Circuit) isn't listed again; it's added
+to that route's lesson_ids, which is how a session finds its own circuit.
 """
 import json
 import logging
@@ -97,7 +98,7 @@ def _titles() -> dict:
 async def list_routes():
     titles = _titles()
     out = []
-    seen: set[str] = set()   # circuits already listed (same shape = same route)
+    seen: dict[str, dict] = {}   # circuits already listed (same shape = same route)
     for f in sorted(Path(settings.mavis_lessons_dir).glob("*.yaml")):
         try:
             lesson = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
@@ -110,13 +111,15 @@ async def list_routes():
                 circuit = _circuit(lesson, runway)
                 sig = json.dumps(circuit)
                 if sig in seen:
+                    seen[sig]["lesson_ids"].append(f.stem)
                     continue
-                seen.add(sig)
-                out.append({
-                    "key": f"{f.stem}:{runway['ident']}", "lesson_id": f.stem,
+                route = {
+                    "key": f"{f.stem}:{runway['ident']}", "lesson_id": f.stem, "lesson_ids": [f.stem],
                     "label": f"{label} (RWY {runway['ident']})", "runway_ident": runway["ident"],
                     **circuit,
-                })
+                }
+                seen[sig] = route
+                out.append(route)
         except Exception as e:  # one bad lesson file shouldn't hide the others
             log.warning("routes: skipping %s: %s", f.name, e)
     return out

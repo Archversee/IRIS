@@ -5,6 +5,13 @@ import { api } from "../api/client.js";
 const NATIVE_W = 1920;
 const NATIVE_H = 1080;
 
+// keep in step with backend/app/aoi_roles.py ROLE_LABELS
+const ROLE_LABELS = {
+  outside: "Outside view", instruments: "Instrument panel", attitude: "Attitude indicator",
+  airspeed: "Airspeed indicator", altimeter: "Altimeter", vsi: "Vertical speed indicator",
+  heading: "Heading indicator", turn: "Turn coordinator", engine: "Engine instruments",
+};
+
 export default function AoiEditor() {
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState("");
@@ -198,6 +205,12 @@ export default function AoiEditor() {
               {zones.map((z) => (
                 <tr key={z.id}>
                   <td>{z.name}</td>
+                  {/* which instrument the analysis takes this zone to be (backend app/aoi_roles.py) */}
+                  <td className={z.role ? "" : "muted"}
+                    title={z.role ? "Used to check whether the pilot looked at the instrument a rule is about"
+                      : "Not recognised as an instrument: name it e.g. Airspeed, Altimeter, Attitude, VSI, Heading, Turn coordinator, Engine"}>
+                    {z.role ? `→ ${ROLE_LABELS[z.role] || z.role}` : "→ not recognised"}
+                  </td>
                   <td className="muted">
                     ({z.x1.toFixed(0)}, {z.y1.toFixed(0)}) – ({z.x2.toFixed(0)}, {z.y2.toFixed(0)})
                   </td>

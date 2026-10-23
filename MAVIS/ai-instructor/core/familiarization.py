@@ -19,7 +19,7 @@ import time
 from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
-from .monitors import Monitors, roll_out_lead
+from .monitors import Monitors, band, roll_out_lead
 from .phase_detector import PhaseDetector, hdg_diff
 from .scoring import DEFAULTS, ScoreCard, _curve
 from coach.phrases import spoken_targets
@@ -311,6 +311,51 @@ class FamiliarizationEngine:
                "SLOW_FLIGHT": self.sf_kt}.get(self.phase, self.speeds.get(self.phase))
         return {"speed": spd,
                 "alt": round(alt) if alt is not None else None, "flaps": None}
+
+    def bands(self) -> dict:
+        """Allowed ranges for the Live Monitor's dials, for the step being
+        flown -- the same numbers its to-do list and checks use: the step's
+        speed band (else the 58 / 140 kt safety limits), height held within
+        height_band_ft (a level-off: level_band_ft of the target), the turn's
+        bank band (else wings level, or the steep-bank limit), and the trim
+        step's climb / descent limit. Altitudes are MSL; bank + = right."""
+        p, e, out = self.phase, self._entry, {}
+        if p in ("BRIEFING", "DEBRIEF", "FIND_AIRFIELD") or not e:
+            return out
+        if p in self.speed_band:
+            lo, hi = self.speed_band[p]
+            out["speed"] = band(lo, hi, (lo + hi) / 2)
+        elif p in ("CLIMB", "CLIMB_TO") and self._stage == 0:
+            lo, hi = self.climb_band
+            out["speed"] = band(lo, hi, (lo + hi) / 2)
+        elif p == "STALL":
+            out["speed"] = band(lo=self.recover_kt, kind="limit") if self._stage else band(target=self.stall_kt)
+        else:
+            out["speed"] = band(58, 140, kind="limit")
+        if p in LEVEL_OFF_STEPS and e.get("tgt") is not None:
+            out["alt"] = band(e["tgt"] - self.level_band, e["tgt"] + self.level_band, e["tgt"])
+        elif p in LEVEL_STEPS and e.get("alt") is not None:
+            out["alt"] = band(e["alt"] - self.height_band, e["alt"] + self.height_band, e["alt"])
+        elif self._target_alt() is not None:
+            out["alt"] = band(target=self._target_alt())
+        want = turn_dir(p)
+        if p in BANKED_TURNS and self._stage == 0:
+            bank, _ = self.turn_target(p)
+            lo, hi = sorted((want * (bank - 7), want * (bank + 7)))
+            out["bank"] = band(lo, hi, want * bank)
+        elif p in ("TURN_LEFT", "TURN_RIGHT") and self._stage == 0:
+            lo, hi = sorted((want * (self.bank - 7), want * (self.bank + 7)))
+            out["bank"] = band(lo, hi, want * self.bank)
+        elif p in ("STRAIGHT_LEVEL", "TRIM", "SLOW_CRUISE", "FAST_CRUISE", "SLOW_FLIGHT")                 or (p in BANKED_TURNS and self._stage == 1):
+            out["bank"] = band(-6, 6, 0)
+        else:
+            lim = 58 if p in STEEP_TURNS else 40
+            out["bank"] = band(-lim, lim, kind="limit")
+        if p == "TRIM":
+            out["vs"] = band(-self.trim_vs, self.trim_vs, 0)
+        elif p == "STALL" and self._stage:
+            out["vs"] = band(lo=-self.recover_sink, kind="limit")
+        return out
 
     # ---- step logic ----
     def _reset_step(self):
@@ -1056,5 +1101,5 @@ class FamiliarizationScorer:
                 grade = g
                 break
         return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, grade, capped, True,
+                         self.retries, total, grade, capped, practice,
                          incomplete=not self.reached)

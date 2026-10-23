@@ -167,6 +167,13 @@ export default function LiveCoach({ freeFlight = false }) {
   async function backToDashboardHome() {
     const sid = state?.session_id;
     try {
+      // post the finished run to the leaderboard now -- quit() doesn't, and
+      // MAVIS would otherwise hold it until the next flight is set up
+      await mavisApi.scoreSubmit();
+    } catch {
+      // best-effort
+    }
+    try {
       await mavisApi.quit();
     } catch {
       // best-effort
@@ -181,6 +188,11 @@ export default function LiveCoach({ freeFlight = false }) {
   // drops back to this page's own start menu (Free Flight / Basic Flight).
   async function finishAndDiscard() {
     const sid = state?.session_id;
+    try {
+      await mavisApi.scoreDrop();   // a discarded run stays off the leaderboard
+    } catch {
+      // best-effort
+    }
     try {
       await mavisApi.quit();
     } catch {

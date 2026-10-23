@@ -54,6 +54,7 @@ $LogDir = Join-Path $RepoRoot "logs\launcher"
 if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
 $script:procs = @{}
+$script:specs = @{}     # how each service was started, so the watchdog can start it again
 
 function Test-Port {
     param([string]$ComputerName = "localhost", [int]$Port)
@@ -102,6 +103,75 @@ function Stop-PortOwner {
     }
 }
 
+# Starts (or restarts) a service from the spec Start-Backend saved for it.
+function Start-ServiceProcess {
+    param([Parameter(Mandatory)][string]$Name)
+    $spec = $script:specs[$Name]
+    $p = Start-Process -FilePath $spec.VenvPython -ArgumentList $spec.ArgList -WorkingDirectory $spec.WorkDir `
+        -RedirectStandardOutput (Join-Path $LogDir "$Name.out.log") -RedirectStandardError (Join-Path $LogDir "$Name.err.log") `
+        -WindowStyle Hidden -PassThru
+    $null = $p.Handle      # keep the handle open, or ExitCode reads empty once it exits
+    $script:procs[$Name] = $p
+    return $p
+}
+
+# ---------------------------------------------------------------------
+# Watchdog: once everything is up, a service whose process exits (a crash,
+# or the backend giving up because Postgres wasn't reachable) is started
+# again. Its logs from the run that died are kept as
+# <Name>.{out,err}.crash-<time>.log, since a restart overwrites the live ones.
+# Waits between restarts double (2 s .. 60 s) while it keeps dying, and reset
+# once it has stayed up for RESTART_RESET_S.
+# The OBS/Smart-Eye adapter isn't watched: IRIS's backend launches it for
+# every MAVIS session itself, and it exits on purpose when a copy is running.
+# ---------------------------------------------------------------------
+$WATCHED = @("MAVIS", "IRIS-backend", "Proxy")
+$RESTART_MIN_S = 2
+$RESTART_MAX_S = 60
+$RESTART_RESET_S = 120
+$script:restartDelay = @{}
+$script:restartAt = @{}
+
+function Save-CrashLogs {
+    param([string]$Name)
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    foreach ($kind in "out", "err") {
+        $log = Join-Path $LogDir "$Name.$kind.log"
+        if (Test-Path -LiteralPath $log) {
+            Move-Item -LiteralPath $log -Destination (Join-Path $LogDir "$Name.$kind.crash-$stamp.log") -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $stamp
+}
+
+function Invoke-Watchdog {
+    foreach ($name in $WATCHED) {
+        $p = $script:procs[$name]
+        if (-not $p -or -not $script:specs.ContainsKey($name)) { continue }   # skipped at startup (no venv)
+        if (-not $p.HasExited) {
+            if ($script:restartDelay[$name] -and ((Get-Date) - $p.StartTime).TotalSeconds -gt $RESTART_RESET_S) {
+                $script:restartDelay[$name] = 0       # stayed up: next crash restarts quickly again
+            }
+            continue
+        }
+        if (-not $script:restartAt[$name]) {
+            $delay = [Math]::Max($RESTART_MIN_S, [Math]::Min($RESTART_MAX_S, 2 * [int]$script:restartDelay[$name]))
+            $script:restartDelay[$name] = $delay
+            $script:restartAt[$name] = (Get-Date).AddSeconds($delay)
+            $stamp = Save-CrashLogs -Name $name
+            Write-Warning ("[$name] exited (code $($p.ExitCode)) at $(Get-Date -Format 'HH:mm:ss') -- restarting in $delay s. " +
+                "Its logs: $LogDir\$name.err.crash-$stamp.log")
+        }
+        if ((Get-Date) -ge $script:restartAt[$name]) {
+            $script:restartAt[$name] = $null
+            $port = $script:specs[$name].ListenPort
+            if ($port) { Stop-PortOwner -Name $name -ListenPort $port }
+            $np = Start-ServiceProcess -Name $name
+            Write-Host "[$name] restarted (pid $($np.Id))."
+        }
+    }
+}
+
 function Start-Backend {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -126,10 +196,8 @@ function Start-Backend {
     $outLog = Join-Path $LogDir "$Name.out.log"
     $errLog = Join-Path $LogDir "$Name.err.log"
     Write-Host "[$Name] starting... (logs: $outLog)"
-    $p = Start-Process -FilePath $VenvPython -ArgumentList $ArgList -WorkingDirectory $WorkDir `
-        -RedirectStandardOutput $outLog -RedirectStandardError $errLog `
-        -WindowStyle Hidden -PassThru
-    $script:procs[$Name] = $p
+    $script:specs[$Name] = @{ WorkDir = $WorkDir; VenvPython = $VenvPython; ArgList = $ArgList; ListenPort = $ListenPort }
+    $p = Start-ServiceProcess -Name $Name
 
     if ($HealthUrl) {
         if (Wait-HttpUp -Url $HealthUrl) {
@@ -244,11 +312,15 @@ if ($DryRun) {
 Write-Host "`n================================================================"
 Write-Host " Dashboard:  http://localhost:$Port"
 Write-Host " Logs:       $LogDir"
+Write-Host " Watchdog:   MAVIS, IRIS backend and proxy are restarted if they exit."
 Write-Host " Press Ctrl+C to stop everything this script started."
 Write-Host "================================================================"
 
 try {
-    while ($true) { Start-Sleep -Seconds 5 }
+    while ($true) {
+        Start-Sleep -Seconds 2
+        Invoke-Watchdog
+    }
 } finally {
     Write-Host "`nStopping..."
     foreach ($name in $script:procs.Keys) {

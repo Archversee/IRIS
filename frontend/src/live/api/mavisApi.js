@@ -31,6 +31,10 @@ export const mavisApi = {
   selectLesson: (id) => postJson("/lesson/select", { id }),
   start: () => postJson("/demo/start"),
   quit: () => postJson("/demo/quit"),
+  // the finished run's scorecard: post it to the leaderboard (name "" = the
+  // trainee name the session was set up with), or throw it away
+  scoreSubmit: (name = "") => postJson("/score/submit", { name }),
+  scoreDrop: () => postJson("/score/drop"),
   restart: () => postJson("/demo/restart"),
   // Restart button: reset, aircraft back to the lesson's start position (airborne
   // for familiarization, runway start otherwise), go again -- same session

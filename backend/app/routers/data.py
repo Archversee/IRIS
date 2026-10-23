@@ -170,6 +170,23 @@ async def get_summary(session_id: UUID):
                 "where session_id = $1 order by flight", session_id)
         except Exception:      # table not created yet (backend not restarted since the upgrade)
             flights = []
+        # the session's score: its latest scorecard (a Restart re-scores the same session)
+        try:
+            card = await conn.fetchrow(
+                "select total, grade from scorecards where session_id = $1 "
+                "order by created_at desc, id desc limit 1", session_id)
+        except Exception:      # MAVIS-integration tables not created
+            card = None
+        # pilot: as saved on the Save Session page, else the name the run was posted under
+        pilot = s["pilot_name"]
+        if not pilot:
+            try:
+                pilot = await conn.fetchval(
+                    "select coalesce(nullif(trim(concat_ws(' ', given_name, family_name)), ''), display_name) "
+                    "from leaderboard_entries where session_id = $1 and display_name <> 'Anonymous' "
+                    "order by scored_at desc limit 1", session_id)
+            except Exception:
+                pilot = None
         if not flights and s["lesson_id"] and lesson_title(s["lesson_id"]):
             # flown before flights were logged: the session's own lesson says what it was
             flights = [{"flight": 1, "title": lesson_title(s["lesson_id"]), "curriculum": "lesson",
@@ -185,4 +202,6 @@ async def get_summary(session_id: UUID):
         "flight_rows": flight_n,
         "eye_rows": eye_n,
         "flights": [dict(f) for f in flights],
+        "pilot": pilot,
+        "score": dict(card) if card else None,     # {total, grade}
     }

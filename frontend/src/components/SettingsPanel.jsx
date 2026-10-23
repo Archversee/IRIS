@@ -116,11 +116,6 @@ export default function SettingsPanel({ onClose }) {
           <section className="set-section">
             <h3>MAVIS</h3>
             <nav className="set-links">
-              <Link to="/leaderboard" className="set-link" onClick={onClose}>
-                <TrophyIcon />
-                <span>Leaderboard</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
               <Link to="/scoring" className="set-link" onClick={onClose}>
                 <ChecklistIcon />
                 <span>Scoring Guide</span>

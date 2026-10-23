@@ -38,6 +38,10 @@ export default function SaveSession() {
     try {
       await api.updateSession(id, { ...details, name: details.name.trim(), pilot_name: details.pilot_name.trim() });
       await saveVideoLinks(id, links);
+      // the AI debrief (summary + a note per broken rule) is written in the background if
+      // config.yaml's debrief.auto_on_save is on (ending the flight and opening Review start
+      // it too; it only fills in what's missing); Review → Debrief shows its progress
+      api.runDebrief(id, { auto: true }).catch(() => {});
       nav(`/sessions/${id}/review`);
     } catch (e) {
       setErr(e.detail || e.message);
