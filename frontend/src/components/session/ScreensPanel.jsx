@@ -124,7 +124,7 @@ export default function ScreensPanel({
   aoiZones, curAoi, scanTrail, scanTrailLen,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
-  routes, routeKey, setRouteKey, groundRoute,
+  groundRoute,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
   live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
 }) {
@@ -227,13 +227,8 @@ export default function ScreensPanel({
       <div className="rev-screen">
         <div className="head">
           Ground track
-          {routes?.length > 0 && setRouteKey && (
-            <select className="route-select" value={routeKey} onChange={(e) => setRouteKey(e.target.value)}
-              title="Draw a MAVIS preset route under the flown path">
-              <option value="">No reference route</option>
-              {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-            </select>
-          )}
+          {/* the circuit this session flew, drawn under the track (picked automatically) */}
+          {groundRoute && <span className="route-label" title="Planned circuit for this session">{groundRoute.label}</span>}
         </div>
         <div className="body">
           {groundTrack.length > 1 ? (

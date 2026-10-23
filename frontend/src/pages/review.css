@@ -707,9 +707,9 @@
 @media (prefers-reduced-motion: reduce) { .scan-trail__dot, .scan-trail__link, .scan-trail__now circle { animation: none; transition: none; } }
 
 /* ---- Ground track: MAVIS reference route (drawn under the flown path) ---- */
-.route-select {
-  margin-left: auto; max-width: 62%; padding: 2px 6px; font-size: 11px; border-radius: 6px;
-  background: #0f2a29; color: #cfe9e6; border: 1px solid #2f5b57;
+.route-label {
+  margin-left: auto; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: #f5c27a;
 }
 /* A wide, soft band (not a thin line) so it stays visible even where the
    flight path runs right on top of it. */
