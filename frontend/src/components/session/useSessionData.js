@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
-import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
+import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS, WL_MIN, WL_MAX } from "./constants.js";
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
@@ -46,7 +46,10 @@ export function useSessionData({ id, live }) {
   const [playing, setPlaying] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
+  const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true,
+    scanSpread: false, scanRandom: false });
+  // eye-based workload index (Review only; the live view falls back to pupil size)
+  const [workloadIndex, setWorkloadIndex] = useState(null);
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
   const [openPhases, setOpenPhases] = useState([]);
   const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
@@ -100,6 +103,16 @@ export function useSessionData({ id, live }) {
     api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
+
+  // workload index: worked out (and cached) by the backend over the finished flight
+  useEffect(() => {
+    setWorkloadIndex(null);
+    if (!id || live) return;
+    let cancelled = false;
+    api.workload(id).then((w) => { if (!cancelled) setWorkloadIndex(w); })
+      .catch((e) => console.warn("workload index unavailable:", e?.message || e));
+    return () => { cancelled = true; };
+  }, [id, live]);
 
   // MAVIS event log: one fetch for a finished session; a live one is polled
   // since the newest event is still open and its end arrives when the next starts
@@ -273,6 +286,18 @@ export function useSessionData({ id, live }) {
   }, [flight, eye, eyeForFlight]);
   const hasEye = eye.length > 0;
 
+  // the index's point (one per second) nearest each flight sample, or null
+  const indexForFlight = useMemo(() => {
+    const pts = workloadIndex?.points;
+    if (!pts?.length) return null;
+    const first = pts[0].t, step = workloadIndex.step_s || 1;
+    return flight.map((r) => {
+      const k = Math.round((Date.parse(r.ts) / 1000 - first) / step);
+      return k >= 0 && k < pts.length ? pts[k] : null;
+    });
+  }, [flight, workloadIndex]);
+  const hasIndex = indexForFlight != null;
+
   const instrumentVideoSrc = summary?.session?.instrument_video_url || null;
   const instrumentOffsetSec = summary?.session?.instrument_video_offset_sec ?? 0;
   const otwVideoSrc = summary?.session?.otw_video_url || null;
@@ -286,14 +311,36 @@ export function useSessionData({ id, live }) {
       vspeed: bounds(flight, "vertical_speed_fpm"),
       workload: [Math.min(...workloadRaw.filter((v) => v != null)), Math.max(...workloadRaw.filter((v) => v != null))],
     };
-    return flight.map((r, i) => ({
-      t: +elapsed(r.ts).toFixed(1),
-      altitude: norm(r.altitude_ft, b.altitude), altitudeR: r.altitude_ft,
-      airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
-      vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
-      workload: norm(workloadRaw[i], b.workload), workloadR: workloadRaw[i],
-    }));
-  }, [flight, workloadRaw]);
+    if (indexForFlight) {
+      // entropies: their own min..max over the points the flight shows
+      const pts = indexForFlight.filter(Boolean);
+      b.h_s = bounds(pts, "h_s");
+      b.h_t = bounds(pts, "h_t");
+    }
+    return flight.map((r, i) => {
+      const p = indexForFlight?.[i];
+      const row = {
+        t: +elapsed(r.ts).toFixed(1),
+        altitude: norm(r.altitude_ft, b.altitude), altitudeR: r.altitude_ft,
+        airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
+        vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
+      };
+      if (!indexForFlight) {
+        // live: no index yet, pupil size (mm) stands in
+        row.workload = norm(workloadRaw[i], b.workload);
+        row.workloadR = workloadRaw[i];
+        return row;
+      }
+      const wl = p?.wl ?? null;
+      row.workload = wl == null ? null : Math.max(0, Math.min(1, norm(wl, [WL_MIN, WL_MAX])));
+      row.workloadR = wl;
+      row.workloadBand = p?.band ?? null;
+      row.workloadIndex = true;
+      row.scanSpread = norm(p?.h_s ?? null, b.h_s); row.scanSpreadR = p?.h_s ?? null;
+      row.scanRandom = norm(p?.h_t ?? null, b.h_t); row.scanRandomR = p?.h_t ?? null;
+      return row;
+    });
+  }, [flight, workloadRaw, indexForFlight]);
 
   const chartSeries = useMemo(() => {
     if (series.length <= CHART_MAX_POINTS) return series;
@@ -717,7 +764,8 @@ export function useSessionData({ id, live }) {
     },
 
     timeline: {
-      chartSeries, timelineTicks, filters, setFilters, hasEye,
+      chartSeries, timelineTicks, filters, setFilters, hasEye, hasIndex,
+      workloadBands: hasIndex ? workloadIndex.bands : null,
       flightPhases, chartMinT, chartMaxT, totalT, curT,
       flightStartMs: t0,     // rule-check violations carry epoch times; t = (epoch_ms - this) / 1000
       onChartMouseDown: (e) => { setScrubbing(true); seekToChartEvent(e); },

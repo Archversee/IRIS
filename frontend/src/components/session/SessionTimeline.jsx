@@ -1,7 +1,7 @@
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
 } from "recharts";
-import { METRICS } from "./constants.js";
+import { METRICS, WL_BAND_LABEL, WL_MAX, WL_MIN } from "./constants.js";
 import { fmt } from "./utils.js";
 
 function TLTooltip({ active, payload }) {
@@ -11,8 +11,13 @@ function TLTooltip({ active, payload }) {
     ["Altitude", fmt(d.altitudeR, 0), "ft"],
     ["Airspeed", fmt(d.airspeedR, 1), "kt"],
     ["Vert speed", fmt(d.vspeedR, 0), "fpm"],
-    ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), "mm pupil"],
+    d.workloadIndex
+      ? ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""]
+      : ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), "mm pupil"],
   ];
+  if (d.workloadIndex) {
+    rows.push(["Scan spread", fmt(d.scanSpreadR, 2), "bits"], ["Scan randomness", fmt(d.scanRandomR, 2), "bits"]);
+  }
   return (
     <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
       <div style={{ color: "#8194a6", marginBottom: 4 }}>T + {d.t}s</div>
@@ -30,9 +35,18 @@ function TLTooltip({ active, payload }) {
 // or a takeoff/landing guess for sessions without any).
 // `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
 // clickable phases/event buttons, no playback transport.
+// Workload's y position on the chart (it's drawn on the fixed WL_MIN..WL_MAX scale)
+const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
+
+// Which metric chips can't be shown: workload needs eye data, the scan
+// entropies the workload index (Review only).
+function unavailable(m, hasEye, hasIndex) {
+  return (m.needs === "eye" && !hasEye) || (m.needs === "index" && !hasIndex);
+}
+
 export default function SessionTimeline({
   readOnly = false,
-  chartSeries, timelineTicks, filters, setFilters, hasEye,
+  chartSeries, timelineTicks, filters, setFilters, hasEye, hasIndex = false, workloadBands = null,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
   seekTo, openPhase,
@@ -46,9 +60,14 @@ export default function SessionTimeline({
         <h2>Session timeline</h2>
         <div className="filters">
           {METRICS.map((m) => {
-            const disabled = m.key === "workload" && !hasEye;
+            const disabled = unavailable(m, hasEye, hasIndex);
             return (
               <button key={m.key} disabled={disabled}
+                title={m.key === "workload" ? (hasIndex
+                  ? "Eye-based workload index: fixation rate and blink rate against this pilot's usual on this flight. "
+                    + "0 = usual; dashed lines mark Medium and High."
+                  : "Pupil size (mm), a rough stand-in until the workload index is worked out after the flight.")
+                  : m.needs === "index" ? `${m.label}: gaze entropy over the AOIs (${m.unit}), from the workload index.` : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
                 onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
                 <span className="swatch" style={{ background: m.color }} />{m.label}
@@ -92,11 +111,14 @@ export default function SessionTimeline({
             );
           })}
           {METRICS.map((m) =>
-            filters[m.key] && !(m.key === "workload" && !hasEye) ? (
+            filters[m.key] && !unavailable(m, hasEye, hasIndex) ? (
               <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
                 dot={false} strokeWidth={1.6} isAnimationActive={false} />
             ) : null
           )}
+          {workloadBands && filters.workload && [workloadBands.medium, workloadBands.high].map((v) => (
+            <ReferenceLine key={v} y={wlY(v)} stroke="#f5a623" strokeOpacity={0.45} strokeDasharray="4 4" />
+          ))}
           <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
         </LineChart>
       </ResponsiveContainer>

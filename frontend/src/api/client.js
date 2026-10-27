@@ -142,6 +142,8 @@ export const api = {
   eye: (id, maxPoints = 200000, onProgress) =>
     reqWithProgress(`/sessions/${id}/eye?max_points=${maxPoints}`, onProgress),
   analytics: (id) => req(`/sessions/${id}/analytics`),
+  // eye-based workload index, one value per second (routers/workload.py; after the flight only)
+  workload: (id) => req(`/sessions/${id}/workload`),
 
   videosAvailable: () => req("/videos-available"),
   linkVideo: (id, screen, body) =>
