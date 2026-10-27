@@ -11,12 +11,10 @@ function TLTooltip({ active, payload }) {
     ["Altitude", fmt(d.altitudeR, 0), "ft"],
     ["Airspeed", fmt(d.airspeedR, 1), "kt"],
     ["Vert speed", fmt(d.vspeedR, 0), "fpm"],
-    d.workloadIndex
-      ? ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""]
-      : ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), "mm pupil"],
   ];
   if (d.workloadIndex) {
-    rows.push(["Scan spread", fmt(d.scanSpreadR, 2), "bits"], ["Scan randomness", fmt(d.scanRandomR, 2), "bits"]);
+    rows.push(["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""],
+      ["Scan spread", fmt(d.scanSpreadR, 2), "bits"], ["Scan randomness", fmt(d.scanRandomR, 2), "bits"]);
   }
   return (
     <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
@@ -38,15 +36,14 @@ function TLTooltip({ active, payload }) {
 // Workload's y position on the chart (it's drawn on the fixed WL_MIN..WL_MAX scale)
 const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
 
-// Which metric chips can't be shown: workload needs eye data, the scan
-// entropies the workload index (Review only).
-function unavailable(m, hasEye, hasIndex) {
-  return (m.needs === "eye" && !hasEye) || (m.needs === "index" && !hasIndex);
+// Metrics drawn from the workload index can't be shown until it has loaded.
+function unavailable(m, hasIndex) {
+  return m.needs === "index" && !hasIndex;
 }
 
 export default function SessionTimeline({
   readOnly = false,
-  chartSeries, timelineTicks, filters, setFilters, hasEye, hasIndex = false, workloadBands = null,
+  chartSeries, timelineTicks, filters, setFilters, hasIndex = false, workloadBands = null,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
   seekTo, openPhase,
@@ -54,19 +51,20 @@ export default function SessionTimeline({
   speed, setSpeed,
   live, followingLive, goLive,
 }) {
+  // the Live Monitor (readOnly) leaves out what comes from the after-flight workload index
+  const metrics = readOnly ? METRICS.filter((m) => !m.needs) : METRICS;
   return (
     <div className="rev-timeline">
       <div className="tl-head">
         <h2>Session timeline</h2>
         <div className="filters">
-          {METRICS.map((m) => {
-            const disabled = unavailable(m, hasEye, hasIndex);
+          {metrics.map((m) => {
+            const disabled = unavailable(m, hasIndex);
             return (
               <button key={m.key} disabled={disabled}
-                title={m.key === "workload" ? (hasIndex
+                title={m.key === "workload"
                   ? "Eye-based workload index: fixation rate and blink rate against this pilot's usual on this flight. "
                     + "0 = usual; dashed lines mark Medium and High."
-                  : "Pupil size (mm), a rough stand-in until the workload index is worked out after the flight.")
                   : m.needs === "index" ? `${m.label}: gaze entropy over the AOIs (${m.unit}), from the workload index.` : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
                 onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
@@ -110,8 +108,8 @@ export default function SessionTimeline({
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
-          {METRICS.map((m) =>
-            filters[m.key] && !unavailable(m, hasEye, hasIndex) ? (
+          {metrics.map((m) =>
+            filters[m.key] && !unavailable(m, hasIndex) ? (
               <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
                 dot={false} strokeWidth={1.6} isAnimationActive={false} />
             ) : null

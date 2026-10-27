@@ -5,7 +5,8 @@ seconds after it); MAVIS would need a backward-looking version of its own.
 Pure: data in, numbers out (no database). routers/workload.py feeds it the
 session's eye samples and AOI zones and caches the result.
 
-  1. clean     drop blinks and samples whose gaze quality < Q_MIN
+  1. clean     drop blinks, untracked samples (gaze direction 0,0,0 -- the live
+               feed's "no lock") and samples whose gaze quality < Q_MIN
   2. fixations Smart Eye's own (fixation_id > 0, one id = one fixation); if a
                recording has none, I-VT on gaze direction (< IVT_DEG_S = fixating)
                Each fixation gets the AOI most of its samples fell in (the
@@ -39,7 +40,7 @@ from collections import Counter
 
 from .incidents import _num, _t, gaze_target
 
-WORKLOAD_VERSION = "1"
+WORKLOAD_VERSION = "2"
 Q_MIN = 0.3               # gaze quality (0..1) below this = not usable
 WINDOW_S = 20.0           # each value covers this long ...
 STEP_S = 1.0              # ... one value every this long
@@ -48,6 +49,7 @@ MAX_DT = 0.2              # one sample stands for at most this long (dropouts do
 MIN_FIX_S = 0.06          # shorter "fixations" are noise
 IVT_DEG_S = 30.0          # I-VT fallback: gaze slower than this = fixating
 MIN_BLINK_GAP_S = 0.1     # blink flags closer than this are the same blink
+MAX_BLINK_S = 0.5         # a longer run of blink flags isn't a blink
 SMOOTH_S = 5.0            # centred moving average over the index
 BANDS = ((0.5, "low"), (1.5, "medium"), (math.inf, "high"))   # WL below 0.5 low, below 1.5 medium, else high
 
@@ -66,8 +68,15 @@ FEATURES = tuple(WEIGHTS)
 
 
 # ---------------------------------------------------------------- 1-2 clean + fixations
+def _tracked(e: dict) -> bool:
+    """False while Smart Eye has no lock: the live feed then sends gaze direction
+    0,0,0 (and no quality at all), not nulls."""
+    d = [_num(e.get(k)) for k in ("gaze_dir_x", "gaze_dir_y", "gaze_dir_z")]
+    return not (None not in d and not any(d))
+
+
 def _usable(e: dict) -> bool:
-    if e.get("blink"):
+    if e.get("blink") or not _tracked(e):
         return False
     q = _num(e.get("gaze_quality"))
     return q is None or q >= Q_MIN
@@ -133,16 +142,25 @@ def fixations(eye: list[dict], zones: list[dict]) -> tuple[list[dict], str]:
 
 
 def blinks(eye: list[dict]) -> list[float]:
-    """Start time of each blink."""
-    out, last, was = [], -math.inf, False
-    for e in eye:
-        b = bool(e.get("blink"))
-        t = _t(e["ts"])
-        if b and not was and t - last >= MIN_BLINK_GAP_S:
-            out.append(t)
-        if b:
-            last = t
-        was = b
+    """Start time of each blink. Only blinks with tracking just before and just
+    after, and shorter than MAX_BLINK_S: around lost tracking the blink flag
+    flickers, and a long "blink" is closed eyes or a lost face, not a blink."""
+    out, i, n = [], 0, len(eye)
+    last_end = -math.inf
+    while i < n:
+        if not eye[i].get("blink"):
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and eye[j + 1].get("blink"):
+            j += 1
+        t0, t1 = _t(eye[i]["ts"]), _t(eye[j]["ts"])
+        before = i > 0 and _tracked(eye[i - 1]) and not eye[i - 1].get("blink")
+        after = j + 1 < n and _tracked(eye[j + 1])
+        if before and after and t1 - t0 <= MAX_BLINK_S and t0 - last_end >= MIN_BLINK_GAP_S:
+            out.append(t0)
+        last_end = t1
+        i = j + 1
     return out
 
 

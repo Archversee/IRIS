@@ -13,8 +13,9 @@ export const METRICS = [
   { key: "altitude", label: "Altitude", unit: "ft", color: "#38bdf8", src: "altitude_ft" },
   { key: "airspeed", label: "Airspeed", unit: "kt", color: "#4ade80", src: "airspeed_kt" },
   { key: "vspeed", label: "Vert speed", unit: "fpm", color: "#a78bfa", src: "vertical_speed_fpm" },
-  // `needs`: "eye" = any eye data; "index" = the workload index (Review only, routers/workload.py)
-  { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload", needs: "eye" },
+  // `needs: "index"` = drawn from the workload index (Review only, routers/workload.py);
+  // the Live Monitor leaves these out until there's a live version of it
+  { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload", needs: "index" },
   { key: "scanSpread", label: "Scan spread", unit: "bits", color: "#14b8a6", src: "h_s", needs: "index" },
   { key: "scanRandom", label: "Scan randomness", unit: "bits", color: "#fb7185", src: "h_t", needs: "index" },
 ];
@@ -40,5 +41,7 @@ export function eventColor(e, i) {
 
 export const VIDEO_SYNC_TOLERANCE = 0.15;
 export const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75;
-export const MIN_AOI_DWELL_SEC_DEFAULT = 0.1;
+// glances shorter than this are folded into the previous look (0 = every glance counts);
+// the scan path's "min glance" box starts here, the Analytics cross-check uses it as is
+export const MIN_AOI_DWELL_SEC_DEFAULT = 0;
 export const CHART_MAX_POINTS = 2000;

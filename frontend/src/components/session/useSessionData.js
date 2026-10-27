@@ -48,9 +48,9 @@ export function useSessionData({ id, live }) {
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true,
     scanSpread: false, scanRandom: false });
-  // eye-based workload index (Review only; the live view falls back to pupil size)
+  // eye-based workload index (Review only)
   const [workloadIndex, setWorkloadIndex] = useState(null);
-  const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
+  const [minAoiDwellInput, setMinAoiDwellInput] = useState(MIN_AOI_DWELL_SEC_DEFAULT.toFixed(1));
   const [openPhases, setOpenPhases] = useState([]);
   const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
   const [sessionFlights, setSessionFlights] = useState([]); // which curriculum each flight came from
@@ -250,41 +250,11 @@ export function useSessionData({ id, live }) {
   const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
   const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
 
-  const eyeForFlight = useMemo(() => {
-    const map = new Array(flight.length).fill(-1);
-    let j = 0;
-    for (let i = 0; i < flight.length; i++) {
-      const ft = new Date(flight[i].ts).getTime();
-      while (j + 1 < eye.length &&
-        Math.abs(new Date(eye[j + 1].ts).getTime() - ft) <= Math.abs(new Date(eye[j].ts).getTime() - ft))
-        j++;
-      map[i] = eye.length ? j : -1;
-    }
-    return map;
-  }, [flight, eye]);
-
   const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
   const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
   const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
   const gazeStretch = useGazeStretch(gaze, curT);
 
-  const workloadRaw = useMemo(() => {
-    const raw = flight.map((_, i) => {
-      const e = eyeForFlight[i] >= 0 ? eye[eyeForFlight[i]] : null;
-      if (!e) return null;
-      const vals = [e.pupil_diam_left_mm, e.pupil_diam_right_mm].filter((v) => v != null);
-      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-    });
-    const W = 15;
-    return raw.map((_, i) => {
-      let sum = 0, n = 0;
-      for (let k = Math.max(0, i - W); k <= Math.min(raw.length - 1, i + W); k++) {
-        if (raw[k] != null) { sum += raw[k]; n++; }
-      }
-      return n ? sum / n : null;
-    });
-  }, [flight, eye, eyeForFlight]);
-  const hasEye = eye.length > 0;
 
   // the index's point (one per second) nearest each flight sample, or null
   const indexForFlight = useMemo(() => {
@@ -309,7 +279,6 @@ export function useSessionData({ id, live }) {
       altitude: bounds(flight, "altitude_ft"),
       airspeed: bounds(flight, "airspeed_kt"),
       vspeed: bounds(flight, "vertical_speed_fpm"),
-      workload: [Math.min(...workloadRaw.filter((v) => v != null)), Math.max(...workloadRaw.filter((v) => v != null))],
     };
     if (indexForFlight) {
       // entropies: their own min..max over the points the flight shows
@@ -325,12 +294,7 @@ export function useSessionData({ id, live }) {
         airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
         vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
       };
-      if (!indexForFlight) {
-        // live: no index yet, pupil size (mm) stands in
-        row.workload = norm(workloadRaw[i], b.workload);
-        row.workloadR = workloadRaw[i];
-        return row;
-      }
+      if (!indexForFlight) return row;
       const wl = p?.wl ?? null;
       row.workload = wl == null ? null : Math.max(0, Math.min(1, norm(wl, [WL_MIN, WL_MAX])));
       row.workloadR = wl;
@@ -340,7 +304,7 @@ export function useSessionData({ id, live }) {
       row.scanRandom = norm(p?.h_t ?? null, b.h_t); row.scanRandomR = p?.h_t ?? null;
       return row;
     });
-  }, [flight, workloadRaw, indexForFlight]);
+  }, [flight, indexForFlight]);
 
   const chartSeries = useMemo(() => {
     if (series.length <= CHART_MAX_POINTS) return series;
@@ -764,7 +728,7 @@ export function useSessionData({ id, live }) {
     },
 
     timeline: {
-      chartSeries, timelineTicks, filters, setFilters, hasEye, hasIndex,
+      chartSeries, timelineTicks, filters, setFilters, hasIndex,
       workloadBands: hasIndex ? workloadIndex.bands : null,
       flightPhases, chartMinT, chartMaxT, totalT, curT,
       flightStartMs: t0,     // rule-check violations carry epoch times; t = (epoch_ms - this) / 1000

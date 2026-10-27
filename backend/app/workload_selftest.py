@@ -116,5 +116,23 @@ check("... and says why (coverage)", all(p["coverage"] < 0.6 for p in res_q["poi
 
 check("empty recording", analyse([], ZONES)["points"] == [])
 
+# no lock: the live feed sends gaze direction 0,0,0 and no quality -> null, not "low"
+lost = recording([(60, 1.0, 4.0, ["Attitude", "Airspeed"])])
+for e in lost:
+    e.update(gaze_dir_x=0.0, gaze_dir_y=0.0, gaze_dir_z=0.0, gaze_quality=None, fixation_id=0)
+check("untracked (0,0,0) data gives no index", all(p["wl"] is None for p in analyse(lost, ZONES)["points"]))
+
+# blink flags around lost tracking, or held too long, aren't blinks
+seq = recording([(5, 1.0, 100, ["Attitude"])])
+for e in seq[60:150]:                       # 1.5 s "blink" = eyes shut / face lost
+    e["blink"] = True
+for e in seq[200:206]:                      # 0.1 s blink straight into lost tracking
+    e["blink"] = True
+for e in seq[206:240]:
+    e.update(gaze_dir_x=0.0, gaze_dir_y=0.0, gaze_dir_z=0.0)
+for e in seq[260:266]:                      # a real one
+    e["blink"] = True
+check("only real blinks counted", len(blinks(seq)) == 1, blinks(seq))
+
 print(f"\n{'ALL PASSED' if not _fails else f'{_fails} FAILED'}")
 sys.exit(1 if _fails else 0)
