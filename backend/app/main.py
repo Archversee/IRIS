@@ -21,6 +21,10 @@ async def lifespan(app: FastAPI):
     await videos.ensure_schema()  # sessions.recording_paths (OBS files to delete with a session)
     await eye_clock.ensure_schema()  # sessions.eye_clock_* (Smart Eye clock offset, from LiveAdapter.py)
     try:
+        await db.ensure_eye_extra()  # eye_tracking_data.extra (the other Smart Eye fields)
+    except Exception as e:  # eye_tracking_data not created yet
+        logging.getLogger(__name__).warning("eye_tracking_data.extra not added: %s", e)
+    try:
         await rule_results.ensure_schema()  # SOP rule checks of flights (db/schema_rule_results.sql)
         await incident_explain.ensure_schema()  # explanations of broken-rule moments (+ instructor ratings)
         await incidents.ensure_schema()  # cached findings of each broken-rule moment

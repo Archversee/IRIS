@@ -349,11 +349,17 @@ UDP_LISTEN_PORT = 5001  # must match the port set as the destination in SEP's Co
 # column has no equivalent id in the network catalogue, so we request the
 # unfiltered "GazeDirectionQ" (id 0x0022) for the live gaze_quality field
 # instead -- same underlying quality metric, just not smoothed.
+# Only sent when USE_RPC_TO_OPEN_STREAM is True; otherwise SEP sends what's
+# ticked in its own Communication Settings -> UDP stream -> Output Data.
 FIELD_SELECTION = (
     "RealTimeClock;HeadPosition;HeadHeading;HeadPitch;HeadRoll;"
     "FilteredGazeDirection;FilteredGazeOrigin;Fixation;Blink;"
     "FilteredClosestWorldIntersection;EyelidOpening;"
-    "FilteredLeftPupilDiameter;FilteredRightPupilDiameter;GazeDirectionQ"
+    "FilteredLeftPupilDiameter;FilteredRightPupilDiameter;GazeDirectionQ;"
+    "Saccade;HeadPositionQ;HeadRotationQ;LeftGazeDirectionQ;RightGazeDirectionQ;"
+    "EyelidOpeningQ;LeftEyelidOpening;LeftEyelidOpeningQ;RightEyelidOpening;RightEyelidOpeningQ;"
+    "PupilDiameter;PupilDiameterQ;LeftPupilDiameter;LeftPupilDiameterQ;RightPupilDiameter;RightPupilDiameterQ;"
+    "FilteredPupilDiameter;FilteredPupilDiameterQ;FilteredLeftPupilDiameterQ;FilteredRightPupilDiameterQ"
 )
 
 # id -> (field kind, our name) -- field kind drives how the subpacket's
@@ -373,7 +379,41 @@ _IDS = {
     0x0068: ("f64", "FilteredLeftPupilDiameter"),
     0x006a: ("f64", "FilteredRightPupilDiameter"),
     0x0022: ("f64", "GazeDirectionQ"),
+    # ---- extras for the workload analysis (LHIPA needs unfiltered pupil +
+    # its quality). Stored in eye_tracking_data.extra as Smart Eye sends them
+    # (SI units: pupil / eyelid in metres, quality 0..1). Ids from the
+    # Programmer's Guide numbering around the ids above; check them against
+    # the first-packet report ("[eye] extra fields ...") -- anything SEP sends
+    # that isn't listed here is still kept, raw, under its hex id.
+    0x003d: ("u32", "Saccade"),
+    0x0011: ("f64", "HeadPositionQ"),
+    0x0019: ("f64", "HeadRotationQ"),
+    0x0025: ("f64", "LeftGazeDirectionQ"),
+    0x0028: ("f64", "RightGazeDirectionQ"),
+    0x0051: ("f64", "EyelidOpeningQ"),
+    0x0052: ("f64", "LeftEyelidOpening"),
+    0x0053: ("f64", "LeftEyelidOpeningQ"),
+    0x0054: ("f64", "RightEyelidOpening"),
+    0x0055: ("f64", "RightEyelidOpeningQ"),
+    0x0060: ("f64", "PupilDiameter"),
+    0x0061: ("f64", "PupilDiameterQ"),
+    0x0062: ("f64", "LeftPupilDiameter"),
+    0x0063: ("f64", "LeftPupilDiameterQ"),
+    0x0064: ("f64", "RightPupilDiameter"),
+    0x0065: ("f64", "RightPupilDiameterQ"),
+    0x0066: ("f64", "FilteredPupilDiameter"),
+    0x0067: ("f64", "FilteredPupilDiameterQ"),
+    0x0069: ("f64", "FilteredLeftPupilDiameterQ"),
+    0x006b: ("f64", "FilteredRightPupilDiameterQ"),
 }
+# fields above that have their own eye_tracking_data column; every other
+# decoded field (and every raw one) goes into the `extra` JSON column
+_CORE_FIELDS = {
+    "RealTimeClock", "HeadPosition", "HeadHeading", "HeadPitch", "HeadRoll", "FilteredGazeDirection",
+    "FilteredGazeOrigin", "Fixation", "Blink", "FilteredClosestWorldIntersection", "EyelidOpening",
+    "FilteredLeftPupilDiameter", "FilteredRightPupilDiameter", "GazeDirectionQ",
+}
+_RAW = "_raw"       # fields[_RAW] = {"0x00ab": "<payload hex>"}: ids not in _IDS, or not decodable as listed
 
 _FILETIME_EPOCH_DELTA = 116444736000000000  # 100ns ticks between 1601-01-01 and 1970-01-01 -- same as ingest.py
 
@@ -432,7 +472,10 @@ def close_smarteye_stream():
 # Packet parsing -- Programmer's Guide Table 3.1 (structure) and 3.2
 # (types). Everything is big-endian ("network byte order").
 def _parse_packet(data: bytes) -> dict:
-    """Returns {our_field_name: raw_value} for every field in _IDS present in this datagram."""
+    """Returns {our_field_name: raw_value} for every field in _IDS present in this
+    datagram, plus fields[_RAW] = {hex id: payload hex} for the rest, so nothing
+    SEP sends is lost. A field that doesn't decode as listed goes raw too
+    instead of dropping the whole packet."""
     fields = {}
     pos = 8  # 8-byte packet header: u32 syncId, u16 packetType, u16 length
     while pos + 4 <= len(data):
@@ -443,28 +486,36 @@ def _parse_packet(data: bytes) -> dict:
 
         kind_name = _IDS.get(sub_id)
         if kind_name is None:
-            continue  # a field we didn't ask to decode -- skip via sub_len, already advanced past it
-        kind, name = kind_name
-
-        if kind == "u32":
-            fields[name] = struct.unpack(">I", payload)[0]
-        elif kind == "u64":
-            fields[name] = struct.unpack(">Q", payload)[0]
-        elif kind == "f64":
-            fields[name] = struct.unpack(">d", payload)[0]
-        elif kind in ("point3d", "vect3d"):
-            fields[name] = struct.unpack(">ddd", payload)  # (x, y, z)
-        elif kind == "world_intersection":
-            exists = struct.unpack_from(">H", payload, 0)[0]
-            if not exists:
-                fields[name] = None
-                continue
-            object_point = struct.unpack_from(">ddd", payload, 26)  # skip exists(2) + worldPoint(24)
-            name_len = struct.unpack_from(">H", payload, 50)[0]
-            object_name = payload[52:52 + name_len].decode("ascii", errors="replace")
-            fields[name] = {"objectPoint": object_point, "objectName": object_name}
+            fields.setdefault(_RAW, {})[f"0x{sub_id:04x}"] = payload.hex()
+            continue
+        try:
+            _decode_field(fields, *kind_name, payload)
+        except (struct.error, IndexError, UnicodeError):
+            fields.setdefault(_RAW, {})[f"0x{sub_id:04x}"] = payload.hex()
 
     return fields
+
+
+def _decode_field(fields: dict, kind: str, name: str, payload: bytes) -> None:
+    """Decodes one subpacket into fields[name]; raises struct.error when the
+    payload isn't the size `kind` says (wrong id guess)."""
+    if kind == "u32":
+        fields[name] = struct.unpack(">I", payload)[0]
+    elif kind == "u64":
+        fields[name] = struct.unpack(">Q", payload)[0]
+    elif kind == "f64":
+        fields[name] = struct.unpack(">d", payload)[0]
+    elif kind in ("point3d", "vect3d"):
+        fields[name] = struct.unpack(">ddd", payload)  # (x, y, z)
+    elif kind == "world_intersection":
+        exists = struct.unpack_from(">H", payload, 0)[0]
+        if not exists:
+            fields[name] = None
+            return
+        object_point = struct.unpack_from(">ddd", payload, 26)  # skip exists(2) + worldPoint(24)
+        name_len = struct.unpack_from(">H", payload, 50)[0]
+        object_name = payload[52:52 + name_len].decode("ascii", errors="replace")
+        fields[name] = {"objectPoint": object_point, "objectName": object_name}
 
 
 # ----------------------------------------------------------------------
@@ -583,7 +634,24 @@ def _build_sample(fields: dict, epoch_s: float | None = None):
         "head_roll_deg": deg(fields.get("HeadRoll")),
         "gaze_quality": fields.get("GazeDirectionQ"),
         "fixation_id": fields.get("Fixation"),
+        "extra": _extra(fields),
     }
+
+
+def _extra(fields: dict) -> dict | None:
+    """Everything SEP sent that has no column of its own, as Smart Eye sends it
+    (pupil / eyelid in metres) -> eye_tracking_data.extra."""
+    def clean(v):        # NaN / inf aren't valid JSON (Postgres jsonb would refuse the whole batch)
+        if isinstance(v, float):
+            return v if math.isfinite(v) else None
+        if isinstance(v, tuple):
+            return [clean(x) for x in v]
+        return v
+
+    out = {k: clean(v) for k, v in fields.items() if k not in _CORE_FIELDS and k != _RAW}
+    if fields.get(_RAW):
+        out[_RAW] = fields[_RAW]
+    return out or None
 
 
 # Forwarding to the backend -- WebSocketApp's run_forever() handles
@@ -689,8 +757,17 @@ _drops = DropMeter()
 
 
 def _report_first_packet(fields: dict) -> None:
-    have = sorted(fields)
+    have = sorted(k for k in fields if k in _CORE_FIELDS)
     print(f"[eye] fields in Smart Eye's packets: {', '.join(have) or 'NONE of the ones we decode'}")
+    extra = {k: v for k, v in fields.items() if k not in _CORE_FIELDS and k != _RAW}
+    if extra:
+        print("[eye] extra fields (-> eye_tracking_data.extra): "
+              + ", ".join(f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}" for k, v in sorted(extra.items())))
+    for hex_id, payload in sorted(fields.get(_RAW, {}).items()):
+        known = _IDS.get(int(hex_id, 16))
+        what = (f"didn't decode as {known[1]} ({known[0]}) -- wrong id in _IDS?" if known
+                else "unrecognised field")
+        print(f"[eye] {hex_id} ({len(payload) // 2} bytes): {what}; kept raw in extra._raw")
     missing = [f for f in _NEEDED_FOR if f not in fields]
     for f in missing:
         print(f"[eye] WARNING: {f} is missing from SEP's output -> {_NEEDED_FOR[f]}. "
