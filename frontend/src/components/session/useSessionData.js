@@ -302,6 +302,7 @@ export function useSessionData({ id, live }) {
       row.workloadIndex = true;
       row.scanSpread = norm(p?.h_s ?? null, b.h_s); row.scanSpreadR = p?.h_s ?? null;
       row.scanRandom = norm(p?.h_t ?? null, b.h_t); row.scanRandomR = p?.h_t ?? null;
+      row.lhipaR = p?.lhipa ?? null;     // pupil activity, shown in the tooltip only
       return row;
     });
   }, [flight, indexForFlight]);

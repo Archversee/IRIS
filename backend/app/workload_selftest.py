@@ -7,8 +7,10 @@ the index tells them apart. Exits non-zero on failure.
 from __future__ import annotations
 
 import math
+import random
 import sys
 
+from . import lhipa as lh
 from .workload import analyse, band_of, blinks, fixations, window_features
 
 T0 = 1_700_000_000.0
@@ -133,6 +135,58 @@ for e in seq[206:240]:
 for e in seq[260:266]:                      # a real one
     e["blink"] = True
 check("only real blinks counted", len(blinks(seq)) == 1, blinks(seq))
+
+# ---------------------------------------------------------------- LHIPA (app/lhipa.py)
+rng = random.Random(7)
+
+
+def pupil_rows(seconds, hz=60, drop_every=0, gap=None, q=0.8):
+    """Unfiltered pupil (metres) on a gently oscillating baseline with noise.
+    drop_every: drop every n-th sample (Smart Eye's single-sample dropouts);
+    gap: (from_s, to_s) with no pupil at all."""
+    out = []
+    for i in range(int(seconds * hz)):
+        t = i / hz
+        mm = 3.0 + 0.2 * math.sin(2 * math.pi * 0.1 * t) + 0.05 * math.sin(2 * math.pi * 3 * t) + rng.gauss(0, 0.03)
+        dropped = (drop_every and i % drop_every == 0) or (gap and gap[0] <= t < gap[1])
+        out.append({"ts": T0 + t, "blink": False, "pupil_raw_m": None if dropped else mm / 1000, "pupil_raw_q": q})
+    return out
+
+
+def grid_of(rows):
+    return lh.PupilGrid([r["ts"] for r in rows], [lh.pupil_mm(r) for r in rows])
+
+
+check("pupil read in mm from metres", abs(lh.pupil_mm({"pupil_raw_m": 0.003, "pupil_raw_q": 0.9}) - 3.0) < 1e-9)
+check("low-quality pupil ignored", lh.pupil_mm({"pupil_raw_m": 0.003, "pupil_raw_q": 0.1}) is None)
+check("implausible pupil ignored", lh.pupil_mm({"pupil_raw_m": 0.02}) is None and lh.pupil_mm({"pupil_raw_m": 0.0}) is None)
+check("blinking pupil ignored", lh.pupil_mm({"pupil_raw_m": 0.003, "blink": True}) is None)
+
+v, cov = lh.window_lhipa(grid_of(pupil_rows(40)), T0 + 20)
+check("LHIPA of a clean 30 s window", v is not None and v > 0 and cov > 0.99, (v, cov))
+v, cov = lh.window_lhipa(grid_of(pupil_rows(40, drop_every=4)), T0 + 20)
+check("single dropped samples are bridged", v is not None and cov > 0.99, (v, cov))
+v, cov = lh.window_lhipa(grid_of(pupil_rows(40, gap=(15, 17))), T0 + 20)
+check("a 2 s gap: still enough pupil", v is not None and 0.85 <= cov < 0.95, (v, cov))
+v, cov = lh.window_lhipa(grid_of(pupil_rows(40, gap=(10, 18))), T0 + 20)
+check("an 8 s gap: no LHIPA", v is None and cov < 0.85, (v, cov))
+check("too short a recording: no LHIPA", lh.window_lhipa(grid_of(pupil_rows(5)), T0 + 2.5)[0] is None)
+
+# in the index: present with pupil data, absent (and harmless) without
+flight = recording([CALM, BUSY, CALM])
+pup = pupil_rows(300)                      # same 60 Hz clock as recording(): match by sample number
+for e in flight:
+    k = round((e["ts"] - T0) * HZ)
+    r = pup[k] if k < len(pup) else None
+    if r:
+        e["pupil_raw_m"], e["pupil_raw_q"] = r["pupil_raw_m"], r["pupil_raw_q"]
+res_p = analyse(flight, ZONES)
+check("pupil source reported", res_p["pupil_source"] == "PupilDiameter", res_p["pupil_source"])
+check("LHIPA in the points", sum(p["lhipa"] is not None for p in res_p["points"]) > 200,
+      sum(p["lhipa"] is not None for p in res_p["points"]))
+check("no pupil data: no LHIPA, index still works", res["pupil_source"] is None
+      and all(p["lhipa"] is None for p in res["points"]) and mean_wl(res, 135, 165) > 1.5)
+check("LHIPA alone gives no score", all(p["wl"] is None for p in res_p["points"] if p["coverage"] < 0.6))
 
 print(f"\n{'ALL PASSED' if not _fails else f'{_fails} FAILED'}")
 sys.exit(1 if _fails else 0)

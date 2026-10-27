@@ -14,6 +14,7 @@ function TLTooltip({ active, payload }) {
   ];
   if (d.workloadIndex) {
     rows.push(["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""],
+      ["Pupil activity (LHIPA)", fmt(d.lhipaR, 2), "/s"],
       ["Scan spread", fmt(d.scanSpreadR, 2), "bits"], ["Scan randomness", fmt(d.scanRandomR, 2), "bits"]);
   }
   return (
@@ -63,7 +64,8 @@ export default function SessionTimeline({
             return (
               <button key={m.key} disabled={disabled}
                 title={m.key === "workload"
-                  ? "Eye-based workload index: fixation rate and blink rate against this pilot's usual on this flight. "
+                  ? "Eye-based workload index: fixation rate, blink rate and pupil activity (LHIPA) against this pilot's "
+                    + "usual on this flight. "
                     + "0 = usual; dashed lines mark Medium and High."
                   : m.needs === "index" ? `${m.label}: gaze entropy over the AOIs (${m.unit}), from the workload index.` : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}

@@ -33,8 +33,10 @@ create table if not exists session_workload (
 )
 """
 
+# + Smart Eye's unfiltered pupil and its quality, for LHIPA (only those two out of `extra`)
 _EYE_COLS = ("ts, aoi, gaze_point_x, gaze_point_y, blink, gaze_quality, fixation_id, "
-             "gaze_dir_x, gaze_dir_y, gaze_dir_z")
+             "gaze_dir_x, gaze_dir_y, gaze_dir_z, "
+             "(extra->>'PupilDiameter')::float8 as pupil_raw_m, (extra->>'PupilDiameterQ')::float8 as pupil_raw_q")
 _NOT_DEMO = """
     and not exists (select 1 from flight_events e
                     where e.session_id = $1 and e.kind = 'demo'

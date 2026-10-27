@@ -22,11 +22,15 @@ session's eye samples and AOI zones and caches the result.
                              AOIs, -sum p_i log2 p_i (p_i = share of fixation time)
                h_t           transition entropy: how unpredictable the next AOI
                              is, -sum pi_i sum_j p_ij log2 p_ij
+               lhipa         pupil activity (app/lhipa.py) over its own, longer
+                             window (lhipa.WINDOW_S), from Smart Eye's unfiltered
+                             pupil; null where too little pupil data
   5. baseline  robust z per feature: (v - median) / max(1.4826 * MAD, Z_FLOOR),
                median / MAD over the baseline span (the whole flight unless one
                is given), so 0 = usual for this pilot on this flight
   6. index     WL = sum w_k * sign_k * z_k / sum w_k  (WEIGHTS), smoothed with a
                centred SMOOTH_S moving average, banded Low / Medium / High.
+               Only where the gaze window has enough data (LHIPA alone isn't).
                The entropies are left out (weight 0) until checked against real
                flights: whether the gaze narrows or scatters under load depends
                on the phase. They are still returned for the timeline.
@@ -38,9 +42,10 @@ import math
 import statistics
 from collections import Counter
 
+from . import lhipa as lh
 from .incidents import _num, _t, gaze_target
 
-WORKLOAD_VERSION = "2"
+WORKLOAD_VERSION = "3"
 Q_MIN = 0.3               # gaze quality (0..1) below this = not usable
 WINDOW_S = 20.0           # each value covers this long ...
 STEP_S = 1.0              # ... one value every this long
@@ -60,10 +65,11 @@ WEIGHTS = {
     "mean_fix_ms": (-1, 0.0),    # shorter looks; ~1/fix_rate, so not counted twice
     "h_s": (-1, 0.0),            # gaze narrowing (landing study); direction unverified
     "h_t": (-1, 0.0),
+    "lhipa": (-1, 1.0),          # pupil oscillates less under load
 }
 # smallest spread a feature's baseline may have, so a very steady baseline
 # can't turn a small change into a huge z
-Z_FLOOR = {"fix_rate": 0.2, "blink_rate": 3.0, "mean_fix_ms": 40.0, "h_s": 0.15, "h_t": 0.15}
+Z_FLOOR = {"fix_rate": 0.2, "blink_rate": 3.0, "mean_fix_ms": 40.0, "h_s": 0.15, "h_t": 0.15, "lhipa": 0.05}
 FEATURES = tuple(WEIGHTS)
 
 
@@ -238,14 +244,15 @@ def _smooth(vals: list[float | None], half: int) -> list[float | None]:
 def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float] | None = None,
             window_s: float = WINDOW_S, step_s: float = STEP_S) -> dict:
     """eye: samples sorted by ts (ts, aoi, gaze_point_x/y, blink, gaze_quality,
-    fixation_id, gaze_dir_x/y/z). baseline: (from, to) epoch seconds of a calm
+    fixation_id, gaze_dir_x/y/z, and for LHIPA pupil_raw_m / pupil_raw_q: Smart
+    Eye's unfiltered PupilDiameter (metres) and its quality). baseline: (from, to) epoch seconds of a calm
     stretch to compare against; None = the whole flight.
     -> {points: [{t, wl, wl_raw, band, coverage, <features>, z: {...}}], baseline, ...}"""
     eye = [e for e in eye if e.get("ts") is not None]
     res = {"version": WORKLOAD_VERSION, "window_s": window_s, "step_s": step_s,
            "weights": {k: {"sign": s, "weight": w} for k, (s, w) in WEIGHTS.items()},
            "bands": {"medium": BANDS[0][0], "high": BANDS[1][0]}, "points": [], "baseline": None,
-           "fixation_source": None, "summary": None}
+           "fixation_source": None, "pupil_source": None, "summary": None}
     if len(eye) < 2:
         return res
     ts = [_t(e["ts"]) for e in eye]
@@ -254,6 +261,8 @@ def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float]
     blink_ts = blinks(eye)
     cum = _usable_prefix(eye, ts)
     mids = [(f["t0"] + f["t1"]) / 2 for f in fix]
+    pupil = lh.PupilGrid(ts, [lh.pupil_mm(e) for e in eye])
+    res["pupil_source"] = "PupilDiameter" if len(pupil.value) else None
 
     half = window_s / 2
     t = float(math.ceil(ts[0]))
@@ -273,6 +282,12 @@ def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float]
                 feats = {k: (v if k == "blink_rate" else None) for k, v in feats.items()}
         else:
             feats = dict.fromkeys(FEATURES)
+        # LHIPA: its own window and coverage, independent of the gaze ones
+        if len(pupil.value):
+            feats["lhipa"], p["pupil_coverage"] = lh.window_lhipa(pupil, t)
+            p["pupil_coverage"] = round(p["pupil_coverage"], 3)
+        else:
+            p["pupil_coverage"] = 0.0
         p.update(feats)
         pts.append(p)
         t += step_s
@@ -296,7 +311,9 @@ def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float]
             if w > 0 and z[k] is not None:
                 num += w * sign * z[k]
                 den += w
-        raw.append(num / den if den else None)
+        # only where the gaze window was scored: LHIPA alone (e.g. just after the
+        # pilot sits down, pupil still settling) isn't enough for a score
+        raw.append(num / den if den and p["coverage"] >= MIN_COVERAGE else None)
     smooth = _smooth(raw, max(0, round(SMOOTH_S / step_s / 2)))
     for p, r, s in zip(pts, raw, smooth):
         p["wl_raw"] = r

@@ -385,6 +385,10 @@ _IDS = {
     # Programmer's Guide numbering around the ids above; check them against
     # the first-packet report ("[eye] extra fields ...") -- anything SEP sends
     # that isn't listed here is still kept, raw, under its hex id.
+    0x0001: ("u32", "FrameNumber"),
+    0x0003: ("u64", "TimeStamp"),
+    0x0005: ("f64", "FrameRate"),
+    0x0031: ("f64", "FilteredGazeDirectionQ"),
     0x003d: ("u32", "Saccade"),
     0x0011: ("f64", "HeadPositionQ"),
     0x0019: ("f64", "HeadRotationQ"),
