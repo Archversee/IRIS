@@ -24,7 +24,7 @@ import websockets
 
 from . import db
 from .config import settings
-from .routers import adapter
+from .routers import adapter, leaderboard
 from .routers.stream import ingest_external_sample
 
 log = logging.getLogger(__name__)
@@ -121,17 +121,19 @@ def map_telemetry_fields(state: dict) -> dict | None:
 
 def map_coaching_events(session_id: UUID, transcript: list[dict], start_idx: int) -> list[tuple]:
     """Pure mapping: transcript entries beyond `start_idx` -> coaching_events
-    rows. MAVIS's WS feed carries only {who, text, t, phase} per transcript
-    entry (not the underlying CoachEvent's code/severity/data), so those
-    three columns are left null here -- see coaching_events' comment in
-    db/schema_mavis_integration.sql."""
+    rows. Each transcript entry is {who, text, t, phase}, plus the
+    CoachEvent's {code, severity, data} for lines that voice one (MAVIS
+    coach/llm_coach.py); those three stay null for other lines (lesson
+    script, chat answers) and for MAVIS versions that don't send them."""
     rows = []
     for entry in transcript[start_idx:]:
         ts = _to_utc(entry.get("t")) or datetime.now(timezone.utc)
         text = entry.get("text") or ""
         if not text:
             continue
-        rows.append((session_id, ts, None, None, entry.get("who"), entry.get("phase"), text, None))
+        data = entry.get("data")
+        rows.append((session_id, ts, entry.get("code"), entry.get("severity"), entry.get("who"), entry.get("phase"),
+                     text, json.dumps(data) if data else None))
     return rows
 
 
@@ -175,7 +177,8 @@ def map_scorecard_row(session_id: UUID, state: dict, sc: dict) -> tuple:
 
 
 class _SessionCursor:
-    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig", "flights_sig")
+    __slots__ = ("seen", "ended", "transcript_len", "last_scorecard_seq", "row_buffer", "events_sig", "flights_sig",
+                 "aircraft")
 
     def __init__(self):
         self.seen = False
@@ -194,13 +197,17 @@ class _SessionCursor:
         self.row_buffer: list[tuple] = []
         self.events_sig: str | None = None   # last flight_events list written, to skip unchanged pushes
         self.flights_sig: str | None = None  # same, for the session_flights list
+        self.aircraft: str | None = None     # sim aircraft last written to sessions.aircraft
 
 
 class MavisBridge:
     def __init__(self, ws_url: str):
         self.ws_url = ws_url
         self._sessions: dict[str, _SessionCursor] = {}
-        self._last_leaderboard_count = -1
+        # the session MAVIS is on right now (its latest state push); None while
+        # MAVIS is down or hasn't started one -- what "running" means (current_session_id)
+        self.current_session: str | None = None
+        self._leaderboard_sig = None   # (count, last ts) of MAVIS's posted runs already saved
         self._last_flush = 0.0
         self._task: asyncio.Task | None = None
 
@@ -240,11 +247,15 @@ class MavisBridge:
             except Exception as e:
                 log.warning("mavis_bridge: connection to %s lost/unavailable (%s) -- retrying in %.0fs",
                              self.ws_url, e, delay)
+            self.current_session = None      # however the connection ended, nothing is live now
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, _MAX_RECONNECT_DELAY_S)
 
     async def _handle_state(self, state: dict) -> None:
+        # before the session check: a score can be posted after the session is cleared
+        await self._sync_leaderboard(state)
         raw_sid = state.get("session_id")
+        self.current_session = raw_sid or None
         if not raw_sid:
             return  # nothing minted yet (pre-Start) -- nothing to attach data to
         session_id = UUID(raw_sid)
@@ -263,6 +274,15 @@ class MavisBridge:
                 await adapter.launch_adapter()
             except Exception as e:
                 log.warning("mavis_bridge: couldn't auto-launch the OBS/Smart-Eye adapter: %s", e)
+
+        # the aircraft MAVIS read from the sim at lesson start; only fills a blank one,
+        # so a name typed on the Save Session page is never overwritten
+        aircraft = (state.get("sim_aircraft") or "").strip()
+        if aircraft and aircraft != cur.aircraft:
+            async with db.acquire() as conn:
+                await conn.execute("update sessions set aircraft = $2 "
+                                   "where id = $1 and coalesce(aircraft, '') = ''", session_id, aircraft)
+            cur.aircraft = aircraft
 
         fields = map_telemetry_fields(state)
         if fields is not None and not cur.ended:
@@ -309,7 +329,6 @@ class MavisBridge:
         if now - self._last_flush >= _FLUSH_INTERVAL_S:
             self._last_flush = now
             await self._flush_flight_rows()
-            await self._sync_leaderboard(state)
 
     async def _ensure_session_row(self, session_id: UUID, state: dict) -> None:
         sess = state.get("session") or {}
@@ -322,11 +341,11 @@ class MavisBridge:
         async with db.acquire() as conn:
             await conn.execute(
                 """
-                insert into sessions (id, name, lesson_id, mode, sim_source, source, started_at)
-                values ($1, $2, $3, $4, 'MSFS', 'mavis', now())
+                insert into sessions (id, name, pilot_name, lesson_id, mode, sim_source, source, started_at)
+                values ($1, $2, $5, $3, $4, 'MSFS', 'mavis', now())
                 on conflict (id) do nothing
                 """,
-                session_id, name, state.get("lesson_id"), sess.get("mode"),
+                session_id, name, state.get("lesson_id"), sess.get("mode"), who or None,
             )
 
     async def _write_flight_events(self, session_id: UUID, rows: list[tuple]) -> None:
@@ -365,37 +384,19 @@ class MavisBridge:
             await db.copy_rows("flight_data", FLIGHT_COLUMNS, all_rows)
 
     async def _sync_leaderboard(self, state: dict) -> None:
-        lb = state.get("leaderboard") or {}
-        rows: list[dict] = []
-        for mode_bucket in lb.values():
-            rows.extend((mode_bucket or {}).get("all") or [])
-        if len(rows) == self._last_leaderboard_count:
+        """Save runs posted to MAVIS's leaderboard -- MAVIS keeps none on
+        disk, so this is what makes them permanent (routers/leaderboard.py).
+        It republishes every run posted since it started; already-saved ones
+        are skipped, so a reconnect after IRIS was down catches up."""
+        posts = state.get("leaderboard_posts")
+        if not isinstance(posts, list):
             return
-        self._last_leaderboard_count = len(rows)
-        for e in rows:
-            await self._upsert_leaderboard_entry(e)
-
-    async def _upsert_leaderboard_entry(self, e: dict) -> None:
-        scores = e.get("scores") or {}
-        scored_at = _to_utc(e.get("ts")) or datetime.now(timezone.utc)
-        async with db.acquire() as conn:
-            await conn.execute(
-                """
-                insert into leaderboard_entries
-                    (display_name, given_name, family_name, mode, lesson_id, scored_at,
-                     track_score, speed_score, altitude_score, landing_score, smoothness_score,
-                     total, grade, retries, capped)
-                select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
-                where not exists (
-                    select 1 from leaderboard_entries
-                    where display_name = $1 and scored_at = $6 and lesson_id is not distinct from $5
-                )
-                """,
-                e.get("name"), e.get("given"), e.get("family"), e.get("mode"), e.get("lesson"),
-                scored_at, scores.get("track"), scores.get("speed"), scores.get("altitude"),
-                scores.get("landing"), scores.get("smoothness"), e.get("total"), e.get("grade"),
-                e.get("retries"), e.get("capped"),
-            )
+        sig = (len(posts), (posts[-1] or {}).get("ts") if posts else None)
+        if sig == self._leaderboard_sig:
+            return
+        for e in posts:
+            await leaderboard.save_entry(e)
+        self._leaderboard_sig = sig
 
 
 def _json_safe(fields: dict) -> dict:
@@ -449,6 +450,14 @@ async def stop() -> None:
     if _bridge is not None:
         await _bridge.stop()
         _bridge = None
+
+
+def current_session_id() -> str | None:
+    """The session MAVIS is on right now, or None (MAVIS down / none started).
+    Only this one can really be in progress: MAVIS flies one session at a
+    time, so any other session left without an ended_at (a crash, a closed
+    tab) is stale, not live."""
+    return _bridge.current_session if _bridge is not None else None
 
 
 def mark_ended(session_id) -> None:

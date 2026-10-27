@@ -26,6 +26,7 @@ class SessionCfg(BaseModel):
     trainee_name: str = ""     # display name for debrief / scorecard
     free_flight: bool = False  # Free Flight menu: the session is logged as free flight, not as a lesson
     strictness: str = ""       # SOP rule checks: lenient | standard | strict ("" = trainee's / mode's)
+    pilot_user_id: str = ""    # IRIS account flying (owns this session's leaderboard entries)
 
 
 class RefCfg(BaseModel):
@@ -105,6 +106,11 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
     else:
         log.warning("media dir %s not found - avatar videos won't load", mp)
 
+    @app.get("/health")
+    async def health():
+        """Tiny liveness check (IRIS's dashboard polls it for its "MAVIS is down" banner)."""
+        return {"ok": True}
+
     @app.get("/")
     async def index():
         # Always revalidate, tablet UI is edited in place during development
@@ -141,7 +147,8 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
         fn = actions.get("configure_session")
         if fn:
             await fn(cfg.mode, cfg.jargon, cfg.reference, cfg.reference_recording,
-                     cfg.trainee_name.strip(), cfg.tone, cfg.free_flight, cfg.strictness)
+                     cfg.trainee_name.strip(), cfg.tone, cfg.free_flight, cfg.strictness,
+                     cfg.pilot_user_id.strip())
         return {"ok": True}
 
     @app.post("/lesson/select")
@@ -245,6 +252,13 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
         """Instructor: save the finished flight as an expert reference (PIN)."""
         fn = actions.get("save_reference")
         return await fn(msg.pin.strip(), msg.display_name) if fn else {"ok": False, "error": "not available"}
+    @app.post("/score/drop")
+    async def score_drop():
+        """Throw the held scorecard away without posting it to the leaderboard."""
+        fn = actions.get("score_drop")
+        if fn:
+            await fn()
+        return {"ok": True}
 
     @app.post("/demo/{action}")
     async def demo(action: str):

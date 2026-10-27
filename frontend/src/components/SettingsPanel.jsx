@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTheme, setTheme } from "../theme.js";
 import { TrophyIcon, ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
+import { useAuth } from "../auth/AuthContext.jsx";
+import { SOP_ROLES } from "./Sidebar.jsx";
 
 // Settings drawer, opened from the sidebar's gear. Only Theme is wired up;
 // everything else is a placeholder (selectable, but not saved or applied
@@ -35,6 +37,7 @@ function Field({ label, soon, help, children }) {
 }
 
 export default function SettingsPanel({ onClose }) {
+  const { user } = useAuth();
   const [theme, setThemeState] = useState(getTheme);
   // placeholders -- local only
   const [timeFmt, setTimeFmt] = useState("24");
@@ -113,11 +116,6 @@ export default function SettingsPanel({ onClose }) {
           <section className="set-section">
             <h3>MAVIS</h3>
             <nav className="set-links">
-              <Link to="/leaderboard" className="set-link" onClick={onClose}>
-                <TrophyIcon />
-                <span>Leaderboard</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
               <Link to="/scoring" className="set-link" onClick={onClose}>
                 <ChecklistIcon />
                 <span>Scoring Guide</span>
@@ -140,6 +138,25 @@ export default function SettingsPanel({ onClose }) {
               </Link>
             </nav>
           </section>
+          {/* SOP -> flight rules: instructor tools, hidden from trainees
+              (App.jsx also sends a trainee who opens /sop/* home). */}
+          {SOP_ROLES.includes(user?.role) && (
+            <section className="set-section">
+              <h3>SOP</h3>
+              <nav className="set-links">
+                <Link to="/sop/new" className="set-link" onClick={onClose}>
+                  <UploadIcon />
+                  <span>SOP Upload</span>
+                  <span className="set-link__chev" aria-hidden="true">›</span>
+                </Link>
+                <Link to="/sop/rules" className="set-link" onClick={onClose}>
+                  <ChecklistIcon />
+                  <span>SOP Rules</span>
+                  <span className="set-link__chev" aria-hidden="true">›</span>
+                </Link>
+              </nav>
+            </section>
+          )}
           {/* More sections go here. */}
         </div>
       </aside>

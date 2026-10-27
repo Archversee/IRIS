@@ -196,7 +196,12 @@ def build_chat(rt, state, coach, loop, retry):
                 return
         # --- everything else: free Q&A via the LLM ---
         tel = state.get("tel", {})
-        snippet = {k: tel.get(k) for k in ("ias", "alt_msl", "hdg", "flaps_deg", "local_time_h")}
+        # named with their units so the model says "knots" / "feet" / "degrees", rounded: fewer tokens
+        snippet = {name: (round(tel[k]) if isinstance(tel.get(k), (int, float)) and k != "local_time_h"
+                          else tel.get(k))
+                   for name, k in (("airspeed_knots", "ias"), ("height_feet", "alt_msl"),
+                                   ("heading_degrees", "hdg"), ("flaps_degrees", "flaps_deg"),
+                                   ("local_time_h", "local_time_h"))}
         await coach.answer(text, snippet, rt.engine.phase)
 
     # ---------- agentic tool layer (Phase 1: conversational tool-router) ----------

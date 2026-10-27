@@ -56,6 +56,7 @@ class AoiZoneCreate(BaseModel):
 
 class AoiZone(AoiZoneCreate):
     id: int
+    role: str | None = None   # instrument the name means (app/aoi_roles.py), None = not recognised
 
 
 # ---- ingest result --------------------------------------------------

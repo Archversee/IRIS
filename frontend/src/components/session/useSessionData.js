@@ -39,10 +39,8 @@ export function useSessionData({ id, live }) {
   const [flightLoaded, setFlightLoaded] = useState(false); // distinguishes "still fetching" from "fetched, genuinely empty"
   const [loadProgress, setLoadProgress] = useState(null); // 0..1 while fetching (Review only); null = unknown/indeterminate
   const [aoiZones, setAoiZones] = useState([]);
-  // Ground track reference route (MAVIS planned circuit): "" = none.
+  // MAVIS planned circuits (GET /routes); the one this session flew is drawn under its track.
   const [routes, setRoutes] = useState([]);
-  const [routeKey, setRouteKey] = useState(null); // null = not chosen yet -> auto-pick once
-  const routeAutoRef = useRef(false);                  // true while routeKey is the automatic pick
   const [err, setErr] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -350,37 +348,35 @@ export function useSessionData({ id, live }) {
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
   }, [runs, curT]);
 
-  // A Free Flight session has no planned route: MAVIS only has some lesson loaded underneath
-  // (the first circuit), and drawing that circuit would also squash the real track into a corner.
-  const isFreeFlight = sessionFlights.some((f) => f.curriculum === "free_flight");
+  // The reference route is not a choice: it's the circuit this exact session
+  // flew, or nothing. The session's lessons come from its flights (MAVIS logs
+  // one per Start / Fly again); Free Flight flights don't count -- MAVIS only
+  // has some lesson loaded underneath. A session flown before flights were
+  // logged falls back to its own lesson_id. Of that lesson's circuit, the
+  // runway end nearest where the flight starts (both ends are listed: MAVIS
+  // flips the lesson to whichever end you take off from) -- within 3 km, so a
+  // flight somewhere else entirely gets no route. Exercises (straight & level,
+  // steep turns...) and Take-off / Landing have no circuit, so no route.
+  const sessionLessons = useMemo(() => {
+    if (!flightsLoaded) return null;
+    const ids = new Set(sessionFlights.filter((f) => f.curriculum !== "free_flight")
+      .map((f) => f.lesson_id).filter(Boolean));
+    if (!sessionFlights.length && summary?.session?.lesson_id) ids.add(summary.session.lesson_id);
+    return ids;
+  }, [sessionFlights, flightsLoaded, summary]);
 
-  // Auto-pick the reference route once: the session's own lesson if MAVIS
-  // flew it, otherwise any route -- from the runway end nearest where the
-  // flight starts (within 3 km). Falls back to none. Never for Free Flight.
-  useEffect(() => {
-    if (routeKey !== null || !routes.length || !flight.length || !summary || !flightsLoaded) return;
-    if (isFreeFlight) { setRouteKey(""); return; }
+  const route = useMemo(() => {
+    if (!sessionLessons?.size || !routes.length) return null;
+    const mine = routes.filter((r) => (r.lesson_ids || [r.lesson_id]).some((id) => sessionLessons.has(id)));
     const start = flight.find((r) => r.latitude != null && r.longitude != null);
-    if (!start) return;
-    const lessonId = summary.session?.lesson_id;
+    if (!mine.length || !start) return null;
     const km = (a) => Math.hypot((a[0] - start.latitude) * 111.32,
       (a[1] - start.longitude) * 111.32 * Math.cos((start.latitude * Math.PI) / 180));
-    const ranked = routes
-      .map((r) => ({ r, d: km(r.runway[0]) - (lessonId && r.lesson_id === lessonId ? 1000 : 0) }))
-      .sort((a, b) => a.d - b.d);
-    const best = ranked[0];
-    routeAutoRef.current = true;
-    setRouteKey(best && km(best.r.runway[0]) <= 3 ? best.r.key : "");
-  }, [routes, flight, summary, routeKey, flightsLoaded, isFreeFlight]);
-
-  // Live: the flight record can arrive just after the route was auto-picked. If it turns out
-  // to be Free Flight, drop that automatic pick (a route the user chose by hand stays).
-  useEffect(() => {
-    if (isFreeFlight && routeAutoRef.current && routeKey) { routeAutoRef.current = false; setRouteKey(""); }
-  }, [isFreeFlight, routeKey]);
-  const pickRoute = (k) => { routeAutoRef.current = false; setRouteKey(k); };
-
-  const route = routes.find((r) => r.key === routeKey) || null;
+    const best = mine.map((r) => ({ r, d: km(r.runway[0]) })).sort((a, b) => a.d - b.d)[0];
+    return best.d <= 3 ? best.r : null;
+    // only the first flight sample matters, not every new live one
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionLessons, routes, flight.length > 0 && flight[0]]);
 
   // Ground track in a 100x100 box. The view fits the flown path AND the
   // reference route (if one is shown), so both use the same projection.
@@ -415,7 +411,7 @@ export function useSessionData({ id, live }) {
     if (!route || !groundGeo.project) return null;
     const P = (q) => groundGeo.project(q[0], q[1]);
     const [a, b] = route.runway.map(P);
-    return { path: toPoints(route.path.map(P)), runway: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }, ident: route.runway_ident };
+    return { path: toPoints(route.path.map(P)), runway: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }, ident: route.runway_ident, label: `Planned circuit · RWY ${route.runway_ident}` };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route, groundGeo]);
 
@@ -714,7 +710,7 @@ export function useSessionData({ id, live }) {
       aoiZones, curAoi, scanTrail, scanTrailLen: SCAN_TRAIL_LEN,
       gaze, gazeStretch,
       groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
-      routes, routeKey: routeKey ?? "", setRouteKey: pickRoute, groundRoute,
+      groundRoute,
       onGroundMouseDown: (e) => { setGroundScrubbing(true); seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseMove: (e) => { if (groundScrubbing) seekToGroundEvent(e.clientX, e.clientY); },
       onGroundMouseUp: () => setGroundScrubbing(false),

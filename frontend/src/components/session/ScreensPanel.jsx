@@ -113,24 +113,26 @@ function useScreenBoxes(rowRef, otwRef, instRef) {
 // The three video/track panels at the top of the session viewer: OTW,
 // Instruments (with AOI zone overlay), and the ground track map.
 //
-// A screen shows one of three things: a live-captured MediaStream (Live
-// page, via the browser's own screen-capture picker), a finished OBS file
-// (Review, `src=`), or neither (nothing linked/captured yet).
+// A screen shows one of four things: a live-captured MediaStream (Live
+// page, via the browser's own screen-capture picker), the backend's
+// auto-captured window feed (Live page, MJPEG `*Feed` URL -- the picker
+// overrides it), a finished OBS file (Review, `src=`), or neither.
 export default function ScreensPanel({
-  otwVideoRef, otwVideoSrc, otwStream, lookingAtOtw,
-  instrumentVideoRef, instrumentVideoSrc, instrumentStream, lookingAtInstruments,
+  otwVideoRef, otwVideoSrc, otwStream, otwFeed, onOtwFeedError, lookingAtOtw,
+  instrumentVideoRef, instrumentVideoSrc, instrumentStream, instrumentFeed, onInstrumentFeedError,
+  lookingAtInstruments,
   aoiZones, curAoi, scanTrail, scanTrailLen,
   gaze, gazeStretch,
   groundTrack, groundTrackRef, groundFullPath, groundFlownPath, groundCurPoint,
-  routes, routeKey, setRouteKey, groundRoute,
+  groundRoute,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
   live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
 }) {
   useStreamBinding(otwVideoRef, otwStream);
   useStreamBinding(instrumentVideoRef, instrumentStream);
 
-  const hasOtw = !!(otwStream || otwVideoSrc);
-  const hasInstrument = !!(instrumentStream || instrumentVideoSrc);
+  const hasOtw = !!(otwStream || otwFeed || otwVideoSrc);
+  const hasInstrument = !!(instrumentStream || instrumentFeed || instrumentVideoSrc);
   const [showTrail, setShowTrail] = useState(true);
   const rowRef = useRef(null), otwBodyRef = useRef(null), instBodyRef = useRef(null);
   const boxes = useScreenBoxes(rowRef, otwBodyRef, instBodyRef);
@@ -152,6 +154,8 @@ export default function ScreensPanel({
         <div className="body" ref={otwBodyRef}>
           {otwStream ? (
             <video ref={otwVideoRef} className="screen-video" autoPlay muted playsInline />
+          ) : otwFeed ? (
+            <img src={otwFeed} className="screen-video" alt="" onError={onOtwFeedError} />
           ) : otwVideoSrc ? (
             <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
@@ -187,6 +191,8 @@ export default function ScreensPanel({
         <div className="body" ref={instBodyRef}>
           {instrumentStream ? (
             <video ref={instrumentVideoRef} className="screen-video" autoPlay muted playsInline />
+          ) : instrumentFeed ? (
+            <img src={instrumentFeed} className="screen-video" alt="" onError={onInstrumentFeedError} />
           ) : instrumentVideoSrc ? (
             <video ref={instrumentVideoRef} src={instrumentVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
@@ -221,13 +227,8 @@ export default function ScreensPanel({
       <div className="rev-screen">
         <div className="head">
           Ground track
-          {routes?.length > 0 && setRouteKey && (
-            <select className="route-select" value={routeKey} onChange={(e) => setRouteKey(e.target.value)}
-              title="Draw a MAVIS preset route under the flown path">
-              <option value="">No reference route</option>
-              {routes.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-            </select>
-          )}
+          {/* the circuit this session flew, drawn under the track (picked automatically) */}
+          {groundRoute && <span className="route-label" title="Planned circuit for this session">{groundRoute.label}</span>}
         </div>
         <div className="body">
           {groundTrack.length > 1 ? (

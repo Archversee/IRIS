@@ -33,6 +33,15 @@ def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
     return max(float(lesson.get("min_speed_kt", 0)), aim - band), aim + band, aim
 
 
+def band(lo=None, hi=None, target=None, kind: str = "band") -> dict:
+    """One dial range for IRIS's Live Monitor (state["bands"]): lo/hi = what's
+    allowed (either may be None: a one-sided limit), target = the number aimed
+    for. kind "band" = what this step asks for; "limit" = only a safety limit
+    (the coach speaks up past it)."""
+    r = lambda v: None if v is None else round(float(v), 1)
+    return {"lo": r(lo), "hi": r(hi), "target": r(target), "kind": kind}
+
+
 class Monitors:
     def __init__(self, aircraft: dict, lesson: dict, sim_adapter: str = "mock"):
         v = aircraft["v_speeds"]
@@ -221,6 +230,31 @@ class Monitors:
                           {"dir": "right" if err > 0 else "left", "leg": leg,
                            "off": round(abs(off)), "deg": deg},
                           cooldown_s=8 if abs(off) > 2 * limit else 12)
+
+    def bands_for(self, phase: str, tel=None) -> dict:
+        """The tolerances this class coaches against in this phase, for the
+        Live Monitor's dials: speed band (or target +/- 10 kt, the callout
+        point), circuit height +/- 100 ft on downwind, the steep-bank limit,
+        and the sink-rate limit on final. Altitudes are MSL."""
+        out: dict = {}
+        airborne = tel is None or not tel.on_ground
+        spd, b = self.tgt_speed.get(phase), self.speed_band.get(phase)
+        fb = final_speed_band(self._lesson, self._v, tel.alt_agl if tel else 0.0) if phase == "FINAL" else None
+        if fb:
+            out["speed"] = band(fb[0], fb[1], fb[2])
+        elif b:
+            out["speed"] = band(b[0], b[1], (b[0] + b[1]) / 2)
+        elif spd:
+            out["speed"] = band(spd - 10, spd + 10, spd)
+        if phase == "DOWNWIND":
+            out["alt"] = band(self.pattern_alt - 100, self.pattern_alt + 100, self.pattern_alt)
+        elif phase == "CROSSWIND":
+            out["alt"] = band(target=self.pattern_alt)          # climbing to it
+        if airborne and phase not in ("TAKEOFF_ROLL", "ROLLOUT"):
+            out["bank"] = band(-32, 32, kind="limit")
+        if phase == "FINAL":
+            out["vs"] = band(lo=-900, kind="limit")
+        return out
 
     def targets_for(self, phase: str) -> dict:
         # show the circuit-height band while climbing to it, not just on downwind

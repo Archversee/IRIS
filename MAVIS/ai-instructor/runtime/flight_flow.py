@@ -60,11 +60,25 @@ def build_flight_flow(rt):
             await asyncio.sleep(0.2)
         return True
 
-    async def _briefing_lines():
+    def _briefing_texts() -> list[str]:
+        """What the briefing will say, in order (also made ahead by rt.prewarm_speech)."""
         own = _lesson_text(rt.lesson.get("briefing"))
         if is_familiarization(rt.lesson):
             alt = (rt.lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
-            await rt.coach.say(own.replace("{alt}", f"{alt:,}"))
+            return [own.replace("{alt}", f"{alt:,}")]
+        if rt.session.get("reference_recording"):
+            out = [phrases.render("BRIEFING_1_REF", {})]
+        else:
+            out = [own or phrases.render("BRIEFING_1", {})]
+        if not rt.lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own
+            out.append(phrases.render("BRIEFING_2", {}))
+        return [t for t in out if t]
+
+    async def _briefing_lines():
+        texts = _briefing_texts()
+        if is_familiarization(rt.lesson):
+            for t in texts:
+                await rt.coach.say(t)
             rt.engine.start_flying()
             return
         # ground starts: if the trainee rolls during the briefing, the rest of
@@ -72,12 +86,8 @@ def build_flight_flow(rt):
         # (not the mock: its autopilot starts rolling straight away)
         brief = (rt.coach.say if rt.lesson.get("airborne_start") or rt.cfg["sim"]["adapter"] == "mock"
                  else _brief)
-        lines = [phrases.render("BRIEFING_1_REF", {}) if rt.session.get("reference_recording")
-                 else own or phrases.render("BRIEFING_1", {})]
-        if not rt.lesson.get("segment"):        # whole-circuit wording; Take-off/Landing have their own
-            lines.append(phrases.render("BRIEFING_2", {}))
-        for text in lines:
-            if await brief(text) is False:
+        for t in texts:
+            if await brief(t) is False:
                 break
         if rt.lesson.get("airborne_start"):
             await _set_frozen(False)          # held on final through the briefing
@@ -391,6 +401,7 @@ def build_flight_flow(rt):
     rt._airborne_start = _airborne_start
     rt._apply_lesson_clock = _apply_lesson_clock
     rt._briefing_lines = _briefing_lines
+    rt._briefing_texts = _briefing_texts
     rt._connect_msfs_with_retries = _connect_msfs_with_retries
     rt._demos_wanted = _demos_wanted
     rt._fam_finish = _fam_finish

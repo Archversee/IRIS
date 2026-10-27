@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { mavisApi, mediaUrl } from "../api/mavisApi.js";
+import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
 
 // Same shell as MainMenu (Basic Flight) -- placeholder UI reusing the same
 // styling/background -- but no visitor/trainee/pilot cards: Free Flight
@@ -8,6 +9,7 @@ import { mavisApi, mediaUrl } from "../api/mavisApi.js";
 // Flight waits for you to press Start). Mode is fixed to "pilot" (least
 // hand-holding) since there's no card to choose it from.
 export default function FreeFlightMenu({ onStarting }) {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [media, setMedia] = useState(null);
@@ -30,6 +32,7 @@ export default function FreeFlightMenu({ onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
+        ...pilotIdentity(user),
         free_flight: true, // logged as Free Flight, not as the lesson MAVIS has loaded underneath
       });
       await mavisApi.start();

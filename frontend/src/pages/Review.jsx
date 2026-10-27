@@ -10,7 +10,15 @@ import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import RuleChecksPanel, { RuleChecksChip } from "../components/session/RuleChecksPanel.jsx";
+import IncidentsPanel, { IncidentsChip } from "../components/session/IncidentsPanel.jsx";
+import DebriefPanel, { DebriefChip, useDebriefJob } from "../components/session/DebriefPanel.jsx";
 import "./review.css";
+
+// times a rule was broken (instructor verdicts count), for the Incidents chip
+function incidentCount(evaluation) {
+  return (evaluation.results || []).reduce((n, r) =>
+    n + (r.final_verdict === "fail" ? (r.violations || []).length : 0), 0);
+}
 
 export default function Review() {
   const { id } = useParams();
@@ -20,6 +28,12 @@ export default function Review() {
   // SOP rule checks: chip in the title bar, drawer with the details, bands on the timeline
   const [rules, setRules] = useState({ evaluation: null, missing: false });
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Incidents: each broken rule, opened as a ±30 s close-up (post-flight only)
+  const [incOpen, setIncOpen] = useState(false);
+  const [debriefOpen, setDebriefOpen] = useState(false);   // whole-flight AI debrief
+  // starts writing the AI debrief + every broken-rule note in the background if any are missing
+  const debriefJob = useDebriefJob(id);
+  const openOnly = (which) => { setRulesOpen(which === "rules"); setIncOpen(which === "inc"); setDebriefOpen(which === "debrief"); };
   const loadRules = useCallback(async () => {
     try {
       setRules({ evaluation: await api.ruleResults(id), missing: false });
@@ -58,8 +72,21 @@ export default function Review() {
           <span className="spacer" />
           {/* which curriculum the session came from: top right, inside the title bar so the
               page grid keeps its four rows (an extra row squeezes the video screens) */}
+          {/* pilot, score, grade, curriculum -- left to right */}
+          {summary.pilot && <span className="rev-curriculum" title="Pilot"><small>Pilot</small> {summary.pilot}</span>}
+          {summary.score?.total != null && (
+            <span className="rev-curriculum" title="Score"><small>Score</small> {summary.score.total}</span>
+          )}
+          {summary.score?.grade && (
+            <span className="rev-curriculum" title="Grade"><small>Grade</small> {summary.score.grade}</span>
+          )}
           {curriculum && <span className="rev-curriculum" title="Curriculum"><small>Curriculum</small> {curriculum}</span>}
-          <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing} onClick={() => setRulesOpen(true)} />
+          <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
+            onClick={() => openOnly("rules")} />
+          <DebriefChip job={debriefJob} onClick={() => openOnly("debrief")} />
+          {rules.evaluation && (
+            <IncidentsChip count={incidentCount(rules.evaluation)} onClick={() => openOnly("inc")} />
+          )}
         </div>
 
         <ScreensPanel {...screens} />
@@ -75,6 +102,13 @@ export default function Review() {
       {rulesOpen && (
         <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
           onClose={() => setRulesOpen(false)} seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
+      )}
+
+      {debriefOpen && <DebriefPanel sessionId={id} onClose={() => setDebriefOpen(false)} />}
+
+      {incOpen && (
+        <IncidentsPanel sessionId={id} onClose={() => setIncOpen(false)} debriefJob={debriefJob}
+          seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
       )}
 
       {phases.openPhases.map((w) => (

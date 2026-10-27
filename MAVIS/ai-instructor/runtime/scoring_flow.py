@@ -216,13 +216,17 @@ def build_scoring_flow(rt):
         rt.engine.briefing_done = False
 
     def _post_card(name: str = "", given: str = "", family: str = "") -> None:
-        """Post the held scorecard once; an empty name posts as Anonymous."""
+        """Post the held scorecard once; with no name given or set up, as Anonymous."""
         card = rt.pending.get("card")
         if not card or card.practice or rt.pending["posted"]:
             return
-        card.name = (name or "").strip()[:24] or "Anonymous"
+        # unnamed (finished without answering): the trainee name the session was set up with
+        card.name = (name or rt.session.get("name") or "").strip()[:24] or "Anonymous"
         card.given = (given or "").strip()[:32]
         card.family = (family or "").strip()[:32]
+        card.aircraft = rt.state.get("sim_aircraft") or rt.aircraft.get("name", "")
+        card.session_id = str(rt.state.get("session_id") or "")
+        card.user_id = rt.session.get("pilot_user_id") or ""
         entry = card.to_entry()
         # which expert the run was flown against ("Fly like"), if not the planned circuit
         ref_id = rt.session.get("reference", "planned")
@@ -231,6 +235,7 @@ def build_scoring_flow(rt):
         rt.board.add(entry)
         rt.pending["posted"] = True
         rt.state["leaderboard"] = rt.board.snapshot()
+        rt.state["leaderboard_posts"] = rt.board.posts()
         rt.state["scorecard"] = _card_state(card, posted=True)
 
     def _discard_card() -> None:
@@ -287,9 +292,17 @@ def build_scoring_flow(rt):
         rt._sync_refs_to_state()
         log.info("saved reference %s (%s) from the finished flight", prof.id, prof.display_name)
         return {"ok": True, "id": prof.id, "name": prof.display_name}
+      
+    async def score_drop():
+        """The trainee threw the run away (IRIS's Finish & discard): clear the
+        held scorecard WITHOUT posting it -- _discard_card would post it."""
+        rt.state["scorecard"] = None
+        rt.pending["card"] = None
+        rt.pending["posted"] = False
 
     rt._discard_card = _discard_card
     rt.finish_lesson = finish_lesson
     rt.score_submit = score_submit
     rt.compare_reference = compare_reference
     rt.save_reference = save_reference
+    rt.score_drop = score_drop

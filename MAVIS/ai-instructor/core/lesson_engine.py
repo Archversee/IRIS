@@ -188,6 +188,10 @@ class LessonEngine:
     def targets(self) -> dict:
         return self.monitors.targets_for(self.detector.phase)
 
+    def bands(self) -> dict:
+        """Allowed ranges for the Live Monitor's dials (Monitors.bands_for)."""
+        return self.monitors.bands_for(self.detector.phase, self._tel)
+
     # ---- to-do list (lessons with todo_steps) ----
     def todo(self) -> dict | None:
         """Same shape as FamiliarizationEngine.todo(): every step with its

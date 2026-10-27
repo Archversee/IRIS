@@ -150,6 +150,10 @@ def publish_state(rt, tel, ctrl) -> None:
         tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=rt._flight_phase(),
         circuit=rt.engine.circuit, total_circuits=rt.engine.detector.total_circuits,
         targets=rt.engine.targets(),
+        # allowed ranges for IRIS's Live Monitor dials (engine.bands())
+        # (none in Free Flight: the lesson loaded underneath isn't what's being flown)
+        bands=(rt.engine.bands() if rt.started.is_set() and not rt.session.get("free_flight")
+               and hasattr(rt.engine, "bands") else None),
         night=not (6.0 < tel.local_time_h < 18.5),
         transcript=rt.transcript[-60:], llm_ok=rt.coach.llm_ok,
         fam_todo=rt.engine.todo() if rt.started.is_set() and hasattr(rt.engine, "todo") else None,
