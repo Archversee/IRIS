@@ -10,8 +10,10 @@ from adapters.sim_base import Telemetry
 from adapters.input_hid import ControlSample
 from .events import CoachEvent
 from .monitors import Monitors, final_speed_band
-from coach.phrases import spoken_targets
+from .meters import standard_all
+from coach import phrases
 from .phase_detector import PhaseDetector
+from .variations import make_variation
 
 
 class LessonEngine:
@@ -37,6 +39,17 @@ class LessonEngine:
         self.elev = float(lesson["airport"]["elevation_ft"])
         self._tel: Telemetry | None = None
         self._ever: set[str] = set()             # phases reached this run
+        # Circuit Variations (core/variations.py): go-around / short / soft field
+        self.variation = make_variation(lesson, aircraft)
+        self._arm_variation()
+
+    def _arm_variation(self) -> None:
+        """Fresh run of a variation; a go-around gets a new random call height."""
+        if self.variation:
+            self.variation.reset()
+            if self.detector.go_around:
+                self.detector.go_around_agl = self.variation.call_agl
+                log.info("go-around will be called at %.0f ft", self.variation.call_agl)
 
     @property
     def phase(self) -> str: return self.detector.phase
@@ -67,6 +80,7 @@ class LessonEngine:
         self._ever.clear()
         self._last_fire.clear()
         self.monitors.reset_turn_cues()
+        self._arm_variation()
 
     def _cooled(self, ev: CoachEvent) -> bool:
         last = self._last_fire.get(ev.code, 0.0)
@@ -83,6 +97,13 @@ class LessonEngine:
         self.monitors._rotate_called = False
         self.monitors._phase_prev = None       # fresh settle-in grace period
         self.monitors.reset_turn_cues()
+        # a re-flown leg keeps what the variation has measured so far (the
+        # soft-field take-off, ...); only the go-around gets a new call height
+        if self.variation and self.detector.go_around:
+            import random
+            lo, hi = (self.variation.cfg.get("call_agl_ft") or [150, 300])
+            self.variation.call_agl = random.uniform(float(lo), float(hi))
+            self.detector.go_around_agl = self.variation.call_agl
 
     def wants_night_switch(self) -> bool:
         """Mid-flight day->night reveal. A lesson flown at night from the start
@@ -123,17 +144,46 @@ class LessonEngine:
                     "total_circuits": self.detector.total_circuits,
                     **{k: v for k, v in
                        self.monitors.targets_for(new_phase).items() if v}}
+            variant = self._leg_variant(new_phase, tel)
+            if variant:
+                data["variant"] = variant
             out.append(CoachEvent(f"PHASE_ENTER_{new_phase}", "info", data, cooldown_s=0))
             note = self.phase_notes.get(new_phase)
             if note:
-                note = {**note, "say_targets": self._spoken_targets(new_phase)}
+                note = {**note, "say_meters": self._step_meters(new_phase),
+                        # the leg call just before it: its targets aren't repeated
+                        "said_before": phrases.render(f"PHASE_ENTER_{new_phase}", data)}
                 # same severity as the phase call, queued after it, so it is
                 # spoken as the follow-on teaching point for this leg
                 out.append(CoachEvent("LESSON_NOTE", "info", {**data, **note}, cooldown_s=0))
         for ev in self.monitors.tick(self.detector.phase, tel, g, ctrl):
             if self._cooled(ev):
                 out.append(ev)
+        if self.variation:
+            d = tel.as_dict()
+            self.variation.observe(d, g.along, g.cross, self.detector.phase)
+            for ev in self.variation.cues(d, g.along, g.cross, self.detector.phase):
+                if self._cooled(ev):
+                    out.append(ev)
         return out
+
+    def _leg_variant(self, phase: str, tel: Telemetry) -> str | None:
+        """Which wording of a leg's call fits what the aircraft is already
+        doing, so MAVIS never says "keep climbing" when we're at circuit
+        height, or "full flaps" when they're already down (coach.phrases
+        PHASE_ENTER_<leg>__<variant>)."""
+        if phase in ("CROSSWIND", "DOWNWIND"):
+            dv = tel.alt_msl - self.monitors.pattern_alt
+            if dv > 100:
+                return "high"
+            if dv >= -100:
+                return "level"
+            return "climb"
+        if phase == "BASE" and tel.flaps_deg >= 15:
+            return "flapsset"
+        if phase == "FINAL" and tel.flaps_deg >= 25:
+            return "flapsset"
+        return None
 
     def targets(self) -> dict:
         return self.monitors.targets_for(self.detector.phase)
@@ -157,16 +207,15 @@ class LessonEngine:
                    "status": "done" if i < cur else ("active" if i == cur else "todo")}
             if i == cur:
                 row["lines"] = list(st.get("todo") or [])
-                row["meters"] = [m for m in (self._meter(k) for k in st.get("meters") or []) if m]
+                row["meters"] = standard_all(self._meter(k) for k in st.get("meters") or [])
             steps.append(row)
         return {"steps": steps, "complete": phase == "DEBRIEF", "done_text": self.todo_done}
 
-    def _spoken_targets(self, phase: str) -> str:
-        """The to-do targets of the step this phase belongs to, spoken."""
+    def _step_meters(self, phase: str) -> list[dict]:
+        """The to-do readouts of the step this phase belongs to (read out after
+        the leg's teaching point -- coach.phrases.spoken_targets)."""
         st = next((s for s in self.todo_steps if phase in s.get("phases", [])), None)
-        if not st:
-            return ""
-        return spoken_targets([m for m in (self._meter(k) for k in st.get("meters") or []) if m])
+        return standard_all(self._meter(k) for k in st.get("meters") or []) if st else []
 
     def _meter(self, kind: str) -> dict | None:
         """One live "now / target" row. No target speed on the take-off: it
@@ -207,7 +256,7 @@ class LessonEngine:
             return {"label": "Glidepath", "now": now, "target": "on the path", "ok": abs(diff) < 60}
         if kind == "flaps":
             want = self.monitors.tgt_flaps.get("FINAL", 30)
-            return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": f"full ({want}°)",
+            return {"label": "Flaps", "now": f"{tel.flaps_deg:.0f}°", "target": "full",
                     "ok": tel.flaps_deg >= want - 6}
         if kind == "height":
             return {"label": "Height", "now": f"{agl:,.0f} ft", "target": ""}

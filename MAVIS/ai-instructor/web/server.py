@@ -48,6 +48,15 @@ class NameMsg(BaseModel):
     family: str = ""
 
 
+class CompareMsg(BaseModel):
+    reference: str
+
+
+class SaveRefMsg(BaseModel):
+    pin: str
+    display_name: str = ""
+
+
 class PinMsg(BaseModel):
     pin: str = ""
 
@@ -232,6 +241,17 @@ def build_app(state: dict, actions: dict, media_dir: str, tts_dir: str = "",
             await fn(msg.name.strip()[:24], msg.given.strip()[:32], msg.family.strip()[:32])
         return {"ok": True}
 
+    @app.post("/score/compare")
+    async def score_compare(msg: CompareMsg):
+        """The finished flight compared with an expert reference (scorecard)."""
+        fn = actions.get("compare_reference")
+        return await fn(msg.reference) if fn else {"ok": False, "error": "not available"}
+
+    @app.post("/score/save_reference")
+    async def score_save_reference(msg: SaveRefMsg):
+        """Instructor: save the finished flight as an expert reference (PIN)."""
+        fn = actions.get("save_reference")
+        return await fn(msg.pin.strip(), msg.display_name) if fn else {"ok": False, "error": "not available"}
     @app.post("/score/drop")
     async def score_drop():
         """Throw the held scorecard away without posting it to the leaderboard."""

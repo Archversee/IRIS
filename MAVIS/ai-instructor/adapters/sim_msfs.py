@@ -54,6 +54,8 @@ _SIMVARS = [
     ("ELEVATOR TRIM PCT", "Percent"),
     ("RUDDER TRIM PCT", "Percent"),
     ("AILERON TRIM PCT", "Percent"),
+    ("GEAR IS ON GROUND:0", "Bool"),          # index 0 = centre gear: the C172's nose wheel
+    ("GROUND VELOCITY", "Knots"),             # "stopped" on the ground, whatever the wind
     ("IS LATITUDE LONGITUDE FREEZE ON", "Bool"),
     ("IS ALTITUDE FREEZE ON", "Bool"),
     ("IS ATTITUDE FREEZE ON", "Bool"),
@@ -278,6 +280,9 @@ class MSFSAdapter:
             elevator_trim_pct=g("ELEVATOR TRIM PCT", None),
             rudder_trim_pct=g("RUDDER TRIM PCT", None),
             aileron_trim_pct=g("AILERON TRIM PCT", None),
+            nose_on_ground=(None if g("GEAR IS ON GROUND:0", None) is None
+                            else bool(g("GEAR IS ON GROUND:0", None))),
+            gs=g("GROUND VELOCITY", None),
         )
 
     def _wait_for(self, pred, timeout_s: float) -> bool:

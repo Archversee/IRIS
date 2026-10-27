@@ -41,14 +41,16 @@ VERBATIM = frozenset({
 RANK_URGENT, RANK_SAFETY = 3, 4
 _URGENT = frozenset({"TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
                      "ROLL_OUT_LEG", "PRE_TURN", "PRE_TURN_ALT", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
-                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
+                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+                     "PHASE_ENTER_GO_AROUND"})
 SAY_RANK = 2   # lines said directly (answers, chat replies): cut off only by urgent/safety
 
 
 def rank(ev: CoachEvent) -> int:
     if ev.severity == "safety":
         return RANK_SAFETY
-    if ev.code in _URGENT:
+    # ...or a call that marks itself urgent (core/variations.py)
+    if ev.code in _URGENT or ev.data.get("urgent"):
         return RANK_URGENT
     return ev.priority     # info 0, nudge 1, correction 2
 
@@ -102,6 +104,8 @@ class Coach:
         self._last_turn_spoken = 0.0
         self._working = False   # True while run() is processing a dequeued event
         self._speaking_rank: int | None = None   # rank of the line being spoken now
+        self._speaking_phase: str | None = None  # the leg / step that line belongs to
+        self._skip_gap = False                   # next line without the usual pause (new_phase)
         self.interrupt = None   # fn() that cuts off the line being spoken (rt.stop_speech)
 
     @property
@@ -121,6 +125,36 @@ class Coach:
                 and r > self._speaking_rank):
             log.info("%s cuts off a less important line", ev.code)
             self.interrupt()
+
+    def new_phase(self, phase: str | None) -> None:
+        """The trainee got ahead (took off, turned, landed before MAVIS was
+        through): whatever is left of an earlier leg / step no longer applies.
+        Queued lines tagged with another phase are dropped and a line from an
+        earlier phase that's still being spoken is cut off, so the new leg's
+        call comes straight away. Safety calls and untagged lines (briefing,
+        night switch, answers) are never dropped."""
+        if not phase:
+            return
+        kept = []
+        while not self.queue.empty():
+            try:
+                item = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            ev = item[2]
+            if ev.severity == "safety" or ev.data.get("phase") in (None, phase):
+                kept.append(item)
+            else:
+                log.info("%s dropped: the lesson has moved on to %s", ev.code, phase)
+        for item in kept:
+            self.queue.put_nowait(item)
+        if (self.interrupt and self._speaking_rank is not None and self._speaking_rank < RANK_SAFETY
+                and self._speaking_phase not in (None, phase)):
+            log.info("cut short: the lesson has moved on to %s", phase)
+            self.interrupt()
+            # the new leg's call goes now, no breathing gap (a line from the
+            # queue: run() sets the gap; direct lines don't count toward it)
+            self._skip_gap = self._working
 
     def _outranked(self, r: int) -> bool:
         """True if something more important than rank r is waiting."""
@@ -219,7 +253,8 @@ class Coach:
                     continue
                 if text:
                     await self.say(text, who="instructor", phase=ev.data.get("phase"), rank=r, event=ev)
-                self._last_spoken = time.time()
+                self._last_spoken = 0.0 if self._skip_gap else time.time()
+                self._skip_gap = False
                 if ev.code.startswith("TURN_"):
                     self._last_turn_spoken = self._last_spoken
             finally:
@@ -239,16 +274,18 @@ class Coach:
             self.transcript.append(entry)
             if who == "instructor" and speak:   # speak=False: shown in chat only
                 self._speaking_rank = rank      # (e.g. lines voiced by the intro video)
+                self._speaking_phase = phase
                 try:
                     await self.speak_fn(text)
                 finally:
                     self._speaking_rank = None
+                    self._speaking_phase = None
 
     # ---------- phrasing ----------
     async def phrase(self, ev: CoachEvent) -> str:
         fallback = phrases.render(ev.code, ev.data)
         # scripted / timing-critical lines are spoken verbatim
-        if (ev.code in VERBATIM or ev.code.startswith("PHASE_ENTER_")
+        if (ev.code in VERBATIM or ev.code.startswith(("PHASE_ENTER_", "VAR_"))
                 or not self.llm_ok):
             return fallback
         prompt = (f"Event: {ev.code} severity={ev.severity} data={ev.data}.\n"

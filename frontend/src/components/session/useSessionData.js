@@ -34,8 +34,8 @@ function meanGaze(eye, eyeTimeline, rawAoi, start, end) {
 // `summary`, `flight`) each page checks before rendering the full layout.
 export function useSessionData({ id, live }) {
   const [summary, setSummary] = useState(null);
-  const [flight, setFlight] = useState([]);
-  const [eye, setEye] = useState([]);
+  const [flightAll, setFlight] = useState([]);   // as stored (see `flight` below)
+  const [eyeAll, setEye] = useState([]);
   const [flightLoaded, setFlightLoaded] = useState(false); // distinguishes "still fetching" from "fetched, genuinely empty"
   const [loadProgress, setLoadProgress] = useState(null); // 0..1 while fetching (Review only); null = unknown/indeterminate
   const [aoiZones, setAoiZones] = useState([]);
@@ -51,6 +51,24 @@ export function useSessionData({ id, live }) {
   const [openPhases, setOpenPhases] = useState([]);
   const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
   const [sessionFlights, setSessionFlights] = useState([]); // which curriculum each flight came from
+
+  // Review leaves out MAVIS's own demonstration flying (the airborne lessons'
+  // "MAVIS demonstration" event, kind "demo"): it isn't the trainee's flight,
+  // so its samples, gaze and timeline event are all hidden. The live view
+  // shows everything as it happens.
+  const demoSpans = useMemo(() => (live ? [] : flightEvents
+    .filter((e) => e.kind === "demo")
+    .map((e) => [Date.parse(e.start_ts), e.end_ts ? Date.parse(e.end_ts) : Infinity])), [flightEvents, live]);
+  const flight = useMemo(() => {
+    if (!demoSpans.length) return flightAll;
+    return flightAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });
+  }, [flightAll, demoSpans]);
+  const eye = useMemo(() => {
+    if (!demoSpans.length) return eyeAll;
+    return eyeAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });
+  }, [eyeAll, demoSpans]);
+  const shownEvents = useMemo(() => (live ? flightEvents : flightEvents.filter((e) => e.kind !== "demo")),
+    [flightEvents, live]);
   const [flightsLoaded, setFlightsLoaded] = useState(false);
   const zCounter = useRef(10);
   const [hiddenAois, setHiddenAois] = useState(new Set());
@@ -454,9 +472,9 @@ export function useSessionData({ id, live }) {
   // boundaries come from the lesson's to-do list, so each ends exactly where the
   // next starts. An event still open runs to the newest sample.
   const flightPhases = useMemo(() => {
-    if (!flightEvents.length || !flight.length) return heuristicPhases;
-    const multi = new Set(flightEvents.map((e) => e.flight)).size > 1;   // several flights in this session
-    return flightEvents.map((e, i) => {
+    if (!shownEvents.length || !flight.length) return heuristicPhases;
+    const multi = new Set(shownEvents.map((e) => e.flight)).size > 1;   // several flights in this session
+    return shownEvents.map((e, i) => {
       const start = +elapsed(e.start_ts).toFixed(1);
       const end = +(e.end_ts ? elapsed(e.end_ts) : totalT).toFixed(1);
       const name = e.attempt > 1 ? `${e.label} (try ${e.attempt})` : e.label;
@@ -467,7 +485,7 @@ export function useSessionData({ id, live }) {
         score: e.score, grade: e.grade, detail: e.detail,
       };
     }).filter((p) => p.end > p.start);
-  }, [flightEvents, heuristicPhases, flight, totalT]);
+  }, [shownEvents, heuristicPhases, flight, totalT]);
 
   const scanLog = useMemo(() => {
     const out = [];

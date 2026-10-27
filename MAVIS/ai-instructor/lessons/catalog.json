@@ -103,22 +103,25 @@
           "id": "lesson07_garound",
           "title": "Go-Around",
           "subtitle": "Rejected landing · power · flap sequence",
-          "available": false,
-          "duration_min": 18
+          "available": true,
+          "duration_min": 18,
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit and come down to land; MAVIS calls go around somewhere below 300 ft. Full power, flaps up in stages, climb straight ahead to 1,000 ft, and the lesson ends."
         },
         {
           "id": "lesson08_short",
           "title": "Short-Field Landing",
           "subtitle": "Stabilised approach · spot landing",
-          "available": false,
-          "duration_min": 20
+          "available": true,
+          "duration_min": 20,
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Fly the circuit, then a 61-knot approach onto the big white aiming-point markings about 400 m in, and stop within 450 m. MAVIS counts the distance down."
         },
         {
           "id": "lesson09_soft",
           "title": "Soft-Field Technique",
           "subtitle": "Soft take-off and landing roll",
-          "available": false,
-          "duration_min": 20
+          "available": true,
+          "duration_min": 20,
+          "start_note": "Starts lined up on runway 02 at Paya Lebar. Soft-field take-off (nose wheel off early, accelerate just above the runway), the circuit, then a slow nose-high landing with the nose wheel held off."
         },
         {
           "id": "lesson10_night",

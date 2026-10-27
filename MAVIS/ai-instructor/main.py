@@ -167,7 +167,7 @@ async def amain(cfg):
                    "flights": [],
                    "sim_aircraft": None,   # aircraft loaded in the sim, read at lesson start (sop_live)
                    "transcript": [],
-                   "speaking": False, "night": False, "track": [[]],
+                   "speaking": False, "night": False, "track": [[]], "demo_track": [],
                    "demo": None,       # {phase, title} while MAVIS is flying a demo
                    "theme": cfg["web"].get("theme", {}),
                    "monitor": cfg["web"].get("monitor_sources", []),
@@ -244,6 +244,7 @@ async def amain(cfg):
                "configure_session": rt.configure_session,
                "select_lesson": rt.select_lesson,
                "quit": rt.quit_lesson, "score_submit": rt.score_submit, "score_drop": rt.score_drop,
+               "compare_reference": rt.compare_reference, "save_reference": rt.save_reference,
                "set_reference": rt.set_reference,
                "reading_say": rt.reading_say,
                "instructor_unlock": rt.instructor_unlock,

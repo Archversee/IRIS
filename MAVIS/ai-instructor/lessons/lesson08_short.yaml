@@ -1,0 +1,119 @@
+name: "Short-Field Landing"
+# Circuit Variations. Same circuit as Lesson 1, from runway 02 at Paya Lebar,
+# finishing with a short-field landing. Paya Lebar's runway is 3.8 km, so the
+# lesson treats it as short. The aim point is something the trainee can see
+# in the sim: the runway's aiming-point markings (two big solid white
+# rectangles, ~400 m in on a runway this long -- short_field.aim_point_m).
+# Nothing marks the stop point (short_field.stop_by_m), so after touchdown
+# MAVIS counts the distance down aloud. Both are also drawn on the map.
+# Scored on landing on the aim point and stopping in time
+# (core/variations.py ShortField), plus a tight approach speed.
+variation: short_field
+short_field:
+  aim_point_m: 400          # touch down here: the aiming-point markings (metres past the threshold)
+  stop_by_m: 850            # ...and be stopped by here (450 m later; counted down aloud)
+airport:
+  icao: WSAP
+  name: Paya Lebar Air Base
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+climb_speed_band_kt: [70, 90]
+# Short-field approach: the C172S POH's 61 kt with full flaps, held within
+# +/- 5 kt (the Landing lesson allows 20). Over the last 50 ft the aim slides
+# to 55 kt; never below 50.
+final_speed_kt: 61
+final_speed_band_kt: 5
+touchdown_speed_kt: 55
+slow_down_below_agl_ft: 50
+min_speed_kt: 50
+say:
+  # short-field technique replaces the standard flare / rollout calls ("gentle
+  # brakes" would contradict "brake firmly"); the touchdown call covers the rollout
+  PHASE_ENTER_FLARE_TOUCHDOWN:
+    layman: "Throttle closed. Only a short float, put it down firmly on the white rectangles."
+    pilot: "Power idle, minimal float, positive touchdown on the aim point."
+  PHASE_ENTER_ROLLOUT:
+    layman: ""
+    pilot: ""
+  PHASE_ENTER_CLIMB_OUT:
+    layman: "Lovely, we're airborne. Keep the speed between 70 and 90 knots and keep climbing straight ahead."
+    pilot: "Airborne. Climb at 70 to 90 knots, wings level."
+phases:
+  - BRIEFING
+  - PRE_TAKEOFF
+  - TAKEOFF_ROLL
+  - CLIMB_OUT
+  - CROSSWIND
+  - DOWNWIND
+  - BASE
+  - FINAL
+  - FLARE_TOUCHDOWN
+  - ROLLOUT
+  - DEBRIEF
+targets:
+  TAKEOFF_ROLL:  { speed: null, note: "full power, rotate at {vr} kt" }
+  CLIMB_OUT:     { speed: "{vy}", flaps: 0 }
+  CROSSWIND:     { speed: "{vy}" }
+  DOWNWIND:      { speed: "{pattern_downwind}", alt: 1100, flaps_abeam: 10 }
+  BASE:          { speed: "{base}", flaps: 20 }
+  FINAL:         { speed: 61, flaps: 30 }
+
+briefing:
+  layman: >-
+    Short-field landing. We'll fly the same rectangle from runway 02, but we'll
+    pretend the runway is short. Your aim point is painted on the runway: the
+    two big solid white rectangles, about 400 metres in. Touch down on them,
+    then brake firmly. There's no line painted where you have to stop, so
+    after touchdown I'll count the distance down for you.
+  pilot: >-
+    Short-field landing, runway 02, one circuit. Simulated short runway: aim
+    point is the aiming-point markings, about 400 metres in; stop within 450
+    metres of them, I'll call the distance remaining. Full flaps, 61 knots on
+    final, plus or minus five.
+
+phase_notes:
+  FINAL:
+    layman: >-
+      Hold that speed tighter than usual, within five knots. Look for the two
+      big white rectangles on the runway and keep them still in the
+      windscreen: if they move up, you're dropping short; if they move down,
+      you'll land long.
+    pilot: >-
+      Plus or minus five knots. Aim point is the aiming-point markings; keep
+      them fixed. Power for the path, pitch for the speed.
+
+closing:
+  layman: >-
+    That's a short-field landing. Let's see how close you got to the aim point.
+  pilot: >-
+    Full stop. Short-field landing complete. Let's look at the touchdown point
+    and the stop.
+
+debrief_summary: >-
+  short-field landing (a circuit from runway 02, then a tight 61-knot
+  approach onto the aiming-point markings about 400 metres in, a firm
+  touchdown on them, and stopping within 450 metres)
+
+scoring:
+  weights:    { track: 15, speed: 15, altitude: 10, landing: 15, smoothness: 5,
+                touchdown: 25, stop: 15 }
+  scales:     { track: 75, speed: 6, altitude: 120, smoothness: 0.22,
+                land_sink: 400, land_center: 40, land_speed: 8 }
+  grade_bands: [[88, "A"], [76, "B"], [64, "C"], [50, "D"]]
+  retry_caps:  { "1": 85, "2": 78, "3": 70 }
+  retry_cap_floor: 60
+  final_length_m: 1100

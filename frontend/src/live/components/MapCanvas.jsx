@@ -65,6 +65,9 @@ export default function MapCanvas({ state }) {
     // Flown track -- one segment per attempt (MAVIS keeps the whole flight)
     let segs = state?.track || [];
     if (segs.length && typeof segs[0][0] === "number") segs = [segs];
+    // MAVIS's own demonstration flight (airborne lessons): dotted, under the
+    // trainee's track, never part of it
+    const demoTrk = state?.demo_track || [];
 
     // View centred on the planned circuit; unzoomed it widens (symmetrically)
     // to keep the aircraft and the entire flown track in view, like IRIS's
@@ -82,6 +85,7 @@ export default function MapCanvas({ state }) {
       };
       if (acA != null) fit(acA, acC);
       segs.forEach((trk) => trk.forEach((p) => fit(...en(p[0], p[1]))));
+      demoTrk.forEach((p) => fit(...en(p[0], p[1])));
     }
     halfA /= zoom; halfC /= zoom;
     cA += pan.a; cC += pan.c;
@@ -129,7 +133,10 @@ export default function MapCanvas({ state }) {
       ctx.strokeStyle = ACC + "55";
       ctx.lineWidth = 2;
       ctx.setLineDash([7, 7]);
-      drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px, 220, sc);
+      // turns as wide as a real aircraft flies them (pattern.corner_radius_m;
+      // the same shape the track score and IRIS's Review route use)
+      drawRoundedPattern(ctx, [[0, 0], [upA, 0], [upA, off], [-fin, off], [-fin, 0]], px,
+        pat.corner_radius_m || 400, sc);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -147,6 +154,43 @@ export default function MapCanvas({ state }) {
     ctx.fillStyle = "#8fa3c4";
     ctx.font = "14px system-ui";
     ctx.fillText("RWY " + rw.ident, r1x - 16, r1y + 22);
+
+    // Short-Field: the aim point (touch down here) and the line to stop before
+    if (L.short_field) {
+      const [ax, ay] = px(L.short_field.aim_point_m, 0);
+      ctx.fillStyle = GOOD;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 6, 0, Math.PI * 2);
+      ctx.fill();
+      const [s1x, s1y] = px(L.short_field.stop_by_m, 90);
+      const [s2x, s2y] = px(L.short_field.stop_by_m, -90);
+      ctx.strokeStyle = "#ff5c5c";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(s1x, s1y);
+      ctx.lineTo(s2x, s2y);
+      ctx.stroke();
+      ctx.fillStyle = "#ff8a8a";
+      ctx.font = "12px system-ui";
+      ctx.fillText("stop before", s1x + 6, s1y - 4);
+      ctx.fillStyle = GOOD;
+      ctx.fillText("aim", ax - 10, ay - 10);
+    }
+
+    // MAVIS's demonstration: a dotted line
+    if (demoTrk.length > 1) {
+      ctx.strokeStyle = "rgba(205, 217, 236, 0.75)";
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.setLineDash([2, 6]);
+      ctx.beginPath();
+      demoTrk.forEach((p, i) => {
+        const [q, r] = px(...en(p[0], p[1]));
+        i ? ctx.lineTo(q, r) : ctx.moveTo(q, r);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Flown track -- old attempts dim/dashed
     segs.forEach((trk, si) => {
@@ -188,7 +232,7 @@ export default function MapCanvas({ state }) {
       ctx.fill();
       ctx.restore();
     }
-  }, [state?.tel, state?.track, state?.lesson, state?.night, state?.phase, zoom, pan]);
+  }, [state?.tel, state?.track, state?.demo_track, state?.lesson, state?.night, state?.phase, zoom, pan]);
 
   function patternToLatLon(along, cross) {
     const proj = projRef.current;

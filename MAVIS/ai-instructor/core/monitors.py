@@ -25,7 +25,7 @@ def final_speed_band(lesson: dict, v_speeds: dict, agl: float):
     band = lesson.get("final_speed_band_kt")
     if not band:
         return None
-    fin = float(v_speeds["final"])
+    fin = float(lesson.get("final_speed_kt") or v_speeds["final"])
     td = float(lesson.get("touchdown_speed_kt", fin))
     below = float(lesson.get("slow_down_below_agl_ft", 100))
     f = max(0.0, min(1.0, agl / below)) if below > 0 else 1.0
@@ -56,9 +56,11 @@ class Monitors:
         self.crosswind_off_track_m = float(lesson.get("crosswind_off_track_m", 300))
         # rotate call speed: the aircraft's Vr, or the lesson's own rotate_kt
         self.vr = float(lesson.get("rotate_kt") or v["vr"])
+        # Soft-Field: no "rotate now" -- the stick is back from the start of the roll
+        self._rotate_call = not lesson.get("no_rotate_call")
         self.tgt_speed = {"CLIMB_OUT": v["vy"], "CROSSWIND": v["vy"],
                           "DOWNWIND": v["pattern_downwind"], "BASE": v["base"],
-                          "FINAL": v["final"]}
+                          "FINAL": round(float(lesson.get("final_speed_kt") or v["final"]))}
         self.tgt_flaps = {"DOWNWIND": f["downwind"], "BASE": f["base"], "FINAL": f["final"]}
         # legs flown without a speed to hold (the Take-off lesson's climb-out):
         # no speed shown, called or nudged there
@@ -75,7 +77,8 @@ class Monitors:
         self._runway_length_m = rw_len
         # Crosswind turn is after the runway ends, height + position (not mid-runway).
         self._turn_crosswind_along_min = float(
-            lesson["pattern"].get("crosswind_turn_min_along_m", rw_len + 120.0))
+            # (the departure end: the planned circuit's rounded crosswind turn starts there)
+            lesson["pattern"].get("crosswind_turn_min_along_m", rw_len))
         self.vy = float(aircraft["v_speeds"]["vy"])
         self.turn_word = "left" if lesson["pattern"].get("side", "left") == "left" else "right"
         # circuit turns: left traffic turns left (heading offset decreasing)
@@ -130,6 +133,9 @@ class Monitors:
         # the crosswind turn is also called on position (approaching the planned
         # corner), once at least this high -- whichever comes first.
         self._xwind_min_agl = float(pat.get("crosswind_turn_min_agl_ft", 400))
+        # Take-off lesson: straight ahead to end_at_agl_ft and done -- no turn
+        # is ever called (heads-up, turn or roll-out)
+        self._no_turns = lesson.get("segment") == "takeoff"
         # sat-nav style heads-up ("in 500 metres, get ready to turn left")
         # this many seconds before each turn call; 0 = off
         self._pre_turn_s = float(pat.get("turn_precue_s", 12.0))
@@ -172,7 +178,7 @@ class Monitors:
     # straight legs on the planned circuit: a point on the line and the
     # direction it's flown, in (along, cross) metres.
     def _leg_line(self, phase: str):
-        if phase in ("CLIMB_OUT", "FINAL"):
+        if phase in ("CLIMB_OUT", "FINAL", "GO_AROUND"):
             return (0.0, 0.0), (1.0, 0.0)
         if phase == "CROSSWIND":
             return (self._up_a, 0.0), (0.0, 1.0)
@@ -214,7 +220,8 @@ class Monitors:
         toward = hdg_diff(want, hdg(da, dc))   # sign: which way the line lies
         if abs(err) < 10 or err * toward < 0:
             return None                    # already heading back to it (or cutting back in steeply)
-        leg = {"CLIMB_OUT": "runway centreline", "FINAL": "centreline"}.get(phase, phase.lower() + " leg")
+        leg = {"CLIMB_OUT": "runway centreline", "FINAL": "centreline",
+               "GO_AROUND": "runway centreline"}.get(phase, phase.lower() + " leg")
         # how much to turn: the intercept toward that point, 10-45 deg
         deg = int(min(45, max(10, round(abs(err) / 5) * 5)))
         # a correction (not a nudge), so a busy cockpit doesn't drop it; repeated
@@ -350,7 +357,7 @@ class Monitors:
         # ---- proactive turn cues (NOT gated by phase settle-in, must beat phase advance) ----
         d = {"dir": self.turn_word, "xwind": int(self.xwind_agl)}
         v = max(tel.ias, 50.0) * 0.5144          # m/s, for "seconds to the turn"
-        if phase == "CLIMB_OUT":
+        if phase == "CLIMB_OUT" and not self._no_turns:
             # position: one turn lead before the planned crosswind line, but
             # never before the runway end (+ margin)
             line_at = max(self._up_a - self.turn_lead_m(tel.ias), self._turn_crosswind_along_min)
@@ -427,7 +434,7 @@ class Monitors:
         if c: E(c)
 
         if phase == "TAKEOFF_ROLL":
-            if tel.ias >= self.vr and not self._rotate_called:
+            if tel.ias >= self.vr and not self._rotate_called and self._rotate_call:
                 self._rotate_called = True
                 E(CoachEvent("ROTATE_NOW", "correction",
                              {"vr": self.vr}, cooldown_s=60))
@@ -486,7 +493,9 @@ class Monitors:
             self._abeam_prev = abeam_ready
 
         fl = self.tgt_flaps.get(phase)
-        if fl and phase in ("BASE", "FINAL") and tel.flaps_deg < fl - 6:
+        # a reminder only: the leg's own call has just asked for these flaps
+        if (fl and phase in ("BASE", "FINAL") and tel.flaps_deg < fl - 6
+                and now - self._phase_t > 15):
             E(CoachEvent("FLAPS_REMINDER", "nudge", {"flaps": fl}, cooldown_s=25))
 
         if not tel.on_ground and abs(tel.bank) > 32:

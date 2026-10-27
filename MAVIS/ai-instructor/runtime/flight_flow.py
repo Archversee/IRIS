@@ -30,6 +30,36 @@ def build_flight_flow(rt):
             return ""
         return block.get(rt.session.get("jargon", "layman")) or block.get("layman") or ""
 
+    def _rolling() -> bool:
+        """The trainee has started the take-off (or is already flying)."""
+        tel = rt.state.get("tel") or {}
+        if not tel:
+            return False
+        if not tel.get("on_ground", True):
+            return True
+        # actually moving -- not just the throttle forward (parking brake on)
+        gs = tel.get("gs")
+        return (gs if gs is not None else tel.get("ias", 0.0)) > 8
+
+    async def _brief(text: str) -> bool:
+        """Speak one briefing line; False (and the line cut off) as soon as
+        the trainee starts the take-off -- the lesson then starts at once."""
+        if not text:
+            return True
+        line = asyncio.create_task(rt.coach.say(text))
+        while not line.done():
+            if _rolling():
+                line.cancel()                  # waiting to speak, or speaking: either way, not any more
+                rt.stop_speech()
+                try:
+                    await line
+                except asyncio.CancelledError:
+                    pass
+                log.info("briefing cut short: the take-off has started")
+                return False
+            await asyncio.sleep(0.2)
+        return True
+
     def _briefing_texts() -> list[str]:
         """What the briefing will say, in order (also made ahead by rt.prewarm_speech)."""
         own = _lesson_text(rt.lesson.get("briefing"))
@@ -51,8 +81,14 @@ def build_flight_flow(rt):
                 await rt.coach.say(t)
             rt.engine.start_flying()
             return
+        # ground starts: if the trainee rolls during the briefing, the rest of
+        # it is skipped and the lesson picks up where the aircraft is
+        # (not the mock: its autopilot starts rolling straight away)
+        brief = (rt.coach.say if rt.lesson.get("airborne_start") or rt.cfg["sim"]["adapter"] == "mock"
+                 else _brief)
         for t in texts:
-            await rt.coach.say(t)
+            if await brief(t) is False:
+                break
         if rt.lesson.get("airborne_start"):
             await _set_frozen(False)          # held on final through the briefing
         rt.engine.start_flying()

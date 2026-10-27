@@ -22,7 +22,8 @@ from .events import CoachEvent
 from .monitors import Monitors, band, roll_out_lead
 from .phase_detector import PhaseDetector, hdg_diff
 from .scoring import DEFAULTS, ScoreCard, _curve
-from coach.phrases import spoken_targets
+from .meters import standard_all
+from . import standards
 
 log = logging.getLogger(__name__)
 
@@ -432,7 +433,7 @@ class FamiliarizationEngine:
         f = self._field(tel)
         data = self.step_data(p, tel)
         self._data = data
-        self._meters = self._readout(tel)        # targets visible while it's explained
+        self._meters = standard_all(self._readout(tel))   # targets visible while it's explained
         slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
         # what the mock autopilot should fly for this step
         mock = {"STRAIGHT_LEVEL": {"hdg_delta": 0},
@@ -465,7 +466,7 @@ class FamiliarizationEngine:
         note = self.notes.get(p)
         if note:
             out.append(CoachEvent("LESSON_NOTE", "info",
-                                  {**data, **note, "say_targets": spoken_targets(self._meters)},
+                                  {**data, **note, "say_meters": self._meters},
                                   cooldown_s=0))
         log.info("familiarization step -> %s (alt %.0f, hdg %.0f, field ~%s nm, bearing from %s)",
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
@@ -706,7 +707,7 @@ class FamiliarizationEngine:
         self._prev_hdg, self._prev_t = tel.hdg, now
         if self._announced != self.phase:
             return self._enter(tel, now)
-        self._meters = self._readout(tel)
+        self._meters = standard_all(self._readout(tel))
         if self._step_done(tel, dt, now):
             pending, self._events = self._events, []
             order = self.detector.ORDER
@@ -738,7 +739,8 @@ class FamiliarizationEngine:
             row.update(target=f"{d['alt_lo']:,}\u2013{d['alt_hi']:,} ft",
                        ok=d["alt_lo"] <= alt <= d["alt_hi"])
         elif p == "GLIDE" and e:
-            row.update(target=f"down to {_r(e['alt'] - self.glide_ft, 10):,} ft")
+            tgt = _r(e["alt"] - self.glide_ft, 10)
+            row.update(target=f"{tgt:,} ft", ok=alt <= tgt + 10)
         return rows + [row]
 
     def _readout_rows(self, tel: Telemetry) -> list[dict]:
@@ -765,30 +767,19 @@ class FamiliarizationEngine:
                     {"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0",
                      "target": f"{d['bank_lo']}\u2013{d['bank_hi']}\u00b0",
                      "ok": d["bank_lo"] - 2 <= abs(tel.bank) <= d["bank_hi"] + 2}]
+        # climbs / descents: the height to reach is the Height row (_readout)
         if p == "CLIMB":
-            up = max(0.0, alt - e["alt"])
-            return [{"label": "Climbed", "now": f"{_r(up, 10)} ft",
-                     "target": f"{d['climb_lo']}\u2013{d['climb_hi']} ft",
-                     "pct": min(1.0, up / max(1.0, self.climb_ft - 100))},
-                    {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "5\u201310\u00b0 up",
+            return [{"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "5\u201310\u00b0 up",
                      "ok": 4 <= pitch <= 11},
                     {"label": "Speed", "now": f"{tel.ias:.0f} kt",
                      "target": f"{d['spd_lo']}\u2013{d['spd_hi']} kt",
                      "ok": d["spd_lo"] - 3 <= tel.ias <= d["spd_hi"] + 3}]
         if p == "DESCEND":
-            down = max(0.0, e["alt"] - alt)
-            return [{"label": "Descended", "now": f"{_r(down, 10)} ft",
-                     "target": f"{d['descend_lo']}\u2013{d['descend_hi']} ft",
-                     "pct": min(1.0, down / max(1.0, self.descend_ft - 100))},
-                    {"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "2\u20135\u00b0 down",
+            return [{"label": "Nose", "now": f"{pitch:+.0f}\u00b0", "target": "2\u20135\u00b0 down",
                      "ok": -6 <= pitch <= -1}]
         if p in ("PITCH_UP", "PITCH_DOWN"):
             up = p == "PITCH_UP"
-            moved = max(0.0, (alt - e["alt"]) if up else (e["alt"] - alt))
-            return [{"label": "Climbed" if up else "Descended", "now": f"{_r(moved, 10)} ft",
-                     "target": f"{d['pitch_lo']}\u2013{d['pitch_hi']} ft",
-                     "pct": min(1.0, moved / max(1.0, self.pitch_ft - 50))},
-                    {"label": "Nose", "now": f"{pitch:+.0f}\u00b0",
+            return [{"label": "Nose", "now": f"{pitch:+.0f}\u00b0",
                      "target": "about 5\u00b0 up" if up else "about 5\u00b0 down",
                      "ok": (2 <= pitch <= 9) if up else (-9 <= pitch <= -1)},
                     {"label": "Speed", "now": f"{tel.ias:.0f} kt",
@@ -859,10 +850,7 @@ class FamiliarizationEngine:
                     {"label": "Steady", "now": f"{self._held:.0f} s", "target": f"{self.level_hold_s:.0f} s",
                      "pct": min(1.0, self._held / self.level_hold_s)}]
         if p == "GLIDE":
-            down = max(0.0, e.get("alt", alt) - alt)
-            rows = [{"label": "Glided down", "now": f"{_r(down, 10)} ft", "target": f"{self.glide_ft:.0f} ft",
-                     "pct": min(1.0, down / self.glide_ft)},
-                    {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+            rows = [{"label": "Speed", "now": f"{tel.ias:.0f} kt",
                      "target": f"{d['glide_lo']}\u2013{d['glide_hi']} kt",
                      "ok": d["glide_lo"] <= tel.ias <= d["glide_hi"]}]
             if not self.mock:
@@ -1074,8 +1062,9 @@ class FamiliarizationScorer:
             self._add("smoothness", abs(roll - self._prev_ctrl[0]) + abs(pitch - self._prev_ctrl[1]))
         self._prev_ctrl = (roll, pitch)
 
-    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
-                 score_caps: bool | None = None) -> ScoreCard:
+    def _scores_total(self, f: float) -> tuple[dict, int, bool]:
+        """Scores, total and whether it was capped, at tolerance factor f
+        (core/standards.py: 1 = the lesson's own scales)."""
         scale = {"altitude": self.s["altitude"], "bank": self.s["bank"],
                  "climb_speed": self.s["speed"], "speed": self.s["speed"],
                  "level_off": self.s["altitude"], "smoothness": self.s["smoothness"]}
@@ -1085,7 +1074,7 @@ class FamiliarizationScorer:
                                if attempted else None)
         for k, (tot, n) in self._acc.items():
             if k in self.metrics:
-                scores[k] = round(_curve(tot / n, scale[k])) if n else None
+                scores[k] = round(_curve(tot / n, scale[k] * f)) if n else None
         flown = {k: v for k, v in scores.items() if v is not None}
         wsum = sum(self.WEIGHTS[k] for k in flown) or 1
         total = round(sum(v * self.WEIGHTS[k] for k, v in flown.items()) / wsum) if flown else 0
@@ -1095,11 +1084,20 @@ class FamiliarizationScorer:
         capped = n_skipped > 0 and total > 95 - 10 * n_skipped
         if capped:
             total = 95 - 10 * n_skipped
-        grade = "F"
+        return scores, total, capped
+
+    def _grade(self, total: int) -> str:
         for thr, g in self.grade_bands:
             if total >= thr:
-                grade = g
-                break
-        return ScoreCard(name or "", mode, lesson_name, time.time(), scores,
-                         self.retries, total, grade, capped, practice,
-                         incomplete=not self.reached)
+                return g
+        return "F"
+
+    def finalize(self, name: str, mode: str, lesson_name: str, practice: bool = False,
+                 score_caps: bool | None = None) -> ScoreCard:
+        scores, total, capped = self._scores_total(standards.factor(mode))
+        card = ScoreCard(name or "", mode, lesson_name, time.time(), scores,
+                         self.retries, total, self._grade(total), capped, practice,
+                         incomplete=not self.reached, level=standards.label(mode))
+        _, cr_total, _ = self._scores_total(standards.CHECKRIDE)
+        card.checkride = {"total": cr_total, "grade": self._grade(cr_total)}
+        return card
