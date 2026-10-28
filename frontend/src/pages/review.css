@@ -34,6 +34,16 @@
   min-height: 100%;
 }
 .rev--no-rail { grid-template-columns: 1fr; }
+/* Session Review: debrief, SOP rule checks and incidents always on screen in a
+   column beside the videos -- no drawers to find and open. */
+.rev--docked { grid-template-columns: minmax(0, 1fr) clamp(340px, 27%, 520px); }
+.rev-dock {
+  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px;
+  padding: 10px 12px 12px 0; min-height: 0;
+}
+.rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
+/* a title-bar chip was clicked: point at its pane */
+.rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }
 /* Session Review only: everything at 80% scale so the dense layout fits.
    (Percentage sizes aren't scaled by zoom, so the box still fills the page.) */
 .rev--zoom80 { zoom: 0.8; }
@@ -330,7 +340,9 @@
 .loading-pct { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
-  .rev-screens, .rev-bottom { grid-template-columns: 1fr; }
+  .rev-screens, .rev-bottom, .rev--docked { grid-template-columns: 1fr; }
+  .rev-dock { grid-template-rows: none; padding: 0 12px 12px; }
+  .rev-dock__slot { max-height: 70vh; }
   .rev-main { grid-template-rows: auto auto auto auto; overflow: auto; }
   .rev { position: static; height: auto; }
 }
@@ -733,12 +745,18 @@
 .rc-chip .bad { color: #ff5c5c; }
 .rc-chip .todo { color: var(--rev-violet); }
 .rc-chip .signed { color: var(--rev-muted); font-weight: 500; }
-.rc-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 60;
-  background: var(--rev-panel); border-left: 1px solid var(--rev-line); color: var(--rev-text);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, .35); overflow-y: auto; padding: 14px 16px 24px;
-  font-family: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px;
+/* the three panes stack in the Review page's docked right column (.rev-dock) */
+.rc-pane {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px;
+  background: var(--rev-panel); border: 1px solid var(--rev-line); border-radius: 10px; color: var(--rev-text);
+  font-family: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px;
 }
+/* the pane title stays put while its contents scroll under it */
+.rc-pane > .rc-head {
+  position: sticky; top: 0; z-index: 1; margin: 0 -12px 8px; padding: 9px 12px 7px;
+  background: var(--rev-panel); border-bottom: 1px solid var(--rev-line);
+}
+.rc-pane > .rc-head h2 { font-size: 14px; letter-spacing: .02em; }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .rc-head h2 { margin: 0; font-size: 18px; }
 .rc-head .spacer { flex: 1; }
@@ -755,7 +773,7 @@
 .rc-tools select, .rc-judge select, .rc-judge input, .rc-signoff textarea {
   font: inherit; background: var(--rev-bg); color: var(--rev-text); border: 1px solid var(--rev-line); border-radius: 6px; padding: 4px 8px;
 }
-.rc-check { display: inline-flex; gap: 6px; align-items: center; }
+.rc-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .rc-preset { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
 .rc-btn {
   font: inherit; cursor: pointer; padding: 4px 12px; border-radius: 6px;

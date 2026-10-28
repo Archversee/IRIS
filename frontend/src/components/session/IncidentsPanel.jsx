@@ -29,7 +29,7 @@ function mmss(s) {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 }
 
-export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStartMs, onCount, debriefJob }) {
+export default function IncidentsPanel({ sessionId, seekTo, flightStartMs, onCount, debriefJob }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);     // {resultId, index}
@@ -62,18 +62,16 @@ export default function IncidentsPanel({ sessionId, onClose, seekTo, flightStart
         <IncidentView resultId={open.resultId} index={open.index} onClose={() => setOpen(null)} debriefJob={debriefJob}
           onWatch={(epoch) => { setOpen(null); seekTo(Math.max(0, toT(epoch) ?? 0)); }} />
       )}
-      <div className="rc-drawer" role="dialog" aria-label="Incidents">
+      <div className="rc-pane" role="region" aria-label="Incidents">
         <div className="rc-head">
           <h2>Incidents</h2>
-          <span className="spacer" />
-          <button className="rc-x" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div className="rc-muted inc-list-sub">
           Each time a rule was broken. Click one to jump the video there and see the 30 s before and after.
         </div>
         {err && <div className="rc-err">{err}</div>}
         {!d && !err && <div className="rc-empty">Loading…</div>}
-        {d && !d.checked && <div className="rc-empty">This flight hasn't been checked against its SOP rules yet (see the SOP chip).</div>}
+        {d && !d.checked && <div className="rc-empty">This flight hasn't been checked against its SOP rules yet (see SOP rule checks above).</div>}
         {d?.checked && d.incidents.length === 0 && <div className="rc-empty">No rules broken in this flight.</div>}
         {d?.pending > 0 && <div className="inc-list-pending">Analysing {d.pending} more…</div>}
         {RUNNING(debriefJob) && <div className="inc-list-pending">AI notes: {debriefJob.state}…</div>}

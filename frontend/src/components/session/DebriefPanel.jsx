@@ -40,7 +40,7 @@ export function DebriefChip({ onClick, job }) {
   );
 }
 
-export default function DebriefPanel({ sessionId, onClose }) {
+export default function DebriefPanel({ sessionId }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [d, setD] = useState(null);
@@ -74,11 +74,9 @@ export default function DebriefPanel({ sessionId, onClose }) {
 
   const s = d?.summary, job = d?.job, running = RUNNING(job);
   return (
-    <div className="rc-drawer" role="dialog" aria-label="Flight debrief">
+    <div className="rc-pane" role="region" aria-label="Flight debrief">
       <div className="rc-head">
         <h2>Debrief</h2>
-        <span className="spacer" />
-        <button className="rc-x" onClick={onClose} aria-label="Close">×</button>
       </div>
       {err && <div className="rc-err">{err}</div>}
       {!d && !err && <div className="rc-empty">Loading…</div>}

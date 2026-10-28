@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useSessionData } from "../components/session/useSessionData.js";
@@ -25,15 +25,21 @@ export default function Review() {
   const nav = useNavigate();
   const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie, phases } =
     useSessionData({ id, live: false });
-  // SOP rule checks: chip in the title bar, drawer with the details, bands on the timeline
+  // SOP rule checks, the AI debrief and the incidents sit in a column docked
+  // beside the videos -- always on screen, nothing to open. The title-bar
+  // chips still summarise them; clicking one points at its section.
   const [rules, setRules] = useState({ evaluation: null, missing: false });
-  const [rulesOpen, setRulesOpen] = useState(false);
-  // Incidents: each broken rule, opened as a ±30 s close-up (post-flight only)
-  const [incOpen, setIncOpen] = useState(false);
-  const [debriefOpen, setDebriefOpen] = useState(false);   // whole-flight AI debrief
   // starts writing the AI debrief + every broken-rule note in the background if any are missing
   const debriefJob = useDebriefJob(id);
-  const openOnly = (which) => { setRulesOpen(which === "rules"); setIncOpen(which === "inc"); setDebriefOpen(which === "debrief"); };
+  const [flash, setFlash] = useState(null);
+  const flashTimer = useRef(null);
+  const showDock = (which) => {
+    document.getElementById(`rev-dock-${which}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setFlash(which);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1200);
+  };
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
   const loadRules = useCallback(async () => {
     try {
       setRules({ evaluation: await api.ruleResults(id), missing: false });
@@ -62,7 +68,7 @@ export default function Review() {
   const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
-    <div className="rev rev--embedded rev--no-rail rev--zoom80">
+    <div className="rev rev--embedded rev--no-rail rev--docked rev--zoom80">
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}
       <div className="rev-main">
@@ -82,10 +88,10 @@ export default function Review() {
           )}
           {curriculum && <span className="rev-curriculum" title="Curriculum"><small>Curriculum</small> {curriculum}</span>}
           <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
-            onClick={() => openOnly("rules")} />
-          <DebriefChip job={debriefJob} onClick={() => openOnly("debrief")} />
+            onClick={() => showDock("rules")} />
+          <DebriefChip job={debriefJob} onClick={() => showDock("debrief")} />
           {rules.evaluation && (
-            <IncidentsChip count={incidentCount(rules.evaluation)} onClick={() => openOnly("inc")} />
+            <IncidentsChip count={incidentCount(rules.evaluation)} onClick={() => showDock("inc")} />
           )}
         </div>
 
@@ -99,17 +105,19 @@ export default function Review() {
         </div>
       </div>
 
-      {rulesOpen && (
-        <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
-          onClose={() => setRulesOpen(false)} seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
-      )}
-
-      {debriefOpen && <DebriefPanel sessionId={id} onClose={() => setDebriefOpen(false)} />}
-
-      {incOpen && (
-        <IncidentsPanel sessionId={id} onClose={() => setIncOpen(false)} debriefJob={debriefJob}
-          seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
-      )}
+      <aside className="rev-dock" aria-label="Debrief, SOP rule checks and incidents">
+        <div id="rev-dock-debrief" className={"rev-dock__slot" + (flash === "debrief" ? " is-flash" : "")}>
+          <DebriefPanel sessionId={id} />
+        </div>
+        <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
+          <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
+            seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
+        </div>
+        <div id="rev-dock-inc" className={"rev-dock__slot" + (flash === "inc" ? " is-flash" : "")}>
+          <IncidentsPanel sessionId={id} debriefJob={debriefJob}
+            seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
+        </div>
+      </aside>
 
       {phases.openPhases.map((w) => (
         <PhaseModal key={w.winId} w={w}

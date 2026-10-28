@@ -49,7 +49,7 @@ export function RuleChecksChip({ evaluation, missing, onClick }) {
   );
 }
 
-export default function RuleChecksPanel({ sessionId, evaluation, missing, reload, onClose, seekTo, flightStartMs }) {
+export default function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, flightStartMs }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [presets, setPresets] = useState(null);
@@ -93,11 +93,9 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
       <IncidentView resultId={incident.resultId} index={incident.index} onClose={() => setIncident(null)}
         onWatch={(epoch) => { setIncident(null); seekTo(Math.max(0, toT(epoch))); }} />
     )}
-    <div className="rc-drawer" role="dialog" aria-label="SOP rule checks">
+    <div className="rc-pane" role="region" aria-label="SOP rule checks">
       <div className="rc-head">
         <h2>SOP rule checks</h2>
-        <span className="spacer" />
-        <button className="rc-x" onClick={onClose} aria-label="Close">×</button>
       </div>
 
       {missing && !evaluation && (
