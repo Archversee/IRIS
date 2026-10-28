@@ -47,7 +47,7 @@ export function useSessionData({ id, live }) {
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true,
-    scanSpread: false, scanRandom: false });
+    scanSpread: false, scanRandom: false, events: true });   // events: the shaded event boxes on the chart
   // eye-based workload index (Review only)
   const [workloadIndex, setWorkloadIndex] = useState(null);
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(MIN_AOI_DWELL_SEC_DEFAULT.toFixed(1));
