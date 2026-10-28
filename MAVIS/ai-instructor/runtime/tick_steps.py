@@ -125,7 +125,10 @@ def score_tick(rt, tel, ctrl, prev_on_ground):
         changed = rt.event_log.observe(rt._flight_phase(), tel.t, rt.engine.circuit,
                                     getattr(rt.engine, "skipped", ()),
                                     kind="stall" if rt._flight_phase() == "STALL" else None)
-        if rt.engine.phase == "DEBRIEF" and not rt.scored["done"]:
+        # the lesson underneath reaching its debrief is not the end of a Free
+        # Flight: that only ends on End Session (quit_lesson)
+        lesson_over = rt.engine.phase == "DEBRIEF" and not rt.session.get("free_flight")
+        if lesson_over and not rt.scored["done"]:
             rt.event_log.end_flight(tel.t, "completed")
             changed = True
         if changed:
@@ -134,7 +137,7 @@ def score_tick(rt, tel, ctrl, prev_on_ground):
                 and rt.engine.phase in ("FLARE_TOUCHDOWN", "FINAL", "ROLLOUT"):
             rt.scorer.on_landing(tel.as_dict(), geom_d)
         prev_on_ground = tel.on_ground
-        if rt.engine.phase == "DEBRIEF" and not rt.scored["done"]:
+        if lesson_over and not rt.scored["done"]:
             rt.scored["done"] = True
             if is_familiarization(rt.lesson) or rt.lesson.get("end_reposition"):
                 # practice over: freeze, score, then back to the runway
@@ -156,7 +159,9 @@ def publish_state(rt, tel, ctrl) -> None:
                and hasattr(rt.engine, "bands") else None),
         night=not (6.0 < tel.local_time_h < 18.5),
         transcript=rt.transcript[-60:], llm_ok=rt.coach.llm_ok,
-        fam_todo=rt.engine.todo() if rt.started.is_set() and hasattr(rt.engine, "todo") else None,
+        # (none in Free Flight either: that to-do list is the lesson's, not this flight's)
+        fam_todo=(rt.engine.todo() if rt.started.is_set() and not rt.session.get("free_flight")
+                  and hasattr(rt.engine, "todo") else None),
         geom={"along": rt.engine.geom.along, "cross": rt.engine.geom.cross}
              if rt.engine.geom else None)
 

@@ -98,7 +98,12 @@ export default function MapCanvas({ state }) {
 
     ctx.clearRect(0, 0, cv.width, cv.height);
 
-    if (L.type === "familiarization") {
+    // Free Flight: no route to fly -- just the runway and the flown track
+    // (the lesson loaded underneath only places the runway)
+    const free = !!state?.session?.free_flight;
+    if (free) {
+      // nothing planned to draw
+    } else if (L.type === "familiarization") {
       // Airborne lessons: no circuit. Only Flight Familiarization has a
       // field to find: its dashed ring is "fly back to here", the lesson
       // ends once the aircraft is inside it -- so it's drawn only during
@@ -156,7 +161,7 @@ export default function MapCanvas({ state }) {
     ctx.fillText("RWY " + rw.ident, r1x - 16, r1y + 22);
 
     // Short-Field: the aim point (touch down here) and the line to stop before
-    if (L.short_field) {
+    if (L.short_field && !free) {
       const [ax, ay] = px(L.short_field.aim_point_m, 0);
       ctx.fillStyle = GOOD;
       ctx.beginPath();
@@ -232,7 +237,8 @@ export default function MapCanvas({ state }) {
       ctx.fill();
       ctx.restore();
     }
-  }, [state?.tel, state?.track, state?.demo_track, state?.lesson, state?.night, state?.phase, zoom, pan]);
+  }, [state?.tel, state?.track, state?.demo_track, state?.lesson, state?.night, state?.phase,
+      state?.session?.free_flight, zoom, pan]);
 
   function patternToLatLon(along, cross) {
     const proj = projRef.current;

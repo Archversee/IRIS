@@ -40,6 +40,10 @@ TIME_HINT = (r"(time|clock|hrs|o'?clock|[ap]\.?m\b|\d{1,2}[:.]\d{2}|night|day(ti
 # words that could make a free-text request a tool call (retry a leg, show/hide the guide, lighting)
 ROUTE_HINT = (r"(again|redo|retry|rewind|checkpoint|another go|go back|guide|diagram|"
               r"controls?|show|hide|close|open|dark|bright|light|weather)")
+# "end lesson", "finish the flight", "stop this session" -- a command, never a
+# question ("how do I end the lesson?" is caught by QUESTION_RE)
+END_RE = (r"\b(end|finish|stop|quit|terminate|wrap up)\b.{0,15}"
+          r"\b(lesson|session|flight|free ?flight)\b")
 
 def parse_clock(t: str):
     """Deterministic parse of explicit times: 12:45pm, 0630, 1400 hrs, 7 pm."""
@@ -98,6 +102,13 @@ def build_chat(rt, state, coach, loop, retry):
         import re
         await coach.say(text, who="trainee")
         t = text.lower()
+        # --- end intent: Free Flight has no lesson to finish, so saying "end
+        #     lesson" ends it the same way the End Session button does ---
+        if (rt.session.get("free_flight") and rt.started.is_set() and not rt.scored["done"]
+                and re.search(END_RE, t) and not re.search(QUESTION_RE, t)):
+            await coach.say("Okay, ending the flight here.")
+            asyncio.create_task(rt.quit_lesson())
+            return
         # --- UI intents: controls guide ---
         if re.search(r"(close|hide|remove).{0,20}(guide|diagram|picture)", t):
             state["ui_cmd"] = {"action": "close_guide", "seq": time.time()}
