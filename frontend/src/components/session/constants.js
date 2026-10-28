@@ -24,6 +24,7 @@ export const METRICS = [
 export const WL_MIN = -1;
 export const WL_MAX = 3;
 export const WL_BAND_LABEL = { low: "Low", medium: "Medium", high: "High" };
+export const WL_BAND_COLOR = { low: "#4ade80", medium: "#f5a623", high: "#ef4444" };
 
 // Flight events (MAVIS to-do steps / circuit phases). Coloured by SOP grade once
 // scored; until then each step gets a neutral colour of its own, a timed-out

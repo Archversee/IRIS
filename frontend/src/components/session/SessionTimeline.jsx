@@ -1,7 +1,7 @@
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
 } from "recharts";
-import { METRICS, WL_BAND_LABEL, WL_MAX, WL_MIN } from "./constants.js";
+import { METRICS, WL_BAND_COLOR, WL_BAND_LABEL, WL_MAX, WL_MIN } from "./constants.js";
 import { fmt } from "./utils.js";
 
 function TLTooltip({ active, payload }) {
@@ -30,18 +30,35 @@ function TLTooltip({ active, payload }) {
   );
 }
 
-// Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
-// or a takeoff/landing guess for sessions without any).
-// `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
-// clickable phases/event buttons, no playback transport.
 // Workload's y position on the chart (it's drawn on the fixed WL_MIN..WL_MAX scale)
 const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
+const WL_STRIP = 0.045;     // height of the band strip along the bottom of the chart (0..1)
 
 // Metrics drawn from the workload index can't be shown until it has loaded.
 function unavailable(m, hasIndex) {
   return m.needs === "index" && !hasIndex;
 }
 
+// Unbroken runs of one workload band over the chart's points: [{band, x1, x2}]
+// (a run ends where the next point starts; gaps in the index end it too)
+function bandRuns(series) {
+  const runs = [];
+  for (let i = 0; i < series.length; i++) {
+    const band = series[i].workloadBand;
+    const last = runs[runs.length - 1];
+    if (last && last.open) last.x2 = series[i].t;
+    if (!band) { if (last) last.open = false; continue; }
+    if (last && last.open && last.band === band) continue;
+    if (last) last.open = false;
+    runs.push({ band, x1: series[i].t, x2: series[i].t, open: true });
+  }
+  return runs;
+}
+
+// Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
+// or a takeoff/landing guess for sessions without any).
+// `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
+// clickable phases/event buttons, no playback transport.
 export default function SessionTimeline({
   readOnly = false,
   chartSeries, timelineTicks, filters, setFilters, hasIndex = false, workloadBands = null,
@@ -54,6 +71,14 @@ export default function SessionTimeline({
 }) {
   // the Live Monitor (readOnly) leaves out what comes from the after-flight workload index
   const metrics = readOnly ? METRICS.filter((m) => !m.needs) : METRICS;
+  // workload bands: shaded Low / Medium / High zones behind the chart + a strip along its bottom
+  const showBands = !!workloadBands && filters.workload && hasIndex;
+  const zones = showBands ? [
+    { band: "low", y1: 0, y2: wlY(workloadBands.medium), opacity: 0.05 },
+    { band: "medium", y1: wlY(workloadBands.medium), y2: wlY(workloadBands.high), opacity: 0.08 },
+    { band: "high", y1: wlY(workloadBands.high), y2: 1, opacity: 0.1 },
+  ] : [];
+  const runs = showBands ? bandRuns(chartSeries) : [];
   return (
     <div className="rev-timeline">
       <div className="tl-head">
@@ -66,7 +91,8 @@ export default function SessionTimeline({
                 title={m.key === "workload"
                   ? "Eye-based workload index: fixation rate, blink rate and pupil activity (LHIPA) against this pilot's "
                     + "usual on this flight. "
-                    + "0 = usual; dashed lines mark Medium and High."
+                    + "0 = usual. Shaded zones: green Low, amber Medium, red High; "
+                    + "the strip along the bottom shows the band at each moment."
                   : m.needs === "index" ? `${m.label}: gaze entropy over the AOIs (${m.unit}), from the workload index.` : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
                 onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
@@ -88,6 +114,12 @@ export default function SessionTimeline({
             stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
           <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
           <Tooltip content={<TLTooltip />} />
+          {zones.map((z) => (
+            <ReferenceArea key={`zone-${z.band}`} y1={z.y1} y2={z.y2} fill={WL_BAND_COLOR[z.band]} fillOpacity={z.opacity}
+              stroke="none" style={{ pointerEvents: "none" }} ifOverflow="hidden"
+              label={{ value: `${WL_BAND_LABEL[z.band]} workload`, position: "insideTopRight",
+                       fill: WL_BAND_COLOR[z.band], fillOpacity: 0.75, fontSize: 10 }} />
+          ))}
           {flightPhases.map((p) => {
             const minSpan = Math.max(1, totalT * 0.008);
             let x1 = p.start, x2 = p.end;
@@ -110,6 +142,10 @@ export default function SessionTimeline({
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
+          {runs.map((r, i) => (
+            <ReferenceArea key={`wl-${i}`} x1={r.x1} x2={r.x2} y1={0} y2={WL_STRIP}
+              fill={WL_BAND_COLOR[r.band]} fillOpacity={0.85} stroke="none" style={{ pointerEvents: "none" }} />
+          ))}
           {metrics.map((m) =>
             filters[m.key] && !unavailable(m, hasIndex) ? (
               <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
