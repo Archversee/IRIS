@@ -25,6 +25,8 @@ def build_checkpoints(rt, state, coach, loop, event_log, _sim_now, checkpoints):
         """Teleport back to the start of a phase and let the trainee retry.
         reason_code selects the spoken line (TELEPORT for a request, FORCE_REPEAT
         when trainee/pilot mode is making them re-fly a leg)."""
+        if rt.session.get("free_flight"):
+            return      # the checkpoints are the circuit lesson's: nothing to re-fly in Free Flight
         order = rt.engine.detector.ORDER
         want = phase if phase in order else order[1]   # generic redo -> first step, not current phase
         # walk backwards until we find a phase we actually checkpointed

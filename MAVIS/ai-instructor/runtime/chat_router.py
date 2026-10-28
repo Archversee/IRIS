@@ -123,7 +123,8 @@ def build_chat(rt, state, coach, loop, retry):
                             "mainly for landing.")
             return
         # --- retry intents: "let me try the landing again", "go back" ---
-        if re.search(r"((try|do|fly|attempt).{0,25}again)|go back|redo|rewind|"
+        # (not in Free Flight: no circuit to re-fly, the words are just chat there)
+        if not rt.session.get("free_flight") and re.search(r"((try|do|fly|attempt).{0,25}again)|go back|redo|rewind|"
                      r"checkpoint|one more (try|go|time)|mess(ed)? (that |it )?up", t):
             phase = None
             for word, ph in PHASE_WORDS.items():
