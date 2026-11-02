@@ -168,9 +168,10 @@
         {
           "id": "lesson14_unusual",
           "title": "Unusual Attitude Recovery",
-          "subtitle": "Nose high / nose low · IMC intro",
-          "available": false,
-          "duration_min": 20
+          "subtitle": "Nose high / nose low · recovery order",
+          "available": true,
+          "duration_min": 20,
+          "start_note": "Starts in the air at about 4,000 ft, 3 nm south of Paya Lebar. MAVIS talks you through it first, then puts you nose high or nose low four times and you recover. No landing."
         }
       ]
     }

@@ -30,7 +30,7 @@ class Runtime:
         # provided by runtime/flight_flow.py
         "night_sequence", "skip_demo", "_airborne_start", "_apply_lesson_clock",
         "_briefing_lines", "_briefing_texts", "_connect_msfs_with_retries", "_demos_wanted", "_fam_finish",
-        "_fam_freezes", "_fam_instruct", "_fam_opening", "_lesson_text",
+        "_fam_freezes", "_fam_instruct", "_fam_opening", "_fam_upset", "_lesson_text",
         "_orient_lesson_to_aircraft", "_set_frozen", "_speakable", "_to_runway_start",
         # provided by runtime/instructor_admin.py
         "instructor_add", "instructor_delete", "instructor_lock", "instructor_remove",

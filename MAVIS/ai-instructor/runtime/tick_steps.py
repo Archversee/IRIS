@@ -12,7 +12,7 @@ import time
 
 from coach import phrases
 from core.events import CoachEvent
-from core.familiarization import PART_CUES, is_familiarization
+from core.familiarization import PART_CUES, UPSET_STEPS, is_familiarization
 from core.modes import allow_coach_event
 from runtime.checkpoints import GATED, MAX_ATTEMPTS
 
@@ -63,7 +63,9 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
         if (not allow_coach_event(pol, ev.code, ev.severity)
                 and ev.code not in (rt.lesson.get("always_say") or [])
                 # "now come back" calls: every mode but Exam (silent)
-                and not (ev.code in PART_CUES and pol.get("coaching") != "silent")):
+                and not (ev.code in PART_CUES and pol.get("coaching") != "silent")
+                # an unusual attitude is set up in every mode (Exam: no explanation)
+                and not (ev.code == "LESSON_NOTE" and ev.data.get("phase") in UPSET_STEPS)):
             continue
         if ev.code == "LESSON_NOTE" and is_familiarization(rt.lesson):
             rt.state["look_at"] = {"items": ev.data.get("look") or [],
@@ -81,7 +83,14 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                     "action": rt._speakable(action).rstrip(".")})
                 ev = CoachEvent("LESSON_NOTE", ev.severity,
                                 {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
-            elif rt._fam_freezes() and ev.data.get("freeze", True):
+            if ev.data.get("phase") in UPSET_STEPS:
+                # unusual attitude: always set up by MAVIS (frozen, placed,
+                # "Recover!") -- with the short cue if it was described in the demo
+                rt.engine.hold()
+                asyncio.create_task(rt._fam_upset(ev))
+                continue
+            if (ev.data.get("phase") not in rt.demo_ctl["shown"]
+                    and rt._fam_freezes() and ev.data.get("freeze", True)):
                 rt.engine.hold()       # judge nothing until "you have control"
                 asyncio.create_task(rt._fam_instruct(ev))
                 continue

@@ -203,6 +203,62 @@ def build_flight_flow(rt):
                 if hasattr(rt.sim, "comply"):     # mock student flies the step from here
                     rt.sim.comply(f"PHASE_ENTER_{phase}", ev.data)
 
+    async def _place_upset(att: dict) -> bool:
+        """Put the (frozen) aircraft in the step's unusual attitude where it is
+        now. The sim's sign for pitch / bank isn't documented: read it back,
+        and if either came out mirrored, flip it in the adapter and place again."""
+        fn = getattr(rt.sim, "set_position", None)
+        if fn is None:
+            return False
+        tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+        for _ in range(2):
+            ok = await rt.loop.run_in_executor(None, lambda: fn(
+                tel.lat, tel.lon, tel.alt_msl, tel.hdg, att["ias"],
+                pitch=att["pitch"], bank=att["bank"]))
+            if not ok or rt.cfg["sim"]["adapter"] == "mock":
+                return ok
+            await asyncio.sleep(0.5)                       # let telemetry catch up
+            now = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+            if abs(now.pitch) < abs(att["pitch"]) / 3 and abs(now.bank) < abs(att["bank"]) / 3:
+                # still level: the freeze kept the attitude -- place it unfrozen instead
+                log.warning("unusual attitude not taken while frozen -- placing it unfrozen")
+                await _set_frozen(False)
+                return await rt.loop.run_in_executor(None, lambda: fn(
+                    tel.lat, tel.lon, tel.alt_msl, tel.hdg, att["ias"],
+                    pitch=att["pitch"], bank=att["bank"]))
+            wrong = [ax for ax, got in (("pitch", now.pitch), ("bank", now.bank))
+                     if abs(att[ax]) >= 5 and got * att[ax] < 0]
+            if not wrong or not hasattr(rt.sim, "flip_attitude_sign"):
+                return True
+            for ax in wrong:
+                rt.sim.flip_attitude_sign(ax)
+        return True
+
+    async def _fam_upset(ev):
+        """Unusual-attitude step: explain it with the aircraft frozen, "look
+        down", put it in the attitude, then unfreeze on "Recover!" -- the step's
+        clock (and the recovery's order of controls) starts from there."""
+        gen, eng = rt.run_gen["n"], rt.engine
+        phase = ev.data.get("phase")
+        silent = (rt.session.get("policy") or {}).get("coaching") == "silent"
+        try:
+            await _set_frozen(True)
+            if not silent:
+                await rt.coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
+            if gen != rt.run_gen["n"] or not rt.started.is_set():
+                return
+            await rt.coach.say(phrases.render("FAM_UPSET_LOOK_DOWN", {}), phase=phase)
+            if not await _place_upset(eng.upset_attitude(phase)):
+                log.warning("unusual attitude: couldn't place the aircraft -- recovering from level")
+        finally:
+            if gen == rt.run_gen["n"] and eng is rt.engine:
+                await _set_frozen(False)
+                eng.release()
+                if hasattr(rt.sim, "comply"):     # mock student flies the step from here
+                    rt.sim.comply(f"PHASE_ENTER_{phase}", ev.data)
+        if gen == rt.run_gen["n"]:
+            await rt.coach.say(phrases.render("FAM_UPSET_RECOVER", {}), phase=phase)
+
     async def _lock_controls(on: bool) -> None:
         """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
         the demo, handed back after."""
@@ -407,6 +463,7 @@ def build_flight_flow(rt):
     rt._fam_finish = _fam_finish
     rt._fam_freezes = _fam_freezes
     rt._fam_instruct = _fam_instruct
+    rt._fam_upset = _fam_upset
     rt._fam_opening = _fam_opening
     rt._lesson_text = _lesson_text
     rt._orient_lesson_to_aircraft = _orient_lesson_to_aircraft

@@ -107,6 +107,10 @@ class MSFSAdapter:
         self._sm = None
         self._datadef = None
         self._initpos_defined = False
+        # InitPosition's Pitch/Bank signs aren't documented: assumed the same as
+        # PLANE PITCH/BANK DEGREES (+ nose down, + left), so ours are negated.
+        # flip_attitude_sign() corrects this once a placement reads back mirrored.
+        self._initpos_sign = {"pitch": -1.0, "bank": -1.0}
         self._lock_mapped = False      # _LOCKED_EVENTS mapped to client ids yet
         self._locked = False
         # the tick loop and a teleport both run in executor threads -- one
@@ -375,13 +379,15 @@ class MSFSAdapter:
 
     def set_position(self, lat: float, lon: float, alt_msl: float, hdg: float,
                      ias: float, throttle_pct: float | None = None,
-                     on_ground: bool = False) -> bool:
+                     on_ground: bool = False, pitch: float = 0.0, bank: float = 0.0) -> bool:
         """Place the aircraft at lat/lon/alt (ft MSL), true heading, already
         flying at `ias` knots, wings level -- SimConnect's InitPosition with
         OnGround=0, the same mechanism MSFS's own airborne starts use
         (on_ground=True instead parks it on the surface, for runway checkpoints).
-        Optionally sets throttle too (a hardware throttle overrides it as soon
-        as it's moved). Returns False if the sim refused or isn't connected."""
+        pitch (+ nose up) / bank (+ right), in degrees, set an attitude other
+        than level (unusual attitudes). Optionally sets throttle too (a hardware
+        throttle overrides it as soon as it's moved). Returns False if the sim
+        refused or isn't connected."""
         if self._sm is None:
             return False
         from ctypes import byref, c_void_p, cast, sizeof
@@ -394,7 +400,9 @@ class MSFSAdapter:
                                                  DATATYPE_INITPOSITION, 0.0, UNUSED)
                     self._initpos_defined = True
                 ip = DATA_INITPOSITION(Latitude=lat, Longitude=lon, Altitude=alt_msl,
-                                       Pitch=0.0, Bank=0.0, Heading=hdg % 360.0,
+                                       Pitch=self._initpos_sign["pitch"] * float(pitch),
+                                       Bank=self._initpos_sign["bank"] * float(bank),
+                                       Heading=hdg % 360.0,
                                        OnGround=1 if on_ground else 0,
                                        Airspeed=0 if on_ground else int(round(ias)))
                 self._sm.SetDataOnSimObject(_INITPOS_DEF_ID, OBJECT_ID_USER, 0, 0,
@@ -406,9 +414,15 @@ class MSFSAdapter:
             log.error("SimConnect set_position failed: %s", e)
             return False
         self._prev_alt = None        # don't turn the jump into a vertical-speed spike
-        log.info("aircraft placed at %.4f,%.4f %.0f ft hdg %.0f %.0f kt",
-                 lat, lon, alt_msl, hdg, ias)
+        log.info("aircraft placed at %.4f,%.4f %.0f ft hdg %.0f %.0f kt pitch %+.0f bank %+.0f",
+                 lat, lon, alt_msl, hdg, ias, pitch, bank)
         return True
+
+    def flip_attitude_sign(self, axis: str) -> None:
+        """A placement read back mirrored on `axis` ("pitch" / "bank"): use
+        the other sign from now on (kept for the rest of the run)."""
+        self._initpos_sign[axis] = -self._initpos_sign[axis]
+        log.warning("InitPosition %s sign flipped -> %+.0f", axis, self._initpos_sign[axis])
 
     def demo_control(self, cmd: dict) -> bool:
         """Fly an instructor demonstration (core/demo.py command): the

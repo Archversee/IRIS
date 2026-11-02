@@ -110,17 +110,26 @@ STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left t
                "GLIDE": "Glide", "SLOW_FLIGHT": "Slow flight", "STALL": "Stall and recover",
                "MEDIUM_TURN_LEFT": "Medium turn left", "MEDIUM_TURN_RIGHT": "Medium turn right",
                "STEEP_TURN_LEFT": "Steep turn left", "STEEP_TURN_RIGHT": "Steep turn right",
+               "UPSET_HIGH_LEFT": "Nose high, banked left", "UPSET_HIGH_RIGHT": "Nose high, banked right",
+               "UPSET_LOW_LEFT": "Nose low, banked left", "UPSET_LOW_RIGHT": "Nose low, banked right",
                "FIND_AIRFIELD": "Find Paya Lebar & point at it"}
 
 DEFAULT_STEPS = ["STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND", "FIND_AIRFIELD"]
 ROLL_STEPS = ("ROLL_LEFT", "ROLL_RIGHT")
 # Spoken the moment the first half of a two-part step is done, so the trainee
 # knows when to come back: roll level, feet level, throttle back, level off.
-PART_CUES = ("FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF")
+PART_CUES = ("FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+             "FAM_UPSET_RECOVERED")
 LEVEL_OFF_STEPS = ("CLIMB_TO", "DESCEND_TO")            # to a set height, then level off there
 MEDIUM_TURNS = ("MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT")
 STEEP_TURNS = ("STEEP_TURN_LEFT", "STEEP_TURN_RIGHT")
 BANKED_TURNS = (*MEDIUM_TURNS, *STEEP_TURNS)
+# Unusual attitudes: MAVIS puts the aircraft there (runtime _fam_upset), the
+# trainee recovers. Nose high (speed falling): power, nose down, wings level.
+# Nose low (speed rising): power off, wings level, then ease the nose up.
+UPSET_HIGH = ("UPSET_HIGH_LEFT", "UPSET_HIGH_RIGHT")
+UPSET_LOW = ("UPSET_LOW_LEFT", "UPSET_LOW_RIGHT")
+UPSET_STEPS = (*UPSET_HIGH, *UPSET_LOW)
 # Height is part of pass/fail only where holding it IS the skill (slow
 # flight, medium and steep turns) -- within a generous band.
 HOLD_HEIGHT_STEPS = ("SLOW_FLIGHT", *BANKED_TURNS)
@@ -240,6 +249,17 @@ class FamiliarizationEngine:
         self.turn_spec = {"MEDIUM": (float(ex.get("medium_bank_deg", 30)), float(ex.get("medium_turn_deg", 180))),
                           "STEEP": (float(ex.get("steep_bank_deg", 45)), float(ex.get("steep_turn_deg", 360)))}
         self.height_band = float(ex.get("height_band_ft", 200))  # where height counts: within this
+        # unusual attitudes: (pitch + up, bank, speed) MAVIS sets each one up at
+        self.upset_spec = {
+            "HIGH": (float(ex.get("nose_high_pitch_deg", 20)), float(ex.get("nose_high_bank_deg", 30)),
+                     float(ex.get("nose_high_ias_kt", 80))),
+            "LOW": (-float(ex.get("nose_low_pitch_deg", 15)), float(ex.get("nose_low_bank_deg", 45)),
+                    float(ex.get("nose_low_ias_kt", 115)))}
+        self.recovered_hold_s = float(ex.get("recovered_hold_s", 2))
+        self.upset_max_kt = float(ex.get("nose_low_max_kt", 125))   # "speed back under control"
+        self.heading_band = float(ex.get("heading_band_deg", 20))
+        self.vne = float(aircraft["v_speeds"].get("vne", 163))
+        self.upset_results: dict[str, dict] = {}     # step -> how its recovery went (scorer)
         fin = lesson.get("finish") or {}
         self.finish_m = float(fin.get("radius_nm", 2.0)) * M_PER_NM
         self.point_deg = float(fin.get("pointing_within_deg", 15))
@@ -290,6 +310,7 @@ class FamiliarizationEngine:
         self.briefing_done = False
         self.held = False
         self.skipped.clear()
+        self.upset_results.clear()
         self._last_fire.clear()
         self._reset_step()
 
@@ -298,6 +319,8 @@ class FamiliarizationEngine:
         self.detector.advance(phase)
         order = self.detector.ORDER
         self.skipped -= set(order[order.index(phase):])
+        for s in order[order.index(phase):]:
+            self.upset_results.pop(s, None)
         self._reset_step()
 
     def wants_night_switch(self) -> bool:
@@ -375,6 +398,7 @@ class FamiliarizationEngine:
         self._events: list[CoachEvent] = []      # said mid-step (the stall callout)
         self._data: dict = {}
         self._meters: list[dict] = []
+        self._upset: dict = {}                   # unusual attitude: the recovery as it goes
 
     def _target_alt(self):
         a = self._entry.get("alt")
@@ -392,7 +416,7 @@ class FamiliarizationEngine:
             return self._entry.get("tgt")
         if self.phase == "GLIDE":
             return a - self.glide_ft
-        if self.phase in LEVEL_STEPS:
+        if self.phase in LEVEL_STEPS or self.phase in UPSET_STEPS:
             return a
         return None
 
@@ -402,6 +426,12 @@ class FamiliarizationEngine:
     def turn_target(self, step: str) -> tuple[float, float]:
         """(bank, degrees of turn) for a medium or steep turn."""
         return self.turn_spec["MEDIUM" if step in MEDIUM_TURNS else "STEEP"]
+
+    def upset_attitude(self, step: str) -> dict:
+        """Where MAVIS puts the aircraft for an unusual-attitude step: pitch
+        (+ nose up), bank (+ right) and speed."""
+        pitch, bank, ias = self.upset_spec["HIGH" if step in UPSET_HIGH else "LOW"]
+        return {"pitch": pitch, "bank": turn_dir(step) * bank, "ias": ias}
 
     def _cooled(self, ev: CoachEvent) -> bool:
         last = self._last_fire.get(ev.code, 0.0)
@@ -428,6 +458,7 @@ class FamiliarizationEngine:
         self._held = self._turned = self._progress = self._prev_turned = 0.0
         self._stage = 0
         self._events = []
+        self._upset = {}
         self._last_hint = now
         p = self.phase
         f = self._field(tel)
@@ -460,6 +491,8 @@ class FamiliarizationEngine:
         if p in BANKED_TURNS:
             bank, deg = self.turn_target(p)
             mock = {"turn_deg": turn_dir(p) * (deg + 5), "bank": bank, "spd": 95}
+        if p in UPSET_STEPS:
+            mock = {"hdg_delta": 0, "spd": 95}       # mock student: straight back to level
         if mock is not None:
             data["mock"] = mock
         out = [CoachEvent(f"PHASE_ENTER_{p}", "info", data, cooldown_s=0)]
@@ -490,7 +523,13 @@ class FamiliarizationEngine:
         slow, fast = self.speeds["SLOW_CRUISE"], self.speeds["FAST_CRUISE"]
         mb, mdeg = self.turn_spec["MEDIUM"]
         sb, sdeg = self.turn_spec["STEEP"]
+        hp, hb, hk = self.upset_spec["HIGH"]
+        lp, lb, lk = self.upset_spec["LOW"]
         return {"phase": p, "circuit": 1, "total_circuits": 1, "alt_now": _r(a, 10),
+                "hdg_now": _hdg(tel.hdg),
+                "high_pitch": round(hp), "high_bank": round(hb), "high_kt": round(hk),
+                "low_pitch": round(-lp), "low_bank": round(lb), "low_kt": round(lk),
+                "upset_max_kt": round(self.upset_max_kt), "hdg_band": round(self.heading_band),
                 "tgt_alt": (round(self.level_target(p, a, demo)) if p in LEVEL_OFF_STEPS
                             else round(a)),
                 "level_band": round(self.level_band), "level_hold_s": round(self.level_hold_s),
@@ -626,6 +665,8 @@ class FamiliarizationEngine:
                         cooldown_s=0))
                 return False
             return tel.ias >= self.recover_kt and tel.vs >= -self.recover_sink
+        if p in UPSET_STEPS:
+            return self._upset_recovery(tel, dt)
         if p in BANKED_TURNS:
             # the turn only counts while banked enough and holding height
             bank, deg = self.turn_target(p)
@@ -642,6 +683,60 @@ class FamiliarizationEngine:
                 return False
             return abs(tel.bank) < 8
         return False
+
+    def _upset_recovery(self, tel: Telemetry, dt: float) -> bool:
+        """Unusual attitude, from "Recover!" (the step is held until then).
+        Stage 0: recover -- wings level, nose near the horizon, speed back in
+        hand -- noting when power, nose and wings each went in, to judge the
+        order (nose high: power, nose down, wings level; nose low: power off,
+        wings level, then nose up). Stage 1: back to the height and heading
+        the upset started from."""
+        p, e, u = self.phase, self._entry, self._upset
+        high = p in UPSET_HIGH
+        now = time.time()
+        if not u:                                 # first tick after "Recover!"
+            u.update(t0=now, th0=tel.throttle, ias_min=tel.ias, ias_max=tel.ias,
+                     alt_min=tel.alt_msl, alt_max=tel.alt_msl)
+        if self._stage == 0:
+            u["ias_min"], u["ias_max"] = min(u["ias_min"], tel.ias), max(u["ias_max"], tel.ias)
+            u["alt_min"], u["alt_max"] = min(u["alt_min"], tel.alt_msl), max(u["alt_max"], tel.alt_msl)
+            if "power" not in u and (self.mock or (
+                    tel.throttle >= min(0.9, u["th0"] + 0.15) if high
+                    else tel.throttle <= max(0.3, u["th0"] - 0.15))):
+                u["power"] = now
+            if "nose" not in u and (tel.pitch <= 5 if high else tel.pitch >= -2):
+                u["nose"] = now
+                u["bank_at_nose"] = abs(tel.bank)
+            if "wings" not in u and abs(tel.bank) < 10:
+                u["wings"] = now
+            speed_ok = (tel.ias >= self.recover_kt if high
+                        else tel.ias <= self.upset_max_kt and tel.vs > -500)
+            if abs(tel.bank) < 10 and -5 <= tel.pitch <= 8 and speed_ok:
+                self._held += dt
+            else:
+                self._held = 0.0
+            if self._held >= self.recovered_hold_s:
+                late = u.get("wings", now) + 1.0
+                if self.mock:
+                    seq_ok = True
+                elif high:   # power and nose down before (or as) the wings come level
+                    seq_ok = u.get("power", now) <= late and u.get("nose", now) <= late
+                else:        # power off first; never pulling the nose up while still banked
+                    seq_ok = (u.get("power", now) <= u.get("nose", now)
+                              and u.get("bank_at_nose", 90.0) < 15)
+                self.upset_results[p] = {
+                    "high": high, "sequence_ok": seq_ok,
+                    "recover_s": round(now - u["t0"], 1),
+                    "alt_change": round((u["alt_min"] if not high else u["alt_max"]) - e["alt"]),
+                    "stalled": u["ias_min"] < self.vs1,
+                    "overspeed": u["ias_max"] > self.vne}
+                self._stage, self._held = 1, 0.0
+                self._cue("FAM_UPSET_RECOVERED")
+            return False
+        back = (abs(tel.alt_msl - e["alt"]) < self.height_band
+                and abs(hdg_diff(tel.hdg, e["hdg"])) < self.heading_band and abs(tel.bank) < 10)
+        self._held = self._held + dt if back else 0.0
+        return self._held >= self.level_hold_s
 
     def _cue(self, code: str) -> None:
         """Queue a "now come back" call (PART_CUES) for this tick's output."""
@@ -664,6 +759,10 @@ class FamiliarizationEngine:
             return out
         if tel.alt_agl < 700:
             out.append(CoachEvent("FAM_LOW", "safety", {"agl": round(tel.alt_agl)}, cooldown_s=15))
+        if self.phase in UPSET_STEPS and self._stage == 0:
+            # mid-recovery: steep, slow or fast is the exercise, and "ease the
+            # nose up" would contradict "wings level first"
+            return out
         if tel.ias < 58 and self.phase not in ("SLOW_FLIGHT", "STALL"):   # slow on purpose there
             out.append(CoachEvent("FAM_SLOW", "correction", {"ias": round(tel.ias)}, cooldown_s=15))
         elif tel.ias > 140:
@@ -873,6 +972,21 @@ class FamiliarizationEngine:
                      "ok": tel.ias >= self.recover_kt},
                     {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm",
                      "target": f"under {self.recover_sink:.0f} fpm", "ok": tel.vs >= -self.recover_sink}]
+        if p in UPSET_STEPS:
+            if self._stage == 1:
+                off = hdg_diff(tel.hdg, e.get("hdg", tel.hdg))
+                return [height_row,
+                        {"label": "Heading", "now": f"{_hdg(tel.hdg):03d}°",
+                         "target": f"{_hdg(e.get('hdg', tel.hdg)):03d}° ±{self.heading_band:.0f}°",
+                         "ok": abs(off) < self.heading_band}]
+            high = p in UPSET_HIGH
+            return [{"label": "Wings level", "now": f"{abs(tel.bank):.0f}°", "target": "under 10°",
+                     "ok": abs(tel.bank) < 10},
+                    {"label": "Nose", "now": f"{pitch:+.0f}°", "target": "on the horizon",
+                     "ok": -5 <= pitch <= 8},
+                    {"label": "Speed", "now": f"{tel.ias:.0f} kt",
+                     "target": (f"{self.recover_kt:.0f}+ kt" if high else f"under {self.upset_max_kt:.0f} kt"),
+                     "ok": tel.ias >= self.recover_kt if high else tel.ias <= self.upset_max_kt}]
         if p in BANKED_TURNS:
             bank, deg = self.turn_target(p)
             k = "med_" if p in MEDIUM_TURNS else "steep_"
@@ -932,6 +1046,8 @@ class FamiliarizationEngine:
                         msg = "Now roll the wings level"
                     elif self.phase in LEVEL_OFF_STEPS:
                         msg = "Now level off and hold it there"
+                    elif self.phase in UPSET_STEPS:
+                        msg = "Recovered. Now back to your height and heading"
                     if msg:
                         row["progress"] = msg
                 if self.held:
@@ -957,7 +1073,8 @@ class FamiliarizationScorer:
     the airfield. main.py hands over the engine's skipped steps before
     finalize()."""
     WEIGHTS = {"exercises": 25, "altitude": 25, "bank": 20, "climb_speed": 10,
-               "speed": 15, "level_off": 20, "smoothness": 20}
+               "speed": 15, "level_off": 20, "smoothness": 20,
+               "sequence": 30, "recovery": 25}
 
     def __init__(self, lesson: dict, aircraft: dict):
         ex = lesson.get("exercises") or {}
@@ -977,7 +1094,12 @@ class FamiliarizationScorer:
                           **{s: float(ex.get("steep_bank_deg", 45)) for s in STEEP_TURNS}}
         # only the metrics this lesson's exercises can produce go on the card
         ex_set = set(self.EXERCISES)
-        self.metrics = {"smoothness"}
+        # an unusual-attitude recovery is meant to be prompt and firm: no smoothness
+        # score there, but the order of the controls and how quickly it was done
+        self.metrics = set() if ex_set & set(UPSET_STEPS) else {"smoothness"}
+        if ex_set & set(UPSET_STEPS):
+            self.metrics |= {"sequence", "recovery"}
+        self.recover_target_s = float(ex.get("recover_target_s", 8))
         if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS}:
             self.metrics.add("altitude")
         if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS}:
@@ -994,9 +1116,10 @@ class FamiliarizationScorer:
         self.reset()
 
     def reset(self) -> None:
-        self._acc = {k: [0.0, 0] for k in self.WEIGHTS if k != "exercises"}
+        self._acc = {k: [0.0, 0] for k in self.WEIGHTS if k not in ("exercises", "sequence", "recovery")}
         self._seen: set[str] = set()
         self.skipped: set[str] = set()
+        self.upsets: dict[str, dict] = {}       # the engine's upset_results, handed over before finalize()
         self._prev_ctrl = None
         self._phase = None
         self._phase_t = 0.0
@@ -1075,6 +1198,16 @@ class FamiliarizationScorer:
         for k, (tot, n) in self._acc.items():
             if k in self.metrics:
                 scores[k] = round(_curve(tot / n, scale[k] * f)) if n else None
+        if "sequence" in self.metrics:
+            ups = list(self.upsets.values())
+            scores["sequence"] = (round(100 * sum(u["sequence_ok"] for u in ups) / len(ups))
+                                  if ups else None)
+            # seconds past the target to recover, plus 10 s each for a stall or
+            # going past Vne on the way
+            errs = [max(0.0, u["recover_s"] - self.recover_target_s)
+                    + 10.0 * u["stalled"] + 10.0 * u["overspeed"] for u in ups]
+            scores["recovery"] = (round(sum(_curve(e, 6.0 * f) for e in errs) / len(errs))
+                                  if errs else None)
         flown = {k: v for k, v in scores.items() if v is not None}
         wsum = sum(self.WEIGHTS[k] for k in flown) or 1
         total = round(sum(v * self.WEIGHTS[k] for k, v in flown.items()) / wsum) if flown else 0

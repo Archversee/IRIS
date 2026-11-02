@@ -175,6 +175,9 @@ TEMPLATES = {
     "FAM_DEMO_END": ["Your turn now, same steps."],
     "FAM_STEP_CUE": ["Now, {title_lc}. {action}."],
     "FAM_DEMO_SKIPPED": ["Okay, demo skipped. Back to the start. Your turn now, the same steps in order."],
+    "FAM_UPSET_LOOK_DOWN": ["Look down at your lap, hands off. I have control."],
+    "FAM_UPSET_RECOVER": ["Recover! You have control."],
+    "FAM_UPSET_RECOVERED": ["Good, recovered. Now back to your height and heading."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
@@ -272,6 +275,9 @@ PILOT_TEMPLATES = {
     "FAM_DEMO_END": ["Your turn, same sequence."],
     "FAM_STEP_CUE": ["{title}. {action}."],
     "FAM_DEMO_SKIPPED": ["Demonstration skipped. Repositioned. Your turn."],
+    "FAM_UPSET_LOOK_DOWN": ["Head down, hands off. I have control."],
+    "FAM_UPSET_RECOVER": ["Recover. You have control."],
+    "FAM_UPSET_RECOVERED": ["Recovered. Regain altitude and heading."],
     "FORCE_REPEAT": ["That leg wasn't quite to standard. We'll re-fly it. Repositioning."],
     "TELEPORT": ["Repositioning to the last checkpoint. We'll re-fly that segment."],
     "TELEPORT_FAIL": ["Unable to reposition. We'll fly the circuit round and set up for another approach."],
