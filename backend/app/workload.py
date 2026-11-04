@@ -3,25 +3,18 @@ After the flight only (windows are centred, so each value also sees the
 seconds after it); MAVIS would need a backward-looking version of its own.
 
 Pure: data in, numbers out (no database). routers/workload.py feeds it the
-session's eye samples and AOI zones and caches the result.
+session's eye samples and caches the result.
 
   1. clean     drop blinks, untracked samples (gaze direction 0,0,0 -- the live
                feed's "no lock") and samples whose gaze quality < Q_MIN
   2. fixations Smart Eye's own (fixation_id > 0, one id = one fixation); if a
                recording has none, I-VT on gaze direction (< IVT_DEG_S = fixating)
-               Each fixation gets the AOI most of its samples fell in (the
-               Review page's naming: an Instruments sample inside a drawn zone
-               is that zone).
   3. windows   WINDOW_S long, one every STEP_S, centred on each second.
                A window with less than MIN_COVERAGE of usable samples is null.
   4. features  fix_rate      fixations per second of usable data
                mean_fix_ms   mean fixation duration (shown, not in the index:
                              it's close to 1 / fix_rate, so it would count twice)
                blink_rate    blinks per minute
-               h_s           stationary entropy: how spread the looking is over
-                             AOIs, -sum p_i log2 p_i (p_i = share of fixation time)
-               h_t           transition entropy: how unpredictable the next AOI
-                             is, -sum pi_i sum_j p_ij log2 p_ij
                lhipa         pupil activity (app/lhipa.py) over its own, longer
                              window (lhipa.WINDOW_S), from Smart Eye's unfiltered
                              pupil; null where too little pupil data
@@ -32,9 +25,6 @@ session's eye samples and AOI zones and caches the result.
   6. index     WL = sum w_k * sign_k * z_k / sum w_k  (WEIGHTS), smoothed with a
                centred SMOOTH_S moving average, banded Low / Medium / High.
                Only where the gaze window has enough data (LHIPA alone isn't).
-               The entropies are left out (weight 0) until checked against real
-               flights: whether the gaze narrows or scatters under load depends
-               on the phase. They are still returned for the timeline.
 """
 from __future__ import annotations
 
@@ -44,9 +34,9 @@ import statistics
 from collections import Counter
 
 from . import lhipa as lh
-from .incidents import _num, _t, gaze_target
+from .incidents import _num, _t
 
-WORKLOAD_VERSION = "4"
+WORKLOAD_VERSION = "5"
 Q_MIN = 0.3               # gaze quality (0..1) below this = not usable
 WINDOW_S = 20.0           # each value covers this long ...
 STEP_S = 1.0              # ... one value every this long
@@ -64,13 +54,11 @@ WEIGHTS = {
     "fix_rate": (+1, 1.0),       # more instruments checked per second
     "blink_rate": (-1, 0.5),     # blinks held back under visual demand
     "mean_fix_ms": (-1, 0.0),    # shorter looks; ~1/fix_rate, so not counted twice
-    "h_s": (-1, 0.0),            # gaze narrowing (landing study); direction unverified
-    "h_t": (-1, 0.0),
     "lhipa": (-1, 1.0),          # pupil oscillates less under load
 }
 # smallest spread a feature's baseline may have, so a very steady baseline
 # can't turn a small change into a huge z
-Z_FLOOR = {"fix_rate": 0.2, "blink_rate": 3.0, "mean_fix_ms": 40.0, "h_s": 0.15, "h_t": 0.15, "lhipa": 0.05}
+Z_FLOOR = {"fix_rate": 0.2, "blink_rate": 3.0, "mean_fix_ms": 40.0, "lhipa": 0.05}
 FEATURES = tuple(WEIGHTS)
 
 
@@ -125,26 +113,22 @@ def _fix_labels(eye: list[dict], ts: list[float]) -> tuple[list, str]:
     return labels, "ivt"
 
 
-def fixations(eye: list[dict], zones: list[dict]) -> tuple[list[dict], str]:
-    """-> ([{t0, t1, aoi}], source); eye sorted by ts."""
+def fixations(eye: list[dict]) -> tuple[list[dict], str]:
+    """-> ([{t0, t1}], source); eye sorted by ts."""
     ts = [_t(e["ts"]) for e in eye]
     labels, source = _fix_labels(eye, ts)
     out: list[dict] = []
-    cur, aois = None, Counter()
+    cur = None
     for i, lab in enumerate(labels + [None]):
         if cur is not None and lab != cur["id"]:
             if cur["t1"] - cur["t0"] >= MIN_FIX_S:
-                aoi = aois.most_common(1)[0][0] if aois else None
-                out.append({"t0": cur["t0"], "t1": cur["t1"], "aoi": aoi})
-            cur, aois = None, Counter()
+                out.append({"t0": cur["t0"], "t1": cur["t1"]})
+            cur = None
         if lab is None:
             continue
         if cur is None:
             cur = {"id": lab, "t0": ts[i], "t1": ts[i]}
         cur["t1"] = ts[i]
-        name = gaze_target(eye[i], zones)
-        if name:
-            aois[name] += 1
     return out, source
 
 
@@ -172,13 +156,6 @@ def blinks(eye: list[dict]) -> list[float]:
 
 
 # ---------------------------------------------------------------- 3-4 windows + features
-def _entropy(counts) -> float | None:
-    tot = sum(counts)
-    if tot <= 0:
-        return None
-    return -sum(c / tot * math.log2(c / tot) for c in counts if c > 0)
-
-
 def window_features(fix: list[dict], blink_ts: list[float], usable_s: float) -> dict:
     """Features of the fixations / blinks inside one window with usable_s seconds of usable data."""
     out = dict.fromkeys(FEATURES)
@@ -188,18 +165,6 @@ def window_features(fix: list[dict], blink_ts: list[float], usable_s: float) -> 
     out["blink_rate"] = len(blink_ts) / usable_s * 60.0
     if fix:
         out["mean_fix_ms"] = statistics.fmean(f["t1"] - f["t0"] for f in fix) * 1000.0
-    dwell: Counter = Counter()
-    for f in fix:
-        if f["aoi"]:
-            dwell[f["aoi"]] += f["t1"] - f["t0"]
-    out["h_s"] = _entropy(dwell.values())
-    seq = [f["aoi"] for f in fix if f["aoi"]]
-    pairs: dict[str, Counter] = {}
-    for a, b in zip(seq, seq[1:]):
-        pairs.setdefault(a, Counter())[b] += 1
-    n = sum(sum(c.values()) for c in pairs.values())
-    if n:
-        out["h_t"] = sum(sum(c.values()) / n * _entropy(c.values()) for c in pairs.values())
     return out
 
 
@@ -242,9 +207,9 @@ def _smooth(vals: list[float | None], half: int) -> list[float | None]:
     return out
 
 
-def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float] | None = None,
+def analyse(eye: list[dict], *, baseline: tuple[float, float] | None = None,
             window_s: float = WINDOW_S, step_s: float = STEP_S) -> dict:
-    """eye: samples sorted by ts (ts, aoi, gaze_point_x/y, blink, gaze_quality,
+    """eye: samples sorted by ts (ts, blink, gaze_quality,
     fixation_id, gaze_dir_x/y/z, and for LHIPA pupil_raw_m / pupil_raw_q: Smart
     Eye's unfiltered PupilDiameter (metres) and its quality). baseline: (from, to) epoch seconds of a calm
     stretch to compare against; None = the whole flight.
@@ -257,7 +222,7 @@ def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float]
     if len(eye) < 2:
         return res
     ts = [_t(e["ts"]) for e in eye]
-    fix, source = fixations(eye, zones)
+    fix, source = fixations(eye)
     res["fixation_source"] = source
     blink_ts = blinks(eye)
     cum = _usable_prefix(eye, ts)

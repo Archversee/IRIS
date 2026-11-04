@@ -11,13 +11,10 @@ import random
 import sys
 
 from . import lhipa as lh
-from .workload import analyse, band_of, blinks, fixations, window_features
+from .workload import analyse, band_of, blinks, fixations
 
 T0 = 1_700_000_000.0
 HZ = 60
-ZONES = [{"name": "Airspeed", "x1": 0, "y1": 0, "x2": 100, "y2": 100},
-         {"name": "Altimeter", "x1": 200, "y1": 0, "x2": 300, "y2": 100},
-         {"name": "Attitude", "x1": 400, "y1": 0, "x2": 500, "y2": 100}]
 SPOT = {"Airspeed": (50, 50), "Altimeter": (250, 50), "Attitude": (450, 50)}
 DIR = {"Airspeed": (-0.3, 0.0), "Altimeter": (0.0, 0.0), "Attitude": (0.3, 0.0), "OTW": (0.0, 0.4)}
 
@@ -72,28 +69,21 @@ def mean_wl(res, lo, hi):
 
 
 # ---------------------------------------------------------------- pieces
-fix, src = fixations(recording([(10, 1.0, 100, ["Airspeed", "Altimeter"])]), ZONES)
+fix, src = fixations(recording([(10, 1.0, 100, ["Airspeed", "Altimeter"])]))
 check("Smart Eye fixation ids used", src == "smarteye", src)
 check("one fixation per look", 9 <= len(fix) <= 11, len(fix))
-check("fixation AOI from the drawn zones", fix[0]["aoi"] == "Airspeed" and fix[1]["aoi"] == "Altimeter",
-      [f["aoi"] for f in fix[:2]])
 
-fix, src = fixations(recording([(10, 1.0, 100, ["Airspeed", "Altimeter"])], smarteye=False), ZONES)
+fix, src = fixations(recording([(10, 1.0, 100, ["Airspeed", "Altimeter"])], smarteye=False))
 check("I-VT fallback without fixation ids", src == "ivt", src)
 check("I-VT finds the looks", 9 <= len(fix) <= 11, len(fix))
 
 b = blinks(recording([(30, 1.0, 5.0, ["Attitude"])]))
 check("blinks counted once each", 5 <= len(b) <= 6, len(b))
 
-one = window_features([{"t0": 0, "t1": 1, "aoi": "A"}, {"t0": 1, "t1": 2, "aoi": "B"}], [], 2.0)
-check("stationary entropy of two equal AOIs = 1 bit", abs(one["h_s"] - 1.0) < 1e-9, one["h_s"])
-alt = window_features([{"t0": i, "t1": i + 1, "aoi": "AB"[i % 2]} for i in range(8)], [], 8.0)
-check("strict alternation has transition entropy 0", alt["h_t"] == 0.0, alt["h_t"])
-
 check("bands", (band_of(0.2), band_of(1.0), band_of(2.0), band_of(None)) == ("low", "medium", "high", None))
 
 # ---------------------------------------------------------------- whole flight
-res = analyse(recording([CALM, BUSY, CALM]), ZONES)
+res = analyse(recording([CALM, BUSY, CALM]))
 calm, busy = mean_wl(res, 20, 100), mean_wl(res, 135, 165)
 check("busy stretch scores higher than calm", calm is not None and busy is not None and busy > calm + 1.0,
       f"calm={calm} busy={busy}")
@@ -103,26 +93,26 @@ check("one value per second", 290 <= len(res["points"]) <= 302, len(res["points"
 check("summary shares add up", abs(sum(res["summary"][k] for k in ("low", "medium", "high")) - 1) < 1e-9)
 
 # explicit baseline: the calm part only
-res_b = analyse(recording([CALM, BUSY, CALM]), ZONES, baseline=(T0 + 10, T0 + 110))
+res_b = analyse(recording([CALM, BUSY, CALM]), baseline=(T0 + 10, T0 + 110))
 check("explicit baseline used", res_b["baseline"]["source"] == "window")
 check("busy still high against a calm baseline", (mean_wl(res_b, 135, 165) or 0) > 1.5, mean_wl(res_b, 135, 165))
 
 # I-VT path gives the same story
-res_ivt = analyse(recording([CALM, BUSY, CALM], smarteye=False), ZONES)
+res_ivt = analyse(recording([CALM, BUSY, CALM], smarteye=False))
 check("I-VT flight: busy higher", (mean_wl(res_ivt, 135, 165) or 0) > (mean_wl(res_ivt, 20, 100) or 0) + 1.0)
 
 # bad tracking -> null, not a number
-res_q = analyse(recording([(60, 1.0, 4.0, ["Attitude", "Airspeed"])], quality=0.1), ZONES)
+res_q = analyse(recording([(60, 1.0, 4.0, ["Attitude", "Airspeed"])], quality=0.1))
 check("low-quality data gives no index", all(p["wl"] is None for p in res_q["points"]))
 check("... and says why (coverage)", all(p["coverage"] < 0.6 for p in res_q["points"]))
 
-check("empty recording", analyse([], ZONES)["points"] == [])
+check("empty recording", analyse([])["points"] == [])
 
 # no lock: the live feed sends gaze direction 0,0,0 and no quality -> null, not "low"
 lost = recording([(60, 1.0, 4.0, ["Attitude", "Airspeed"])])
 for e in lost:
     e.update(gaze_dir_x=0.0, gaze_dir_y=0.0, gaze_dir_z=0.0, gaze_quality=None, fixation_id=0)
-check("untracked (0,0,0) data gives no index", all(p["wl"] is None for p in analyse(lost, ZONES)["points"]))
+check("untracked (0,0,0) data gives no index", all(p["wl"] is None for p in analyse(lost)["points"]))
 
 # blink flags around lost tracking, or held too long, aren't blinks
 seq = recording([(5, 1.0, 100, ["Attitude"])])
@@ -180,7 +170,7 @@ for e in flight:
     r = pup[k] if k < len(pup) else None
     if r:
         e["pupil_raw_m"], e["pupil_raw_q"] = r["pupil_raw_m"], r["pupil_raw_q"]
-res_p = analyse(flight, ZONES)
+res_p = analyse(flight)
 check("pupil source reported", res_p["pupil_source"] == "PupilDiameter", res_p["pupil_source"])
 check("LHIPA in the points", sum(p["lhipa"] is not None for p in res_p["points"]) > 200,
       sum(p["lhipa"] is not None for p in res_p["points"]))
@@ -196,7 +186,7 @@ for e in lost_gaze[:60 * HZ]:                # first minute: pupil fine, gaze lo
 for e in lost_gaze[:60 * HZ]:
     if e.get("pupil_raw_m"):                 # a very different pupil activity while unscored
         e["pupil_raw_m"] += rng.choice((-1, 1)) * rng.uniform(0.2, 0.6) / 1000
-res_lg = analyse(lost_gaze, ZONES)
+res_lg = analyse(lost_gaze)
 scored = [p for p in res_lg["points"] if p["coverage"] >= 0.6 and p["lhipa"] is not None]
 import statistics as _st  # noqa: E402
 every = [p["lhipa"] for p in res_lg["points"] if p["lhipa"] is not None]
