@@ -47,7 +47,7 @@ export function useSessionData({ id, live }) {
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true,
-    scanSpread: false, scanRandom: false, events: true });   // events: the shaded event boxes on the chart
+    events: true });   // events: the shaded event boxes on the chart
   // eye-based workload index (Review only)
   const [workloadIndex, setWorkloadIndex] = useState(null);
   const [minAoiDwellInput, setMinAoiDwellInput] = useState(MIN_AOI_DWELL_SEC_DEFAULT.toFixed(1));
@@ -280,12 +280,6 @@ export function useSessionData({ id, live }) {
       airspeed: bounds(flight, "airspeed_kt"),
       vspeed: bounds(flight, "vertical_speed_fpm"),
     };
-    if (indexForFlight) {
-      // entropies: their own min..max over the points the flight shows
-      const pts = indexForFlight.filter(Boolean);
-      b.h_s = bounds(pts, "h_s");
-      b.h_t = bounds(pts, "h_t");
-    }
     return flight.map((r, i) => {
       const p = indexForFlight?.[i];
       const row = {
@@ -300,8 +294,6 @@ export function useSessionData({ id, live }) {
       row.workloadR = wl;
       row.workloadBand = p?.band ?? null;
       row.workloadIndex = true;
-      row.scanSpread = norm(p?.h_s ?? null, b.h_s); row.scanSpreadR = p?.h_s ?? null;
-      row.scanRandom = norm(p?.h_t ?? null, b.h_t); row.scanRandomR = p?.h_t ?? null;
       row.lhipaR = p?.lhipa ?? null;     // pupil activity, shown in the tooltip only
       return row;
     });

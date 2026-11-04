@@ -14,8 +14,7 @@ function TLTooltip({ active, payload }) {
   ];
   if (d.workloadIndex) {
     rows.push(["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""],
-      ["Pupil activity (LHIPA)", fmt(d.lhipaR, 2), "/s"],
-      ["Scan spread", fmt(d.scanSpreadR, 2), "bits"], ["Scan randomness", fmt(d.scanRandomR, 2), "bits"]);
+      ["Pupil activity (LHIPA)", fmt(d.lhipaR, 2), "/s"]);
   }
   return (
     <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
@@ -74,7 +73,7 @@ export default function SessionTimeline({
                   ? "Eye-based workload index: fixation rate, blink rate and pupil activity (LHIPA) against this pilot's "
                     + "usual on this flight. "
                     + "0 = usual. Shaded zones: green Low, amber Medium, red High."
-                  : m.needs === "index" ? `${m.label}: gaze entropy over the AOIs (${m.unit}), from the workload index.` : undefined}
+                  : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
                 onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
                 <span className="swatch" style={{ background: m.color }} />{m.label}

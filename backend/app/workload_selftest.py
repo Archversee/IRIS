@@ -188,5 +188,22 @@ check("no pupil data: no LHIPA, index still works", res["pupil_source"] is None
       and all(p["lhipa"] is None for p in res["points"]) and mean_wl(res, 135, 165) > 1.5)
 check("LHIPA alone gives no score", all(p["wl"] is None for p in res_p["points"] if p["coverage"] < 0.6))
 
+# the baseline ("usual") comes from scored windows only, LHIPA's too: unscored
+# stretches with pupil data (pilot just sat down) mustn't shift it
+lost_gaze = [dict(e) for e in flight]
+for e in lost_gaze[:60 * HZ]:                # first minute: pupil fine, gaze lost
+    e.update(gaze_dir_x=0.0, gaze_dir_y=0.0, gaze_dir_z=0.0, fixation_id=0)
+for e in lost_gaze[:60 * HZ]:
+    if e.get("pupil_raw_m"):                 # a very different pupil activity while unscored
+        e["pupil_raw_m"] += rng.choice((-1, 1)) * rng.uniform(0.2, 0.6) / 1000
+res_lg = analyse(lost_gaze, ZONES)
+scored = [p for p in res_lg["points"] if p["coverage"] >= 0.6 and p["lhipa"] is not None]
+import statistics as _st  # noqa: E402
+every = [p["lhipa"] for p in res_lg["points"] if p["lhipa"] is not None]
+base = res_lg["baseline"]["stats"]["lhipa"]["median"]
+check("LHIPA baseline ignores unscored windows",
+      abs(base - _st.median(p["lhipa"] for p in scored)) < 2e-3 and abs(base - _st.median(every)) > 0.01,
+      (base, _st.median(p["lhipa"] for p in scored), _st.median(every)))
+
 print(f"\n{'ALL PASSED' if not _fails else f'{_fails} FAILED'}")
 sys.exit(1 if _fails else 0)

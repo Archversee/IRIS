@@ -16,8 +16,6 @@ export const METRICS = [
   // `needs: "index"` = drawn from the workload index (Review only, routers/workload.py);
   // the Live Monitor leaves these out until there's a live version of it
   { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload", needs: "index" },
-  { key: "scanSpread", label: "Scan spread", unit: "bits", color: "#14b8a6", src: "h_s", needs: "index" },
-  { key: "scanRandom", label: "Scan randomness", unit: "bits", color: "#fb7185", src: "h_t", needs: "index" },
 ];
 // The workload index is drawn on a fixed scale so its bands sit at the same
 // height on every flight: WL_MIN..WL_MAX fills the chart.

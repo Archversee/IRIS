@@ -26,8 +26,9 @@ session's eye samples and AOI zones and caches the result.
                              window (lhipa.WINDOW_S), from Smart Eye's unfiltered
                              pupil; null where too little pupil data
   5. baseline  robust z per feature: (v - median) / max(1.4826 * MAD, Z_FLOOR),
-               median / MAD over the baseline span (the whole flight unless one
-               is given), so 0 = usual for this pilot on this flight
+               median / MAD over the scored windows of the baseline span (the
+               whole flight unless one is given), so 0 = usual for this pilot
+               on this flight
   6. index     WL = sum w_k * sign_k * z_k / sum w_k  (WEIGHTS), smoothed with a
                centred SMOOTH_S moving average, banded Low / Medium / High.
                Only where the gaze window has enough data (LHIPA alone isn't).
@@ -45,7 +46,7 @@ from collections import Counter
 from . import lhipa as lh
 from .incidents import _num, _t, gaze_target
 
-WORKLOAD_VERSION = "3"
+WORKLOAD_VERSION = "4"
 Q_MIN = 0.3               # gaze quality (0..1) below this = not usable
 WINDOW_S = 20.0           # each value covers this long ...
 STEP_S = 1.0              # ... one value every this long
@@ -292,14 +293,18 @@ def analyse(eye: list[dict], zones: list[dict], *, baseline: tuple[float, float]
         pts.append(p)
         t += step_s
 
-    in_base = [p for p in pts if baseline is None or baseline[0] <= p["t"] <= baseline[1]]
+    # baseline: the scored windows only (enough gaze data), for every feature --
+    # LHIPA can exist where the gaze window can't be scored (just after the pilot
+    # sits down, pupil still settling), and that stretch mustn't shape its "usual"
+    in_base = [p for p in pts if p["coverage"] >= MIN_COVERAGE
+               and (baseline is None or baseline[0] <= p["t"] <= baseline[1])]
     stats = {}
     for k in FEATURES:
         r = _robust([p[k] for p in in_base if p[k] is not None], Z_FLOOR[k])
         stats[k] = {"median": r[0], "spread": r[1]} if r else None
     res["baseline"] = {"source": "window" if baseline else "flight",
                        "from": baseline[0] if baseline else ts[0], "to": baseline[1] if baseline else ts[-1],
-                       "windows": sum(1 for p in in_base if p["coverage"] >= MIN_COVERAGE), "stats": stats}
+                       "windows": len(in_base), "stats": stats}
 
     raw = []
     for p in pts:
