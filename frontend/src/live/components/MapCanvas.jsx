@@ -68,6 +68,10 @@ export default function MapCanvas({ state }) {
     // MAVIS's own demonstration flight (airborne lessons): dotted, under the
     // trainee's track, never part of it
     const demoTrk = state?.demo_track || [];
+    // Navigation lessons: the places to fly to (a diversion's airfield only once announced)
+    // (none in Free Flight: they belong to the lesson loaded underneath)
+    const marks = state?.session?.free_flight ? []
+      : (L.marks || []).filter((m) => !m.hidden || m.phases.includes(state?.phase));
 
     // View centred on the planned circuit; unzoomed it widens (symmetrically)
     // to keep the aircraft and the entire flown track in view, like IRIS's
@@ -86,6 +90,7 @@ export default function MapCanvas({ state }) {
       if (acA != null) fit(acA, acC);
       segs.forEach((trk) => trk.forEach((p) => fit(...en(p[0], p[1]))));
       demoTrk.forEach((p) => fit(...en(p[0], p[1])));
+      marks.forEach((m) => fit(...en(m.lat, m.lon)));
     }
     halfA /= zoom; halfC /= zoom;
     cA += pan.a; cC += pan.c;
@@ -196,6 +201,18 @@ export default function MapCanvas({ state }) {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // Navigation: each place to fly to, the one being flown to in green
+    marks.forEach((m) => {
+      const [mx, my] = px(...en(m.lat, m.lon));
+      const active = m.phases.includes(state?.phase);
+      ctx.fillStyle = active ? GOOD : "#8fa3c4";
+      ctx.beginPath();
+      ctx.arc(mx, my, active ? 7 : 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = "13px system-ui";
+      ctx.fillText(m.name, mx + 10, my + 4);
+    });
 
     // Flown track -- old attempts dim/dashed
     segs.forEach((trk, si) => {

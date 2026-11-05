@@ -89,8 +89,9 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                 rt.engine.hold()
                 asyncio.create_task(rt._fam_upset(ev))
                 continue
-            if (ev.data.get("phase") not in rt.demo_ctl["shown"]
-                    and rt._fam_freezes() and ev.data.get("freeze", True)):
+            if (ev.data.get("teleport")          # always held: it moves the aircraft
+                    or (ev.data.get("phase") not in rt.demo_ctl["shown"]
+                        and rt._fam_freezes() and ev.data.get("freeze", True))):
                 rt.engine.hold()       # judge nothing until "you have control"
                 asyncio.create_task(rt._fam_instruct(ev))
                 continue

@@ -107,6 +107,7 @@ class MSFSAdapter:
         self._sm = None
         self._datadef = None
         self._initpos_defined = False
+        self._vacuum_failed = False    # TOGGLE_VACUUM_FAILURE sent and not yet undone
         self._lock_mapped = False      # _LOCKED_EVENTS mapped to client ids yet
         self._locked = False
         # the tick loop and a teleport both run in executor threads -- one
@@ -410,6 +411,23 @@ class MSFSAdapter:
                  lat, lon, alt_msl, hdg, ias)
         return True
 
+    def set_vacuum_failed(self, on: bool) -> bool:
+        """Fail / restore the vacuum system (attitude and heading gauges on a
+        dial-gauge aircraft). The sim only has a toggle, so it's sent only when
+        this differs from what we last set."""
+        if self._sm is None:
+            return False
+        try:
+            with self._lock:
+                if self._vacuum_failed != bool(on):
+                    self._sm.send_event("TOGGLE_VACUUM_FAILURE")
+                    self._vacuum_failed = bool(on)
+                    log.info("vacuum system %s", "failed" if on else "restored")
+        except Exception as e:
+            log.error("SimConnect set_vacuum_failed(%s) failed: %s", on, e)
+            return False
+        return True
+
     def set_attitude(self, pitch: float, bank: float) -> bool:
         """Set the aircraft's attitude directly (unusual attitudes): pitch
         + nose up, bank + right, degrees. Written to PLANE PITCH / BANK DEGREES
@@ -546,6 +564,7 @@ class MSFSAdapter:
     def close(self) -> None:
         if self._sm:
             try:
+                self.set_vacuum_failed(False)    # never leave the sim with dead gauges
                 self._sm.Close()
             except Exception:
                 pass

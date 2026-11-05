@@ -1,0 +1,152 @@
+name: "Map Reading & Pilotage"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, to-do list and scorecard. Pilotage: fly from landmark to
+# landmark, matching the map to what's outside and noting the time over each
+# (FAA-H-8083-25 ch. 16; CFI Notebook lost procedures, "actual times over
+# waypoints"). MAVIS gives the heading to each one; the map shows them all.
+# Older dial-gauge C172: the heading indicator is a gyro that drifts, so it's set
+# to the compass first, in straight and level flight.
+# Magnetic variation at Singapore is under 1 degree: true and compass headings
+# read the same here.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map, finding Paya Lebar at
+# the end, and the runway the aircraft is put back on.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# 2 nm south of Marina Bay Sands, over the water, pointing at it
+airborne_start:
+  lat: 1.2492
+  lon: 103.8600
+  alt_msl_ft: 1500
+  heading_true: 0
+  ias_kt: 95
+  throttle_pct: 70
+
+# In order. radius_nm: how close counts as "there" -- wider for an airport.
+checkpoints:
+  - name: Marina Bay Sands
+    lat: 1.2825             # Wikipedia, 1 deg 16' 57" N 103 deg 51' 36" E
+    lon: 103.8600
+    radius_nm: 0.4
+    look: three towers joined by a ship-shaped deck on top
+  - name: the National Stadium
+    lat: 1.30444            # Wikipedia, 1 deg 18' 16" N 103 deg 52' 27" E
+    lon: 103.87417
+    radius_nm: 0.4
+    look: a big silver dome beside the Kallang Basin
+  - name: Changi Airport
+    lat: 1.35921            # Singapore AIP aerodrome reference point (control tower)
+    lon: 103.98932
+    radius_nm: 1.0
+    look: long parallel runways by the east coast
+
+steps:
+  - CHECKPOINT_1
+  - CHECKPOINT_2
+  - CHECKPOINT_3
+  - FIND_AIRFIELD
+
+exercises:
+  hint_every_s: 30          # off course: say where it is and the heading, this often
+  step_timeout_s: 420
+  feedback_s: 5             # the time over a checkpoint, before the next one
+
+# Finding Paya Lebar: nose on it for a few seconds, same as Flight Familiarization
+finish:
+  pointing_within_deg: 15
+  pointing_hold_s: 5
+  pointing_max_nm: 10
+  radius_nm: 2.0
+
+freeze_during_instructions: true
+demos: false                # the flying is the lesson: nothing to watch first
+
+# Every mode needs these: without them there's nowhere to fly to
+always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_CP_REACHED, FAM_FIELD_HINT]
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  map reading and pilotage (airborne start south of Marina Bay; flew landmark to
+  landmark -- Marina Bay Sands, the National Stadium, Changi Airport -- noting
+  the time over each, then found Paya Lebar and pointed at it; no take-off or
+  landing)
+
+briefing:
+  layman: >-
+    Map reading. We're at about {alt} feet, over the water south of the city.
+    We'll fly from landmark to landmark, matching the map to what you see
+    outside. I'll tell you the heading for each one.
+  pilot: >-
+    Pilotage, airborne at {alt} feet south of Marina Bay. Three visual
+    checkpoints, note the time over each, then locate Paya Lebar.
+
+# See lesson00_familiarization.yaml for the step_notes format.
+step_notes:
+  CHECKPOINT_1:
+    title: Marina Bay Sands
+    todo:
+      - "Set the heading indicator to the compass"
+      - "Fly to {tgt_name}"
+      - "Look for {tgt_look}"
+      - "Hold {alt_now:,} ft"
+    look: [heading, outside]
+    layman: >-
+      Set your heading indicator to the compass first, it drifts. Then {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Fly heading {tgt_hdg:03d} and hold {alt_now:,} feet.
+    pilot: >-
+      Set the heading indicator to the compass. Checkpoint one, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Heading {tgt_hdg:03d}, maintain {alt_now:,} feet.
+  CHECKPOINT_2:
+    title: The National Stadium
+    todo:
+      - "Fly to {tgt_name}"
+      - "Look for {tgt_look}"
+      - "Hold {alt_now:,} ft"
+    look: [outside]
+    freeze: false
+    layman: >-
+      Next, {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Turn {tgt_dir} onto {tgt_hdg:03d}.
+    pilot: >-
+      Checkpoint two, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d}.
+  CHECKPOINT_3:
+    title: Changi Airport
+    todo:
+      - "Fly to {tgt_name}"
+      - "Look for {tgt_look}"
+      - "Hold {alt_now:,} ft"
+    look: [outside]
+    freeze: false
+    layman: >-
+      Last one, {tgt_name}: {tgt_look}. It's about {tgt_dist_nm} miles away, about {tgt_min} minutes. Turn {tgt_dir} onto {tgt_hdg:03d}.
+    pilot: >-
+      Checkpoint three, {tgt_name}, {tgt_dist_nm} miles, {tgt_min} minutes. Turn {tgt_dir} heading {tgt_hdg:03d}.
+  FIND_AIRFIELD:
+    title: Find Paya Lebar & point at it
+    say_targets: false
+    todo:
+      - "Find Paya Lebar's long runway"
+      - "Point the nose at it"
+    look: [outside]
+    freeze: false
+    layman: >-
+      Now home. Paya Lebar's at your {clock} o'clock, about {dist_nm} miles. Find its long runway and point the nose at it, heading {brg_lo} to {brg_hi}.
+    pilot: >-
+      Locate Paya Lebar, {clock} o'clock, {dist_nm} miles, heading {brg_lo} to {brg_hi}. Point at the field.

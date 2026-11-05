@@ -111,6 +111,7 @@ def build_scoring_flow(rt):
                  "bank": "turns", "climb_speed": "climb speed", "speed": "speed control",
                  "level_off": "levelling off",
                  "sequence": "recovery order", "recovery": "quick recoveries",
+                 "heading": "heading accuracy",
                  "smoothness": "smooth hands"}
         best, worst = max(sc, key=sc.get), min(sc, key=sc.get)
         fallback = f"Lovely flying. Best was your {names[best]}; work on {names[worst]} next time."
@@ -188,6 +189,8 @@ def build_scoring_flow(rt):
             rt.scorer.skipped = set(getattr(rt.engine, "skipped", ()))
         if hasattr(rt.scorer, "upsets"):          # unusual attitudes: how each recovery went
             rt.scorer.upsets = dict(getattr(rt.engine, "upset_results", {}))
+        if hasattr(rt.scorer, "results"):         # navigation / partial panel: heading errors
+            rt.scorer.results = dict(getattr(rt.engine, "results", {}))
         card = rt.scorer.finalize(
             rt.session.get("name", ""), rt.session["mode"], rt.lesson_id, practice,
             score_caps=bool(pol.get("score_caps")))

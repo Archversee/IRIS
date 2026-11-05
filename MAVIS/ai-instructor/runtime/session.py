@@ -40,6 +40,8 @@ def build_session(rt):
             elif (not is_familiarization(rt.lesson)
                     and (rt.session.get("policy") or {}).get("coaching") == "turn_by_turn"):
                 await rt._set_frozen(True)     # landing: held on final while it's briefed
+        if rt.lesson.get("vacuum_failure") and not free:
+            await rt._set_vacuum(True)         # Partial Panel: the gauges fail as it starts
         rt.state["look_at"] = None
         rt.demo_ctl["shown"] = set()
         rt.started.set()
@@ -86,6 +88,7 @@ def build_session(rt):
             "blob": rt.sim.save_state() if hasattr(rt.sim, "save_state") else None}
 
     async def restart():
+        await rt._set_vacuum(False)            # start() fails it again if the lesson wants
         rt.stop_speech()
         rt.run_gen["n"] += 1
         rt.live_rules["ev"] = None
@@ -170,6 +173,7 @@ def build_session(rt):
         time of day. Refused while a run is in progress."""
         if new_id == rt.lesson_id:
             return {"ok": True, "lesson_id": rt.lesson_id}
+        await rt._set_vacuum(False)
         meta = lesson_meta(rt.catalog, new_id)
         path = HERE / "lessons" / f"{new_id}.yaml"
         if (not meta or not meta.get("available") or meta.get("kind") == "reading"
@@ -299,6 +303,7 @@ def build_session(rt):
 
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
+        await rt._set_vacuum(False)
         if is_familiarization(rt.lesson):
             await rt._set_frozen(False)        # hand the aircraft back on the way out
         if rt.scored["done"]:

@@ -14,6 +14,7 @@ import time
 from adapters.sim_base import Telemetry
 from coach import phrases
 from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
+from core.events import CoachEvent
 from core.familiarization import (STEP_TITLES, UPSET_HIGH, is_familiarization, runway_start,
                                   start_position)
 from core.reference_profiles import ReferenceRegistry
@@ -177,6 +178,13 @@ def build_flight_flow(rt):
         if fn and not await rt.loop.run_in_executor(None, fn, on):
             log.warning("sim did not confirm freeze=%s", on)
 
+    async def _set_vacuum(on: bool) -> None:
+        """Partial Panel's failed attitude and heading gauges (lesson
+        `vacuum_failure`): failed at the start, restored on every way out."""
+        fn = getattr(rt.sim, "set_vacuum_failed", None)
+        if fn and not await rt.loop.run_in_executor(None, fn, on):
+            log.warning("sim did not take vacuum failure=%s", on)
+
     _speakable = phrases.speakable      # to-do text as MAVIS says it
 
     def _demos_wanted() -> bool:
@@ -194,6 +202,8 @@ def build_flight_flow(rt):
         phase = ev.data.get("phase")
         try:
             await _set_frozen(True)
+            if ev.data.get("teleport"):
+                ev = await _teleport_step(ev, eng)
             await rt.coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
             if gen == rt.run_gen["n"] and rt.started.is_set():
                 await rt.coach.say(phrases.render("FAM_YOU_HAVE_CONTROL", {}), phase=phase)
@@ -203,6 +213,20 @@ def build_flight_flow(rt):
                 eng.release()
                 if hasattr(rt.sim, "comply"):     # mock student flies the step from here
                     rt.sim.comply(f"PHASE_ENTER_{phase}", ev.data)
+
+    async def _teleport_step(ev, eng):
+        """A step that starts somewhere else (`teleport:` in its step note, same
+        keys as airborne_start): move there, frozen, then word the step from
+        there. No flying back: the lesson just carries on from the new place."""
+        a = ev.data["teleport"]
+        lat, lon = start_position({**rt.lesson, "airborne_start": a})
+        ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
+            lat, lon, a["alt_msl_ft"], a["heading_true"], a["ias_kt"], throttle_pct=a.get("throttle_pct")))
+        if not ok:
+            log.warning("step %s: couldn't teleport -- carrying on from here", ev.data.get("phase"))
+        await asyncio.sleep(0.8)                 # let telemetry catch up
+        tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+        return CoachEvent(ev.code, ev.severity, {**ev.data, **eng.rebase(tel)}, cooldown_s=0)
 
     async def _place_upset(att: dict) -> bool:
         """Frozen: teleport back to the lesson's start height and heading (each
@@ -395,6 +419,7 @@ def build_flight_flow(rt):
         it back at the start of the runway, stopped, ready for whatever's next."""
         gen = rt.run_gen["n"]
         await _set_frozen(True)
+        await _set_vacuum(False)
         try:
             await rt.finish_lesson(False)
         except Exception:
@@ -472,6 +497,7 @@ def build_flight_flow(rt):
     rt._lesson_text = _lesson_text
     rt._orient_lesson_to_aircraft = _orient_lesson_to_aircraft
     rt._set_frozen = _set_frozen
+    rt._set_vacuum = _set_vacuum
     rt._speakable = _speakable
     rt._to_runway_start = _to_runway_start
     rt.night_sequence = night_sequence

@@ -99,6 +99,12 @@ def _hdg(x: float) -> int:
     return _r(x % 360.0, 10) % 360 or 360
 
 
+def _clock(tel: Telemetry) -> str:
+    """The sim's local time as a pilot writes it: 0942."""
+    h = int(tel.local_time_h) % 24
+    return f"{h:02d}{int((tel.local_time_h % 1) * 60) % 60:02d}"
+
+
 STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left turn",
                "TURN_RIGHT": "Gentle right turn", "CLIMB": "Climb", "DESCEND": "Descend",
                "PITCH_UP": "Nose up", "PITCH_DOWN": "Nose down",
@@ -112,6 +118,12 @@ STEP_TITLES = {"STRAIGHT_LEVEL": "Straight & level", "TURN_LEFT": "Gentle left t
                "STEEP_TURN_LEFT": "Steep turn left", "STEEP_TURN_RIGHT": "Steep turn right",
                "UPSET_HIGH_LEFT": "Nose high, banked left", "UPSET_HIGH_RIGHT": "Nose high, banked right",
                "UPSET_LOW_LEFT": "Nose low, banked left", "UPSET_LOW_RIGHT": "Nose low, banked right",
+               "CHECKPOINT_1": "Checkpoint 1", "CHECKPOINT_2": "Checkpoint 2",
+               "CHECKPOINT_3": "Checkpoint 3", "CHECKPOINT_4": "Checkpoint 4",
+               "DIVERT_TURN": "Turn for the new airfield", "DIVERT_TRACK": "Fly to the new airfield",
+               "LOST_CLIMB": "Lost: climb",
+               "TIMED_TURN_LEFT": "Timed turn left", "TIMED_TURN_RIGHT": "Timed turn right",
+               "COMPASS_TURN": "Turn by the compass",
                "FIND_AIRFIELD": "Find Paya Lebar & point at it"}
 
 DEFAULT_STEPS = ["STRAIGHT_LEVEL", "TURN_LEFT", "TURN_RIGHT", "CLIMB", "DESCEND", "FIND_AIRFIELD"]
@@ -133,6 +145,15 @@ BANKED_TURNS = (*MEDIUM_TURNS, *STEEP_TURNS)
 UPSET_HIGH = ("UPSET_HIGH_LEFT", "UPSET_HIGH_RIGHT")
 UPSET_LOW = ("UPSET_LOW_LEFT", "UPSET_LOW_RIGHT")
 UPSET_STEPS = (*UPSET_HIGH, *UPSET_LOW)
+# Navigation: fly to a place the lesson names (`checkpoints`, `diversion`).
+CHECKPOINTS = ("CHECKPOINT_1", "CHECKPOINT_2", "CHECKPOINT_3", "CHECKPOINT_4")
+TARGET_STEPS = (*CHECKPOINTS, "DIVERT_TURN", "DIVERT_TRACK")
+# Partial panel: 90 degrees at standard rate (3 degrees a second) by the clock
+TIMED_TURNS = ("TIMED_TURN_LEFT", "TIMED_TURN_RIGHT")
+# Height is held (and scored) on these, whatever else they ask
+HOLD_ALT_STEPS = (*TARGET_STEPS, *TIMED_TURNS, "COMPASS_TURN")
+# To-do card: only what the step asks for, no reference height row
+NO_HEIGHT_ROW = (*UPSET_STEPS, *HOLD_ALT_STEPS, "LOST_CLIMB")
 # Height is part of pass/fail only where holding it IS the skill (slow
 # flight, medium and steep turns) -- within a generous band.
 HOLD_HEIGHT_STEPS = ("SLOW_FLIGHT", *BANKED_TURNS)
@@ -264,6 +285,18 @@ class FamiliarizationEngine:
         self.upset_seen_s = float(ex.get("upset_seen_s", 6))        # no upset by then: it didn't set up
         self.vne = float(aircraft["v_speeds"].get("vne", 163))
         self.upset_results: dict[str, dict] = {}     # step -> how its recovery went (scorer)
+        # navigation
+        self.checkpoints = lesson.get("checkpoints") or []
+        self.diversion = lesson.get("diversion") or {}
+        self.track_band = float(ex.get("track_band_deg", 15))      # on heading: within this (ACS +/-15)
+        self.lost_climb_ft = float(ex.get("lost_climb_ft", 500))
+        # partial panel
+        self.timed_deg = float(ex.get("timed_turn_deg", 90))
+        self.timed_s = self.timed_deg / 3.0                        # standard rate
+        self.compass_deg = float(ex.get("compass_turn_deg", 90))   # + right
+        self.heading_ok = float(ex.get("heading_ok_deg", 10))      # a turn within this is good
+        self.vacuum_failed = bool(lesson.get("vacuum_failure"))    # attitude gauge is out
+        self.results: dict[str, dict] = {}           # step -> {"heading_err": deg} (scorer)
         fin = lesson.get("finish") or {}
         self.finish_m = float(fin.get("radius_nm", 2.0)) * M_PER_NM
         self.point_deg = float(fin.get("pointing_within_deg", 15))
@@ -315,6 +348,7 @@ class FamiliarizationEngine:
         self.held = False
         self.skipped.clear()
         self.upset_results.clear()
+        self.results.clear()
         self._last_fire.clear()
         self._reset_step()
 
@@ -325,6 +359,7 @@ class FamiliarizationEngine:
         self.skipped -= set(order[order.index(phase):])
         for s in order[order.index(phase):]:
             self.upset_results.pop(s, None)
+            self.results.pop(s, None)
         self._reset_step()
 
     def wants_night_switch(self) -> bool:
@@ -403,6 +438,8 @@ class FamiliarizationEngine:
         self._data: dict = {}
         self._meters: list[dict] = []
         self._upset: dict = {}                   # unusual attitude: the recovery as it goes
+        self._done_t = None                      # step finished: MAVIS is saying how it went
+        self._err = [0.0, 0.0]                   # diversion: off-heading error, time
 
     def _target_alt(self):
         a = self._entry.get("alt")
@@ -420,8 +457,10 @@ class FamiliarizationEngine:
             return self._entry.get("tgt")
         if self.phase == "GLIDE":
             return a - self.glide_ft
-        if self.phase in LEVEL_STEPS or self.phase in UPSET_STEPS:
+        if self.phase in LEVEL_STEPS or self.phase in UPSET_STEPS or self.phase in HOLD_ALT_STEPS:
             return a
+        if self.phase == "LOST_CLIMB":
+            return self._entry.get("tgt")
         return None
 
     def level_target(self, step: str, alt: float, demo: bool = False) -> float:
@@ -436,6 +475,54 @@ class FamiliarizationEngine:
         (+ nose up), bank (+ right) and speed."""
         pitch, bank, ias = self.upset_spec["HIGH" if step in UPSET_HIGH else "LOW"]
         return {"pitch": pitch, "bank": turn_dir(step) * bank, "ias": ias}
+
+    def _place(self, p: str) -> dict | None:
+        """The place a navigation step flies to: name, lat, lon, radius_nm, look."""
+        if p in CHECKPOINTS:
+            i = CHECKPOINTS.index(p)
+            return self.checkpoints[i] if i < len(self.checkpoints) else None
+        return (self.diversion or None) if p in ("DIVERT_TURN", "DIVERT_TRACK") else None
+
+    def _target(self, p: str, tel: Telemetry) -> dict:
+        """Where the step's place is from here, in the words MAVIS says it."""
+        pl = self._place(p)
+        if not pl:
+            return {}
+        brg, dist = bearing_dist(tel.lat, tel.lon, float(pl["lat"]), float(pl["lon"]))
+        rel = hdg_diff(brg, tel.hdg)
+        nm = dist / M_PER_NM
+        return {"tgt_name": pl["name"], "tgt_look": pl.get("look", ""), "tgt_hdg": _hdg(brg),
+                "tgt_dist_nm": max(1, round(nm)), "tgt_clock": clock_position(brg - tel.hdg),
+                "tgt_dir": "right" if rel > 0 else "left",
+                "tgt_min": max(1, round(nm / max(60.0, tel.ias) * 60)),
+                "rel": rel, "dist_m": dist, "radius_m": float(pl.get("radius_nm", 0.5)) * M_PER_NM}
+
+    def _snap_entry(self, tel: Telemetry) -> None:
+        """What the step measures from: its height and heading as it starts."""
+        self._entry.update(alt=tel.alt_msl, hdg=tel.hdg, throttle=tel.throttle, ias=tel.ias)
+        if self.phase == "LOST_CLIMB":
+            self._entry["tgt"] = round((tel.alt_msl + self.lost_climb_ft) / 100.0) * 100.0
+        if self.phase == "COMPASS_TURN":
+            self._entry["tgt"] = float(_hdg(tel.hdg + self.compass_deg))
+
+    def rebase(self, tel: Telemetry) -> dict:
+        """A step that teleports: the aircraft has just moved, so measure from
+        here and word the step from here. Returns its new data."""
+        self._snap_entry(tel)
+        self._data = self.step_data(self.phase, tel)
+        self._meters = standard_all(self._readout(tel))
+        note = self.notes.get(self.phase) or {}
+        return {**self._data, "say_meters": [] if note.get("say_targets") is False else self._meters}
+
+    def _finish(self, code: str, data: dict | None = None) -> None:
+        """Say how the step went; it ends once that's had time to be said."""
+        self._feedback(code, data)
+        self._done_t = time.time()
+
+    def _feedback(self, code: str, data: dict | None = None) -> None:
+        """How a step went. Untagged (phase None): the next step starting must
+        not drop it or cut it off (coach.new_phase) -- it's said in full."""
+        self._cue(code, {**(data or {}), "phase": None})
 
     def _cooled(self, ev: CoachEvent) -> bool:
         last = self._last_fire.get(ev.code, 0.0)
@@ -459,10 +546,13 @@ class FamiliarizationEngine:
                        "ias": tel.ias}
         if self.phase in LEVEL_OFF_STEPS:
             self._entry["tgt"] = self.level_target(self.phase, tel.alt_msl)
+        self._snap_entry(tel)
         self._held = self._turned = self._progress = self._prev_turned = 0.0
         self._stage = 0
         self._events = []
         self._upset = {}
+        self._done_t = None
+        self._err = [0.0, 0.0]
         self._last_hint = now
         p = self.phase
         f = self._field(tel)
@@ -497,13 +587,23 @@ class FamiliarizationEngine:
             mock = {"turn_deg": turn_dir(p) * (deg + 5), "bank": bank, "spd": 95}
         if p in UPSET_STEPS:
             mock = {"hdg_delta": 0, "spd": 95}       # mock student: straight back to level
+        if p in TARGET_STEPS:
+            mock = {"hdg_delta": data.get("rel", 0.0), "spd": 95}
+        if p in TIMED_TURNS:
+            mock = {"turn_deg": turn_dir(p) * self.timed_deg, "bank": 15, "spd": 95}
+        if p == "COMPASS_TURN":
+            mock = {"turn_deg": self.compass_deg, "bank": 15, "spd": 95}
+        if p == "LOST_CLIMB":
+            mock = {"alt_delta_ft": self.lost_climb_ft + 50, "spd": self.vy}
         if mock is not None:
             data["mock"] = mock
         out = [CoachEvent(f"PHASE_ENTER_{p}", "info", data, cooldown_s=0)]
         note = self.notes.get(p)
         if note:
             out.append(CoachEvent("LESSON_NOTE", "info",
-                                  {**data, **note, "say_meters": self._meters},
+                                  # say_targets: false -- the line already gives what to aim for
+                                  {**data, **note, "say_meters": (
+                                      [] if note.get("say_targets") is False else self._meters)},
                                   cooldown_s=0))
         log.info("familiarization step -> %s (alt %.0f, hdg %.0f, field ~%s nm, bearing from %s)",
                  p, tel.alt_msl, tel.hdg, f["dist_nm"], f["brg_lo"])
@@ -530,6 +630,15 @@ class FamiliarizationEngine:
         hp, hb, hk = self.upset_spec["HIGH"]
         lp, lb, lk = self.upset_spec["LOW"]
         return {"phase": p, "circuit": 1, "total_circuits": 1, "alt_now": _r(a, 10),
+                **self._target(p, tel),
+                "time_now": _clock(tel),
+                "lost_ft": round(self.lost_climb_ft),
+                "lost_tgt": int(round((a + self.lost_climb_ft) / 100.0) * 100),
+                "timed_deg": round(self.timed_deg), "timed_s": round(self.timed_s),
+                # standard-rate bank: speed / 10 + 7 (a rule of thumb), to the nearest 5
+                "std_bank": _r(tel.ias / 10.0 + 7.0, 5),
+                "compass_hdg": _hdg(tel.hdg + self.compass_deg),
+                "compass_dir": "right" if self.compass_deg > 0 else "left",
                 "high_pitch": round(hp), "high_bank": round(hb), "high_kt": round(hk),
                 "low_pitch": round(-lp), "low_bank": round(lb), "low_kt": round(lk),
                 "upset_max_kt": round(self.upset_max_kt),
@@ -566,6 +675,35 @@ class FamiliarizationEngine:
     def _achieved(self, tel: Telemetry, dt: float) -> bool:
         """Has the trainee done what the current step asks?"""
         p, e = self.phase, self._entry
+        if self._done_t is not None:             # done: just saying how it went
+            return time.time() - self._done_t >= self.feedback_s
+        if p in CHECKPOINTS:
+            t = self._target(p, tel)
+            if not t:
+                return True                      # the lesson names fewer checkpoints
+            if t["dist_m"] <= t["radius_m"]:
+                self._finish("FAM_CP_REACHED", {"tgt_name": t["tgt_name"], "time_now": _clock(tel)})
+            return False
+        if p == "DIVERT_TURN":
+            t = self._target(p, tel)
+            return not t or (abs(t["rel"]) <= self.track_band and abs(tel.bank) < 10)
+        if p == "DIVERT_TRACK":
+            t = self._target(p, tel)
+            if not t:
+                return True
+            self._err[0] += max(0.0, abs(t["rel"]) - self.track_band) * dt
+            self._err[1] += dt
+            if t["dist_m"] <= t["radius_m"]:
+                self.results[p] = {"heading_err": self._err[0] / max(1.0, self._err[1])}
+                self._finish("FAM_DIVERT_DONE", {
+                    "tgt_name": t["tgt_name"], "mins": max(1, round((time.time() - e["t"]) / 60.0))})
+            return False
+        if p == "LOST_CLIMB":
+            return tel.alt_msl >= e["tgt"] - 50
+        if p in TIMED_TURNS:
+            return self._timed_turn(tel)
+        if p == "COMPASS_TURN":
+            return self._compass_turn(tel)
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
             if f["dist_m"] <= self.point_max_m and abs(f["rel"]) <= self.point_deg:
@@ -708,7 +846,7 @@ class FamiliarizationEngine:
             if not u["seen"]:
                 if now - u["t0"] > self.upset_seen_s:      # never got there: not set up
                     log.warning("unusual attitude %s never seen -- moving on", p)
-                    self._cue("FAM_UPSET_NOT_SET")
+                    self._feedback("FAM_UPSET_NOT_SET")
                     return True
                 return False
         if "power" not in u and (self.mock or (
@@ -742,22 +880,64 @@ class FamiliarizationEngine:
                "overspeed": u["ias_max"] > self.vne}
         self.upset_results[p] = res
         self._stage, u["done_t"] = 1, now
-        self._cue("FAM_UPSET_GOOD" if seq_ok and not res["stalled"] and not res["overspeed"] else
-                  "FAM_UPSET_STALLED" if res["stalled"] else
-                  "FAM_UPSET_FAST" if res["overspeed"] else
-                  "FAM_UPSET_FIX_HIGH" if high else "FAM_UPSET_FIX_LOW")
+        self._feedback("FAM_UPSET_GOOD" if seq_ok and not res["stalled"] and not res["overspeed"] else
+                       "FAM_UPSET_STALLED" if res["stalled"] else
+                       "FAM_UPSET_FAST" if res["overspeed"] else
+                       "FAM_UPSET_FIX_HIGH" if high else "FAM_UPSET_FIX_LOW")
         return False
 
-    def _cue(self, code: str) -> None:
-        """Queue a "now come back" call (PART_CUES) for this tick's output."""
-        self._events.append(CoachEvent(code, "correction", {"phase": self.phase}, cooldown_s=0))
+    def _timed_turn(self, tel: Telemetry) -> bool:
+        """Roll in (the clock starts), MAVIS calls the time, roll out: judged on
+        how far it actually turned. Nothing counts until the bank goes on."""
+        u, want = self._upset, turn_dir(self.phase)
+        now = time.time()
+        if "t_in" not in u:
+            if self.mock or tel.bank * want >= 8:
+                u.update(t_in=now, turned0=self._turned)
+            return False
+        if self._stage == 0:
+            if now - u["t_in"] >= self.timed_s:
+                self._stage = 1
+                self._cue("FAM_TIMED_ROLL_OUT", {"timed_s": round(self.timed_s)})
+            return False
+        if abs(tel.bank) < 5:
+            turned = abs(self._turned - u["turned0"])
+            err = turned - self.timed_deg
+            self.results[self.phase] = {"heading_err": abs(err)}
+            self._finish("FAM_TIMED_GOOD" if abs(err) <= self.heading_ok else
+                         "FAM_TIMED_MORE" if err > 0 else "FAM_TIMED_LESS",
+                         {"turned": _r(turned, 5), "timed_deg": round(self.timed_deg)})
+        return False
+
+    def _compass_turn(self, tel: Telemetry) -> bool:
+        """Turn to the heading MAVIS gave, reading it off the compass. The first
+        roll-out is what's judged; if it's off, MAVIS says which way to fix it."""
+        u, tgt = self._upset, self._entry["tgt"]
+        if abs(self._turned) < 45 or abs(tel.bank) >= 8:
+            return False                         # not turned yet, or still turning
+        off = hdg_diff(tgt, tel.hdg)
+        if self.phase not in self.results:
+            self.results[self.phase] = {"heading_err": abs(off)}
+        if abs(off) <= self.heading_ok:
+            self._finish("FAM_COMPASS_GOOD", {"compass_hdg": _hdg(tgt), "off": round(abs(off))})
+        elif not u.get("told"):
+            u["told"] = True
+            self._cue("FAM_COMPASS_FIX", {"compass_hdg": _hdg(tgt), "off": round(abs(off)),
+                                          "dir": "right" if off > 0 else "left"})
+        return False
+
+    def _cue(self, code: str, data: dict | None = None) -> None:
+        """Queue a call to say this tick (PART_CUES, how a step went)."""
+        self._events.append(CoachEvent(code, "correction", {"phase": self.phase, **(data or {})},
+                                       cooldown_s=0))
 
     def _step_done(self, tel: Telemetry, dt: float, now: float) -> bool:
         """Done, or out of time (finding the field never times out: it's the
         lesson's goal). A timed-out step moves on but is marked skipped."""
         if self._achieved(tel, dt):
             return True
-        if self.phase != "FIND_AIRFIELD" and now - self._entry["t"] > self.step_max_s:
+        limit = float((self.notes.get(self.phase) or {}).get("timeout_s", self.step_max_s))
+        if self.phase != "FIND_AIRFIELD" and now - self._entry["t"] > limit:
             self.skipped.add(self.phase)
             log.info("familiarization step %s timed out -- moving on", self.phase)
             return True
@@ -797,6 +977,11 @@ class FamiliarizationEngine:
                                       {"dir": "left" if want < 0 else "right",
                                        "bank_lo": self._data.get(key + "bank_lo"),
                                        "bank_hi": self._data.get(key + "bank_hi")}, cooldown_s=25))
+        if self.phase in TARGET_STEPS and self._done_t is None:
+            t = self._target(self.phase, tel)
+            if t and now - self._last_hint >= self.hint_s and abs(t["rel"]) > self.track_band + 5:
+                self._last_hint = now
+                out.append(CoachEvent("FAM_TARGET_HINT", "nudge", {"phase": self.phase, **t}, cooldown_s=0))
         if self.phase == "FIND_AIRFIELD":
             f = self._field(tel)
             if now - self._last_hint >= self.hint_s and abs(f["rel"]) > self.point_deg:
@@ -839,8 +1024,10 @@ class FamiliarizationEngine:
         or reach where the step has one, otherwise the current height for
         reference only (no target, so it isn't read out or marked red)."""
         rows = self._readout_rows(tel)
-        if any(r.get("label") == "Height" for r in rows) or self.phase in UPSET_STEPS:
-            return rows                    # unusual attitudes: only what the recovery needs
+        if self.vacuum_failed:             # the card mustn't give back what the gauge lost
+            rows = [r for r in rows if r.get("label") not in ("Bank", "Wings level")]
+        if any(r.get("label") == "Height" for r in rows) or self.phase in NO_HEIGHT_ROW:
+            return rows                    # only what the step needs
         p, e, d = self.phase, self._entry, self._data
         alt = tel.alt_msl
         row = {"label": "Height", "now": f"{_r(alt, 10):,} ft", "target": ""}
@@ -982,6 +1169,40 @@ class FamiliarizationEngine:
                      "ok": tel.ias >= self.recover_kt},
                     {"label": "Sink", "now": f"{max(0.0, -tel.vs):.0f} fpm",
                      "target": f"under {self.recover_sink:.0f} fpm", "ok": tel.vs >= -self.recover_sink}]
+        if p in TARGET_STEPS:
+            t = self._target(p, tel)
+            if not t or self._done_t is not None:
+                return []
+            on = abs(t["rel"]) <= self.track_band
+            rows = [{"label": t["tgt_name"],
+                     "now": "on the nose" if on else f"turn {t['tgt_dir']} {_r(abs(t['rel']), 5)}\u00b0",
+                     "target": f"heading {t['tgt_hdg']:03d}\u00b0", "ok": on},
+                    {"label": "Distance", "now": f"~{t['tgt_dist_nm']} nm", "target": ""}]
+            if p == "DIVERT_TRACK":
+                rows.append(height_row)
+            return rows
+        if p == "LOST_CLIMB":
+            tgt = e.get("tgt", alt)
+            return [{"label": "Climb to", "now": f"{_r(alt, 10):,} ft", "target": f"{tgt:,.0f} ft",
+                     "ok": alt >= tgt - 50}]
+        if p in TIMED_TURNS:
+            if self._done_t is not None:
+                return []
+            if self._stage == 1:
+                return [{"label": "Wings level", "now": f"{abs(tel.bank):.0f}\u00b0", "target": "under 5\u00b0",
+                         "ok": abs(tel.bank) < 5}]
+            t_in = self._upset.get("t_in")
+            bank = d.get("std_bank", 15)
+            return [{"label": "Bank", "now": f"{abs(tel.bank):.0f}\u00b0", "target": f"about {bank}\u00b0",
+                     "ok": abs(abs(tel.bank) - bank) <= 5},
+                    {"label": "Time", "now": f"{time.time() - t_in:.0f} s" if t_in else "bank to start",
+                     "target": f"{self.timed_s:.0f} s"}]
+        if p == "COMPASS_TURN":
+            if self._done_t is not None:
+                return []
+            tgt = e.get("tgt", tel.hdg)
+            return [{"label": "Compass", "now": f"{_hdg(tel.hdg):03d}\u00b0", "target": f"{_hdg(tgt):03d}\u00b0",
+                     "ok": abs(hdg_diff(tgt, tel.hdg)) <= self.heading_ok}]
         if p in UPSET_STEPS:
             if self._stage == 1:
                 return []                  # recovered: MAVIS says how it went
@@ -1052,6 +1273,8 @@ class FamiliarizationEngine:
                         msg = "Now roll the wings level"
                     elif self.phase in LEVEL_OFF_STEPS:
                         msg = "Now level off and hold it there"
+                    elif self.phase in TIMED_TURNS:
+                        msg = "Now roll the wings level"
                     elif self.phase in UPSET_STEPS:
                         msg = "Done — next one coming up"
                     if msg:
@@ -1080,7 +1303,7 @@ class FamiliarizationScorer:
     finalize()."""
     WEIGHTS = {"exercises": 25, "altitude": 25, "bank": 20, "climb_speed": 10,
                "speed": 15, "level_off": 20, "smoothness": 20,
-               "sequence": 30, "recovery": 25}
+               "sequence": 30, "recovery": 25, "heading": 30}
 
     def __init__(self, lesson: dict, aircraft: dict):
         ex = lesson.get("exercises") or {}
@@ -1106,7 +1329,9 @@ class FamiliarizationScorer:
         if ex_set & set(UPSET_STEPS):
             self.metrics |= {"sequence", "recovery"}
         self.recover_target_s = float(ex.get("recover_target_s", 8))
-        if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS}:
+        if ex_set & {"DIVERT_TRACK", "COMPASS_TURN", *TIMED_TURNS}:
+            self.metrics.add("heading")
+        if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS}:
             self.metrics.add("altitude")
         if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS}:
             self.metrics.add("bank")
@@ -1122,10 +1347,11 @@ class FamiliarizationScorer:
         self.reset()
 
     def reset(self) -> None:
-        self._acc = {k: [0.0, 0] for k in self.WEIGHTS if k not in ("exercises", "sequence", "recovery")}
+        self._acc = {k: [0.0, 0] for k in self.WEIGHTS if k not in ("exercises", "sequence", "recovery", "heading")}
         self._seen: set[str] = set()
         self.skipped: set[str] = set()
         self.upsets: dict[str, dict] = {}       # the engine's upset_results, handed over before finalize()
+        self.results: dict[str, dict] = {}      # the engine's results (heading errors), likewise
         self._prev_ctrl = None
         self._phase = None
         self._phase_t = 0.0
@@ -1166,7 +1392,7 @@ class FamiliarizationScorer:
                 self._add("speed", max(0.0, lo - ias, ias - hi))
             else:
                 self._add("speed", abs(ias - self.speeds[phase]))
-        if phase in ("STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS):
+        if phase in ("STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS):
             self._add("altitude", abs(alt - self._ref_alt))
         # bank accuracy once established in the turn -- rolling in and out
         # passes through small angles on the way and isn't an error
@@ -1204,6 +1430,10 @@ class FamiliarizationScorer:
         for k, (tot, n) in self._acc.items():
             if k in self.metrics:
                 scores[k] = round(_curve(tot / n, scale[k] * f)) if n else None
+        if "heading" in self.metrics:
+            errs = [r["heading_err"] for r in self.results.values()]
+            scores["heading"] = (round(sum(_curve(e, 15.0 * f) for e in errs) / len(errs))
+                                 if errs else None)
         if "sequence" in self.metrics:
             ups = list(self.upsets.values())
             scores["sequence"] = (round(100 * sum(u["sequence_ok"] for u in ups) / len(ups))
