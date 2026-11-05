@@ -75,7 +75,7 @@ freeze_during_instructions: true
 demos: false                # the flying is the lesson: nothing to watch first
 
 # Every mode needs these: without them there's nowhere to fly to
-always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_DIVERT_DONE, FAM_FIELD_HINT]
+always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_DIVERT_DONE, FAM_DIVERT_WIDE, FAM_FIELD_HINT, FAM_STEP_DONE]
 
 end_reposition:
   along_m: 60
@@ -97,11 +97,13 @@ briefing:
 
 # See lesson00_familiarization.yaml for the step_notes format. teleport: the
 # step starts somewhere else (same keys as airborne_start); timeout_s: its own
-# time limit (a diversion turn has to be prompt).
+# time limit (a diversion turn has to be prompt); done: said only when the step
+# was really done, not when it timed out.
 step_notes:
   DIVERT_TURN:
     title: Turn for Seletar
     timeout_s: 60
+    done: { layman: "Good, you're on heading.", pilot: "On heading." }
     todo:
       - "Set the heading indicator to the compass"
       - "Turn {tgt_dir} for {tgt_name}"
@@ -115,17 +117,18 @@ step_notes:
     timeout_s: 480
     todo:
       - "Hold heading {tgt_hdg:03d}"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
       - "Look for {tgt_look}"
     look: [heading, altitude]
     freeze: false
     layman: >-
-      Good. Hold {tgt_hdg:03d} and {alt_now:,} feet, about {tgt_min} minutes to {tgt_name}. Look for {tgt_look}.
+      Fly {tgt_hdg:03d} and hold {hold_alt:,} feet, about {tgt_min} minutes to {tgt_name}. Look for {tgt_look}.
     pilot: >-
-      Maintain {tgt_hdg:03d}, {alt_now:,} feet, {tgt_min} minutes to {tgt_name}.
+      Maintain {tgt_hdg:03d}, {hold_alt:,} feet, {tgt_min} minutes to {tgt_name}.
   LOST_CLIMB:
     title: "Lost: climb"
     timeout_s: 180
+    done: { layman: "Good, you're up. Now look around.", pilot: "Level. Look around." }
     teleport:               # east of Changi, pointing away from Paya Lebar
       bearing_from_field_deg: 70
       distance_nm: 7
@@ -135,10 +138,10 @@ step_notes:
       throttle_pct: 70
     todo:
       - "Set the heading indicator to the compass"
-      - "Climb to {lost_tgt:,} ft"
+      - "Add power, climb to {lost_tgt:,} ft"
     look: [heading, altitude]
     layman: >-
-      New exercise: pretend you're lost. Set your heading indicator to the compass again. Then step one is climb, because higher up you can see further and radios reach further. Climb to {lost_tgt:,} feet.
+      New exercise: pretend you're lost. Set your heading indicator to the compass again. Then step one is climb, because higher up you can see further and radios reach further. Add power and climb to {lost_tgt:,} feet.
     pilot: >-
       Lost procedure. Set the heading indicator to the compass. Climb first for visual range and radio coverage: {lost_tgt:,} feet.
   FIND_AIRFIELD:

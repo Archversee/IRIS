@@ -80,7 +80,7 @@ freeze_during_instructions: true
 demos: false                # the flying is the lesson: nothing to watch first
 
 # Every mode needs these: without them there's nowhere to fly to
-always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_CP_REACHED, FAM_FIELD_HINT]
+always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_CP_REACHED, FAM_FIELD_HINT, FAM_STEP_DONE]
 
 end_reposition:
   along_m: 60
@@ -108,18 +108,18 @@ step_notes:
       - "Set the heading indicator to the compass"
       - "Fly to {tgt_name}"
       - "Look for {tgt_look}"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [heading, outside]
     layman: >-
-      Set your heading indicator to the compass first, it drifts. Then {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Fly heading {tgt_hdg:03d} and hold {alt_now:,} feet.
+      Set your heading indicator to the compass first, it drifts. Then {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Fly heading {tgt_hdg:03d} and hold {hold_alt:,} feet.
     pilot: >-
-      Set the heading indicator to the compass. Checkpoint one, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Heading {tgt_hdg:03d}, maintain {alt_now:,} feet.
+      Set the heading indicator to the compass. Checkpoint one, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Heading {tgt_hdg:03d}, maintain {hold_alt:,} feet.
   CHECKPOINT_2:
     title: The National Stadium
     todo:
       - "Fly to {tgt_name}"
       - "Look for {tgt_look}"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [outside]
     freeze: false
     layman: >-
@@ -131,7 +131,7 @@ step_notes:
     todo:
       - "Fly to {tgt_name}"
       - "Look for {tgt_look}"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [outside]
     freeze: false
     layman: >-

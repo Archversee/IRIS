@@ -185,8 +185,9 @@ TEMPLATES = {
     "FAM_UPSET_FAST": ["The speed went past the red line. Throttle back sooner."],
     "FAM_UPSET_NOT_SET": ["That one didn't set up properly, so we'll skip it."],
     "FAM_TARGET_HINT": ["{tgt_name} is at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Turn {tgt_dir} onto {tgt_hdg:03d}."],
-    "FAM_CP_REACHED": ["That's {tgt_name}. The time's {time_now}: note it down, it tells you how you're doing."],
-    "FAM_DIVERT_DONE": ["There's {tgt_name}, and that took about {mins} minutes. Nicely done."],
+    "FAM_CP_REACHED": ["That's {tgt_name}. The time's {time_now}. Write it down, so you can see how long each leg takes."],
+    "FAM_DIVERT_DONE": ["There's {tgt_name}, and that took about {mins} minutes. Nicely done, you turned quickly and held your heading."],
+    "FAM_DIVERT_WIDE": ["There's {tgt_name}, about {mins} minutes. Next time turn straight away, and stay closer to the heading."],
     "FAM_TIMED_ROLL_OUT": ["That's {timed_s} seconds. Roll the wings level now."],
     "FAM_TIMED_GOOD": ["You turned {turned} degrees. Spot on."],
     "FAM_TIMED_MORE": ["You turned {turned} degrees, too far. Use a little less bank."],
@@ -302,6 +303,7 @@ PILOT_TEMPLATES = {
     "FAM_TARGET_HINT": ["{tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d}."],
     "FAM_CP_REACHED": ["Over {tgt_name} at {time_now}. Note the time."],
     "FAM_DIVERT_DONE": ["{tgt_name} in sight, {mins} minutes. Diversion complete."],
+    "FAM_DIVERT_WIDE": ["{tgt_name} in sight, {mins} minutes. Turn promptly and hold the heading closer."],
     "FAM_TIMED_ROLL_OUT": ["Time. Roll out."],
     "FAM_TIMED_GOOD": ["{turned} degrees. Good."],
     "FAM_TIMED_MORE": ["{turned} degrees, overshot. Less bank."],
@@ -531,7 +533,7 @@ def render(code: str, data: dict) -> str:
             return txt.format(**d)
         except (KeyError, IndexError):
             return txt
-    if code == "LESSON_NOTE":
+    if code in ("LESSON_NOTE", "FAM_STEP_DONE"):
         # lesson YAML teaching point: {layman, pilot} variants authored per phase
         txt = d.get(_JARGON) or d.get("layman") or ""
         try:

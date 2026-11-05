@@ -54,7 +54,7 @@ exercises:
   timed_turn_deg: 90
   compass_turn_deg: 90      # + right
   heading_ok_deg: 10        # a turn finishing within this is a good one
-  descend_to_ft: 500
+  level_to_ft: 2500         # the descent's height, wherever the aircraft has drifted to
   level_band_ft: 100
   level_hold_s: 5
   height_band_ft: 200
@@ -65,7 +65,7 @@ freeze_during_instructions: true
 demos: false                # the autopilot needs the gauges that have just failed
 
 # Every mode needs these: the step's numbers and how it went
-always_say: [LESSON_NOTE, FAM_TIMED_ROLL_OUT, FAM_TIMED_GOOD, FAM_TIMED_MORE, FAM_TIMED_LESS,
+always_say: [LESSON_NOTE, FAM_STEP_DONE, FAM_TIMED_ROLL_OUT, FAM_TIMED_GOOD, FAM_TIMED_MORE, FAM_TIMED_LESS,
              FAM_COMPASS_GOOD, FAM_COMPASS_FIX]
 
 end_reposition:
@@ -80,34 +80,32 @@ debrief_summary: >-
 
 briefing:
   layman: >-
-    Partial panel. We're at about {alt} feet, south of Paya Lebar. The vacuum
-    pump has failed, so your attitude and heading gauges can't be trusted. Cover
-    them with some paper. You'll fly on the turn coordinator, altimeter and
-    compass.
+    Partial panel. We're at about {alt} feet, south of Paya Lebar. You'll fly
+    without your two main gauges, on the turn coordinator, altimeter and compass.
   pilot: >-
-    Partial panel, airborne at {alt} feet south of Paya Lebar. Vacuum failure:
-    cover the attitude and heading indicators. Turn coordinator, altimeter, VSI
-    and magnetic compass only.
+    Partial panel, airborne at {alt} feet south of Paya Lebar. Turn coordinator,
+    altimeter, VSI and magnetic compass only.
 
 # See lesson00_familiarization.yaml for the step_notes format.
 step_notes:
   STRAIGHT_LEVEL:
     title: Wings level on the turn coordinator
+    done: { layman: "Good, wings level.", pilot: "Good." }
     todo:
       - "Cover the attitude and heading gauges"
       - "Keep the turn coordinator's wings level for {hold_s} seconds"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [altitude, vsi]
     layman: >-
-      The vacuum pump has failed, so cover the attitude and heading gauges with some paper. Then keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {alt_now:,} feet on the altimeter.
+      The vacuum pump has failed, so cover the attitude and heading gauges with some paper. Then keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {hold_alt:,} feet on the altimeter.
     pilot: >-
-      Vacuum failure: cover the attitude and heading indicators. Wings level on the turn coordinator for {hold_s} seconds, {alt_now:,} feet.
+      Vacuum failure: cover the attitude and heading indicators. Wings level on the turn coordinator for {hold_s} seconds, {hold_alt:,} feet.
   TIMED_TURN_LEFT:
     title: Timed turn left
     todo:
       - "Put the left wing on the turn coordinator's L mark"
       - "Roll level when MAVIS calls the time"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [altitude]
     layman: >-
       With no heading gauge, you turn by the clock. Put the left wing of the little aircraft on the L mark and you turn 3 degrees a second, so {timed_deg} degrees takes {timed_s} seconds. The clock starts when you bank. I'll call the time.
@@ -118,7 +116,7 @@ step_notes:
     todo:
       - "Put the right wing on the turn coordinator's R mark"
       - "Roll level when MAVIS calls the time"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [altitude]
     freeze: false
     layman: >-
@@ -127,9 +125,10 @@ step_notes:
       Standard-rate turn right, {timed_s} seconds, I'll call it.
   COMPASS_TURN:
     title: Turn by the compass
+    freeze: false
     todo:
       - "Turn {compass_dir} to {compass_hdg:03d} on the compass"
-      - "Hold {alt_now:,} ft"
+      - "Hold {hold_alt:,} ft"
     look: [altitude]
     layman: >-
       Now use the magnetic compass. Turn {compass_dir} to {compass_hdg:03d}, wing on the mark. This close to the equator it barely swings in a turn, so roll out on the number.
@@ -137,11 +136,12 @@ step_notes:
       Compass turn {compass_dir} to {compass_hdg:03d}, standard rate. Turning error is negligible at this latitude.
   DESCEND_TO:
     title: Descend and level off
+    freeze: false
     todo:
       - "Descend to {tgt_alt:,} ft"
       - "Level off and hold it"
     look: [altitude, vsi]
     layman: >-
-      Last one. Ease the power back and descend to {tgt_alt:,} feet on the altimeter, then level off and hold it. After that your gauges come back.
+      Last one. Ease the power back and descend to {tgt_alt:,} feet on the altimeter, then level off and hold it. After that you can take the paper off, your gauges are back.
     pilot: >-
-      Descend to {tgt_alt:,} feet and level off. Vacuum restored after that.
+      Descend to {tgt_alt:,} feet and level off. Vacuum restored after that, remove the covers.

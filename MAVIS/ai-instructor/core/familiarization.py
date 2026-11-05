@@ -253,6 +253,7 @@ class FamiliarizationEngine:
         self.level_ft = {"CLIMB_TO": float(ex.get("climb_to_ft", 500)),
                          "DESCEND_TO": float(ex.get("descend_to_ft", 500))}
         self.level_band = float(ex.get("level_band_ft", 100))     # "level at the target" means within this
+        self.level_to = float(ex.get("level_to_ft", 0))           # a set height to level off at, else relative
         self.level_hold_s = float(ex.get("level_hold_s", 5))
         self.glide_kt = float(ex.get("glide_kt", 68))
         self.glide_ft = float(ex.get("glide_ft", 300))
@@ -296,6 +297,7 @@ class FamiliarizationEngine:
         self.compass_deg = float(ex.get("compass_turn_deg", 90))   # + right
         self.heading_ok = float(ex.get("heading_ok_deg", 10))      # a turn within this is good
         self.vacuum_failed = bool(lesson.get("vacuum_failure"))    # attitude gauge is out
+        self.start_alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft")
         self.results: dict[str, dict] = {}           # step -> {"heading_err": deg} (scorer)
         fin = lesson.get("finish") or {}
         self.finish_m = float(fin.get("radius_nm", 2.0)) * M_PER_NM
@@ -464,6 +466,8 @@ class FamiliarizationEngine:
         return None
 
     def level_target(self, step: str, alt: float, demo: bool = False) -> float:
+        if self.level_to and not demo:     # the lesson names the height: drifting doesn't move it
+            return self.level_to
         return level_target(step, alt, self.demo_level_ft if demo else self.level_ft)
 
     def turn_target(self, step: str) -> tuple[float, float]:
@@ -500,6 +504,9 @@ class FamiliarizationEngine:
     def _snap_entry(self, tel: Telemetry) -> None:
         """What the step measures from: its height and heading as it starts."""
         self._entry.update(alt=tel.alt_msl, hdg=tel.hdg, throttle=tel.throttle, ias=tel.ias)
+        if self.phase in HOLD_ALT_STEPS and self.start_alt:
+            # always the lesson's height: drifting 120 ft high mustn't move the goalposts
+            self._entry["alt"] = float(self.start_alt)
         if self.phase == "LOST_CLIMB":
             self._entry["tgt"] = round((tel.alt_msl + self.lost_climb_ft) / 100.0) * 100.0
         if self.phase == "COMPASS_TURN":
@@ -632,6 +639,7 @@ class FamiliarizationEngine:
         return {"phase": p, "circuit": 1, "total_circuits": 1, "alt_now": _r(a, 10),
                 **self._target(p, tel),
                 "time_now": _clock(tel),
+                "hold_alt": int(self.start_alt or _r(a, 10)),
                 "lost_ft": round(self.lost_climb_ft),
                 "lost_tgt": int(round((a + self.lost_climb_ft) / 100.0) * 100),
                 "timed_deg": round(self.timed_deg), "timed_s": round(self.timed_s),
@@ -695,7 +703,8 @@ class FamiliarizationEngine:
             self._err[1] += dt
             if t["dist_m"] <= t["radius_m"]:
                 self.results[p] = {"heading_err": self._err[0] / max(1.0, self._err[1])}
-                self._finish("FAM_DIVERT_DONE", {
+                wide = "DIVERT_TURN" in self.skipped or self.results[p]["heading_err"] > 5
+                self._finish("FAM_DIVERT_WIDE" if wide else "FAM_DIVERT_DONE", {
                     "tgt_name": t["tgt_name"], "mins": max(1, round((time.time() - e["t"]) / 60.0))})
             return False
         if p == "LOST_CLIMB":
@@ -935,6 +944,10 @@ class FamiliarizationEngine:
         """Done, or out of time (finding the field never times out: it's the
         lesson's goal). A timed-out step moves on but is marked skipped."""
         if self._achieved(tel, dt):
+            done = (self.notes.get(self.phase) or {}).get("done")
+            if done and self._done_t is None:
+                self._finish("FAM_STEP_DONE", done)
+                return False
             return True
         limit = float((self.notes.get(self.phase) or {}).get("timeout_s", self.step_max_s))
         if self.phase != "FIND_AIRFIELD" and now - self._entry["t"] > limit:
@@ -949,7 +962,7 @@ class FamiliarizationEngine:
             return out
         if tel.alt_agl < 700:
             out.append(CoachEvent("FAM_LOW", "safety", {"agl": round(tel.alt_agl)}, cooldown_s=15))
-        if self.phase in UPSET_STEPS and self._stage == 0:
+        if self.phase in UPSET_STEPS:
             # mid-recovery: steep, slow or fast is the exercise, and "ease the
             # nose up" would contradict "wings level first"
             return out
@@ -1026,7 +1039,8 @@ class FamiliarizationEngine:
         rows = self._readout_rows(tel)
         if self.vacuum_failed:             # the card mustn't give back what the gauge lost
             rows = [r for r in rows if r.get("label") not in ("Bank", "Wings level")]
-        if any(r.get("label") == "Height" for r in rows) or self.phase in NO_HEIGHT_ROW:
+        if (any(r.get("label") == "Height" for r in rows) or self.phase in NO_HEIGHT_ROW
+                or (self.phase == "FIND_AIRFIELD" and (self.checkpoints or self.diversion))):
             return rows                    # only what the step needs
         p, e, d = self.phase, self._entry, self._data
         alt = tel.alt_msl
@@ -1174,7 +1188,7 @@ class FamiliarizationEngine:
             if not t or self._done_t is not None:
                 return []
             on = abs(t["rel"]) <= self.track_band
-            rows = [{"label": t["tgt_name"],
+            rows = [{"label": t["tgt_name"][:1].upper() + t["tgt_name"][1:],
                      "now": "on the nose" if on else f"turn {t['tgt_dir']} {_r(abs(t['rel']), 5)}\u00b0",
                      "target": f"heading {t['tgt_hdg']:03d}\u00b0", "ok": on},
                     {"label": "Distance", "now": f"~{t['tgt_dist_nm']} nm", "target": ""}]
@@ -1317,6 +1331,7 @@ class FamiliarizationScorer:
         # the same lesson keys the engine reads, so score and to-do agree
         self.level_ft = {"CLIMB_TO": float(ex.get("climb_to_ft", 500)),
                          "DESCEND_TO": float(ex.get("descend_to_ft", 500))}
+        self.level_to = float(ex.get("level_to_ft", 0))
         self.speeds.update({"SLOW_FLIGHT": float(ex.get("slow_flight_kt", 55)),
                             "GLIDE": float(ex.get("glide_kt", 68))})
         self.turn_bank = {**{s: float(ex.get("medium_bank_deg", 30)) for s in MEDIUM_TURNS},
@@ -1329,6 +1344,7 @@ class FamiliarizationScorer:
         if ex_set & set(UPSET_STEPS):
             self.metrics |= {"sequence", "recovery"}
         self.recover_target_s = float(ex.get("recover_target_s", 8))
+        self.start_alt = (lesson.get("airborne_start") or {}).get("alt_msl_ft")
         if ex_set & {"DIVERT_TRACK", "COMPASS_TURN", *TIMED_TURNS}:
             self.metrics.add("heading")
         if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS}:
@@ -1380,6 +1396,8 @@ class FamiliarizationScorer:
             self._seen.add(phase)
         if phase != self._phase:
             self._phase, self._ref_alt = phase, tel.get("alt_msl", 0.0)
+            if phase in HOLD_ALT_STEPS and self.start_alt:
+                self._ref_alt = float(self.start_alt)      # same height the engine asks for
             self._phase_t = time.time()
         settled = time.time() - self._phase_t
         alt, vs = tel.get("alt_msl", 0.0), tel.get("vs", 0.0)
@@ -1408,7 +1426,7 @@ class FamiliarizationScorer:
             self._add("climb_speed", max(0.0, lo - ias, ias - hi))
         # level-off: how close to the set height once it's levelled
         if phase in LEVEL_OFF_STEPS and abs(vs) < 200:
-            err = abs(alt - level_target(phase, self._ref_alt, self.level_ft))
+            err = abs(alt - (self.level_to or level_target(phase, self._ref_alt, self.level_ft)))
             if err < 300:
                 self._add("level_off", err)
         roll = ctrl["roll"] if ctrl and ctrl.get("available") else tel.get("aileron", 0.0)

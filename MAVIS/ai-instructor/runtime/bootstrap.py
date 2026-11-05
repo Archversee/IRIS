@@ -99,7 +99,8 @@ def lesson_state(lesson) -> dict:
         out.update(type="familiarization")
         # navigation: the places to fly to, for the map. A diversion's airfield
         # stays off the map until it's announced.
-        marks = [{"name": c["name"], "lat": c["lat"], "lon": c["lon"], "phases": [f"CHECKPOINT_{i + 1}"]}
+        marks = [{"name": c["name"][:1].upper() + c["name"][1:], "lat": c["lat"], "lon": c["lon"],
+                  "phases": [f"CHECKPOINT_{i + 1}"]}
                  for i, c in enumerate(lesson.get("checkpoints") or [])]
         d = lesson.get("diversion")
         if d:
