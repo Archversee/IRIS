@@ -118,3 +118,4 @@ class EyeSample(BaseModel):
     gaze_quality: float | None = None
     aoi: str | None = None
     fixation_id: int | None = None
+    extra: dict | None = None      # other Smart Eye fields (LiveAdapter.py _extra) -> eye_tracking_data.extra

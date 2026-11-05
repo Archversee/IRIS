@@ -38,6 +38,7 @@ safety net, not a competing source of truth.
                                          (SimConnect close, OBS stop, CSV
                                          batch-upload) instead of being killed.
 """
+import json
 import logging
 import time
 from collections import deque
@@ -137,6 +138,7 @@ def _sample_to_record(session_id: UUID, s: FlightSample) -> tuple:
 
 def _eye_sample_to_row(session_id: UUID, s: EyeSample) -> tuple:
     d = s.model_dump()
+    d["extra"] = json.dumps(d["extra"]) if d["extra"] else None     # jsonb takes text
     return tuple([session_id, d["ts"]] + [d[c] for c in db.EYE_COLUMNS[2:]])
 
 
@@ -205,7 +207,7 @@ async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
             except Exception as e:
                 print(f"[stream] dropped malformed eye sample: {e}")
                 continue
-            record = sample.model_dump(mode="json")
+            record = sample.model_dump(mode="json", exclude={"extra"})   # extra: stored, not shown live
             buf.eye_samples.append(record)
             buf.eye_row_buffer.append(_eye_sample_to_row(session_id, sample))
             await _broadcast(buf, {"type": "eye_sample", "sample": record})

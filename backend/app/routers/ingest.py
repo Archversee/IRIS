@@ -7,6 +7,7 @@ Endpoints:
 """
 import csv
 import io
+import json
 import math
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -22,6 +23,7 @@ FLIGHT_BOOL = {"gear_handle_position", "sim_running", "sim_paused"}
 EYE_BOOL = {"blink"}
 EYE_INT = {"fixation_id"}
 EYE_TEXT = {"aoi"}
+EYE_JSON = {"extra"}
 
 
 # ---- Smart Eye raw export auto-conversion ----------------------------
@@ -51,6 +53,20 @@ _SMARTEYE_MM = {
     "pupil_diam_right_mm": "FilteredRightPupilDiameter",
     "eyelid_opening_mm": "EyelidOpening",
 }
+# Other Smart Eye columns kept in eye_tracking_data.extra, under the same
+# names the live feed uses (Sim_Data_Adapter/LiveAdapter.py _IDS), as
+# exported (pupil / eyelid in metres). Only those present in the file.
+_SMARTEYE_EXTRA = (
+    "Saccade", "HeadPositionQ", "HeadRotationQ", "LeftGazeDirectionQ", "RightGazeDirectionQ",
+    "FilteredGazeDirectionQ", "FilteredLeftGazeDirectionQ", "FilteredRightGazeDirectionQ",
+    "EyelidOpeningQ", "LeftEyelidOpening", "LeftEyelidOpeningQ", "RightEyelidOpening", "RightEyelidOpeningQ",
+    "LeftEyelidState", "LeftEyelidStateQ", "RightEyelidState", "RightEyelidStateQ",
+    "PupilDiameter", "PupilDiameterQ", "LeftPupilDiameter", "LeftPupilDiameterQ",
+    "RightPupilDiameter", "RightPupilDiameterQ", "FilteredPupilDiameter", "FilteredPupilDiameterQ",
+    "FilteredLeftPupilDiameterQ", "FilteredRightPupilDiameterQ",
+    "LeftEyeOccluded", "LeftEyeOccludedQ", "RightEyeOccluded", "RightEyeOccludedQ", "Glasses", "GlassesQ",
+    "FrameRate",
+)
 _SMARTEYE_DEG = {
     "head_heading_deg": "HeadHeading",
     "head_pitch_deg": "HeadPitch",
@@ -137,6 +153,9 @@ def _smarteye_rows(raw: str):
         # Blink is a blink-event id counter (0 = not blinking)
         blink_raw = row.get("Blink")
         out["blink"] = "0" if blink_raw in (None, "", "0") else "1"
+        extra = {k: v for k in _SMARTEYE_EXTRA
+                 if (v := _to_float(row.get(k))) is not None and math.isfinite(v)}   # NaN isn't valid jsonb
+        out["extra"] = json.dumps(extra) if extra else None
         yield out
 
 
@@ -153,6 +172,16 @@ def _to_float(v: str | None):
     try:
         return float(v)
     except (TypeError, ValueError):
+        return None
+
+
+def _to_json(v: str | None):
+    """A JSON object as text (jsonb takes text), or None; anything else is dropped."""
+    if not v:
+        return None
+    try:
+        return v if isinstance(json.loads(v), dict) else None
+    except ValueError:
         return None
 
 
@@ -253,6 +282,8 @@ async def ingest_eye(session_id: UUID, file: UploadFile):
                 rec.append(_to_int(val))
             elif col in EYE_TEXT:
                 rec.append(val or None)
+            elif col in EYE_JSON:
+                rec.append(_to_json(val))
             else:
                 rec.append(_to_float(val))
         records.append(tuple(rec))

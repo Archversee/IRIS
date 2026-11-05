@@ -28,7 +28,7 @@ def _time_filters(start: datetime | None, end: datetime | None, params: list):
     return clause
 
 
-async def _query_timeseries(table, session_id, start, end, max_points):
+async def _query_timeseries(table, session_id, start, end, max_points, columns="*"):
     params = [session_id]
     where = "session_id = $1" + _time_filters(start, end, params)
 
@@ -38,7 +38,7 @@ async def _query_timeseries(table, session_id, start, end, max_points):
         params.append(stride)
         sql = f"""
             select * from (
-                select *, row_number() over (order by ts) as rn
+                select {columns}, row_number() over (order by ts) as rn
                   from {table}
                  where {where}
             ) t
@@ -46,7 +46,7 @@ async def _query_timeseries(table, session_id, start, end, max_points):
             order by ts
         """
     else:
-        sql = f"select * from {table} where {where} order by ts"
+        sql = f"select {columns} from {table} where {where} order by ts"
 
     async with db.acquire() as conn:
         rows = await conn.fetch(sql, *params)
@@ -75,7 +75,9 @@ async def get_eye(
     end: datetime | None = None,
     max_points: int = Query(2000, ge=0, le=200000),
 ):
-    return await _query_timeseries("eye_tracking_data", session_id, start, end, max_points)
+    # not `extra` (every other Smart Eye field): large, and nothing on the Review page uses it
+    cols = ", ".join(c for c in db.EYE_COLUMNS if c != "extra")
+    return await _query_timeseries("eye_tracking_data", session_id, start, end, max_points, cols)
 
 
 # Phases that are not events (the briefing/debrief are not flown)

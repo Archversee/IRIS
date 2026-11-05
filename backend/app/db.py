@@ -63,8 +63,16 @@ EYE_COLUMNS = [
     "pupil_diam_left_mm", "pupil_diam_right_mm", "eyelid_opening_mm", "blink",
     "head_pos_x", "head_pos_y", "head_pos_z",
     "head_heading_deg", "head_pitch_deg", "head_roll_deg",
-    "gaze_quality", "aoi", "fixation_id",
+    "gaze_quality", "aoi", "fixation_id", "extra",
 ]
+# eye_tracking_data.extra: every other Smart Eye field (LiveAdapter.py _extra,
+# or the file export's EXTRA columns in routers/ingest.py) as a JSON object.
+# Added to older databases by ensure_eye_extra() at startup.
+
+
+async def ensure_eye_extra() -> None:
+    async with acquire() as conn:
+        await conn.execute("alter table eye_tracking_data add column if not exists extra jsonb")
 
 
 async def copy_rows(table: str, columns: list[str], records: list[tuple]) -> int:

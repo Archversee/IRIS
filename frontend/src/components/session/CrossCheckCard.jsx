@@ -37,7 +37,7 @@ export default function CrossCheckCard({ sessionId }) {
     <div className="card xc">
       <div className="xc__head">
         <h3>Instrument cross-check</h3>
-        <span className="muted">How often the gaze moved directly between each pair of areas (glances ≥ {MIN_AOI_DWELL_SEC_DEFAULT}s)</span>
+        <span className="muted">How often the gaze moved directly between each pair of areas ({MIN_AOI_DWELL_SEC_DEFAULT > 0 ? `glances ≥ ${MIN_AOI_DWELL_SEC_DEFAULT}s` : "every glance"})</span>
       </div>
 
       {err ? <p className="err">{err}</p>

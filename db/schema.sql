@@ -97,6 +97,7 @@ create table if not exists eye_tracking_data (
     gaze_quality           double precision,   -- 0..1 confidence
     aoi                    text,               -- area of interest label
     fixation_id            integer,
+    extra                  jsonb,              -- other Smart Eye fields, as sent (pupil/eyelid in metres)
 
     primary key (session_id, ts)
 );

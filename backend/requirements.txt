@@ -6,5 +6,8 @@ pydantic-settings==2.7.1
 python-multipart==0.0.20
 websockets==14.1
 pyyaml>=6.0
+# workload index: LHIPA (app/lhipa.py) wavelet transform
+numpy>=1.26
+PyWavelets>=1.6
 # Live Monitor window capture (routers/capture.py) -- Windows only
 windows-capture>=2.0; sys_platform == "win32"

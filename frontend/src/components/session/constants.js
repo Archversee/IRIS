@@ -13,8 +13,16 @@ export const METRICS = [
   { key: "altitude", label: "Altitude", unit: "ft", color: "#38bdf8", src: "altitude_ft" },
   { key: "airspeed", label: "Airspeed", unit: "kt", color: "#4ade80", src: "airspeed_kt" },
   { key: "vspeed", label: "Vert speed", unit: "fpm", color: "#a78bfa", src: "vertical_speed_fpm" },
-  { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload" },
+  // `needs: "index"` = drawn from the workload index (Review only, routers/workload.py);
+  // the Live Monitor leaves these out until there's a live version of it
+  { key: "workload", label: "Workload", unit: "", color: "#f5a623", src: "workload", needs: "index" },
 ];
+// The workload index is drawn on a fixed scale so its bands sit at the same
+// height on every flight: WL_MIN..WL_MAX fills the chart.
+export const WL_MIN = -1;
+export const WL_MAX = 3;
+export const WL_BAND_LABEL = { low: "Low", medium: "Medium", high: "High" };
+export const WL_BAND_COLOR = { low: "#4ade80", medium: "#f5a623", high: "#ef4444" };
 
 // Flight events (MAVIS to-do steps / circuit phases). Coloured by SOP grade once
 // scored; until then each step gets a neutral colour of its own, a timed-out
@@ -32,5 +40,7 @@ export function eventColor(e, i) {
 
 export const VIDEO_SYNC_TOLERANCE = 0.15;
 export const VIDEO_SYNC_TOLERANCE_PLAYING = 0.75;
-export const MIN_AOI_DWELL_SEC_DEFAULT = 0.1;
+// glances shorter than this are folded into the previous look (0 = every glance counts);
+// the scan path's "min glance" box starts here, the Analytics cross-check uses it as is
+export const MIN_AOI_DWELL_SEC_DEFAULT = 0;
 export const CHART_MAX_POINTS = 2000;

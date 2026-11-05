@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
-import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS } from "./constants.js";
+import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS, WL_MIN, WL_MAX } from "./constants.js";
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo, useGazeStretch } from "./hooks.js";
 
@@ -46,8 +46,11 @@ export function useSessionData({ id, live }) {
   const [playing, setPlaying] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true });
-  const [minAoiDwellInput, setMinAoiDwellInput] = useState(String(MIN_AOI_DWELL_SEC_DEFAULT));
+  const [filters, setFilters] = useState({ altitude: true, airspeed: true, vspeed: false, workload: true,
+    events: true });   // events: the shaded event boxes on the chart
+  // eye-based workload index (Review only)
+  const [workloadIndex, setWorkloadIndex] = useState(null);
+  const [minAoiDwellInput, setMinAoiDwellInput] = useState(MIN_AOI_DWELL_SEC_DEFAULT.toFixed(1));
   const [openPhases, setOpenPhases] = useState([]);
   const [flightEvents, setFlightEvents] = useState([]); // MAVIS-logged events (to-do steps / phases)
   const [sessionFlights, setSessionFlights] = useState([]); // which curriculum each flight came from
@@ -100,6 +103,16 @@ export function useSessionData({ id, live }) {
     api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
+
+  // workload index: worked out (and cached) by the backend over the finished flight
+  useEffect(() => {
+    setWorkloadIndex(null);
+    if (!id || live) return;
+    let cancelled = false;
+    api.workload(id).then((w) => { if (!cancelled) setWorkloadIndex(w); })
+      .catch((e) => console.warn("workload index unavailable:", e?.message || e));
+    return () => { cancelled = true; };
+  }, [id, live]);
 
   // MAVIS event log: one fetch for a finished session; a live one is polled
   // since the newest event is still open and its end arrives when the next starts
@@ -237,41 +250,23 @@ export function useSessionData({ id, live }) {
   const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
   const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
 
-  const eyeForFlight = useMemo(() => {
-    const map = new Array(flight.length).fill(-1);
-    let j = 0;
-    for (let i = 0; i < flight.length; i++) {
-      const ft = new Date(flight[i].ts).getTime();
-      while (j + 1 < eye.length &&
-        Math.abs(new Date(eye[j + 1].ts).getTime() - ft) <= Math.abs(new Date(eye[j].ts).getTime() - ft))
-        j++;
-      map[i] = eye.length ? j : -1;
-    }
-    return map;
-  }, [flight, eye]);
-
   const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
   const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
   const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
   const gazeStretch = useGazeStretch(gaze, curT);
 
-  const workloadRaw = useMemo(() => {
-    const raw = flight.map((_, i) => {
-      const e = eyeForFlight[i] >= 0 ? eye[eyeForFlight[i]] : null;
-      if (!e) return null;
-      const vals = [e.pupil_diam_left_mm, e.pupil_diam_right_mm].filter((v) => v != null);
-      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+
+  // the index's point (one per second) nearest each flight sample, or null
+  const indexForFlight = useMemo(() => {
+    const pts = workloadIndex?.points;
+    if (!pts?.length) return null;
+    const first = pts[0].t, step = workloadIndex.step_s || 1;
+    return flight.map((r) => {
+      const k = Math.round((Date.parse(r.ts) / 1000 - first) / step);
+      return k >= 0 && k < pts.length ? pts[k] : null;
     });
-    const W = 15;
-    return raw.map((_, i) => {
-      let sum = 0, n = 0;
-      for (let k = Math.max(0, i - W); k <= Math.min(raw.length - 1, i + W); k++) {
-        if (raw[k] != null) { sum += raw[k]; n++; }
-      }
-      return n ? sum / n : null;
-    });
-  }, [flight, eye, eyeForFlight]);
-  const hasEye = eye.length > 0;
+  }, [flight, workloadIndex]);
+  const hasIndex = indexForFlight != null;
 
   const instrumentVideoSrc = summary?.session?.instrument_video_url || null;
   const instrumentOffsetSec = summary?.session?.instrument_video_offset_sec ?? 0;
@@ -284,16 +279,25 @@ export function useSessionData({ id, live }) {
       altitude: bounds(flight, "altitude_ft"),
       airspeed: bounds(flight, "airspeed_kt"),
       vspeed: bounds(flight, "vertical_speed_fpm"),
-      workload: [Math.min(...workloadRaw.filter((v) => v != null)), Math.max(...workloadRaw.filter((v) => v != null))],
     };
-    return flight.map((r, i) => ({
-      t: +elapsed(r.ts).toFixed(1),
-      altitude: norm(r.altitude_ft, b.altitude), altitudeR: r.altitude_ft,
-      airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
-      vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
-      workload: norm(workloadRaw[i], b.workload), workloadR: workloadRaw[i],
-    }));
-  }, [flight, workloadRaw]);
+    return flight.map((r, i) => {
+      const p = indexForFlight?.[i];
+      const row = {
+        t: +elapsed(r.ts).toFixed(1),
+        altitude: norm(r.altitude_ft, b.altitude), altitudeR: r.altitude_ft,
+        airspeed: norm(r.airspeed_kt, b.airspeed), airspeedR: r.airspeed_kt,
+        vspeed: norm(r.vertical_speed_fpm, b.vspeed), vspeedR: r.vertical_speed_fpm,
+      };
+      if (!indexForFlight) return row;
+      const wl = p?.wl ?? null;
+      row.workload = wl == null ? null : Math.max(0, Math.min(1, norm(wl, [WL_MIN, WL_MAX])));
+      row.workloadR = wl;
+      row.workloadBand = p?.band ?? null;
+      row.workloadIndex = true;
+      row.lhipaR = p?.lhipa ?? null;     // pupil activity, shown in the tooltip only
+      return row;
+    });
+  }, [flight, indexForFlight]);
 
   const chartSeries = useMemo(() => {
     if (series.length <= CHART_MAX_POINTS) return series;
@@ -717,7 +721,8 @@ export function useSessionData({ id, live }) {
     },
 
     timeline: {
-      chartSeries, timelineTicks, filters, setFilters, hasEye,
+      chartSeries, timelineTicks, filters, setFilters, hasIndex,
+      workloadBands: hasIndex ? workloadIndex.bands : null,
       flightPhases, chartMinT, chartMaxT, totalT, curT,
       flightStartMs: t0,     // rule-check violations carry epoch times; t = (epoch_ms - this) / 1000
       onChartMouseDown: (e) => { setScrubbing(true); seekToChartEvent(e); },

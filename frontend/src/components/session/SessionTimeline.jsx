@@ -1,7 +1,7 @@
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
 } from "recharts";
-import { METRICS } from "./constants.js";
+import { METRICS, WL_BAND_COLOR, WL_BAND_LABEL, WL_MAX, WL_MIN } from "./constants.js";
 import { fmt } from "./utils.js";
 
 function TLTooltip({ active, payload }) {
@@ -11,8 +11,11 @@ function TLTooltip({ active, payload }) {
     ["Altitude", fmt(d.altitudeR, 0), "ft"],
     ["Airspeed", fmt(d.airspeedR, 1), "kt"],
     ["Vert speed", fmt(d.vspeedR, 0), "fpm"],
-    ["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), "mm pupil"],
   ];
+  if (d.workloadIndex) {
+    rows.push(["Workload", d.workloadR == null ? "—" : fmt(d.workloadR, 2), WL_BAND_LABEL[d.workloadBand] || ""],
+      ["Pupil activity (LHIPA)", fmt(d.lhipaR, 2), "/s"]);
+  }
   return (
     <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
       <div style={{ color: "#8194a6", marginBottom: 4 }}>T + {d.t}s</div>
@@ -26,13 +29,21 @@ function TLTooltip({ active, payload }) {
   );
 }
 
+// Workload's y position on the chart (it's drawn on the fixed WL_MIN..WL_MAX scale)
+const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
+
+// Metrics drawn from the workload index can't be shown until it has loaded.
+function unavailable(m, hasIndex) {
+  return m.needs === "index" && !hasIndex;
+}
+
 // Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
 // or a takeoff/landing guess for sessions without any).
 // `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
 // clickable phases/event buttons, no playback transport.
 export default function SessionTimeline({
   readOnly = false,
-  chartSeries, timelineTicks, filters, setFilters, hasEye,
+  chartSeries, timelineTicks, filters, setFilters, hasIndex = false, workloadBands = null,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
   seekTo, openPhase,
@@ -40,21 +51,43 @@ export default function SessionTimeline({
   speed, setSpeed,
   live, followingLive, goLive,
 }) {
+  // the Live Monitor (readOnly) leaves out what comes from the after-flight workload index
+  const metrics = readOnly ? METRICS.filter((m) => !m.needs) : METRICS;
+  // workload bands: shaded Low / Medium / High zones behind the chart
+  const showBands = !!workloadBands && filters.workload && hasIndex;
+  const zones = showBands ? [
+    { band: "low", y1: 0, y2: wlY(workloadBands.medium), opacity: 0.05 },
+    { band: "medium", y1: wlY(workloadBands.medium), y2: wlY(workloadBands.high), opacity: 0.08 },
+    { band: "high", y1: wlY(workloadBands.high), y2: 1, opacity: 0.1 },
+  ] : [];
   return (
     <div className="rev-timeline">
       <div className="tl-head">
         <h2>Session timeline</h2>
         <div className="filters">
-          {METRICS.map((m) => {
-            const disabled = m.key === "workload" && !hasEye;
+          {metrics.map((m) => {
+            const disabled = unavailable(m, hasIndex);
             return (
               <button key={m.key} disabled={disabled}
+                title={m.key === "workload"
+                  ? "Eye-based workload index: fixation rate, blink rate and pupil activity (LHIPA) against this pilot's "
+                    + "usual on this flight. "
+                    + "0 = usual. Shaded zones: green Low, amber Medium, red High."
+                  : undefined}
                 className={"filter-chip" + (filters[m.key] && !disabled ? " on" : "")}
                 onClick={() => setFilters((f) => ({ ...f, [m.key]: !f[m.key] }))}>
                 <span className="swatch" style={{ background: m.color }} />{m.label}
               </button>
             );
           })}
+          {flightPhases.length > 0 && (
+            <button className={"filter-chip" + (filters.events !== false ? " on" : "")}
+              title="Show or hide the shaded event boxes on the chart (the event buttons below stay)"
+              onClick={() => setFilters((f) => ({ ...f, events: f.events === false }))}>
+              <span className="swatch" style={{ background: "repeating-linear-gradient(45deg, #38bdf8 0 2px, #a78bfa 2px 4px)" }} />
+              Events
+            </button>
+          )}
         </div>
       </div>
       <ResponsiveContainer width="100%" height={150}>
@@ -69,7 +102,13 @@ export default function SessionTimeline({
             stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
           <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
           <Tooltip content={<TLTooltip />} />
-          {flightPhases.map((p) => {
+          {zones.map((z) => (
+            <ReferenceArea key={`zone-${z.band}`} y1={z.y1} y2={z.y2} fill={WL_BAND_COLOR[z.band]} fillOpacity={z.opacity}
+              stroke="none" style={{ pointerEvents: "none" }} ifOverflow="hidden"
+              label={{ value: `${WL_BAND_LABEL[z.band]} workload`, position: "insideTopRight",
+                       fill: WL_BAND_COLOR[z.band], fillOpacity: 0.75, fontSize: 10 }} />
+          ))}
+          {filters.events !== false && flightPhases.map((p) => {
             const minSpan = Math.max(1, totalT * 0.008);
             let x1 = p.start, x2 = p.end;
             if (x2 - x1 < minSpan) {
@@ -91,12 +130,15 @@ export default function SessionTimeline({
                 label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
             );
           })}
-          {METRICS.map((m) =>
-            filters[m.key] && !(m.key === "workload" && !hasEye) ? (
+          {metrics.map((m) =>
+            filters[m.key] && !unavailable(m, hasIndex) ? (
               <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
                 dot={false} strokeWidth={1.6} isAnimationActive={false} />
             ) : null
           )}
+          {workloadBands && filters.workload && [workloadBands.medium, workloadBands.high].map((v) => (
+            <ReferenceLine key={v} y={wlY(v)} stroke="#f5a623" strokeOpacity={0.45} strokeDasharray="4 4" />
+          ))}
           <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
         </LineChart>
       </ResponsiveContainer>
