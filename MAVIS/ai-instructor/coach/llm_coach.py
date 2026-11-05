@@ -24,7 +24,8 @@ VERBATIM = frozenset({
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
     "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
-    "FAM_UPSET_RECOVERED",
+    "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW", "FAM_UPSET_STALLED",
+    "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET",   # the recovery order: never reworded
     "SINK_HIGH_FAST",   # the fix is the nose, not power: never reworded into "add power"
     "ALT_LOW_FAST", "ALT_HIGH_SLOW", "FAM_FAST_DIVE",   # same: nose, not power
     "SPEED_FAST_LEVEL", "SPEED_SLOW_LEVEL",             # level flight: power, not nose
@@ -59,7 +60,8 @@ def rank(ev: CoachEvent) -> int:
 # "now come back" calls (core.familiarization.PART_CUES): may wait a little
 # behind a line already being spoken
 _PART_CUES = frozenset({"FAM_ROLL_OUT", "ROLL_OUT_LEG", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
-                        "FAM_UPSET_RECOVERED"})
+                        "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW",
+                        "FAM_UPSET_STALLED", "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:

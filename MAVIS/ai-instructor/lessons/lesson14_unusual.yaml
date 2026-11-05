@@ -2,8 +2,10 @@ name: "Unusual Attitude Recovery"
 # Airborne lesson built on the familiarization engine (core/familiarization.py):
 # same airborne start, up-front demo, to-do list, "look here" card and
 # scorecard. `steps` picks this lesson's exercises; it ends after the last one.
-# Each step: MAVIS freezes the aircraft, the trainee looks down, MAVIS places it
-# nose high or nose low and banked (runtime _fam_upset), then "Recover!".
+# Each step: MAVIS freezes the aircraft, the trainee looks down, MAVIS teleports
+# it back to the start height and heading and sets it nose high or nose low and
+# banked (runtime _fam_upset), then hands over. Once it's back level MAVIS says
+# whether the order was right, and the next step teleports it up again.
 #
 # Recovery order (CFI Notebook "Unusual Attitudes", visual recovery; FAA-H-8083-3C
 # ch. 5 Figure 5-3 upset recovery template, FAA-H-8083-15 IFH):
@@ -65,9 +67,8 @@ exercises:
   recover_kt: 65              # nose high: recovered once the speed is back above this
   nose_low_max_kt: 125        # nose low: ... and back under this (C172S Vno 129)
   recovered_hold_s: 2         # wings level, nose on the horizon, speed in hand, this long
-  height_band_ft: 200         # then back within this of the starting height (ACS +/-200 ft)
-  heading_band_deg: 20        # ... and this of the starting heading
-  level_hold_s: 3
+  feedback_s: 4               # then MAVIS says how it went, before the next teleport
+  upset_seen_s: 6             # no upset seen by then: it didn't set up, move on
   recover_target_s: 8         # recovery time that scores full marks
   step_timeout_s: 120
 
@@ -80,19 +81,20 @@ debrief_summary: >-
   unusual attitude recovery (airborne start; MAVIS put the aircraft nose high
   and banked, then nose low and banked, each way, and the trainee recovered:
   nose high with power, nose down, wings level; nose low with power off, wings
-  level, then nose up; then back to the starting height and heading; no
-  take-off or landing)
+  level, then nose up; after each one MAVIS said whether the order was right
+  and put the aircraft back up at the start height for the next; no take-off
+  or landing)
 
 briefing:
   layman: >-
-    Unusual attitudes. We're up at about {alt} feet, south of Paya Lebar. I'll
-    have you look down while I put the aircraft in an odd position, then say
-    recover. Nose high: power, nose down, wings level. Nose low: power off,
-    wings level, then ease the nose up.
+    Unusual attitudes. We're up at about {alt} feet, south of Paya Lebar. Each
+    time, I'll have you look down while I put the aircraft in an odd position,
+    then hand it to you to get it back to level flight. Nose high: power, nose
+    down, wings level. Nose low: power off, wings level, then ease the nose up.
   pilot: >-
     Unusual attitude recovery, airborne at {alt} feet south of Paya Lebar. Nose
     high: power, pitch down, level the wings. Nose low: power off, level the
-    wings, then pitch up. Then back to altitude and heading.
+    wings, then pitch up.
 
 # See lesson00_familiarization.yaml for the step_notes format. demo_layman /
 # demo_pilot: what MAVIS says instead in the up-front demo, for a step the
@@ -104,12 +106,11 @@ step_notes:
       - "Full power"
       - "Nose down to the horizon"
       - "Roll the wings level"
-      - "Back to {alt_now:,} ft, heading {hdg_now:03d}"
     look: [attitude, airspeed]
     layman: >-
       Nose high: the speed's dropping. Full power, push the nose down to the horizon, then roll the wings level.
     pilot: >-
-      Nose-high recovery: power, pitch down to the horizon, level the wings, then back to {alt_now:,} feet.
+      Nose-high recovery: power, pitch down to the horizon, level the wings.
     demo_layman: >-
       I can't fly this one with the autopilot, so listen: nose high, speed dropping. Full power, nose down, wings level.
     demo_pilot: >-
@@ -120,7 +121,6 @@ step_notes:
       - "Throttle back"
       - "Roll the wings level first"
       - "Then ease the nose up to the horizon"
-      - "Back to {alt_now:,} ft, heading {hdg_now:03d}"
     look: [attitude, airspeed]
     layman: >-
       Nose low: the speed's building. Throttle back, roll the wings level first, then ease the nose up. Don't pull while you're banked.
@@ -136,7 +136,6 @@ step_notes:
       - "Full power"
       - "Nose down to the horizon"
       - "Roll the wings level"
-      - "Back to {alt_now:,} ft, heading {hdg_now:03d}"
     look: [attitude, airspeed]
     layman: >-
       Nose high again, the other way. Power, nose down, wings level.
@@ -152,7 +151,6 @@ step_notes:
       - "Throttle back"
       - "Roll the wings level first"
       - "Then ease the nose up to the horizon"
-      - "Back to {alt_now:,} ft, heading {hdg_now:03d}"
     look: [attitude, airspeed]
     layman: >-
       Last one, nose low. Throttle back, wings level, then ease the nose up.

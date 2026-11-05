@@ -85,7 +85,7 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                                 {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
             if ev.data.get("phase") in UPSET_STEPS:
                 # unusual attitude: always set up by MAVIS (frozen, placed,
-                # "Recover!") -- with the short cue if it was described in the demo
+                # handed over) -- with the short cue if it was described in the demo
                 rt.engine.hold()
                 asyncio.create_task(rt._fam_upset(ev))
                 continue

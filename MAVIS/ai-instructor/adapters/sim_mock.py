@@ -163,9 +163,8 @@ class MockAdapter:
 
     def set_position(self, lat: float, lon: float, alt_msl: float, hdg: float,
                      ias: float, throttle_pct: float | None = None,
-                     on_ground: bool = False, pitch: float = 0.0, bank: float = 0.0) -> bool:
-        """Airborne start: jump there and free-fly (hold heading/alt/speed).
-        The mock has no attitude to set: pitch / bank are ignored."""
+                     on_ground: bool = False) -> bool:
+        """Airborne start: jump there and free-fly (hold heading/alt/speed)."""
         self.n = (lat - self.lat0) * 111320.0
         self.e = (lon - self.lon0) * 111320.0 * math.cos(math.radians(self.lat0))
         self.alt = 0.0 if on_ground else max(0.0, (alt_msl - self.elev) * FT2M)

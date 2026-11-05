@@ -14,7 +14,8 @@ import time
 from adapters.sim_base import Telemetry
 from coach import phrases
 from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
-from core.familiarization import STEP_TITLES, is_familiarization, runway_start, start_position
+from core.familiarization import (STEP_TITLES, UPSET_HIGH, is_familiarization, runway_start,
+                                  start_position)
 from core.reference_profiles import ReferenceRegistry
 from runtime.bootstrap import lesson_state, make_engine, make_scorer
 
@@ -204,43 +205,41 @@ def build_flight_flow(rt):
                     rt.sim.comply(f"PHASE_ENTER_{phase}", ev.data)
 
     async def _place_upset(att: dict) -> bool:
-        """Put the (frozen) aircraft in the step's unusual attitude where it is
-        now. The sim's sign for pitch / bank isn't documented: read it back,
-        and if either came out mirrored, flip it in the adapter and place again."""
-        fn = getattr(rt.sim, "set_position", None)
-        if fn is None:
+        """Frozen: teleport back to the lesson's start height and heading (each
+        upset starts from the same place), then set the step's attitude. The
+        attitude freeze holds it until the hand-over. Read back to confirm it took
+        -- set once more if not -- and False if the sim still shows it level."""
+        a = rt.lesson.get("airborne_start") or {}
+        lat, lon = start_position(rt.lesson)
+        ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
+            lat, lon, a["alt_msl_ft"], a["heading_true"], att["ias"]))
+        if not ok:
             return False
-        tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+        if rt.cfg["sim"]["adapter"] == "mock" or not hasattr(rt.sim, "set_attitude"):
+            return True                          # nothing to set or read back
         for _ in range(2):
-            ok = await rt.loop.run_in_executor(None, lambda: fn(
-                tel.lat, tel.lon, tel.alt_msl, tel.hdg, att["ias"],
-                pitch=att["pitch"], bank=att["bank"]))
-            if not ok or rt.cfg["sim"]["adapter"] == "mock":
-                return ok
-            await asyncio.sleep(0.5)                       # let telemetry catch up
+            await asyncio.sleep(0.3)             # after the teleport (it levels the wings)
+            if not await rt.loop.run_in_executor(None, rt.sim.set_attitude,
+                                                 att["pitch"], att["bank"]):
+                return False
+            await asyncio.sleep(0.5)             # let telemetry catch up
             now = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
-            if abs(now.pitch) < abs(att["pitch"]) / 3 and abs(now.bank) < abs(att["bank"]) / 3:
-                # still level: the freeze kept the attitude -- place it unfrozen instead
-                log.warning("unusual attitude not taken while frozen -- placing it unfrozen")
-                await _set_frozen(False)
-                return await rt.loop.run_in_executor(None, lambda: fn(
-                    tel.lat, tel.lon, tel.alt_msl, tel.hdg, att["ias"],
-                    pitch=att["pitch"], bank=att["bank"]))
-            wrong = [ax for ax, got in (("pitch", now.pitch), ("bank", now.bank))
-                     if abs(att[ax]) >= 5 and got * att[ax] < 0]
-            if not wrong or not hasattr(rt.sim, "flip_attitude_sign"):
+            if (now.pitch * att["pitch"] > 0 and abs(now.pitch) >= abs(att["pitch"]) / 2
+                    and now.bank * att["bank"] > 0 and abs(now.bank) >= abs(att["bank"]) / 2):
                 return True
-            for ax in wrong:
-                rt.sim.flip_attitude_sign(ax)
-        return True
+            log.warning("unusual attitude reads back pitch %+.0f bank %+.0f (wanted %+.0f / %+.0f)",
+                        now.pitch, now.bank, att["pitch"], att["bank"])
+        return False
 
     async def _fam_upset(ev):
-        """Unusual-attitude step: explain it with the aircraft frozen, "look
-        down", put it in the attitude, then unfreeze on "Recover!" -- the step's
-        clock (and the recovery's order of controls) starts from there."""
+        """Unusual-attitude step: frozen, explain it, "look down", teleport to
+        the start height and set the attitude, then unfreeze and hand over --
+        the step's clock (and the order of the controls) starts from there. If
+        the sim won't take the attitude, say so and move to the next one."""
         gen, eng = rt.run_gen["n"], rt.engine
         phase = ev.data.get("phase")
         silent = (rt.session.get("policy") or {}).get("coaching") == "silent"
+        placed = False
         try:
             await _set_frozen(True)
             if not silent:
@@ -248,8 +247,10 @@ def build_flight_flow(rt):
             if gen != rt.run_gen["n"] or not rt.started.is_set():
                 return
             await rt.coach.say(phrases.render("FAM_UPSET_LOOK_DOWN", {}), phase=phase)
-            if not await _place_upset(eng.upset_attitude(phase)):
-                log.warning("unusual attitude: couldn't place the aircraft -- recovering from level")
+            placed = await _place_upset(eng.upset_attitude(phase))
+            if not placed:
+                log.warning("unusual attitude: the sim didn't take %s -- skipping it", phase)
+                eng.skip_phase()                 # not the trainee's fault: no score either way
         finally:
             if gen == rt.run_gen["n"] and eng is rt.engine:
                 await _set_frozen(False)
@@ -257,7 +258,10 @@ def build_flight_flow(rt):
                 if hasattr(rt.sim, "comply"):     # mock student flies the step from here
                     rt.sim.comply(f"PHASE_ENTER_{phase}", ev.data)
         if gen == rt.run_gen["n"]:
-            await rt.coach.say(phrases.render("FAM_UPSET_RECOVER", {}), phase=phase)
+            # what's happened and what to do -- not just "recover"
+            code = (("FAM_UPSET_RECOVER_HIGH" if phase in UPSET_HIGH else "FAM_UPSET_RECOVER_LOW")
+                    if placed else "FAM_UPSET_NOT_SET")
+            await rt.coach.say(phrases.render(code, {}), phase=phase)
 
     async def _lock_controls(on: bool) -> None:
         """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
