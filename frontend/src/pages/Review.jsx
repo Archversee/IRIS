@@ -14,6 +14,18 @@ import IncidentsPanel, { IncidentsChip } from "../components/session/IncidentsPa
 import DebriefPanel, { DebriefChip, useDebriefJob } from "../components/session/DebriefPanel.jsx";
 import "./review.css";
 
+// The docked column's width, as a share of the page (the CSS clamps it, see
+// .rev--docked in review.css). Dragged like the sidebar; null = the default.
+const DOCK_KEY = "reviewDockWidth";
+function loadDockFrac() {
+  try {
+    const f = Number(localStorage.getItem(DOCK_KEY));
+    return f > 0 && f < 1 ? f : null;
+  } catch {
+    return null;
+  }
+}
+
 // times a rule was broken (instructor verdicts count), for the Incidents chip
 function incidentCount(evaluation) {
   return (evaluation.results || []).reduce((n, r) =>
@@ -40,6 +52,39 @@ export default function Review() {
     flashTimer.current = setTimeout(() => setFlash(null), 1200);
   };
   useEffect(() => () => clearTimeout(flashTimer.current), []);
+
+  // Drag the dock's left edge to resize it; double-click puts it back.
+  // Widening it squeezes the ground track away first (ScreensPanel fitGround).
+  const revRef = useRef(null), dockRef = useRef(null);
+  const [dockFrac, setDockFrac] = useState(loadDockFrac);
+  const [dockDragging, setDockDragging] = useState(false);
+  useEffect(() => {
+    if (dockDragging) return;
+    try {
+      if (dockFrac == null) localStorage.removeItem(DOCK_KEY);
+      else localStorage.setItem(DOCK_KEY, String(dockFrac));
+    } catch { /* storage unavailable -- fine */ }
+  }, [dockFrac, dockDragging]);
+  function startDockDrag(e) {
+    e.preventDefault();
+    setDockDragging(true);
+    // a share of the page, so it holds whatever the window/zoom
+    const fracAt = (x) => {
+      const r = revRef.current.getBoundingClientRect();
+      return Math.min(0.95, Math.max(0.05, (r.right - x) / r.width));
+    };
+    const onMove = (ev) => setDockFrac(fracAt(ev.clientX));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      // keep what the CSS limits actually allowed, so the edge stays under the pointer next time
+      const r = revRef.current.getBoundingClientRect();
+      setDockFrac(dockRef.current.getBoundingClientRect().width / r.width);
+      setDockDragging(false);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
   const loadRules = useCallback(async () => {
     try {
       setRules({ evaluation: await api.ruleResults(id), missing: false });
@@ -68,7 +113,8 @@ export default function Review() {
   const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
-    <div className="rev rev--embedded rev--no-rail rev--docked rev--zoom80">
+    <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom80" + (dockDragging ? " is-dock-dragging" : "")}
+      style={dockFrac != null ? { "--dock-w": `${(dockFrac * 100).toFixed(2)}%` } : undefined}>
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}
       <div className="rev-main">
@@ -95,7 +141,7 @@ export default function Review() {
           )}
         </div>
 
-        <ScreensPanel {...screens} />
+        <ScreensPanel {...screens} fitGround />
         <SessionTimeline {...timeline} />
 
         <div className="rev-bottom rev-bottom--telemetry">
@@ -105,7 +151,10 @@ export default function Review() {
         </div>
       </div>
 
-      <aside className="rev-dock" aria-label="Debrief, SOP rule checks and incidents">
+      <aside className="rev-dock" ref={dockRef} aria-label="Debrief, SOP rule checks and incidents">
+        <div className="rev-dock__resizer" role="separator" aria-orientation="vertical"
+          title="Drag to resize · double-click to reset"
+          onPointerDown={startDockDrag} onDoubleClick={() => setDockFrac(null)} />
         <div id="rev-dock-debrief" className={"rev-dock__slot" + (flash === "debrief" ? " is-flash" : "")}>
           <DebriefPanel sessionId={id} />
         </div>

@@ -35,11 +35,57 @@
 }
 .rev--no-rail { grid-template-columns: 1fr; }
 /* Session Review: debrief, SOP rule checks and incidents always on screen in a
-   column beside the videos -- no drawers to find and open. */
-.rev--docked { grid-template-columns: minmax(0, 1fr) clamp(340px, 27%, 520px); }
+   column beside the videos -- no drawers to find and open.
+   The column is resizable (Review.jsx sets --dock-w while dragging). Default
+   D = clamp(340px, 27%, 520px); it can be dragged down to 260px, and up until
+   the ground track is gone: D + one screen's width (W) + the gap, so OTW and
+   Instruments never shrink. W = the screens' share at the default width:
+   (100% - D - 24px main padding - 20px gaps) / 3. */
+/* W, worked out on .rev-main against the page's width (100cqw there = .rev);
+   registered as a length so it's fixed there, not re-read against .rev-main
+   (itself a container, below) where it's used */
+@property --rev-scr-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
+.rev--docked {
+  container-type: inline-size;   /* 100cqw on .rev-main = this page's width, for W */
+  grid-template-columns: minmax(0, 1fr) clamp(260px, var(--dock-w, clamp(340px, 27%, 520px)),
+    calc(clamp(340px, 27%, 520px) + (100% - clamp(340px, 27%, 520px) - 44px) / 3 + 10px));
+}
 .rev-dock {
+  position: relative;
   display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px;
   padding: 10px 12px 12px 0; min-height: 0;
+}
+/* the drag handle sits in the gutter between the videos and the column */
+.rev-dock__resizer {
+  position: absolute; top: 10px; bottom: 12px; left: -9px; width: 6px; border-radius: 3px;
+  cursor: col-resize; z-index: 5; touch-action: none;
+}
+.rev-dock__resizer:hover, .is-dock-dragging .rev-dock__resizer { background: var(--accent, var(--rev-cyan)); opacity: 0.6; }
+.is-dock-dragging { cursor: col-resize; user-select: none; }
+.is-dock-dragging .rev-screens { pointer-events: none; }
+/* Screens row: all three start at W (and grow alike if the column is made
+   narrower); when it gets wider the ground track gives up its width first
+   (shrink weight 1000 vs 1), then ScreensPanel hides it. */
+.rev--docked .rev-screens { display: flex; }
+.rev--docked .rev-main { --rev-scr-w: calc((100cqw - clamp(340px, 27cqw, 520px) - 44px) / 3); }
+.rev--docked .rev-screen { flex: 1 1 var(--rev-scr-w); min-width: 0; }
+.rev--docked .rev-screen--ground { flex-shrink: 1000; }
+.rev--docked .rev-screens.is-ground-hidden { justify-content: center; }
+.rev--docked .rev-screens.is-ground-hidden .rev-screen { flex-grow: 0; }
+.rev--docked .rev-screens.is-ground-hidden .rev-screen--ground { display: none; }
+/* As the left side narrows, everything under the screens just compresses;
+   below ~980px the title bar wraps, and scan path + region viewing stack in
+   one column so flight telemetry keeps a usable width. */
+.rev--docked .rev-main { container: revmain / inline-size; }
+.rev--docked .card-head { flex-wrap: wrap; row-gap: 4px; }
+.rev--docked .card-head h3 { white-space: nowrap; }
+@container revmain (max-width: 980px) {
+  .rev-titlebar { flex-wrap: wrap; row-gap: 4px; }
+  .rev-titlebar h1, .rev-titlebar .sub { white-space: nowrap; }
+  .rev--docked .rev-bottom--telemetry {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .rev--docked .rev-bottom--telemetry > .ft-card { grid-column: 2; grid-row: 1 / span 2; }
 }
 .rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
 /* a title-bar chip was clicked: point at its pane */
@@ -342,6 +388,8 @@
 @media (max-width: 900px) {
   .rev-screens, .rev-bottom, .rev--docked { grid-template-columns: 1fr; }
   .rev-dock { grid-template-rows: none; padding: 0 12px 12px; }
+  .rev-dock__resizer { display: none; }
+  .rev--docked .rev-screens { flex-direction: column; }
   .rev-dock__slot { max-height: 70vh; }
   .rev-main { grid-template-rows: auto auto auto auto; overflow: auto; }
   .rev { position: static; height: auto; }
@@ -476,7 +524,13 @@
 .ft-att { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ft-att__svg { flex: 1; min-height: 100px; max-height: 170px; aspect-ratio: 1; }
 .ft-att__svg g { transition: transform .2s linear; }
-.ft-att__vals { display: flex; gap: 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ft-att__vals { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Review: the dial fits whatever box its group gets (narrow when the sidebar is
+   collapsed or on a wide screen; short on a small one). The SVG box takes the
+   group's free space without asking for any, and the circle is drawn at the
+   smaller of its width and height, so it never spills out or stretches the row. */
+.ft-card:not(.ft-card--live) .ft-att { flex: 1 1 0; min-width: 0; justify-content: center; }
+.ft-card:not(.ft-card--live) .ft-att__svg { flex: 1 1 0; width: 100%; height: 0; min-height: 0; aspect-ratio: auto; }
 .ft-att__vals small { font-size: 10px; font-weight: 400; color: var(--rev-muted); }
 
 .ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 56px; }
@@ -515,9 +569,31 @@
 /* Wrap by the card's own width, so it works full-width (Live Monitor) and
    in Review's bottom-row column alike. */
 @container (max-width: 860px) {
+  .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
+}
+/* Below ~1100px one row leaves the attitude group only a sliver (the tapes and
+   controls can't shrink), e.g. Review with the sidebar collapsed -- so wrap. */
+@container (max-width: 1100px) {
   .ft-gauges { flex-wrap: wrap; }
   .ft-group { flex: 1 1 260px; }
-  .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
+  /* Review: the tapes and the attitude dial share the first row down to a
+     narrow card (the dial shrinks to fit), so it never gets a row of its own */
+  .ft-card:not(.ft-card--live) .ft-group { flex-basis: 200px; }
+}
+/* Review in a narrow card (the docked column dragged wide on a smaller
+   screen): smaller stick and trim bars, tighter gaps, so the controls row
+   still fits across instead of scrolling sideways. */
+@container (max-width: 600px) {
+  .ft-card:not(.ft-card--live) .ft-group { gap: 8px; padding: 8px; }
+  .ft-card:not(.ft-card--live) .ft-ctl, .ft-card:not(.ft-card--live) .ft-tape { min-width: 40px; }
+  .ft-card:not(.ft-card--live) .ft-stick { width: 84px; height: 84px; }
+  .ft-card:not(.ft-card--live) .ft-hbar { width: 56px; }
+  .ft-card:not(.ft-card--live) .ft-ctl__cap { max-width: 52px; font-size: 9px; }
+}
+/* On one row (wide screens) the attitude group takes a share of the spare
+   width too, instead of staying as narrow as its numbers. */
+@container (min-width: 1101px) {
+  .ft-card:not(.ft-card--live) .ft-group:has(.ft-att) { flex-grow: 0.9; }
 }
 
 /* ---- Live Monitor only (.ft-card--live): bank + heading dials, the
