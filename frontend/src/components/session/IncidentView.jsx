@@ -236,10 +236,6 @@ function Explanation({ a, win, job, onChange }) {
     catch (x) { setErr(x.detail || x.message); }
     finally { setBusy(false); }
   }
-  async function rate(rating) {
-    try { onChange(await api.rateExplanation(e.id, { rating: e.rating === rating ? null : rating })); }
-    catch (x) { setErr(x.detail || x.message); }
-  }
   const writing = !e && job && job.state !== "done" && job.state !== "error";
   if (!e && !isInstructor && !writing) return null;
   return (
@@ -264,14 +260,6 @@ function Explanation({ a, win, job, onChange }) {
       {e?.unsupported_numbers?.length > 0 && (
         <div className="inc-explain__warn">
           Check these numbers, they aren't in the measured facts: {e.unsupported_numbers.join(", ")}
-        </div>
-      )}
-      {e && isInstructor && (
-        <div className="inc-explain__rate">
-          <span className="rc-muted">Was this right?</span>
-          <button className={"rc-btn" + (e.rating === "helpful" ? " is-on" : "")} onClick={() => rate("helpful")}>👍 Helpful</button>
-          <button className={"rc-btn" + (e.rating === "not_helpful" ? " is-on" : "")} onClick={() => rate("not_helpful")}>👎 Not helpful</button>
-          {e.rated_by && <span className="rc-muted">rated by {e.rated_by}</span>}
         </div>
       )}
       {!e && isInstructor && !busy && !writing && (

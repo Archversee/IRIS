@@ -1028,8 +1028,6 @@
 .inc-explain__head .spacer { flex: 1; }
 .inc-explain__text { margin: 8px 0 0; line-height: 1.5; font-size: 15px; }
 .inc-explain__warn { margin-top: 6px; color: var(--rev-amber); font-size: 13px; }
-.inc-explain__rate { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-.rc-btn.is-on { border-color: var(--rev-cyan); color: var(--rev-cyan); }
 
 /* ---- Analyse pop-up: hovering the chart (IncidentView.jsx MomentTip) ---- */
 .inc-hint { float: right; font-weight: 400; font-size: 12px; color: var(--rev-cyan); }

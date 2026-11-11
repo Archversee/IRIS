@@ -1,7 +1,7 @@
 // Review → Debrief: the whole flight in a few lines, written by the local
 // reasoning model from measured facts only, plus those facts at a glance.
 // Written automatically when the flight ends or Review is first opened (with a
-// note for each broken rule); instructors can rewrite it and rate it.
+// note for each broken rule).
 // Backend: app/routers/debrief.py, prompt in app/flight_summary.py.
 import { useEffect, useState } from "react";
 import { api } from "../../api/client.js";
@@ -65,12 +65,6 @@ export default function DebriefPanel({ sessionId }) {
     try { await api.runDebrief(sessionId, body); setTick((t) => t + 1); }
     catch (e) { setErr(e.detail || e.message); }
   }
-  async function rate(rating) {
-    try {
-      const s = await api.rateSummary(d.summary.id, { rating: d.summary.rating === rating ? null : rating });
-      setD((x) => ({ ...x, summary: s }));
-    } catch (e) { setErr(e.detail || e.message); }
-  }
 
   const s = d?.summary, job = d?.job, running = RUNNING(job);
   return (
@@ -113,14 +107,6 @@ export default function DebriefPanel({ sessionId }) {
                 {s.requested_by === "auto" ? "Written automatically after the flight" : `Written for ${s.requested_by}`}
                 {" · "}{new Date(s.created_at).toLocaleString()}
               </div>
-              {isInstructor && (
-                <div className="inc-explain__rate">
-                  <span className="rc-muted">Was this right?</span>
-                  <button className={"rc-btn" + (s.rating === "helpful" ? " is-on" : "")} onClick={() => rate("helpful")}>👍 Helpful</button>
-                  <button className={"rc-btn" + (s.rating === "not_helpful" ? " is-on" : "")} onClick={() => rate("not_helpful")}>👎 Not helpful</button>
-                  {s.rated_by && <span className="rc-muted">rated by {s.rated_by}</span>}
-                </div>
-              )}
             </section>
           ) : !running && (
             <div className="rc-empty">
