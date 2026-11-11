@@ -177,7 +177,6 @@ export const api = {
   debrief: (id) => req(`/sessions/${id}/debrief`),
   debriefStatus: (id) => req(`/sessions/${id}/debrief/status`),
   runDebrief: (id, body) => req(`/sessions/${id}/debrief/run`, json("POST", body)),
-  rateSummary: (summaryId, body) => req(`/flight-summaries/${summaryId}`, json("PATCH", body)),
   // Progress across flights (post-flight trends)
   progressPilots: () => req("/progress/pilots"),
   progressPilot: (name) => req(`/progress/pilot?name=${encodeURIComponent(name)}`),
@@ -187,10 +186,9 @@ export const api = {
   // the 30 s before and after one broken rule (backend app/incidents.py)
   // win: {before, after} seconds (optional; the backend's default is config.yaml `debrief:`)
   incident: (resultId, index, win) => req(`/rule-results/${resultId}/incidents/${index}${winQuery(win)}`),
-  // reasoning-model explanation of it (instructors); {rating: helpful|not_helpful|null, note}
+  // reasoning-model explanation of it (instructors)
   explainIncident: (resultId, index, win) =>
     req(`/rule-results/${resultId}/incidents/${index}/explain${winQuery(win)}`, { method: "POST" }),
-  rateExplanation: (id, body) => req(`/incident-explanations/${id}`, json("PATCH", body)),
   setRuleVerdict: (resultId, body) => req(`/rule-results/${resultId}`, json("PATCH", body)),
   signOffRules: (id, body) => req(`/sessions/${id}/rule-results/sign-off`, json("POST", body)),
   getRuleStrictness: (userId) => req(`/users/${userId}/rule-strictness`),

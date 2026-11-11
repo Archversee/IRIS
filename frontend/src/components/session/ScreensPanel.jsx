@@ -110,6 +110,32 @@ function useScreenBoxes(rowRef, otwRef, instRef) {
   return boxes;
 }
 
+// Review (`fitGround`): when the row narrows (the docked column beside it is
+// dragged wider), the ground track gives up its width first while OTW and
+// Instruments keep theirs (review.css) -- and once it's too thin to read it's
+// hidden outright. Hidden = the room left beside OTW + Instruments is under
+// GROUND_MIN_W. Only while the screens sit side by side (not stacked).
+const GROUND_MIN_W = 120;
+function useGroundHidden(enabled, rowRef) {
+  const [hidden, setHidden] = useState(false);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!enabled || !row) return;
+    const measure = () => {
+      const cs = getComputedStyle(row);
+      if (cs.display !== "flex" || cs.flexDirection !== "row") { setHidden(false); return; }
+      const [otw, inst] = row.querySelectorAll(":scope > .rev-screen");
+      const gap = parseFloat(cs.columnGap) || 0;
+      setHidden(row.clientWidth - otw.offsetWidth - inst.offsetWidth - 2 * gap < GROUND_MIN_W);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [enabled, rowRef]);
+  return enabled && hidden;
+}
+
 // The three video/track panels at the top of the session viewer: OTW,
 // Instruments (with AOI zone overlay), and the ground track map.
 //
@@ -127,6 +153,7 @@ export default function ScreensPanel({
   groundRoute,
   onGroundMouseDown, onGroundMouseMove, onGroundMouseUp,
   live, onCaptureOtw, onStopOtw, onCaptureInstrument, onStopInstrument,
+  fitGround,
 }) {
   useStreamBinding(otwVideoRef, otwStream);
   useStreamBinding(instrumentVideoRef, instrumentStream);
@@ -136,12 +163,13 @@ export default function ScreensPanel({
   const [showTrail, setShowTrail] = useState(true);
   const rowRef = useRef(null), otwBodyRef = useRef(null), instBodyRef = useRef(null);
   const boxes = useScreenBoxes(rowRef, otwBodyRef, instBodyRef);
+  const groundHidden = useGroundHidden(fitGround, rowRef);
   // Draw zones + trail even without a linked recording -- the layout of
   // the zones alone still shows where the eyes went.
   const showInstrumentOverlay = hasInstrument || (scanTrail?.length > 0 && aoiZones.length > 0);
 
   return (
-    <div className="rev-screens" ref={rowRef}>
+    <div className={"rev-screens" + (groundHidden ? " is-ground-hidden" : "")} ref={rowRef}>
       <div className={"rev-screen" + (lookingAtOtw ? " active-screen" : "")}>
         <div className="head">
           OTW
@@ -224,7 +252,7 @@ export default function ScreensPanel({
         </div>
       </div>
 
-      <div className="rev-screen">
+      <div className="rev-screen rev-screen--ground">
         <div className="head">
           Ground track
           {/* the circuit this session flew, drawn under the track (picked automatically) */}

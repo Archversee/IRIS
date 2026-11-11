@@ -1,7 +1,7 @@
 // Review → Debrief: the whole flight in a few lines, written by the local
 // reasoning model from measured facts only, plus those facts at a glance.
 // Written automatically when the flight ends or Review is first opened (with a
-// note for each broken rule); instructors can rewrite it and rate it.
+// note for each broken rule).
 // Backend: app/routers/debrief.py, prompt in app/flight_summary.py.
 import { useEffect, useState } from "react";
 import { api } from "../../api/client.js";
@@ -40,7 +40,7 @@ export function DebriefChip({ onClick, job }) {
   );
 }
 
-export default function DebriefPanel({ sessionId, onClose }) {
+export default function DebriefPanel({ sessionId }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [d, setD] = useState(null);
@@ -65,20 +65,12 @@ export default function DebriefPanel({ sessionId, onClose }) {
     try { await api.runDebrief(sessionId, body); setTick((t) => t + 1); }
     catch (e) { setErr(e.detail || e.message); }
   }
-  async function rate(rating) {
-    try {
-      const s = await api.rateSummary(d.summary.id, { rating: d.summary.rating === rating ? null : rating });
-      setD((x) => ({ ...x, summary: s }));
-    } catch (e) { setErr(e.detail || e.message); }
-  }
 
   const s = d?.summary, job = d?.job, running = RUNNING(job);
   return (
-    <div className="rc-drawer" role="dialog" aria-label="Flight debrief">
+    <div className="rc-pane" role="region" aria-label="Flight debrief">
       <div className="rc-head">
         <h2>Debrief</h2>
-        <span className="spacer" />
-        <button className="rc-x" onClick={onClose} aria-label="Close">×</button>
       </div>
       {err && <div className="rc-err">{err}</div>}
       {!d && !err && <div className="rc-empty">Loading…</div>}
@@ -89,7 +81,7 @@ export default function DebriefPanel({ sessionId, onClose }) {
               <span className="db-spin" aria-hidden="true" />
               {job.state[0].toUpperCase() + job.state.slice(1)}
               {job.total ? ` · ${job.done} of ${job.total} done` : ""}{job.failed ? ` · ${job.failed} failed` : ""}
-              <div className="rc-muted">{d.model} on the debrief PC. Each one can take a minute; you can keep reviewing.</div>
+              <div className="rc-muted">Written on the debrief PC. Each one can take a minute; you can keep reviewing.</div>
             </div>
           )}
           {job?.state === "error" && (
@@ -113,16 +105,8 @@ export default function DebriefPanel({ sessionId, onClose }) {
               )}
               <div className="rc-muted db-meta">
                 {s.requested_by === "auto" ? "Written automatically after the flight" : `Written for ${s.requested_by}`}
-                {" · "}{s.model}{s.reasoned ? " · reasoned" : ""} · {new Date(s.created_at).toLocaleString()}
+                {" · "}{new Date(s.created_at).toLocaleString()}
               </div>
-              {isInstructor && (
-                <div className="inc-explain__rate">
-                  <span className="rc-muted">Was this right?</span>
-                  <button className={"rc-btn" + (s.rating === "helpful" ? " is-on" : "")} onClick={() => rate("helpful")}>👍 Helpful</button>
-                  <button className={"rc-btn" + (s.rating === "not_helpful" ? " is-on" : "")} onClick={() => rate("not_helpful")}>👎 Not helpful</button>
-                  {s.rated_by && <span className="rc-muted">rated by {s.rated_by}</span>}
-                </div>
-              )}
             </section>
           ) : !running && (
             <div className="rc-empty">
@@ -131,17 +115,17 @@ export default function DebriefPanel({ sessionId, onClose }) {
             </div>
           )}
 
-          {isInstructor && !running && (
+          {/* only when something is missing: no "write it again" once there's a summary */}
+          {isInstructor && !running && (!s || d.notes_missing > 0) && (
             <div className="rc-tools">
-              <button className="rc-btn primary" onClick={() => run({ redo_summary: true })}>
-                {s ? "Write the summary again" : "Write the debrief"}
-              </button>
+              {!s && (
+                <button className="rc-btn primary" onClick={() => run({ redo_summary: true })}>Write the debrief</button>
+              )}
               {d.notes_missing > 0 && (
                 <button className="rc-btn" onClick={() => run({ all_notes: true })}>
                   Write the {d.notes_missing} missing broken-rule note{d.notes_missing === 1 ? "" : "s"}
                 </button>
               )}
-              <span className="rc-muted">Model: {d.model || "not set"}</span>
             </div>
           )}
 
@@ -188,10 +172,6 @@ function Facts({ f }) {
             ? `broke ${f.previous_flight.rules_broken.join(", ")} (${f.previous_flight.times_broken}×)` : "no rules broken"}.
         </div>
       )}
-      <details className="db-raw">
-        <summary>All facts the model was given</summary>
-        <pre>{JSON.stringify(f, null, 1)}</pre>
-      </details>
     </section>
   );
 }

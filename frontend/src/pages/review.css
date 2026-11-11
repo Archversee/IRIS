@@ -34,6 +34,62 @@
   min-height: 100%;
 }
 .rev--no-rail { grid-template-columns: 1fr; }
+/* Session Review: debrief, SOP rule checks and incidents always on screen in a
+   column beside the videos -- no drawers to find and open.
+   The column is resizable (Review.jsx sets --dock-w while dragging). Default
+   D = clamp(340px, 27%, 520px); it can be dragged down to 260px, and up until
+   the ground track is gone: D + one screen's width (W) + the gap, so OTW and
+   Instruments never shrink. W = the screens' share at the default width:
+   (100% - D - 24px main padding - 20px gaps) / 3. */
+/* W, worked out on .rev-main against the page's width (100cqw there = .rev);
+   registered as a length so it's fixed there, not re-read against .rev-main
+   (itself a container, below) where it's used */
+@property --rev-scr-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
+.rev--docked {
+  container-type: inline-size;   /* 100cqw on .rev-main = this page's width, for W */
+  grid-template-columns: minmax(0, 1fr) clamp(260px, var(--dock-w, clamp(340px, 27%, 520px)),
+    calc(clamp(340px, 27%, 520px) + (100% - clamp(340px, 27%, 520px) - 44px) / 3 + 10px));
+}
+.rev-dock {
+  position: relative;
+  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.5fr); gap: 10px;
+  padding: 10px 12px 12px 0; min-height: 0;
+}
+/* the drag handle sits in the gutter between the videos and the column */
+.rev-dock__resizer {
+  position: absolute; top: 10px; bottom: 12px; left: -9px; width: 6px; border-radius: 3px;
+  cursor: col-resize; z-index: 5; touch-action: none;
+}
+.rev-dock__resizer:hover, .is-dock-dragging .rev-dock__resizer { background: var(--accent, var(--rev-cyan)); opacity: 0.6; }
+.is-dock-dragging { cursor: col-resize; user-select: none; }
+.is-dock-dragging .rev-screens { pointer-events: none; }
+/* Screens row: all three start at W (and grow alike if the column is made
+   narrower); when it gets wider the ground track gives up its width first
+   (shrink weight 1000 vs 1), then ScreensPanel hides it. */
+.rev--docked .rev-screens { display: flex; }
+.rev--docked .rev-main { --rev-scr-w: calc((100cqw - clamp(340px, 27cqw, 520px) - 44px) / 3); }
+.rev--docked .rev-screen { flex: 1 1 var(--rev-scr-w); min-width: 0; }
+.rev--docked .rev-screen--ground { flex-shrink: 1000; }
+.rev--docked .rev-screens.is-ground-hidden { justify-content: center; }
+.rev--docked .rev-screens.is-ground-hidden .rev-screen { flex-grow: 0; }
+.rev--docked .rev-screens.is-ground-hidden .rev-screen--ground { display: none; }
+/* As the left side narrows, everything under the screens just compresses;
+   below ~980px the title bar wraps, and scan path + region viewing stack in
+   one column so flight telemetry keeps a usable width. */
+.rev--docked .rev-main { container: revmain / inline-size; }
+.rev--docked .card-head { flex-wrap: wrap; row-gap: 4px; }
+.rev--docked .card-head h3 { white-space: nowrap; }
+@container revmain (max-width: 980px) {
+  .rev-titlebar { flex-wrap: wrap; row-gap: 4px; }
+  .rev-titlebar h1, .rev-titlebar .sub { white-space: nowrap; }
+  .rev--docked .rev-bottom--telemetry {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .rev--docked .rev-bottom--telemetry > .ft-card { grid-column: 2; grid-row: 1 / span 2; }
+}
+.rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
+/* a title-bar chip was clicked: point at its pane */
+.rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }
 /* Session Review only: everything at 80% scale so the dense layout fits.
    (Percentage sizes aren't scaled by zoom, so the box still fills the page.) */
 .rev--zoom80 { zoom: 0.8; }
@@ -330,7 +386,11 @@
 .loading-pct { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
-  .rev-screens, .rev-bottom { grid-template-columns: 1fr; }
+  .rev-screens, .rev-bottom, .rev--docked { grid-template-columns: 1fr; }
+  .rev-dock { grid-template-rows: none; padding: 0 12px 12px; }
+  .rev-dock__resizer { display: none; }
+  .rev--docked .rev-screens { flex-direction: column; }
+  .rev-dock__slot { max-height: 70vh; }
   .rev-main { grid-template-rows: auto auto auto auto; overflow: auto; }
   .rev { position: static; height: auto; }
 }
@@ -464,7 +524,13 @@
 .ft-att { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ft-att__svg { flex: 1; min-height: 100px; max-height: 170px; aspect-ratio: 1; }
 .ft-att__svg g { transition: transform .2s linear; }
-.ft-att__vals { display: flex; gap: 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ft-att__vals { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Review: the dial fits whatever box its group gets (narrow when the sidebar is
+   collapsed or on a wide screen; short on a small one). The SVG box takes the
+   group's free space without asking for any, and the circle is drawn at the
+   smaller of its width and height, so it never spills out or stretches the row. */
+.ft-card:not(.ft-card--live) .ft-att { flex: 1 1 0; min-width: 0; justify-content: center; }
+.ft-card:not(.ft-card--live) .ft-att__svg { flex: 1 1 0; width: 100%; height: 0; min-height: 0; aspect-ratio: auto; }
 .ft-att__vals small { font-size: 10px; font-weight: 400; color: var(--rev-muted); }
 
 .ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 56px; }
@@ -503,9 +569,31 @@
 /* Wrap by the card's own width, so it works full-width (Live Monitor) and
    in Review's bottom-row column alike. */
 @container (max-width: 860px) {
+  .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
+}
+/* Below ~1100px one row leaves the attitude group only a sliver (the tapes and
+   controls can't shrink), e.g. Review with the sidebar collapsed -- so wrap. */
+@container (max-width: 1100px) {
   .ft-gauges { flex-wrap: wrap; }
   .ft-group { flex: 1 1 260px; }
-  .ft-card .readout-cols { grid-template-columns: 1fr 1fr; }
+  /* Review: the tapes and the attitude dial share the first row down to a
+     narrow card (the dial shrinks to fit), so it never gets a row of its own */
+  .ft-card:not(.ft-card--live) .ft-group { flex-basis: 200px; }
+}
+/* Review in a narrow card (the docked column dragged wide on a smaller
+   screen): smaller stick and trim bars, tighter gaps, so the controls row
+   still fits across instead of scrolling sideways. */
+@container (max-width: 600px) {
+  .ft-card:not(.ft-card--live) .ft-group { gap: 8px; padding: 8px; }
+  .ft-card:not(.ft-card--live) .ft-ctl, .ft-card:not(.ft-card--live) .ft-tape { min-width: 40px; }
+  .ft-card:not(.ft-card--live) .ft-stick { width: 84px; height: 84px; }
+  .ft-card:not(.ft-card--live) .ft-hbar { width: 56px; }
+  .ft-card:not(.ft-card--live) .ft-ctl__cap { max-width: 52px; font-size: 9px; }
+}
+/* On one row (wide screens) the attitude group takes a share of the spare
+   width too, instead of staying as narrow as its numbers. */
+@container (min-width: 1101px) {
+  .ft-card:not(.ft-card--live) .ft-group:has(.ft-att) { flex-grow: 0.9; }
 }
 
 /* ---- Live Monitor only (.ft-card--live): bank + heading dials, the
@@ -733,12 +821,18 @@
 .rc-chip .bad { color: #ff5c5c; }
 .rc-chip .todo { color: var(--rev-violet); }
 .rc-chip .signed { color: var(--rev-muted); font-weight: 500; }
-.rc-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 60;
-  background: var(--rev-panel); border-left: 1px solid var(--rev-line); color: var(--rev-text);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, .35); overflow-y: auto; padding: 14px 16px 24px;
-  font-family: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px;
+/* the three panes stack in the Review page's docked right column (.rev-dock) */
+.rc-pane {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px;
+  background: var(--rev-panel); border: 1px solid var(--rev-line); border-radius: 10px; color: var(--rev-text);
+  font-family: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px;
 }
+/* the pane title stays put while its contents scroll under it */
+.rc-pane > .rc-head {
+  position: sticky; top: 0; z-index: 1; margin: 0 -12px 8px; padding: 9px 12px 7px;
+  background: var(--rev-panel); border-bottom: 1px solid var(--rev-line);
+}
+.rc-pane > .rc-head h2 { font-size: 14px; letter-spacing: .02em; }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .rc-head h2 { margin: 0; font-size: 18px; }
 .rc-head .spacer { flex: 1; }
@@ -755,7 +849,7 @@
 .rc-tools select, .rc-judge select, .rc-judge input, .rc-signoff textarea {
   font: inherit; background: var(--rev-bg); color: var(--rev-text); border: 1px solid var(--rev-line); border-radius: 6px; padding: 4px 8px;
 }
-.rc-check { display: inline-flex; gap: 6px; align-items: center; }
+.rc-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .rc-preset { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
 .rc-btn {
   font: inherit; cursor: pointer; padding: 4px 12px; border-radius: 6px;
@@ -797,6 +891,94 @@
 .rc-judge input { flex: 1; min-width: 140px; }
 .rc-signoff textarea { width: 100%; resize: vertical; }
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---- SOP rule checks: counts strip, broken-rule cards, show-all toggle ---- */
+.rc-tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.rc-tally__item {
+  font: inherit; cursor: pointer; position: relative;
+  display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: 8px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); color: var(--rev-muted);
+  transition: border-color .12s, background .12s;
+}
+.rc-tally__item:hover:not(:disabled) { border-color: var(--border-strong, var(--rev-line)); background: var(--hover, var(--rev-panel)); }
+.rc-tally__item:disabled { cursor: default; opacity: .55; }
+.rc-tally__item b { font-size: 20px; line-height: 1.1; color: var(--rev-text); font-variant-numeric: tabular-nums; }
+.rc-tally__item span { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.rc-tally__item.is-fail b { color: #ff6b6b; }
+.rc-tally__item.is-fail.is-zero b { color: var(--rev-green); }
+.rc-tally__item.is-pass b { color: var(--rev-green); }
+.rc-tally__item.is-instructor b { color: var(--rev-violet); }
+/* the selected tile: tinted, outlined in its colour, with a notch pointing at the list */
+.rc-tally__item.is-on { --tc: var(--rev-muted); border-color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, var(--rev-panel-2)); }
+.rc-tally__item.is-on span { color: var(--rev-text); }
+.rc-tally__item.is-on::after {
+  content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; margin-left: -5px;
+  background: inherit; border: inherit; border-top: 0; border-left: 0; transform: rotate(45deg);
+}
+.rc-tally__item.is-fail.is-on { --tc: #ff5c5c; }
+.rc-tally__item.is-fail.is-zero.is-on { --tc: var(--rev-green); }
+.rc-tally__item.is-pass.is-on { --tc: var(--rev-green); }
+.rc-tally__item.is-instructor.is-on { --tc: var(--rev-violet); }
+.rc-group h3 .rc-back { float: right; font-weight: 500; }
+
+.rc-allmet {
+  padding: 10px 12px; border-radius: 8px; color: var(--rev-green);
+  background: rgba(74, 222, 128, .08); border: 1px solid rgba(74, 222, 128, .4);
+}
+/* instructor's verdict + note on one line under each rule */
+.rc-judge select { width: auto; flex: 0 1 170px; min-width: 0; }
+.rc-judge input { width: auto; }
+.rc-tools--recheck { margin-top: 14px; }
+
+/* a broken rule: big "N×" on the left (coloured by severity), what the rule
+   asks and what happened on the right, then each time it was broken */
+.rc-brk {
+  --sev: var(--rev-amber);
+  border: 1px solid var(--rev-line); border-left: 4px solid var(--sev); border-radius: 10px;
+  background: var(--rev-panel-2); margin-bottom: 10px; overflow: hidden;
+}
+.rc-brk.sev-warning { --sev: #ff5c5c; }
+.rc-brk.sev-caution { --sev: var(--rev-amber); }
+.rc-brk.sev-advisory { --sev: var(--rev-cyan); }
+.rc-brk__top { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; cursor: pointer; }
+.rc-brk__count {
+  flex: none; width: 58px; padding: 6px 0 5px; border-radius: 8px; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  color: var(--sev); background: color-mix(in srgb, var(--sev) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sev) 45%, transparent);
+}
+.rc-brk__count b { font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; }
+.rc-brk__count span { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-top: 3px; opacity: .85; }
+.rc-brk__what { flex: 1; min-width: 0; }
+.rc-brk__title { display: flex; gap: 8px; align-items: baseline; }
+.rc-brk__title .rc-title { font-size: 15px; }
+.rc-brk__req { margin-top: 3px; font-size: 12px; color: var(--rev-muted); }
+.rc-brk__req b { color: var(--rev-text); font-variant-numeric: tabular-nums; }
+.rc-brk__sum { margin-top: 3px; }
+.rc-brk__by { margin-top: 3px; font-size: 12px; color: var(--rev-violet); }
+.rc-brk > .rc-note, .rc-brk > .rc-detail, .rc-brk > .rc-judge { margin: 0 12px 10px; }
+
+/* each time it was broken: number, time into the flight, what, buttons */
+.rc-times { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rev-line); }
+.rc-time {
+  display: grid; grid-template-columns: 22px 40px minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
+  padding: 6px 12px; font-size: 13px;
+}
+.rc-time + .rc-time { border-top: 1px solid color-mix(in srgb, var(--rev-line) 60%, transparent); }
+.rc-time:hover { background: var(--rev-panel); }
+.rc-time__n {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: var(--sev); border: 1px solid var(--sev);
+}
+.rc-time__at { font-variant-numeric: tabular-nums; color: var(--rev-muted); }
+.rc-time__what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-time__phase {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px;
+  text-transform: capitalize; color: var(--rev-muted); background: var(--rev-panel); border: 1px solid var(--rev-line);
+}
+.rc-time--more { display: block; text-align: center; }
+.rc-linkbtn { font: inherit; font-size: 12px; background: none; border: 0; color: var(--rev-cyan); cursor: pointer; padding: 2px 6px; }
+.rc-time .rc-vbtn { white-space: nowrap; }
 
 /* ---- incident view: 30 s before / after a broken rule (IncidentView.jsx) ---- */
 .rc-vgroup { display: inline-flex; gap: 2px; }
@@ -846,8 +1028,37 @@
 .inc-explain__head .spacer { flex: 1; }
 .inc-explain__text { margin: 8px 0 0; line-height: 1.5; font-size: 15px; }
 .inc-explain__warn { margin-top: 6px; color: var(--rev-amber); font-size: 13px; }
-.inc-explain__rate { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-.rc-btn.is-on { border-color: var(--rev-cyan); color: var(--rev-cyan); }
+
+/* ---- Analyse pop-up: hovering the chart (IncidentView.jsx MomentTip) ---- */
+.inc-hint { float: right; font-weight: 400; font-size: 12px; color: var(--rev-cyan); }
+.inc-moment {
+  width: 400px; padding: 10px 12px; border-radius: 10px; font-size: 12px; color: var(--rev-text);
+  background: var(--rev-panel); border: 1px solid var(--border-strong, var(--rev-line));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+}
+.inc-moment__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--rev-line); }
+.inc-moment__head b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.inc-moment__head b.is-out { color: #ff6b6b; }
+.inc-moment__flag { margin-left: auto; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+.inc-moment__flag.is-out { color: #ff6b6b; }
+.inc-moment__flag.is-in { color: var(--rev-green); }
+.inc-moment__body { display: grid; grid-template-columns: 1fr 1.1fr; gap: 14px; padding-top: 8px; }
+.inc-moment h4 { margin: 0 0 6px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--rev-muted); }
+.inc-moment i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.inc-moment__now { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.inc-pie { display: flex; align-items: center; gap: 8px; }
+.inc-pie__svg { width: 64px; height: 64px; flex: none; }
+.inc-pie ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; min-width: 0; flex: 1; }
+.inc-pie li { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.inc-pie li b { margin-left: auto; padding-left: 6px; font-variant-numeric: tabular-nums; }
+.inc-pie__cap { margin-top: 4px; font-size: 11px; }
+.inc-pie__none { font-size: 12px; }
+.inc-ctl { display: grid; grid-template-columns: 1fr; gap: 2px; margin-bottom: 6px; }
+.inc-ctl__label { color: var(--rev-muted); font-size: 11px; }
+.inc-ctl__bar { position: relative; height: 8px; border-radius: 4px; background: var(--rev-bg); border: 1px solid var(--rev-line); overflow: hidden; }
+.inc-ctl__bar.is-centred::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border-strong, var(--rev-line)); }
+.inc-ctl__bar i { position: absolute; top: 0; bottom: 0; width: auto; height: auto; border-radius: 0; }
+.inc-ctl__val { font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; margin-top: -1px; }
 
 /* ---- Incidents drawer (components/session/IncidentsPanel.jsx) ---- */
 .inc-list-sub { margin-bottom: 10px; }
