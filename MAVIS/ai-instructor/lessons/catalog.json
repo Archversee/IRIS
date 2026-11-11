@@ -140,16 +140,18 @@
         {
           "id": "lesson11_pilotage",
           "title": "Map Reading & Pilotage",
-          "subtitle": "Hold a heading · find checkpoints",
-          "available": false,
-          "duration_min": 28
+          "subtitle": "Landmark to landmark · note the time",
+          "available": true,
+          "duration_min": 15,
+          "start_note": "Starts in the air at about 1,500 ft, over the water south of Marina Bay. Fly to three landmarks, then find Paya Lebar and point at it. No landing."
         },
         {
           "id": "lesson12_diversion",
           "title": "Diversion",
-          "subtitle": "Lost procedure · nearest suitable aerodrome",
-          "available": false,
-          "duration_min": 25
+          "subtitle": "Divert to Seletar · lost procedure",
+          "available": true,
+          "duration_min": 15,
+          "start_note": "Starts in the air at about 2,000 ft, 3 nm south of Paya Lebar. Divert to Seletar, then practise being lost and find Paya Lebar. No landing."
         }
       ]
     },
@@ -161,16 +163,18 @@
         {
           "id": "lesson13_partial",
           "title": "Partial Panel Flying",
-          "subtitle": "AI and HI failure · scan discipline",
-          "available": false,
-          "duration_min": 22
+          "subtitle": "Vacuum failure · timed turns · compass",
+          "available": true,
+          "duration_min": 15,
+          "start_note": "Starts in the air at about 3,000 ft, 3 nm south of Paya Lebar. The vacuum system fails: have some paper ready to cover the attitude and heading gauges. No landing."
         },
         {
           "id": "lesson14_unusual",
           "title": "Unusual Attitude Recovery",
-          "subtitle": "Nose high / nose low · IMC intro",
-          "available": false,
-          "duration_min": 20
+          "subtitle": "Nose high / nose low · recovery order",
+          "available": true,
+          "duration_min": 20,
+          "start_note": "Starts in the air at about 4,000 ft, 3 nm south of Paya Lebar. MAVIS talks you through it first, then puts you nose high or nose low four times and you recover. No landing."
         }
       ]
     }

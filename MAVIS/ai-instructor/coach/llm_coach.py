@@ -24,6 +24,11 @@ VERBATIM = frozenset({
     "PHASE_ENTER_DEBRIEF",
     "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
     "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+    "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW", "FAM_UPSET_STALLED",
+    "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET",   # the recovery order: never reworded
+    "FAM_TARGET_HINT", "FAM_CP_REACHED", "FAM_DIVERT_DONE", "FAM_DIVERT_WIDE", "FAM_STEP_DONE",   # never reworded
+    "FAM_TIMED_ROLL_OUT", "FAM_TIMED_GOOD", "FAM_TIMED_MORE", "FAM_TIMED_LESS",
+    "FAM_COMPASS_GOOD", "FAM_COMPASS_FIX",
     "SINK_HIGH_FAST",   # the fix is the nose, not power: never reworded into "add power"
     "ALT_LOW_FAST", "ALT_HIGH_SLOW", "FAM_FAST_DIVE",   # same: nose, not power
     "SPEED_FAST_LEVEL", "SPEED_SLOW_LEVEL",             # level flight: power, not nose
@@ -41,7 +46,7 @@ VERBATIM = frozenset({
 RANK_URGENT, RANK_SAFETY = 3, 4
 _URGENT = frozenset({"TURN_CROSSWIND", "TURN_DOWNWIND", "TURN_BASE", "TURN_FINAL",
                      "ROLL_OUT_LEG", "PRE_TURN", "PRE_TURN_ALT", "ROTATE_NOW", "ROTATE_LATE", "FAM_ROLL_OUT",
-                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+                     "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF", "FAM_TIMED_ROLL_OUT",
                      "PHASE_ENTER_GO_AROUND"})
 SAY_RANK = 2   # lines said directly (answers, chat replies): cut off only by urgent/safety
 
@@ -57,7 +62,9 @@ def rank(ev: CoachEvent) -> int:
 
 # "now come back" calls (core.familiarization.PART_CUES): may wait a little
 # behind a line already being spoken
-_PART_CUES = frozenset({"FAM_ROLL_OUT", "ROLL_OUT_LEG", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF"})
+_PART_CUES = frozenset({"FAM_ROLL_OUT", "ROLL_OUT_LEG", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
+                        "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW",
+                        "FAM_UPSET_STALLED", "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:

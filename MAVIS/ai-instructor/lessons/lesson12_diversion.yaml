@@ -1,0 +1,158 @@
+name: "Diversion"
+# Airborne lesson built on the familiarization engine (core/familiarization.py):
+# same airborne start, to-do list and scorecard. Two parts:
+#   Diversion (CFI Notebook "Diversions"; ACS PA.VI.C): note the time, turn
+#   promptly onto a heading for the new airfield, hold heading +/-15 deg and
+#   height +/-200 ft.
+#   Lost (ACS PA.VI.D; the "5 Cs": climb, communicate, confess, comply,
+#   conserve): the aircraft is teleported somewhere else, the trainee climbs,
+#   MAVIS plays the radio, and the trainee finds Paya Lebar.
+# Older dial-gauge C172: the heading indicator is a gyro that drifts, so it's set
+# to the compass when the lesson starts and again after the teleport.
+# Magnetic variation at Singapore is under 1 degree: true and compass headings
+# read the same here.
+type: familiarization
+
+# Same airfield geometry as Lesson 1 -- used for the map, finding Paya Lebar at
+# the end, and the runway the aircraft is put back on.
+airport:
+  icao: WSAP
+  name: Paya Lebar
+  elevation_ft: 65
+runway:
+  ident: "02"
+  heading_true: 22.4
+  threshold: { lat: 1.344640, lon: 103.903000 }   # RWY 02 threshold, OurAirports (runway 61 m wide)
+  length_m: 3796
+pattern:                    # not flown; kept so shared map/scorer code has its keys
+  side: left
+  altitude_msl_ft: 1100
+  downwind_offset_nm: 0.8
+  crosswind_turn_agl_ft: 600
+  centerline_offset_m: 0    # threshold above is the real centreline; adjust only if the map reads off-centre when centred in the sim
+  base_turn_past_abeam_m: 1100
+  mock_base_turn_past_abeam_m: 1000
+total_circuits: 1
+
+# Inbound to Paya Lebar from the south, as if coming home
+airborne_start:
+  bearing_from_field_deg: 180
+  distance_nm: 3
+  alt_msl_ft: 2000
+  heading_true: 20
+  ias_kt: 95
+  throttle_pct: 70
+
+diversion:
+  name: Seletar
+  lat: 1.41694              # Singapore AIP aerodrome reference point, 01 25 01 N 103 52 04 E
+  lon: 103.86778
+  radius_nm: 1.5            # close enough to call it reached
+  look: a single runway, north of the city
+
+steps:
+  - DIVERT_TURN
+  - DIVERT_TRACK
+  - LOST_CLIMB
+  - FIND_AIRFIELD
+
+exercises:
+  track_band_deg: 15        # on heading: within this (ACS +/-15 deg)
+  height_band_ft: 200       # the to-do card's height band (ACS +/-200 ft)
+  lost_climb_ft: 500
+  hint_every_s: 30          # off course: say where it is and the heading, this often
+  step_timeout_s: 420
+  feedback_s: 5
+
+# Finding Paya Lebar: nose on it for a few seconds, same as Flight Familiarization
+finish:
+  pointing_within_deg: 15
+  pointing_hold_s: 5
+  pointing_max_nm: 10
+  radius_nm: 2.0
+
+freeze_during_instructions: true
+demos: false                # the flying is the lesson: nothing to watch first
+
+# Every mode needs these: without them there's nowhere to fly to
+always_say: [LESSON_NOTE, FAM_TARGET_HINT, FAM_DIVERT_DONE, FAM_DIVERT_WIDE, FAM_FIELD_HINT, FAM_STEP_DONE]
+
+end_reposition:
+  along_m: 60
+
+debrief_summary: >-
+  diversion and lost procedure (airborne start; diverted to Seletar when Paya
+  Lebar closed, turning promptly and holding heading and height; then, teleported
+  elsewhere as if lost, climbed for a better view and found Paya Lebar; no
+  take-off or landing)
+
+briefing:
+  layman: >-
+    Diversions. We're at about {alt} feet, heading back to Paya Lebar. Things
+    won't go to plan, so I'll ask you to change where we're going, then we'll
+    practise what to do when you're lost.
+  pilot: >-
+    Diversion and lost procedure, airborne at {alt} feet, inbound to Paya Lebar.
+    Expect a diversion, then a lost-procedure exercise.
+
+# See lesson00_familiarization.yaml for the step_notes format. teleport: the
+# step starts somewhere else (same keys as airborne_start); timeout_s: its own
+# time limit (a diversion turn has to be prompt); done: said only when the step
+# was really done, not when it timed out.
+step_notes:
+  DIVERT_TURN:
+    title: Turn for Seletar
+    timeout_s: 60
+    done: { layman: "Good, you're on heading.", pilot: "On heading." }
+    todo:
+      - "Set the heading indicator to the compass"
+      - "Turn {tgt_dir} for {tgt_name}"
+    look: [heading]
+    layman: >-
+      Paya Lebar's runway has just closed, so we're diverting to {tgt_name}. Note the time, {time_now}. Set your heading indicator to the compass. It's at your {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} onto heading {tgt_hdg:03d} straight away.
+    pilot: >-
+      Paya Lebar closed, divert {tgt_name}. Time {time_now}. Set the heading indicator to the compass. {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d} now.
+  DIVERT_TRACK:
+    title: Fly to Seletar
+    timeout_s: 480
+    todo:
+      - "Hold heading {tgt_hdg:03d}"
+      - "Hold {hold_alt:,} ft"
+      - "Look for {tgt_look}"
+    look: [heading, altitude]
+    freeze: false
+    layman: >-
+      Fly heading {tgt_hdg:03d} and hold {hold_alt:,} feet, about {tgt_min} minutes to {tgt_name}. Look for {tgt_look}.
+    pilot: >-
+      Maintain heading {tgt_hdg:03d}, {hold_alt:,} feet, {tgt_min} minutes to {tgt_name}.
+  LOST_CLIMB:
+    title: "Lost: climb"
+    timeout_s: 180
+    done: { layman: "Good, you're up. Now look around.", pilot: "Level. Look around." }
+    teleport:               # east of Changi, pointing away from Paya Lebar
+      bearing_from_field_deg: 70
+      distance_nm: 7
+      alt_msl_ft: 1500
+      heading_true: 60
+      ias_kt: 95
+      throttle_pct: 70
+    todo:
+      - "Set the heading indicator to the compass"
+      - "Add power, climb to {lost_tgt:,} ft"
+    look: [heading, altitude]
+    layman: >-
+      New exercise: pretend you're lost. Set your heading indicator to the compass again. Then step one is climb, because higher up you can see further and radios reach further. Add power and climb to {lost_tgt:,} feet.
+    pilot: >-
+      Lost procedure. Set the heading indicator to the compass. Climb first for visual range and radio coverage: {lost_tgt:,} feet.
+  FIND_AIRFIELD:
+    title: Find Paya Lebar & point at it
+    say_targets: false
+    todo:
+      - "Find Paya Lebar's long runway"
+      - "Point the nose at it"
+    look: [outside]
+    freeze: false
+    layman: >-
+      Next you'd radio for help, say you're lost, do what they tell you, and throttle back to save fuel. I'll be the radio: Paya Lebar's at your {clock} o'clock, {dist_nm} miles. Fly heading {brg_lo} to {brg_hi} and point at it.
+    pilot: >-
+      Communicate, confess, comply, conserve. Radar vector: Paya Lebar {clock} o'clock, {dist_nm} miles, heading {brg_lo} to {brg_hi}. Point at the field.

@@ -26,17 +26,22 @@ def build_session(rt):
     async def start(keep_session: bool = False):
         if rt.started.is_set():
             return
+        # Free Flight flies from wherever the aircraft is: none of the lesson loaded
+        # underneath (its airborne start, clock, briefing or demos) is applied
+        free = bool(rt.session.get("free_flight"))
         if rt.cfg["sim"]["adapter"] == "msfs":
             await rt._connect_msfs_with_retries()
             if not is_familiarization(rt.lesson) and not rt.lesson.get("airborne_start"):
                 rt._orient_lesson_to_aircraft(await rt.loop.run_in_executor(None, rt.sim.get_telemetry))
-        if rt.lesson.get("airborne_start"):
+        if rt.lesson.get("airborne_start") and not free:
             await rt._airborne_start()
             if rt._fam_freezes():
                 await rt._set_frozen(True)     # held through the briefing
             elif (not is_familiarization(rt.lesson)
                     and (rt.session.get("policy") or {}).get("coaching") == "turn_by_turn"):
                 await rt._set_frozen(True)     # landing: held on final while it's briefed
+        if rt.lesson.get("vacuum_failure") and not free:
+            await rt._set_vacuum(True)         # Partial Panel: the gauges fail as it starts
         rt.state["look_at"] = None
         rt.demo_ctl["shown"] = set()
         rt.started.set()
@@ -49,7 +54,6 @@ def build_session(rt):
         # a new flight in this session: which curriculum it came from (free flight is
         # not a lesson, whatever lesson MAVIS happens to have loaded underneath)
         meta = lesson_meta(rt.catalog, rt.lesson_id) or {}
-        free = bool(rt.session.get("free_flight"))
         rt.free_tracker.reset()
         labels, kind = event_log_setup(rt.lesson, rt.engine)
         rt.event_log.labels = {**labels, **(FREE_FLIGHT_LABELS if free else {})}
@@ -62,14 +66,16 @@ def build_session(rt):
                 "" if free else meta.get("module_title", ""), rt.session.get("mode", ""))
         rt._publish_events()
         rt.state["lesson_running"] = True
-        if (rt.lesson.get("night_event") or {}).get("at") == "start":
+        if (rt.lesson.get("night_event") or {}).get("at") == "start" and not free:
             await rt._apply_lesson_clock()
             rt.engine.mark_night_done()
         # Never block mock / lesson start on briefing TTS, warmup can hog the GPU.
         if hasattr(rt.sim, "release"):        # mock: start the autopilot immediately
             rt.sim.release()
         pol = rt.session.get("policy") or {}
-        if is_familiarization(rt.lesson) and rt._demos_wanted():
+        if free:
+            rt.engine.start_flying()
+        elif is_familiarization(rt.lesson) and rt._demos_wanted():
             # briefing, the whole lesson flown once as a demo, then hand over
             asyncio.create_task(rt._fam_opening(pol.get("coaching") == "turn_by_turn"))
         elif pol.get("coaching") == "turn_by_turn":
@@ -82,6 +88,7 @@ def build_session(rt):
             "blob": rt.sim.save_state() if hasattr(rt.sim, "save_state") else None}
 
     async def restart():
+        await rt._set_vacuum(False)            # start() fails it again if the lesson wants
         rt.stop_speech()
         rt.run_gen["n"] += 1
         rt.live_rules["ev"] = None
@@ -166,6 +173,7 @@ def build_session(rt):
         time of day. Refused while a run is in progress."""
         if new_id == rt.lesson_id:
             return {"ok": True, "lesson_id": rt.lesson_id}
+        await rt._set_vacuum(False)
         meta = lesson_meta(rt.catalog, new_id)
         path = HERE / "lessons" / f"{new_id}.yaml"
         if (not meta or not meta.get("available") or meta.get("kind") == "reading"
@@ -260,8 +268,8 @@ def build_session(rt):
         # the first thing MAVIS says then needs no synthesis
         try:
             # only when start() will say the briefing: otherwise it would just hold up the first real line
-            if ((is_familiarization(rt.lesson) and rt._demos_wanted())
-                    or policy.get("coaching") == "turn_by_turn"):
+            if not free_flight and ((is_familiarization(rt.lesson) and rt._demos_wanted())
+                                    or policy.get("coaching") == "turn_by_turn"):
                 rt.prewarm_speech(rt._briefing_texts())
         except Exception as e:                # never let this stop a session starting
             log.info("speech prewarm skipped: %s", e)
@@ -295,6 +303,7 @@ def build_session(rt):
 
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
+        await rt._set_vacuum(False)
         if is_familiarization(rt.lesson):
             await rt._set_frozen(False)        # hand the aircraft back on the way out
         if rt.scored["done"]:

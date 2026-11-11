@@ -107,6 +107,7 @@ class MSFSAdapter:
         self._sm = None
         self._datadef = None
         self._initpos_defined = False
+        self._vacuum_failed = False    # TOGGLE_VACUUM_FAILURE sent and not yet undone
         self._lock_mapped = False      # _LOCKED_EVENTS mapped to client ids yet
         self._locked = False
         # the tick loop and a teleport both run in executor threads -- one
@@ -410,6 +411,66 @@ class MSFSAdapter:
                  lat, lon, alt_msl, hdg, ias)
         return True
 
+    def set_vacuum_failed(self, on: bool) -> bool:
+        """Fail / restore the vacuum system (attitude and heading gauges on a
+        dial-gauge aircraft). The sim only has a toggle, so it's sent only when
+        this differs from what we last set."""
+        if self._sm is None:
+            return False
+        try:
+            with self._lock:
+                if self._vacuum_failed != bool(on):
+                    self._sm.send_event("TOGGLE_VACUUM_FAILURE")
+                    self._vacuum_failed = bool(on)
+                    log.info("vacuum system %s", "failed" if on else "restored")
+        except Exception as e:
+            log.error("SimConnect set_vacuum_failed(%s) failed: %s", on, e)
+            return False
+        return True
+
+    def set_attitude(self, pitch: float, bank: float) -> bool:
+        """Set the aircraft's attitude directly (unusual attitudes): pitch
+        + nose up, bank + right, degrees. Written to PLANE PITCH / BANK DEGREES
+        in the sim's own sense (+ nose down, + left) -- the same mapping
+        get_telemetry() reads them with. Best done frozen: the attitude freeze
+        then holds it there until set_frozen(False)."""
+        if self._sm is None:
+            return False
+        try:
+            with self._lock:
+                self._sm.set_simdatum("PLANE PITCH DEGREES", -float(pitch), "degrees")
+                self._sm.set_simdatum("PLANE BANK DEGREES", -float(bank), "degrees")
+        except Exception as e:
+            log.error("SimConnect set_attitude failed: %s", e)
+            return False
+        log.info("attitude set: pitch %+.0f bank %+.0f", pitch, bank)
+        return True
+
+    def ease_attitude(self, frm: tuple, to: tuple, secs: float = 3.0, hz: float = 30.0) -> bool:
+        """Move the attitude smoothly from (pitch, bank) to (pitch, bank) over
+        `secs` (frozen: the unusual-attitude demo). Runs on its own clock in
+        this thread and goes by elapsed time, so a late write never makes it
+        lag and then jump."""
+        if self._sm is None:
+            return False
+        import time as _time
+        t0 = _time.time()
+        try:
+            while True:
+                f = min(1.0, (_time.time() - t0) / secs)
+                e = f * f * (3.0 - 2.0 * f)          # ease in and out
+                with self._lock:
+                    self._sm.set_simdatum("PLANE PITCH DEGREES", -(frm[0] + (to[0] - frm[0]) * e), "degrees")
+                    self._sm.set_simdatum("PLANE BANK DEGREES", -(frm[1] + (to[1] - frm[1]) * e), "degrees")
+                if f >= 1.0:
+                    break
+                _time.sleep(1.0 / hz)
+        except Exception as e:
+            log.error("SimConnect ease_attitude failed: %s", e)
+            return False
+        log.info("attitude eased to pitch %+.0f bank %+.0f", to[0], to[1])
+        return True
+
     def demo_control(self, cmd: dict) -> bool:
         """Fly an instructor demonstration (core/demo.py command): the
         aircraft's own autopilot for heading / altitude / vertical speed, the
@@ -528,6 +589,7 @@ class MSFSAdapter:
     def close(self) -> None:
         if self._sm:
             try:
+                self.set_vacuum_failed(False)    # never leave the sim with dead gauges
                 self._sm.Close()
             except Exception:
                 pass

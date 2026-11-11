@@ -97,6 +97,17 @@ def lesson_state(lesson) -> dict:
         out["final_m"] = float((lesson.get("airborne_start") or {}).get("final_m", 0))
     if is_familiarization(lesson):
         out.update(type="familiarization")
+        # navigation: the places to fly to, for the map. A diversion's airfield
+        # stays off the map until it's announced.
+        marks = [{"name": c["name"][:1].upper() + c["name"][1:], "lat": c["lat"], "lon": c["lon"],
+                  "phases": [f"CHECKPOINT_{i + 1}"]}
+                 for i, c in enumerate(lesson.get("checkpoints") or [])]
+        d = lesson.get("diversion")
+        if d:
+            marks.append({"name": d["name"], "lat": d["lat"], "lon": d["lon"], "hidden": True,
+                          "phases": ["DIVERT_TURN", "DIVERT_TRACK"]})
+        if marks:
+            out["marks"] = marks
         if "FIND_AIRFIELD" in lesson_steps(lesson):
             # the "fly back to here" ring -- only for a lesson that ends by
             # finding Paya Lebar (Flight Familiarization), not the others

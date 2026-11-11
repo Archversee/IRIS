@@ -22,7 +22,10 @@ export default function InFlightPanel({ state, toolbar, onMainMenu, onDiscard, o
       <div className="mavis-hud__right">
         <div className="mavis-hud__top">
           <span className="pill">{state?.phase || "—"}</span>
-          <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
+          {/* Free Flight has no circuits to count (the lesson loaded underneath does) */}
+          {!state?.session?.free_flight && (
+            <span className="muted">Circuit {state?.circuit ?? "—"} / {state?.total_circuits ?? "—"}</span>
+          )}
           <SopChip sop={state?.sop} />
         </div>
         <RuleAlerts live={state?.sop_live} flying={!!state?.lesson_running} />

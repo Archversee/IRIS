@@ -12,7 +12,7 @@ import time
 
 from coach import phrases
 from core.events import CoachEvent
-from core.familiarization import PART_CUES, is_familiarization
+from core.familiarization import PART_CUES, UPSET_STEPS, is_familiarization
 from core.modes import allow_coach_event
 from runtime.checkpoints import GATED, MAX_ATTEMPTS
 
@@ -63,13 +63,15 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
         if (not allow_coach_event(pol, ev.code, ev.severity)
                 and ev.code not in (rt.lesson.get("always_say") or [])
                 # "now come back" calls: every mode but Exam (silent)
-                and not (ev.code in PART_CUES and pol.get("coaching") != "silent")):
+                and not (ev.code in PART_CUES and pol.get("coaching") != "silent")
+                # an unusual attitude is set up in every mode (Exam: no explanation)
+                and not (ev.code == "LESSON_NOTE" and ev.data.get("phase") in UPSET_STEPS)):
             continue
         if ev.code == "LESSON_NOTE" and is_familiarization(rt.lesson):
             rt.state["look_at"] = {"items": ev.data.get("look") or [],
                                 "phase": ev.data.get("phase"), "seq": time.time()}
-            if ev.data.get("phase") in rt.demo_ctl["shown"]:
-                # watched in the demo: a short cue, no hold -- keep the momentum
+            if ev.data.get("phase") in rt.demo_ctl["shown"] and ev.data.get("phase") not in UPSET_STEPS:
+                # watched in the demo (an unusual attitude says its own: _fam_upset): a short cue, no hold -- keep the momentum
                 title = ev.data.get("title") or ev.data.get("phase")
                 action = (ev.data.get("todo") or [""])[0]
                 try:
@@ -81,7 +83,15 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
                     "action": rt._speakable(action).rstrip(".")})
                 ev = CoachEvent("LESSON_NOTE", ev.severity,
                                 {**ev.data, "layman": cue, "pilot": cue}, cooldown_s=0)
-            elif rt._fam_freezes() and ev.data.get("freeze", True):
+            if ev.data.get("phase") in UPSET_STEPS:
+                # unusual attitude: always set up by MAVIS (frozen, placed,
+                # handed over) -- with the short cue if it was described in the demo
+                rt.engine.hold()
+                asyncio.create_task(rt._fam_upset(ev))
+                continue
+            if (ev.data.get("teleport")          # always held: it moves the aircraft
+                    or (ev.data.get("phase") not in rt.demo_ctl["shown"]
+                        and rt._fam_freezes() and ev.data.get("freeze", True))):
                 rt.engine.hold()       # judge nothing until "you have control"
                 asyncio.create_task(rt._fam_instruct(ev))
                 continue
@@ -125,7 +135,10 @@ def score_tick(rt, tel, ctrl, prev_on_ground):
         changed = rt.event_log.observe(rt._flight_phase(), tel.t, rt.engine.circuit,
                                     getattr(rt.engine, "skipped", ()),
                                     kind="stall" if rt._flight_phase() == "STALL" else None)
-        if rt.engine.phase == "DEBRIEF" and not rt.scored["done"]:
+        # the lesson underneath reaching its debrief is not the end of a Free
+        # Flight: that only ends on End Session (quit_lesson)
+        lesson_over = rt.engine.phase == "DEBRIEF" and not rt.session.get("free_flight")
+        if lesson_over and not rt.scored["done"]:
             rt.event_log.end_flight(tel.t, "completed")
             changed = True
         if changed:
@@ -134,7 +147,7 @@ def score_tick(rt, tel, ctrl, prev_on_ground):
                 and rt.engine.phase in ("FLARE_TOUCHDOWN", "FINAL", "ROLLOUT"):
             rt.scorer.on_landing(tel.as_dict(), geom_d)
         prev_on_ground = tel.on_ground
-        if rt.engine.phase == "DEBRIEF" and not rt.scored["done"]:
+        if lesson_over and not rt.scored["done"]:
             rt.scored["done"] = True
             if is_familiarization(rt.lesson) or rt.lesson.get("end_reposition"):
                 # practice over: freeze, score, then back to the runway
@@ -156,7 +169,9 @@ def publish_state(rt, tel, ctrl) -> None:
                and hasattr(rt.engine, "bands") else None),
         night=not (6.0 < tel.local_time_h < 18.5),
         transcript=rt.transcript[-60:], llm_ok=rt.coach.llm_ok,
-        fam_todo=rt.engine.todo() if rt.started.is_set() and hasattr(rt.engine, "todo") else None,
+        # (none in Free Flight either: that to-do list is the lesson's, not this flight's)
+        fam_todo=(rt.engine.todo() if rt.started.is_set() and not rt.session.get("free_flight")
+                  and hasattr(rt.engine, "todo") else None),
         geom={"along": rt.engine.geom.along, "cross": rt.engine.geom.cross}
              if rt.engine.geom else None)
 
