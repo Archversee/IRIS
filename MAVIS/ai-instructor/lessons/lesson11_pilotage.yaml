@@ -52,11 +52,11 @@ checkpoints:
     lon: 103.87417
     radius_nm: 0.4
     look: a big silver dome beside the Kallang Basin
-  - name: Changi Airport
-    lat: 1.35921            # Singapore AIP aerodrome reference point (control tower)
-    lon: 103.98932
-    radius_nm: 1.0
-    look: long parallel runways by the east coast
+  - name: Bedok Reservoir   # 3.8 nm on from the stadium (Changi was 7.7)
+    lat: 1.34222            # Wikipedia, 1 deg 20' 32" N 103 deg 55' 30" E
+    lon: 103.92500
+    radius_nm: 0.5
+    look: a big lake with a park around it, among the flats
 
 steps:
   - CHECKPOINT_1
@@ -74,7 +74,7 @@ finish:
   pointing_within_deg: 15
   pointing_hold_s: 5
   pointing_max_nm: 10
-  radius_nm: 2.0
+  radius_nm: 0.5           # overhead also counts (Bedok Reservoir is only 1.4 nm away)
 
 freeze_during_instructions: true
 demos: false                # the flying is the lesson: nothing to watch first
@@ -87,7 +87,7 @@ end_reposition:
 
 debrief_summary: >-
   map reading and pilotage (airborne start south of Marina Bay; flew landmark to
-  landmark -- Marina Bay Sands, the National Stadium, Changi Airport -- noting
+  landmark -- Marina Bay Sands, the National Stadium, Bedok Reservoir -- noting
   the time over each, then found Paya Lebar and pointed at it; no take-off or
   landing)
 
@@ -127,7 +127,7 @@ step_notes:
     pilot: >-
       Checkpoint two, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d}.
   CHECKPOINT_3:
-    title: Changi Airport
+    title: Bedok Reservoir
     todo:
       - "Fly to {tgt_name}"
       - "Look for {tgt_look}"
