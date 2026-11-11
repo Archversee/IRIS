@@ -15,8 +15,8 @@ from adapters.sim_base import Telemetry
 from coach import phrases
 from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
 from core.events import CoachEvent
-from core.familiarization import (STEP_TITLES, UPSET_HIGH, is_familiarization, runway_start,
-                                  start_position)
+from core.familiarization import (STEP_TITLES, UPSET_HIGH, UPSET_STEPS, is_familiarization,
+                                  runway_start, start_position)
 from core.reference_profiles import ReferenceRegistry
 from runtime.bootstrap import lesson_state, make_engine, make_scorer
 
@@ -255,11 +255,17 @@ def build_flight_flow(rt):
                         now.pitch, now.bank, att["pitch"], att["bank"])
         return False
 
+    def _title_lc(step: str, data: dict | None = None) -> str:
+        t = (data or {}).get("title") or (rt.engine.notes.get(step) or {}).get("title") or STEP_TITLES.get(step, step)
+        return t[:1].lower() + t[1:]
+
     async def _fam_upset(ev):
-        """Unusual-attitude step: frozen, explain it, "look down", teleport to
-        the start height and set the attitude, then unfreeze and hand over --
-        the step's clock (and the order of the controls) starts from there. If
-        the sim won't take the attitude, say so and move to the next one."""
+        """Unusual-attitude step, with every change of control said out loud:
+        frozen, say which one it is (the full explanation if the demo didn't
+        show it), "I have control, look down", set the attitude, "Look up. You
+        have control." -- and only then unfreeze: the step's clock (and the
+        order of the controls) starts there. Then what to do, said while they
+        recover. If the sim won't take the attitude, say so and move on."""
         gen, eng = rt.run_gen["n"], rt.engine
         phase = ev.data.get("phase")
         silent = (rt.session.get("policy") or {}).get("coaching") == "silent"
@@ -267,7 +273,9 @@ def build_flight_flow(rt):
         try:
             await _set_frozen(True)
             if not silent:
-                await rt.coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
+                line = (phrases.render("FAM_UPSET_NEXT", {"title_lc": _title_lc(phase, ev.data)})
+                        if phase in rt.demo_ctl["shown"] else phrases.render("LESSON_NOTE", ev.data))
+                await rt.coach.say(line, phase=phase)
             if gen != rt.run_gen["n"] or not rt.started.is_set():
                 return
             await rt.coach.say(phrases.render("FAM_UPSET_LOOK_DOWN", {}), phase=phase)
@@ -275,6 +283,9 @@ def build_flight_flow(rt):
             if not placed:
                 log.warning("unusual attitude: the sim didn't take %s -- skipping it", phase)
                 eng.skip_phase()                 # not the trainee's fault: no score either way
+            elif gen == rt.run_gen["n"]:
+                # still frozen: it only moves once they've been told it's theirs
+                await rt.coach.say(phrases.render("FAM_UPSET_HANDOVER", {}), phase=phase)
         finally:
             if gen == rt.run_gen["n"] and eng is rt.engine:
                 await _set_frozen(False)
@@ -286,6 +297,49 @@ def build_flight_flow(rt):
             code = (("FAM_UPSET_RECOVER_HIGH" if phase in UPSET_HIGH else "FAM_UPSET_RECOVER_LOW")
                     if placed else "FAM_UPSET_NOT_SET")
             await rt.coach.say(phrases.render(code, {}), phase=phase)
+
+    async def _ease_attitude(frm: tuple, to: tuple, secs: float = 2.5) -> None:
+        """Frozen: move the attitude from (pitch, bank) to (pitch, bank)
+        smoothly, so the trainee can see it happen."""
+        n = max(1, round(secs / 0.1))
+        for i in range(1, n + 1):
+            f = i / n
+            await rt.loop.run_in_executor(None, rt.sim.set_attitude, frm[0] + (to[0] - frm[0]) * f,
+                                          frm[1] + (to[1] - frm[1]) * f)
+            await asyncio.sleep(secs / n)
+
+    async def _demo_upset(step: str, gen: int) -> bool:
+        """Demonstrate one unusual attitude: frozen, put the aircraft in it,
+        then do each recovery action in order as it's said -- the throttle,
+        then the nose and the wings eased round on the attitude, slowly enough
+        to follow. (The autopilot can't fly an upset, so the attitude is moved
+        directly.) False if skipped, restarted, or the sim didn't take it."""
+        def stop() -> bool:
+            return rt.demo_ctl["skip"].is_set() or gen != rt.run_gen["n"]
+
+        await rt.coach.say(phrases.render("FAM_UPSET_DEMO_SET", {"title_lc": _title_lc(step)}), phase=step)
+        att = rt.engine.upset_attitude(step)
+        if stop() or not await _place_upset(att):
+            return False
+        cur = (att["pitch"], att["bank"])
+        moves = ([("FAM_UPSET_DEMO_POWER", 1.0, None), ("FAM_UPSET_DEMO_NOSE_DOWN", None, (0.0, cur[1])),
+                  ("FAM_UPSET_DEMO_WINGS", None, (0.0, 0.0)), ("FAM_UPSET_DEMO_DONE_HIGH", None, None)]
+                 if step in UPSET_HIGH else
+                 [("FAM_UPSET_DEMO_IDLE", 0.0, None), ("FAM_UPSET_DEMO_WINGS_FIRST", None, (cur[0], 0.0)),
+                  ("FAM_UPSET_DEMO_NOSE_UP", None, (0.0, 0.0)), ("FAM_UPSET_DEMO_DONE_LOW", None, None)])
+        can_move = rt.cfg["sim"]["adapter"] != "mock" and hasattr(rt.sim, "set_attitude")
+        for code, throttle, to in moves:
+            if stop():
+                return False
+            speak = asyncio.create_task(rt.coach.say(phrases.render(code, {}), phase=step))
+            if throttle is not None:
+                await rt.loop.run_in_executor(None, rt.sim.demo_control, {"throttle": throttle})
+            if to and can_move:
+                await _ease_attitude(cur, to)
+                cur = to
+            await speak
+            await asyncio.sleep(0.6)             # a beat between actions
+        return not stop()
 
     async def _lock_controls(on: bool) -> None:
         """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
@@ -366,6 +420,19 @@ def build_flight_flow(rt):
             rt.event_log.observe("DEMO", rt._sim_now(), kind="demo")
             rt._publish_events()
             for i, step in enumerate(steps):
+                if step in UPSET_STEPS:
+                    # shown for real: put in the attitude and recovered, frozen
+                    rt.state["demo"] = {"n": i + 1, "of": len(steps), "describe": False,
+                                        "title": (rt.engine.notes.get(step) or {}).get("title") or step}
+                    await _set_frozen(True)
+                    shown = await _demo_upset(step, gen)
+                    skipped = rt.demo_ctl["skip"].is_set() or gen != rt.run_gen["n"]
+                    if skipped:
+                        rt.stop_speech()
+                        break
+                    if shown:
+                        rt.demo_ctl["shown"].add(step)
+                    continue
                 tel = dict(rt.state.get("tel") or tel0)
                 data = rt.engine.preview(step, Telemetry(**tel), demo=True)
                 if data.get("demo_layman"):

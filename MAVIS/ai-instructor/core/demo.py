@@ -26,11 +26,11 @@ from .phase_detector import hdg_diff
 # Steps that aren't demonstrated: finding the field is the lesson's own test.
 NO_DEMO = {"FIND_AIRFIELD"}
 # Steps the autopilot can't fly -- it won't bank past about 25 degrees and
-# can't be made to stall or flown into an unusual attitude -- so the demo holds
-# the aircraft level while MAVIS explains them (the lesson's demo_layman /
-# demo_pilot lines, if it has them).
-DESCRIBE_ONLY = {"STALL", "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT",
-                 "UPSET_HIGH_LEFT", "UPSET_HIGH_RIGHT", "UPSET_LOW_LEFT", "UPSET_LOW_RIGHT"}
+# can't be made to stall -- so the demo holds the aircraft level while MAVIS
+# explains them (the lesson's demo_layman / demo_pilot lines, if it has them).
+# Unusual attitudes aren't flown by the autopilot either: the demo sets the
+# attitude and moves it directly (runtime/flight_flow.py _demo_upset).
+DESCRIBE_ONLY = {"STALL", "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
 # Steps that change height: they get a bigger share of the demo's minute.
 DEMO_LONG_STEPS = {"CLIMB", "DESCEND", "CLIMB_TO", "DESCEND_TO", "GLIDE",
                    "PITCH_UP", "PITCH_DOWN", "SLOW_FLIGHT", "MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT"}

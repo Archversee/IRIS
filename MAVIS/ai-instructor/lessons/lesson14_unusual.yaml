@@ -74,6 +74,15 @@ exercises:
 
 freeze_during_instructions: true
 
+# Who has control, said every time it changes
+say:
+  FAM_DEMO_START:
+    layman: "Watch me first. I have control, so keep your hands off."
+    pilot: "Demonstration. I have control."
+  FAM_DEMO_END:
+    layman: "That's how it's done. Your turn now. I'll set each one up, then tell you when you have control."
+    pilot: "Your turn. I'll set each one up and hand over."
+
 end_reposition:
   along_m: 60
 
@@ -88,17 +97,18 @@ debrief_summary: >-
 briefing:
   layman: >-
     Unusual attitudes. We're up at about {alt} feet, south of Paya Lebar. Each
-    time, I'll have you look down while I put the aircraft in an odd position,
-    then hand it to you to get it back to level flight. Nose high: power, nose
-    down, wings level. Nose low: power off, wings level, then ease the nose up.
+    time, I'll take control and have you look down while I put the aircraft in
+    an odd position. When I say you have control, look up and get it back to
+    level flight. Nose high: power, nose down, wings level. Nose low: power
+    off, wings level, then ease the nose up.
   pilot: >-
     Unusual attitude recovery, airborne at {alt} feet south of Paya Lebar. Nose
     high: power, pitch down, level the wings. Nose low: power off, level the
     wings, then pitch up.
 
-# See lesson00_familiarization.yaml for the step_notes format. demo_layman /
-# demo_pilot: what MAVIS says instead in the up-front demo, for a step the
-# autopilot can't fly (core/demo.py DESCRIBE_ONLY).
+# See lesson00_familiarization.yaml for the step_notes format. The up-front
+# demo sets each attitude up and recovers it itself (runtime/flight_flow.py
+# _demo_upset); demo: false steps are explained when the trainee gets there.
 step_notes:
   UPSET_HIGH_LEFT:
     title: Nose high, banked left
@@ -111,10 +121,6 @@ step_notes:
       Nose high: the speed's dropping. Full power, push the nose down to the horizon, then roll the wings level.
     pilot: >-
       Nose-high recovery: power, pitch down to the horizon, level the wings.
-    demo_layman: >-
-      I can't fly this one with the autopilot, so listen: nose high, speed dropping. Full power, nose down, wings level.
-    demo_pilot: >-
-      No autopilot demo. Nose high: power, pitch down, wings level.
   UPSET_LOW_RIGHT:
     title: Nose low, banked right
     todo:
@@ -126,11 +132,8 @@ step_notes:
       Nose low: the speed's building. Throttle back, roll the wings level first, then ease the nose up. Don't pull while you're banked.
     pilot: >-
       Nose-low recovery: power off, level the wings, then pitch up to the horizon. No back pressure until wings level.
-    demo_layman: >-
-      Nose low, speed building: throttle back, wings level first, then ease the nose up.
-    demo_pilot: >-
-      Nose low: power off, wings level, then pitch up.
   UPSET_HIGH_RIGHT:
+    demo: false               # the mirror image of one shown in the demo
     title: Nose high, banked right
     todo:
       - "Full power"
@@ -141,11 +144,8 @@ step_notes:
       Nose high again, the other way. Power, nose down, wings level.
     pilot: >-
       Nose high, right bank. Power, pitch down, wings level.
-    demo_layman: >-
-      Then the same, banked the other way.
-    demo_pilot: >-
-      Then nose high, right bank.
   UPSET_LOW_LEFT:
+    demo: false               # the mirror image of one shown in the demo
     title: Nose low, banked left
     todo:
       - "Throttle back"
@@ -156,7 +156,3 @@ step_notes:
       Last one, nose low. Throttle back, wings level, then ease the nose up.
     pilot: >-
       Nose low, left bank. Power off, wings level, pitch up.
-    demo_layman: >-
-      And nose low, banked left.
-    demo_pilot: >-
-      Then nose low, left bank.

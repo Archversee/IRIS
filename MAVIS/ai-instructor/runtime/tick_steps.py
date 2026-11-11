@@ -70,8 +70,8 @@ def dispatch_events(rt, pol, events, tel, force_redo) -> None:
         if ev.code == "LESSON_NOTE" and is_familiarization(rt.lesson):
             rt.state["look_at"] = {"items": ev.data.get("look") or [],
                                 "phase": ev.data.get("phase"), "seq": time.time()}
-            if ev.data.get("phase") in rt.demo_ctl["shown"]:
-                # watched in the demo: a short cue, no hold -- keep the momentum
+            if ev.data.get("phase") in rt.demo_ctl["shown"] and ev.data.get("phase") not in UPSET_STEPS:
+                # watched in the demo (an unusual attitude says its own: _fam_upset): a short cue, no hold -- keep the momentum
                 title = ev.data.get("title") or ev.data.get("phase")
                 action = (ev.data.get("todo") or [""])[0]
                 try:
