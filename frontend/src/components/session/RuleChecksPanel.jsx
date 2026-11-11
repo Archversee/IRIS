@@ -25,6 +25,7 @@ const GROUPS = [
   { key: "pass", title: "Met" },
   { key: "other", title: "Didn't apply / no data" },
 ];
+const SHOW_ALL_KEY = "sopShowAllRules";
 const groupOf = (v) => (v === "fail" || v === "pass" || v === "instructor" ? v : "other");
 
 export function RuleChecksChip({ evaluation, missing, onClick }) {
@@ -83,9 +84,30 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
   const grouped = useMemo(() => {
     const g = { fail: [], instructor: [], pass: [], other: [] };
     for (const r of results) g[groupOf(r.final_verdict)].push(r);
-    g.fail.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3));
+    // most serious first, then the rule broken most often
+    g.fail.sort((a, b) => ((SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3))
+      || ((b.violations || []).length - (a.violations || []).length));
     return g;
   }, [results]);
+  const timesBroken = grouped.fail.reduce((n, r) => n + (r.violations || []).length, 0);
+  // Only the broken rules by default; the rest behind a checkbox (remembered).
+  const [showAll, setShowAll] = useState(() => {
+    try { return localStorage.getItem(SHOW_ALL_KEY) === "1"; } catch { return false; }
+  });
+  const toggleShowAll = (on) => {
+    setShowAll(on);
+    try { localStorage.setItem(SHOW_ALL_KEY, on ? "1" : "0"); } catch { /* storage unavailable -- fine */ }
+  };
+  const nOthers = results.length - grouped.fail.length;
+  const ruleRow = (r) => (
+    <RuleRow key={r.id} r={r} isInstructor={isInstructor} toT={toT}
+      seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
+      onAnalyse={(index) => {          // the video jumps there too, a few seconds early
+        const v = r.violations?.[index];
+        if (v?.t0 != null) seekTo(Math.max(0, toT(v.t0) - 5));
+        setIncident({ resultId: r.id, index });
+      }} />
+  );
 
   return (
     <>
@@ -153,8 +175,52 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
         </div>
       )}
 
+      {err && <div className="rc-err">{err}</div>}
+
+      {evaluation && results.length > 0 && (
+        <>
+          <div className="rc-tally">
+            <div className={"rc-tally__item is-fail" + (grouped.fail.length ? "" : " is-zero")}>
+              <b>{grouped.fail.length}</b><span>broken</span>
+            </div>
+            <div className="rc-tally__item is-pass"><b>{grouped.pass.length}</b><span>met</span></div>
+            {grouped.instructor.length > 0 && (
+              <div className="rc-tally__item is-assess"><b>{grouped.instructor.length}</b><span>to assess</span></div>
+            )}
+            <div className="rc-tally__item"><b>{grouped.other.length}</b><span>didn't apply</span></div>
+          </div>
+
+          <section className="rc-group">
+            <h3>
+              Rules broken
+              {timesBroken > 0 && <span className="rc-muted"> · {timesBroken} time{timesBroken === 1 ? "" : "s"} in total</span>}
+            </h3>
+            {grouped.fail.length ? grouped.fail.map(ruleRow)
+              : <div className="rc-allmet">✓ No rules broken{grouped.pass.length ? `: all ${grouped.pass.length} measured rules were met` : ""}. Nice flying.</div>}
+          </section>
+
+          {nOthers > 0 && (
+            <label className="rc-showall">
+              <input type="checkbox" checked={showAll} onChange={(e) => toggleShowAll(e.target.checked)} />
+              Show the other {nOthers} rule{nOthers === 1 ? "" : "s"}
+              <span className="rc-muted">
+                {" "}({[grouped.pass.length && `${grouped.pass.length} met`,
+                  grouped.instructor.length && `${grouped.instructor.length} to assess`,
+                  grouped.other.length && `${grouped.other.length} didn't apply`].filter(Boolean).join(", ")})
+              </span>
+            </label>
+          )}
+          {showAll && GROUPS.filter((g) => g.key !== "fail").map((g) => grouped[g.key].length > 0 && (
+            <section key={g.key} className="rc-group">
+              <h3>{g.title} <span className="rc-muted">({grouped[g.key].length})</span></h3>
+              {grouped[g.key].map(ruleRow)}
+            </section>
+          ))}
+        </>
+      )}
+
       {isInstructor && (
-        <div className="rc-tools">
+        <div className="rc-tools rc-tools--recheck">
           <label>
             Strictness{" "}
             <select value={strictness} onChange={(e) => setStrictness(e.target.value)}>
@@ -182,37 +248,6 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
           )}
         </div>
       )}
-      {err && <div className="rc-err">{err}</div>}
-
-      {evaluation && !isInstructor && grouped.fail.length > 0 && (
-        <div className="rc-focus">
-          <h3>Work on these first</h3>
-          <ol>
-            {grouped.fail.slice(0, 3).map((r) => (
-              <li key={r.id}><b>{r.title}</b>: {r.summary}</li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {evaluation && !isInstructor && grouped.fail.length === 0 && results.length > 0 && (
-        <div className="rc-focus good">Every checked rule was met. Nice flying.</div>
-      )}
-
-      {evaluation && GROUPS.map((g) => grouped[g.key].length > 0 && (
-        <section key={g.key} className="rc-group">
-          <h3>{g.title} <span className="rc-muted">({grouped[g.key].length})</span></h3>
-          {grouped[g.key].map((r) => (
-            <RuleRow key={r.id} r={r} isInstructor={isInstructor}
-              seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
-              onAnalyse={(index) => {          // the video jumps there too, a few seconds early
-                const v = r.violations?.[index];
-                if (v?.t0 != null) seekTo(Math.max(0, toT(v.t0) - 5));
-                setIncident({ resultId: r.id, index });
-              }} />
-          ))}
-        </section>
-      ))}
-
       {evaluation && isInstructor && (
         <div className="rc-signoff">
           <h3>Sign off</h3>
@@ -244,15 +279,110 @@ function fmtPreset(k, v) {
   return `${v} s`;
 }
 
-function RuleRow({ r, isInstructor, seek, onSaved, onAnalyse }) {
+function mmss(s) {
+  if (s == null || !isFinite(s)) return "–";
+  const t = Math.max(0, Math.round(s));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}
+const MAX_SHOWN = 12;
+
+function RuleRow({ r, isInstructor, toT, seek, onSaved, onAnalyse }) {
   const [open, setOpen] = useState(false);
+  const [showEvery, setShowEvery] = useState(false);
+  const v = VERDICT[r.final_verdict] || VERDICT.not_evaluated;
+  const viol = r.violations || [];
+
+  const detail = open && (
+    <div className="rc-detail">
+      {r.source_quote && (
+        <blockquote>“{r.source_quote}”{r.source_page ? <span className="rc-muted"> p. {r.source_page}</span> : null}</blockquote>
+      )}
+      {r.layer && <div className="rc-muted">{r.layer === "general" ? "Training handbook rule" : "Aircraft SOP rule"}</div>}
+    </div>
+  );
+  const note = r.instructor_note && !isInstructor && <div className="rc-note">Instructor: {r.instructor_note}</div>;
+  const judge = isInstructor && <Judge r={r} onSaved={onSaved} />;
+
+  if (r.final_verdict !== "fail") {
+    return (
+      <div className={"rc-rule sev-" + (r.severity || "caution")}>
+        <div className="rc-rule-head" onClick={() => setOpen((o) => !o)}>
+          <span className={"rc-pill " + v.cls}>{v.label}</span>
+          <span className="rc-title">{r.title}</span>
+          {r.severity && <span className={"rc-sev " + r.severity}>{r.severity}</span>}
+          {r.instructor_verdict && <span className="rc-overruled" title={`Computed: ${VERDICT[r.verdict]?.label}`}>instructor</span>}
+        </div>
+        <div className="rc-sum">
+          {r.requirement && <span className="rc-req">{r.requirement}</span>} {r.summary}
+        </div>
+        {note}{detail}{judge}
+      </div>
+    );
+  }
+
+  // Broken: the count up front, then each time it happened.
+  const outFor = viol.reduce((t, x) => t + (x.dur_s || 0), 0);
+  const shown = showEvery ? viol : viol.slice(0, MAX_SHOWN);
+  return (
+    <div className={"rc-brk sev-" + (r.severity || "caution")}>
+      <div className="rc-brk__top" onClick={() => setOpen((o) => !o)} title="Show where this rule comes from">
+        <div className="rc-brk__count">
+          {viol.length ? <><b>{viol.length}×</b><span>{viol.length === 1 ? "once" : "times"}</span></>
+            : <><b>✗</b><span>judged</span></>}
+        </div>
+        <div className="rc-brk__what">
+          <div className="rc-brk__title">
+            <span className="rc-title">{r.title}</span>
+            {r.severity && <span className={"rc-sev " + r.severity}>{r.severity}</span>}
+          </div>
+          {r.requirement && <div className="rc-brk__req">Limit: <b>{r.requirement}</b></div>}
+          <div className="rc-brk__sum">
+            {r.summary}
+            {outFor > 0 && <span className="rc-muted"> · outside the limit for {outFor.toFixed(0)} s in total</span>}
+          </div>
+          {r.instructor_verdict && (
+            <div className="rc-muted rc-brk__by">Marked not met by the instructor{r.verdict !== "fail" ? ` (computed: ${VERDICT[r.verdict]?.label})` : ""}</div>
+          )}
+        </div>
+      </div>
+      {viol.length > 0 && (
+        <ol className="rc-times">
+          {shown.map((x, i) => (
+            <li key={i} className="rc-time">
+              <span className="rc-time__n">{i + 1}</span>
+              <span className="rc-time__at" title="Time into the flight">{x.t0 != null ? mmss(toT(x.t0)) : "–"}</span>
+              <span className="rc-time__what">
+                {x.phase && <span className="rc-time__phase">{x.phase.toLowerCase().replace(/_/g, " ")}</span>}
+                <b>{x.peak_text}</b>
+                {x.dur_s != null && <span className="rc-muted"> · {x.dur_s.toFixed(0)} s</span>}
+              </span>
+              <button className="rc-vbtn" onClick={() => seek(x.t0)} title="Jump the video and timeline to this moment">▶ Watch</button>
+              <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
+                title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+            </li>
+          ))}
+          {viol.length > MAX_SHOWN && (
+            <li className="rc-time rc-time--more">
+              <button className="rc-linkbtn" onClick={() => setShowEvery((x) => !x)}>
+                {showEvery ? "Show fewer" : `Show all ${viol.length}`}
+              </button>
+            </li>
+          )}
+        </ol>
+      )}
+      {note}{detail}{judge}
+    </div>
+  );
+}
+
+// Instructor: agree with the computed verdict or overrule it, with a note.
+function Judge({ r, onSaved }) {
   const [verdict, setVerdict] = useState(r.instructor_verdict || "");
   const [note, setNote] = useState(r.instructor_note || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { setVerdict(r.instructor_verdict || ""); setNote(r.instructor_note || ""); },
     [r.id, r.instructor_verdict, r.instructor_note]);
-  const v = VERDICT[r.final_verdict] || VERDICT.not_evaluated;
   const dirty = verdict !== (r.instructor_verdict || "") || note !== (r.instructor_note || "");
 
   const save = async () => {
@@ -265,54 +395,17 @@ function RuleRow({ r, isInstructor, seek, onSaved, onAnalyse }) {
   };
 
   return (
-    <div className={"rc-rule sev-" + (r.severity || "caution")}>
-      <div className="rc-rule-head" onClick={() => setOpen((o) => !o)}>
-        <span className={"rc-pill " + v.cls}>{v.label}</span>
-        <span className="rc-title">{r.title}</span>
-        {r.severity && <span className={"rc-sev " + r.severity}>{r.severity}</span>}
-        {r.instructor_verdict && <span className="rc-overruled" title={`Computed: ${VERDICT[r.verdict]?.label}`}>instructor</span>}
-      </div>
-      <div className="rc-sum">
-        {r.requirement && <span className="rc-req">{r.requirement}</span>} {r.summary}
-      </div>
-      {r.instructor_note && !isInstructor && <div className="rc-note">Instructor: {r.instructor_note}</div>}
-      {(r.violations || []).length > 0 && (
-        <div className="rc-viol">
-          {r.violations.slice(0, 12).map((x, i) => (
-            <span key={i} className="rc-vgroup">
-              <button className="rc-vbtn" onClick={() => seek(x.t0)}
-                title={`${x.phase || ""} · jump to this moment`}>
-                ▶ {x.phase ? `${x.phase.toLowerCase().replace(/_/g, " ")} · ` : ""}{x.dur_s.toFixed(0)} s · {x.peak_text}
-              </button>
-              <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
-                title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
-            </span>
-          ))}
-          {r.violations.length > 12 && <span className="rc-muted">+{r.violations.length - 12} more</span>}
-        </div>
-      )}
-      {open && (
-        <div className="rc-detail">
-          {r.source_quote && (
-            <blockquote>“{r.source_quote}”{r.source_page ? <span className="rc-muted"> p. {r.source_page}</span> : null}</blockquote>
-          )}
-          {r.layer && <div className="rc-muted">{r.layer === "general" ? "Training handbook rule" : "Aircraft SOP rule"}</div>}
-        </div>
-      )}
-      {isInstructor && (
-        <div className="rc-judge">
-          <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
-            <option value="">{r.verdict === "instructor" ? "Not assessed" : `Agree (${VERDICT[r.verdict]?.label})`}</option>
-            <option value="pass">Met</option>
-            <option value="fail">Not met</option>
-            <option value="not_applicable">Didn't apply</option>
-          </select>
-          <input placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
-          <button className="rc-btn" disabled={!dirty || saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
-          {r.reviewed_by && <span className="rc-muted">by {r.reviewed_by}</span>}
-          {err && <span className="rc-err">{err}</span>}
-        </div>
-      )}
+    <div className="rc-judge">
+      <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+        <option value="">{r.verdict === "instructor" ? "Not assessed" : `Agree (${VERDICT[r.verdict]?.label})`}</option>
+        <option value="pass">Met</option>
+        <option value="fail">Not met</option>
+        <option value="not_applicable">Didn't apply</option>
+      </select>
+      <input placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <button className="rc-btn" disabled={!dirty || saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+      {r.reviewed_by && <span className="rc-muted">by {r.reviewed_by}</span>}
+      {err && <span className="rc-err">{err}</span>}
     </div>
   );
 }

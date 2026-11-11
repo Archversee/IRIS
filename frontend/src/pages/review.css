@@ -892,6 +892,86 @@
 .rc-signoff textarea { width: 100%; resize: vertical; }
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
 
+/* ---- SOP rule checks: counts strip, broken-rule cards, show-all toggle ---- */
+.rc-tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; margin-bottom: 4px; }
+.rc-tally__item {
+  display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: 8px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); color: var(--rev-muted);
+}
+.rc-tally__item b { font-size: 20px; line-height: 1.1; color: var(--rev-text); font-variant-numeric: tabular-nums; }
+.rc-tally__item span { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.rc-tally__item.is-fail { border-color: rgba(255, 92, 92, .55); background: rgba(255, 92, 92, .08); }
+.rc-tally__item.is-fail b { color: #ff6b6b; }
+.rc-tally__item.is-fail.is-zero { border-color: var(--rev-line); background: var(--rev-panel-2); }
+.rc-tally__item.is-fail.is-zero b { color: var(--rev-green); }
+.rc-tally__item.is-pass b { color: var(--rev-green); }
+.rc-tally__item.is-assess b { color: var(--rev-violet); }
+
+.rc-allmet {
+  padding: 10px 12px; border-radius: 8px; color: var(--rev-green);
+  background: rgba(74, 222, 128, .08); border: 1px solid rgba(74, 222, 128, .4);
+}
+.rc-showall {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; padding: 8px 10px;
+  border: 1px dashed var(--rev-line); border-radius: 8px; cursor: pointer; user-select: none;
+}
+.rc-showall:hover { border-color: var(--border-strong, var(--rev-line)); }
+.rc-showall input { margin: 0; width: auto; flex: none; }
+/* instructor's verdict + note on one line under each rule */
+.rc-judge select { width: auto; flex: 0 1 170px; min-width: 0; }
+.rc-judge input { width: auto; }
+.rc-tools--recheck { margin-top: 14px; }
+
+/* a broken rule: big "N×" on the left (coloured by severity), what the rule
+   asks and what happened on the right, then each time it was broken */
+.rc-brk {
+  --sev: var(--rev-amber);
+  border: 1px solid var(--rev-line); border-left: 4px solid var(--sev); border-radius: 10px;
+  background: var(--rev-panel-2); margin-bottom: 10px; overflow: hidden;
+}
+.rc-brk.sev-warning { --sev: #ff5c5c; }
+.rc-brk.sev-caution { --sev: var(--rev-amber); }
+.rc-brk.sev-advisory { --sev: var(--rev-cyan); }
+.rc-brk__top { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; cursor: pointer; }
+.rc-brk__count {
+  flex: none; width: 58px; padding: 6px 0 5px; border-radius: 8px; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  color: var(--sev); background: color-mix(in srgb, var(--sev) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sev) 45%, transparent);
+}
+.rc-brk__count b { font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; }
+.rc-brk__count span { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-top: 3px; opacity: .85; }
+.rc-brk__what { flex: 1; min-width: 0; }
+.rc-brk__title { display: flex; gap: 8px; align-items: baseline; }
+.rc-brk__title .rc-title { font-size: 15px; }
+.rc-brk__req { margin-top: 3px; font-size: 12px; color: var(--rev-muted); }
+.rc-brk__req b { color: var(--rev-text); font-variant-numeric: tabular-nums; }
+.rc-brk__sum { margin-top: 3px; }
+.rc-brk__by { margin-top: 3px; font-size: 12px; color: var(--rev-violet); }
+.rc-brk > .rc-note, .rc-brk > .rc-detail, .rc-brk > .rc-judge { margin: 0 12px 10px; }
+
+/* each time it was broken: number, time into the flight, what, buttons */
+.rc-times { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rev-line); }
+.rc-time {
+  display: grid; grid-template-columns: 22px 40px minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
+  padding: 6px 12px; font-size: 13px;
+}
+.rc-time + .rc-time { border-top: 1px solid color-mix(in srgb, var(--rev-line) 60%, transparent); }
+.rc-time:hover { background: var(--rev-panel); }
+.rc-time__n {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: var(--sev); border: 1px solid var(--sev);
+}
+.rc-time__at { font-variant-numeric: tabular-nums; color: var(--rev-muted); }
+.rc-time__what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-time__phase {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px;
+  text-transform: capitalize; color: var(--rev-muted); background: var(--rev-panel); border: 1px solid var(--rev-line);
+}
+.rc-time--more { display: block; text-align: center; }
+.rc-linkbtn { font: inherit; font-size: 12px; background: none; border: 0; color: var(--rev-cyan); cursor: pointer; padding: 2px 6px; }
+.rc-time .rc-vbtn { white-space: nowrap; }
+
 /* ---- incident view: 30 s before / after a broken rule (IncidentView.jsx) ---- */
 .rc-vgroup { display: inline-flex; gap: 2px; }
 .rc-vbtn--why { border-color: var(--rev-cyan); color: var(--rev-cyan); }
