@@ -81,7 +81,8 @@ debrief_summary: >-
 briefing:
   layman: >-
     Partial panel. We're at about {alt} feet, south of Paya Lebar. You'll fly
-    without your two main gauges, on the turn coordinator, altimeter and compass.
+    without your two main gauges, on the turn coordinator, altimeter and the
+    magnetic compass at the top of the windscreen.
   pilot: >-
     Partial panel, airborne at {alt} feet south of Paya Lebar. Turn coordinator,
     altimeter, VSI and magnetic compass only.
@@ -108,7 +109,7 @@ step_notes:
       - "Hold {hold_alt:,} ft"
     look: [altitude]
     layman: >-
-      With no heading gauge, you turn by the clock. Put the left wing of the little aircraft on the L mark and you turn 3 degrees a second, so {timed_deg} degrees takes {timed_s} seconds. The clock starts when you bank. I'll call the time.
+      With no heading gauge, you do a timed turn. Put the left wing of the little aircraft on the turn coordinator's L mark. That's a standard-rate turn, 3 degrees a second, so {timed_deg} degrees takes {timed_s} seconds. Pilots time it on the panel clock, but I'll call the time for you. It starts when you bank.
     pilot: >-
       Standard-rate turn left on the turn coordinator, {timed_deg} degrees in {timed_s} seconds. Time starts on roll-in, I'll call it.
   TIMED_TURN_RIGHT:
@@ -124,16 +125,17 @@ step_notes:
     pilot: >-
       Standard-rate turn right, {timed_s} seconds, I'll call it.
   COMPASS_TURN:
-    title: Turn by the compass
+    title: Turn by the magnetic compass
     freeze: false
     todo:
-      - "Turn {compass_dir} to {compass_hdg:03d} on the compass"
+      - "Turn {compass_dir} to {compass_hdg:03d} on the magnetic compass"
+      - "It's at the top of the windscreen"
       - "Hold {hold_alt:,} ft"
     look: [altitude]
     layman: >-
-      Now use the magnetic compass. Turn {compass_dir} to {compass_hdg:03d}, wing on the mark. This close to the equator it barely swings in a turn, so roll out on the number.
+      Now the magnetic compass, the small one at the top of the windscreen, not the heading gauge you covered. It still works without the vacuum pump. Turn {compass_dir} to {compass_hdg:03d}, wing on the mark. This close to the equator it barely swings in a turn, so roll out on the number.
     pilot: >-
-      Compass turn {compass_dir} to {compass_hdg:03d}, standard rate. Turning error is negligible at this latitude.
+      Magnetic compass turn {compass_dir} to {compass_hdg:03d}, standard rate. Turning error is negligible at this latitude.
   DESCEND_TO:
     title: Descend and level off
     freeze: false

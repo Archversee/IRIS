@@ -204,7 +204,7 @@ TEMPLATES = {
     "FAM_TIMED_MORE": ["You turned {turned} degrees, too far. Use a little less bank."],
     "FAM_TIMED_LESS": ["You turned {turned} degrees, not quite {timed_deg}. Use a little more bank."],
     "FAM_COMPASS_GOOD": ["Nicely done, {off} degrees off {compass_hdg:03d}."],
-    "FAM_COMPASS_FIX": ["You're {off} degrees off. Turn {dir} a little, to {compass_hdg:03d} on the compass."],
+    "FAM_COMPASS_FIX": ["You're {off} degrees off. Turn {dir} a little, to {compass_hdg:03d} on the magnetic compass."],
 }
 
 # Overrides for aircraft/hardware where flaps are a single up/down switch,
