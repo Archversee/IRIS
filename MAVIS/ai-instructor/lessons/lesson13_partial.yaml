@@ -81,7 +81,7 @@ debrief_summary: >-
 briefing:
   layman: >-
     Partial panel. We're at about {alt} feet, south of Paya Lebar. You'll fly
-    without your two main gauges, on the turn coordinator, altimeter and the
+    without the two middle gauges, on the turn coordinator, altimeter and the
     magnetic compass at the top of the windscreen.
   pilot: >-
     Partial panel, airborne at {alt} feet south of Paya Lebar. Turn coordinator,
@@ -93,12 +93,12 @@ step_notes:
     title: Wings level on the turn coordinator
     done: { layman: "Good, wings level.", pilot: "Good." }
     todo:
-      - "Cover the attitude and heading gauges"
+      - "Cover the two middle gauges: attitude and heading"
       - "Keep the turn coordinator's wings level for {hold_s} seconds"
       - "Hold {hold_alt:,} ft"
     look: [altitude, vsi]
     layman: >-
-      The vacuum pump has failed, so cover the attitude and heading gauges with some paper. Then keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {hold_alt:,} feet on the altimeter.
+      The vacuum pump has failed, so the two middle gauges have stopped working: the attitude gauge with the horizon, and the heading gauge below it. Cover them with some paper. Then keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {hold_alt:,} feet on the altimeter.
     pilot: >-
       Vacuum failure: cover the attitude and heading indicators. Wings level on the turn coordinator for {hold_s} seconds, {hold_alt:,} feet.
   TIMED_TURN_LEFT:
