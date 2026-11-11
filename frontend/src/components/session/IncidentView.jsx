@@ -6,9 +6,10 @@ import { api } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 
 // The 30 s before and after one broken rule (backend app/incidents.py):
-// the value against its limits, where the pilot was looking, what they did
-// with the controls, and what it adds up to. t = 0 is the moment the limit
-// was crossed. Opened from a broken-rule moment in Review's SOP drawer.
+// the value against its limits, and what it adds up to. t = 0 is the moment
+// the limit was crossed. Opened from a broken-rule moment in Review's SOP
+// panel. One chart: hovering it shows, for that moment, where the pilot was
+// looking (a pie of the last few seconds) and what the controls were doing.
 
 const ROLE_COLOR = {
   outside: "#14b8a6", instruments: "#38bdf8", airspeed: "#4ade80", altimeter: "#f5a623",
@@ -26,6 +27,7 @@ const CONTROLS = [
   { key: "aileron", label: "Stick left/right", color: "#a78bfa", scale: 1 },
   { key: "rudder", label: "Rudder", color: "#fb7185", scale: 1 },
 ];
+const GAZE_LOOKBACK_S = 5;    // the hover pie: where the eyes went in the seconds up to that moment
 const s1 = (v) => (v == null ? "–" : `${v > 0 ? "+" : ""}${v.toFixed(1)} s`);
 // relative to the moment the limit was crossed, in words
 const rel = (v) => (v == null ? "–" : Math.abs(v) < 0.05 ? "as the limit was crossed"
@@ -121,14 +123,19 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
             </section>
 
             <section className="inc-chart">
-              <h3>{a.rule.metric ? labelOf(a.rule.metric) : "Value"} <span className="rc-muted">· allowed range shaded</span></h3>
-              <ResponsiveContainer width="100%" height={190}>
+              <h3>
+                {a.rule.metric ? labelOf(a.rule.metric) : "Value"} <span className="rc-muted">· allowed range shaded</span>
+                <span className="inc-hint">Hover the graph: where they were looking and the controls at that moment</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={series} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--rev-line)" strokeDasharray="3 3" />
                   <XAxis dataKey="t" type="number" domain={[a.window.from_s, a.window.to_s]} unit="s"
                     stroke="var(--rev-muted)" tick={{ fontSize: 11 }} />
                   <YAxis stroke="var(--rev-muted)" tick={{ fontSize: 11 }} width={44} domain={["auto", "auto"]} />
-                  <Tooltip content={<ValueTip unit={a.bounds.unit} />} />
+                  <Tooltip content={<MomentTip a={a} colorOf={colorOf} />} isAnimationActive={false}
+                    cursor={{ stroke: "var(--rev-cyan)", strokeWidth: 1 }} wrapperStyle={{ zIndex: 5, pointerEvents: "none" }}
+                    allowEscapeViewBox={{ x: false, y: true }} />
                   {(a.bounds.lo != null || a.bounds.hi != null) && (
                     <ReferenceArea y1={a.bounds.lo ?? undefined} y2={a.bounds.hi ?? undefined} ifOverflow="extendDomain"
                       fill="#4ade80" fillOpacity={0.08} stroke="#4ade80" strokeOpacity={0.35} strokeDasharray="4 3" />
@@ -141,7 +148,8 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
                   {a.context.callouts.filter((c) => c.who !== "trainee").map((c, i) => (
                     <ReferenceLine key={i} x={c.t} stroke="#a78bfa" strokeDasharray="2 3" />
                   ))}
-                  <Line dataKey="v" stroke="#e8eef8" dot={false} strokeWidth={1.8} isAnimationActive={false} connectNulls />
+                  <Line dataKey="v" stroke="#e8eef8" dot={false} strokeWidth={1.8} isAnimationActive={false} connectNulls
+                    activeDot={{ r: 4, fill: "var(--rev-cyan)", stroke: "#fff", strokeWidth: 1 }} />
                 </ComposedChart>
               </ResponsiveContainer>
               {/* line key under the chart: labels on the chart collide when moments are close */}
@@ -151,31 +159,6 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
                 {a.response.first_input && <span><i style={{ background: "#facc15" }} />first input ({s1(a.response.first_input.t)})</span>}
                 <span><i className="dash" style={{ borderColor: "#4ade80" }} />back within limits ({s1(a.breach.dur_s)})</span>
                 {a.context.callouts.some((c) => c.who !== "trainee") && <span><i className="dash" style={{ borderColor: "#a78bfa" }} />MAVIS callout</span>}
-              </div>
-            </section>
-
-            <section className="inc-chart">
-              <h3>Where they were looking</h3>
-              <GazeStrip a={a} colorOf={colorOf} />
-            </section>
-
-            <section className="inc-chart">
-              <h3>Controls <span className="rc-muted">· throttle 0–100 %, stick and rudder −1 … +1</span></h3>
-              <ResponsiveContainer width="100%" height={110}>
-                <ComposedChart data={series} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="var(--rev-line)" strokeDasharray="3 3" />
-                  <XAxis dataKey="t" type="number" domain={[a.window.from_s, a.window.to_s]} unit="s"
-                    stroke="var(--rev-muted)" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="var(--rev-muted)" tick={{ fontSize: 11 }} width={44} domain={[-1, 1]} />
-                  <ReferenceLine x={0} stroke="#ff5c5c" />
-                  {CONTROLS.map((c) => (
-                    <Line key={c.key} dataKey={c.key} name={c.label} stroke={c.color} dot={false} strokeWidth={1.4}
-                      isAnimationActive={false} connectNulls />
-                  ))}
-                </ComposedChart>
-              </ResponsiveContainer>
-              <div className="inc-legend">
-                {CONTROLS.map((c) => <span key={c.key}><i style={{ background: c.color }} />{c.label}</span>)}
               </div>
             </section>
 
@@ -303,42 +286,120 @@ function labelOf(metric) {
     pitch: "Pitch", hdg: "Heading", flaps_deg: "Flaps", rpm: "Engine RPM", throttle: "Throttle" }[metric] || metric;
 }
 
-function ValueTip({ active, payload, unit }) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div className="inc-tip">
-      <div>{s1(d.t)}</div>
-      <b>{d.v == null ? "–" : `${d.v.toFixed(1)} ${unit}`}</b>
-    </div>
-  );
-}
-
 function Num({ label, value }) {
   return <div className="inc-num"><span>{label}</span><b>{value}</b></div>;
 }
 
-// One bar per look, coloured by instrument; red line at the breach.
-function GazeStrip({ a, colorOf }) {
-  const from = a.window.from_s, to = a.window.to_s, span = to - from || 1;
-  const segs = a.gaze_segments.filter((s) => s.t1 >= from && s.t0 <= to);
-  const names = [...new Map(segs.map((s) => [s.name, s])).values()];
-  if (!segs.length) return <div className="rc-muted">No eye data in this window.</div>;
+// Hovering the chart: the value at that moment, where the pilot was looking
+// (now, and a pie of the last GAZE_LOOKBACK_S seconds), and the controls.
+function MomentTip({ active, payload, a, colorOf }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const unit = a.bounds.unit || "";
+  const out = d.v != null && ((a.bounds.lo != null && d.v < a.bounds.lo) || (a.bounds.hi != null && d.v > a.bounds.hi));
   return (
-    <>
-      <div className="inc-strip">
-        {segs.map((s, i) => (
-          <span key={i} title={`${s.name} · ${s1(s.t0)} → ${s1(s.t1)}`}
-            style={{ left: `${((Math.max(s.t0, from) - from) / span) * 100}%`,
-              width: `${Math.max(0.3, ((Math.min(s.t1, to) - Math.max(s.t0, from)) / span) * 100)}%`,
-              background: colorOf(s) }} />
-        ))}
-        <i className="inc-strip__breach" style={{ left: `${((0 - from) / span) * 100}%` }} />
-        <i className="inc-strip__onset" style={{ left: `${((a.onset.t - from) / span) * 100}%` }} />
+    <div className="inc-moment">
+      <div className="inc-moment__head">
+        <span className="rc-muted">{rel(d.t)}</span>
+        <b className={out ? "is-out" : "is-in"}>{d.v == null ? "–" : `${d.v.toFixed(1)} ${unit}`}</b>
+        <span className={"inc-moment__flag " + (out ? "is-out" : "is-in")}>{out ? "outside the limit" : "within limits"}</span>
       </div>
-      <div className="inc-legend">
-        {names.map((s) => <span key={s.name}><i style={{ background: colorOf(s) }} />{s.name}</span>)}
+      <div className="inc-moment__body">
+        <GazePie a={a} t={d.t} colorOf={colorOf} />
+        <Controls d={d} />
       </div>
-    </>
+    </div>
   );
 }
+
+function GazePie({ a, t, colorOf }) {
+  const from = t - GAZE_LOOKBACK_S;
+  const segs = (a.gaze_segments || []).filter((s) => s.t1 > from && s.t0 <= t);
+  const share = new Map();
+  for (const s of segs) {
+    const dur = Math.min(s.t1, t) - Math.max(s.t0, from);
+    if (dur <= 0) continue;
+    const cur = share.get(s.name) || { seg: s, dur: 0 };
+    cur.dur += dur;
+    share.set(s.name, cur);
+  }
+  const parts = [...share.values()].sort((x, y) => y.dur - x.dur);
+  const total = parts.reduce((n, p) => n + p.dur, 0);
+  const now = (a.gaze_segments || []).find((s) => s.t0 <= t && s.t1 >= t);
+  return (
+    <div className="inc-moment__gaze">
+      <h4>Looking at</h4>
+      <div className="inc-moment__now">
+        {now ? <><i style={{ background: colorOf(now) }} />{now.name}</> : <span className="rc-muted">no eye data</span>}
+      </div>
+      {total > 0 ? (
+        <div className="inc-pie">
+          <Pie parts={parts.map((p) => ({ value: p.dur, color: colorOf(p.seg) }))} />
+          <ul>
+            {parts.slice(0, 5).map((p) => (
+              <li key={p.seg.name}><i style={{ background: colorOf(p.seg) }} />{p.seg.name}<b>{Math.round((p.dur / total) * 100)}%</b></li>
+            ))}
+          </ul>
+        </div>
+      ) : <div className="rc-muted inc-pie__none">No eye data in the last {GAZE_LOOKBACK_S} s.</div>}
+      {total > 0 && <div className="rc-muted inc-pie__cap">last {GAZE_LOOKBACK_S} s</div>}
+    </div>
+  );
+}
+
+// A small donut from {value, color} parts.
+function Pie({ parts }) {
+  const total = parts.reduce((n, p) => n + p.value, 0);
+  const R = 30, r = 17;
+  if (parts.length === 1) {
+    return (
+      <svg viewBox="-32 -32 64 64" className="inc-pie__svg">
+        <circle r={(R + r) / 2} fill="none" stroke={parts[0].color} strokeWidth={R - r} />
+      </svg>
+    );
+  }
+  let ang = -Math.PI / 2;
+  const pt = (rad, a) => `${(rad * Math.cos(a)).toFixed(2)} ${(rad * Math.sin(a)).toFixed(2)}`;
+  return (
+    <svg viewBox="-32 -32 64 64" className="inc-pie__svg">
+      {parts.map((p, i) => {
+        const a0 = ang, a1 = ang + (p.value / total) * Math.PI * 2;
+        ang = a1;
+        const big = a1 - a0 > Math.PI ? 1 : 0;
+        return <path key={i} fill={p.color} stroke="var(--rev-panel)" strokeWidth="0.8"
+          d={`M ${pt(R, a0)} A ${R} ${R} 0 ${big} 1 ${pt(R, a1)} L ${pt(r, a1)} A ${r} ${r} 0 ${big} 0 ${pt(r, a0)} Z`} />;
+      })}
+    </svg>
+  );
+}
+
+// The controls at that moment: throttle fills from the left (0-100 %), the
+// stick and rudder from the middle (-1 ... +1), each with it in words.
+function Controls({ d }) {
+  const words = {
+    elevator: (x) => (Math.abs(x) < 0.05 ? "centred" : x > 0 ? `back ${pct(x)}` : `forward ${pct(x)}`),
+    aileron: (x) => (Math.abs(x) < 0.05 ? "centred" : x < 0 ? `left ${pct(x)}` : `right ${pct(x)}`),
+    rudder: (x) => (Math.abs(x) < 0.05 ? "centred" : x < 0 ? `left ${pct(x)}` : `right ${pct(x)}`),
+  };
+  return (
+    <div className="inc-moment__ctl">
+      <h4>Controls</h4>
+      {CONTROLS.map((c) => {
+        const x = d[c.key];
+        const isThr = c.key === "throttle";
+        return (
+          <div key={c.key} className="inc-ctl">
+            <span className="inc-ctl__label">{c.label}</span>
+            <span className={"inc-ctl__bar" + (isThr ? "" : " is-centred")}>
+              {x != null && (isThr
+                ? <i style={{ left: 0, width: `${Math.max(0, Math.min(1, x)) * 100}%`, background: c.color }} />
+                : <i style={{ left: `${50 + Math.min(0, Math.max(-1, x)) * 50}%`, width: `${Math.abs(Math.max(-1, Math.min(1, x))) * 50}%`, background: c.color }} />)}
+            </span>
+            <span className="inc-ctl__val">{x == null ? "–" : isThr ? `${Math.round(x * 100)}%` : words[c.key](x)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+const pct = (x) => `${Math.round(Math.abs(x) * 100)}%`;
