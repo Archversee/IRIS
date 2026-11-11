@@ -137,11 +137,12 @@ step_notes:
   DESCEND_TO:
     title: Descend and level off
     freeze: false
+    done: { layman: "Good, you're level. Take the paper off, I'm giving you your gauges back.", pilot: "Level. Remove the covers." }
     todo:
       - "Descend to {tgt_alt:,} ft"
       - "Level off and hold it"
     look: [altitude, vsi]
     layman: >-
-      Last one. Ease the power back and descend to {tgt_alt:,} feet on the altimeter, then level off and hold it. After that you can take the paper off, your gauges are back.
+      Last one. Ease the power back and descend to {tgt_alt:,} feet on the altimeter, then level off and hold it.
     pilot: >-
-      Descend to {tgt_alt:,} feet and level off. Vacuum restored after that, remove the covers.
+      Descend to {tgt_alt:,} feet and level off.

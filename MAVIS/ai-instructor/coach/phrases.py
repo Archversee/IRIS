@@ -185,7 +185,7 @@ TEMPLATES = {
     "FAM_UPSET_FAST": ["The speed went past the red line. Throttle back sooner."],
     "FAM_UPSET_NOT_SET": ["That one didn't set up properly, so we'll skip it."],
     "FAM_TARGET_HINT": ["{tgt_name} is at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Turn {tgt_dir} onto {tgt_hdg:03d}."],
-    "FAM_CP_REACHED": ["That's {tgt_name}. The time's {time_now}. Write it down, so you can see how long each leg takes."],
+    "FAM_CP_REACHED": ["That's {tgt_name}. The time's {time_now}.{why}"],
     "FAM_DIVERT_DONE": ["There's {tgt_name}, and that took about {mins} minutes. Nicely done, you turned quickly and held your heading."],
     "FAM_DIVERT_WIDE": ["There's {tgt_name}, about {mins} minutes. Next time turn straight away, and stay closer to the heading."],
     "FAM_TIMED_ROLL_OUT": ["That's {timed_s} seconds. Roll the wings level now."],
