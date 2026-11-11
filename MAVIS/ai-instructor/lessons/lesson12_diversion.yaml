@@ -109,7 +109,7 @@ step_notes:
       - "Turn {tgt_dir} for {tgt_name}"
     look: [heading]
     layman: >-
-      Paya Lebar's runway has just closed, so we're diverting to {tgt_name}. Note the time, {time_now}. Set your heading indicator to the compass. It's at your {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} onto {tgt_hdg:03d} straight away.
+      Paya Lebar's runway has just closed, so we're diverting to {tgt_name}. Note the time, {time_now}. Set your heading indicator to the compass. It's at your {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} onto heading {tgt_hdg:03d} straight away.
     pilot: >-
       Paya Lebar closed, divert {tgt_name}. Time {time_now}. Set the heading indicator to the compass. {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d} now.
   DIVERT_TRACK:
@@ -122,9 +122,9 @@ step_notes:
     look: [heading, altitude]
     freeze: false
     layman: >-
-      Fly {tgt_hdg:03d} and hold {hold_alt:,} feet, about {tgt_min} minutes to {tgt_name}. Look for {tgt_look}.
+      Fly heading {tgt_hdg:03d} and hold {hold_alt:,} feet, about {tgt_min} minutes to {tgt_name}. Look for {tgt_look}.
     pilot: >-
-      Maintain {tgt_hdg:03d}, {hold_alt:,} feet, {tgt_min} minutes to {tgt_name}.
+      Maintain heading {tgt_hdg:03d}, {hold_alt:,} feet, {tgt_min} minutes to {tgt_name}.
   LOST_CLIMB:
     title: "Lost: climb"
     timeout_s: 180
@@ -153,6 +153,6 @@ step_notes:
     look: [outside]
     freeze: false
     layman: >-
-      Next you'd radio for help, say you're lost, do what they tell you, and throttle back to save fuel. I'll be the radio: Paya Lebar's at your {clock} o'clock, {dist_nm} miles. Head {brg_lo} to {brg_hi} and point at it.
+      Next you'd radio for help, say you're lost, do what they tell you, and throttle back to save fuel. I'll be the radio: Paya Lebar's at your {clock} o'clock, {dist_nm} miles. Fly heading {brg_lo} to {brg_hi} and point at it.
     pilot: >-
       Communicate, confess, comply, conserve. Radar vector: Paya Lebar {clock} o'clock, {dist_nm} miles, heading {brg_lo} to {brg_hi}. Point at the field.

@@ -123,7 +123,7 @@ step_notes:
     look: [outside]
     freeze: false
     layman: >-
-      Next, {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Turn {tgt_dir} onto {tgt_hdg:03d}.
+      Next, {tgt_name}: {tgt_look}. It's at your {tgt_clock} o'clock, about {tgt_dist_nm} miles. Turn {tgt_dir} onto heading {tgt_hdg:03d}.
     pilot: >-
       Checkpoint two, {tgt_name}, {tgt_clock} o'clock, {tgt_dist_nm} miles. Turn {tgt_dir} heading {tgt_hdg:03d}.
   CHECKPOINT_3:
@@ -135,7 +135,7 @@ step_notes:
     look: [outside]
     freeze: false
     layman: >-
-      Last one, {tgt_name}: {tgt_look}. It's about {tgt_dist_nm} miles away, about {tgt_min} minutes. Turn {tgt_dir} onto {tgt_hdg:03d}.
+      Last one, {tgt_name}: {tgt_look}. It's about {tgt_dist_nm} miles away, about {tgt_min} minutes. Turn {tgt_dir} onto heading {tgt_hdg:03d}.
     pilot: >-
       Checkpoint three, {tgt_name}, {tgt_dist_nm} miles, {tgt_min} minutes. Turn {tgt_dir} heading {tgt_hdg:03d}.
   FIND_AIRFIELD:
