@@ -5,8 +5,9 @@ name: "Partial Panel Flying"
 # the turn coordinator (electric), airspeed, altimeter, vertical speed and the
 # magnetic compass. `vacuum_failure` fails it for real in the sim
 # (TOGGLE_VACUUM_FAILURE, MSFS SDK) as the lesson starts and restores it on every
-# way out. In the sim the two failed gauges stop, so there's nothing to cover:
-# the trainee is told which two they are and to ignore them.
+# way out. In the sim the heading gauge stops and the attitude gauge's gyro
+# winds down, slowly tilting the horizon: the trainee is told which two they
+# are, that the horizon will tilt, and to ignore them.
 # Standard rate: 3 degrees a second, so 90 degrees in 30 seconds -- the wing of
 # the little aircraft on the turn coordinator's L or R mark.
 type: familiarization
@@ -98,9 +99,9 @@ step_notes:
       - "Hold {hold_alt:,} ft"
     look: [altitude, vsi]
     layman: >-
-      The vacuum pump has failed, so the two middle gauges have stopped working: the attitude gauge with the horizon, and the heading gauge below it. Ignore them. Keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {hold_alt:,} feet on the altimeter.
+      The vacuum pump has failed, so the two middle gauges have stopped working: the attitude gauge with the horizon, and the heading gauge below it. The horizon will slowly tilt as it winds down, but it's wrong, so ignore both. Keep the little aircraft on the turn coordinator level for {hold_s} seconds, and hold {hold_alt:,} feet on the altimeter.
     pilot: >-
-      Vacuum failure: attitude and heading indicators inoperative. Wings level on the turn coordinator for {hold_s} seconds, {hold_alt:,} feet.
+      Vacuum failure: attitude and heading indicators inoperative, the attitude indicator will slowly topple. Wings level on the turn coordinator for {hold_s} seconds, {hold_alt:,} feet.
   TIMED_TURN_LEFT:
     title: Timed turn left
     todo:
