@@ -298,9 +298,13 @@ def build_flight_flow(rt):
                     if placed else "FAM_UPSET_NOT_SET")
             await rt.coach.say(phrases.render(code, {}), phase=phase)
 
-    async def _ease_attitude(frm: tuple, to: tuple, secs: float = 2.5) -> None:
+    async def _ease_attitude(frm: tuple, to: tuple, secs: float = 3.0) -> None:
         """Frozen: move the attitude from (pitch, bank) to (pitch, bank)
-        smoothly, so the trainee can see it happen."""
+        smoothly, so the trainee can see it happen -- in the adapter's own
+        thread where it can (steady, whatever MAVIS is saying meanwhile)."""
+        if hasattr(rt.sim, "ease_attitude"):
+            await rt.loop.run_in_executor(None, rt.sim.ease_attitude, frm, to, secs)
+            return
         n = max(1, round(secs / 0.1))
         for i in range(1, n + 1):
             f = i / n

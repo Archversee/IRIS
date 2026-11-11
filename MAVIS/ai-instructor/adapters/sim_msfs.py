@@ -446,6 +446,31 @@ class MSFSAdapter:
         log.info("attitude set: pitch %+.0f bank %+.0f", pitch, bank)
         return True
 
+    def ease_attitude(self, frm: tuple, to: tuple, secs: float = 3.0, hz: float = 30.0) -> bool:
+        """Move the attitude smoothly from (pitch, bank) to (pitch, bank) over
+        `secs` (frozen: the unusual-attitude demo). Runs on its own clock in
+        this thread and goes by elapsed time, so a late write never makes it
+        lag and then jump."""
+        if self._sm is None:
+            return False
+        import time as _time
+        t0 = _time.time()
+        try:
+            while True:
+                f = min(1.0, (_time.time() - t0) / secs)
+                e = f * f * (3.0 - 2.0 * f)          # ease in and out
+                with self._lock:
+                    self._sm.set_simdatum("PLANE PITCH DEGREES", -(frm[0] + (to[0] - frm[0]) * e), "degrees")
+                    self._sm.set_simdatum("PLANE BANK DEGREES", -(frm[1] + (to[1] - frm[1]) * e), "degrees")
+                if f >= 1.0:
+                    break
+                _time.sleep(1.0 / hz)
+        except Exception as e:
+            log.error("SimConnect ease_attitude failed: %s", e)
+            return False
+        log.info("attitude eased to pitch %+.0f bank %+.0f", to[0], to[1])
+        return True
+
     def demo_control(self, cmd: dict) -> bool:
         """Fly an instructor demonstration (core/demo.py command): the
         aircraft's own autopilot for heading / altitude / vertical speed, the

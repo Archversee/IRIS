@@ -96,15 +96,15 @@ debrief_summary: >-
 
 briefing:
   layman: >-
-    Unusual attitudes. We're up at about {alt} feet, south of Paya Lebar. Each
-    time, I'll take control and have you look down while I put the aircraft in
-    an odd position. When I say you have control, look up and get it back to
-    level flight. Nose high: power, nose down, wings level. Nose low: power
-    off, wings level, then ease the nose up.
+    Unusual attitudes. We're at about {alt} feet, south of Paya Lebar. Each
+    time, I'll take control while you look down, and leave the aircraft in an
+    odd position. When I say you have control, look up and fix it. If the nose
+    is high, add full power and push the nose down, then level the wings. If
+    the nose is low, take the power off and level the wings, then gently pull up.
   pilot: >-
-    Unusual attitude recovery, airborne at {alt} feet south of Paya Lebar. Nose
-    high: power, pitch down, level the wings. Nose low: power off, level the
-    wings, then pitch up.
+    Unusual attitude recovery, {alt} feet south of Paya Lebar. Nose high: full
+    power, lower the nose, then level the wings. Nose low: power off, level the
+    wings, then raise the nose.
 
 # See lesson00_familiarization.yaml for the step_notes format. The up-front
 # demo sets each attitude up and recovers it itself (runtime/flight_flow.py
@@ -115,21 +115,21 @@ step_notes:
     todo:
       - "Full power"
       - "Nose down to the horizon"
-      - "Roll the wings level"
+      - "Level the wings"
     look: [attitude, airspeed]
     layman: >-
-      Nose high: the speed's dropping. Full power, push the nose down to the horizon, then roll the wings level.
+      The nose is high and you're slowing down. Add full power, push the nose down to the horizon, then level the wings.
     pilot: >-
       Nose-high recovery: power, pitch down to the horizon, level the wings.
   UPSET_LOW_RIGHT:
     title: Nose low, banked right
     todo:
-      - "Throttle back"
-      - "Roll the wings level first"
-      - "Then ease the nose up to the horizon"
+      - "Power off"
+      - "Level the wings first"
+      - "Then gently pull up to the horizon"
     look: [attitude, airspeed]
     layman: >-
-      Nose low: the speed's building. Throttle back, roll the wings level first, then ease the nose up. Don't pull while you're banked.
+      The nose is low and you're speeding up. Take the power off and level the wings first, then gently pull up. Don't pull while you're still banked.
     pilot: >-
       Nose-low recovery: power off, level the wings, then pitch up to the horizon. No back pressure until wings level.
   UPSET_HIGH_RIGHT:
@@ -138,21 +138,21 @@ step_notes:
     todo:
       - "Full power"
       - "Nose down to the horizon"
-      - "Roll the wings level"
+      - "Level the wings"
     look: [attitude, airspeed]
     layman: >-
-      Nose high again, the other way. Power, nose down, wings level.
+      Nose high again, banked the other way. Same fix: full power, nose down, then level the wings.
     pilot: >-
       Nose high, right bank. Power, pitch down, wings level.
   UPSET_LOW_LEFT:
     demo: false               # the mirror image of one shown in the demo
     title: Nose low, banked left
     todo:
-      - "Throttle back"
-      - "Roll the wings level first"
-      - "Then ease the nose up to the horizon"
+      - "Power off"
+      - "Level the wings first"
+      - "Then gently pull up to the horizon"
     look: [attitude, airspeed]
     layman: >-
-      Last one, nose low. Throttle back, wings level, then ease the nose up.
+      Last one, nose low again. Power off, level the wings, then gently pull up.
     pilot: >-
       Nose low, left bank. Power off, wings level, pitch up.
