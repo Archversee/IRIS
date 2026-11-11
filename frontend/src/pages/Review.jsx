@@ -10,7 +10,6 @@ import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import PhaseModal from "../components/session/PhaseModal.jsx";
 import RuleChecksPanel, { RuleChecksChip } from "../components/session/RuleChecksPanel.jsx";
-import IncidentsPanel, { IncidentsChip } from "../components/session/IncidentsPanel.jsx";
 import DebriefPanel, { DebriefChip, useDebriefJob } from "../components/session/DebriefPanel.jsx";
 import "./review.css";
 
@@ -24,12 +23,6 @@ function loadDockFrac() {
   } catch {
     return null;
   }
-}
-
-// times a rule was broken (instructor verdicts count), for the Incidents chip
-function incidentCount(evaluation) {
-  return (evaluation.results || []).reduce((n, r) =>
-    n + (r.final_verdict === "fail" ? (r.violations || []).length : 0), 0);
 }
 
 export default function Review() {
@@ -136,9 +129,6 @@ export default function Review() {
           <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
             onClick={() => showDock("rules")} />
           <DebriefChip job={debriefJob} onClick={() => showDock("debrief")} />
-          {rules.evaluation && (
-            <IncidentsChip count={incidentCount(rules.evaluation)} onClick={() => showDock("inc")} />
-          )}
         </div>
 
         <ScreensPanel {...screens} fitGround />
@@ -151,7 +141,7 @@ export default function Review() {
         </div>
       </div>
 
-      <aside className="rev-dock" ref={dockRef} aria-label="Debrief, SOP rule checks and incidents">
+      <aside className="rev-dock" ref={dockRef} aria-label="Debrief and SOP rule checks">
         <div className="rev-dock__resizer" role="separator" aria-orientation="vertical"
           title="Drag to resize · double-click to reset"
           onPointerDown={startDockDrag} onDoubleClick={() => setDockFrac(null)} />
@@ -160,10 +150,6 @@ export default function Review() {
         </div>
         <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
           <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
-            seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
-        </div>
-        <div id="rev-dock-inc" className={"rev-dock__slot" + (flash === "inc" ? " is-flash" : "")}>
-          <IncidentsPanel sessionId={id} debriefJob={debriefJob}
             seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
         </div>
       </aside>

@@ -25,7 +25,13 @@ const GROUPS = [
   { key: "pass", title: "Met" },
   { key: "other", title: "Didn't apply / no data" },
 ];
-const SHOW_ALL_KEY = "sopShowAllRules";
+// the count tiles, which are also the tabs
+const TALLY = [
+  { key: "fail", label: "broken", title: "Broken" },
+  { key: "pass", label: "met", title: "Met" },
+  { key: "instructor", label: "to assess", title: "Left for the instructor to assess" },
+  { key: "other", label: "didn't apply", title: "Didn't apply" },
+];
 const groupOf = (v) => (v === "fail" || v === "pass" || v === "instructor" ? v : "other");
 
 export function RuleChecksChip({ evaluation, missing, onClick }) {
@@ -90,15 +96,10 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
     return g;
   }, [results]);
   const timesBroken = grouped.fail.reduce((n, r) => n + (r.violations || []).length, 0);
-  // Only the broken rules by default; the rest behind a checkbox (remembered).
-  const [showAll, setShowAll] = useState(() => {
-    try { return localStorage.getItem(SHOW_ALL_KEY) === "1"; } catch { return false; }
-  });
-  const toggleShowAll = (on) => {
-    setShowAll(on);
-    try { localStorage.setItem(SHOW_ALL_KEY, on ? "1" : "0"); } catch { /* storage unavailable -- fine */ }
-  };
-  const nOthers = results.length - grouped.fail.length;
+  // The count tiles double as tabs: the broken rules by default, and a click
+  // on Met / To assess / Didn't apply lists those instead (again: back to broken).
+  const [view, setView] = useState("fail");
+  const pick = (key) => setView((cur) => (cur === key && key !== "fail" ? "fail" : key));
   const ruleRow = (r) => (
     <RuleRow key={r.id} r={r} isInstructor={isInstructor} toT={toT}
       seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
@@ -179,43 +180,40 @@ export default function RuleChecksPanel({ sessionId, evaluation, missing, reload
 
       {evaluation && results.length > 0 && (
         <>
-          <div className="rc-tally">
-            <div className={"rc-tally__item is-fail" + (grouped.fail.length ? "" : " is-zero")}>
-              <b>{grouped.fail.length}</b><span>broken</span>
-            </div>
-            <div className="rc-tally__item is-pass"><b>{grouped.pass.length}</b><span>met</span></div>
-            {grouped.instructor.length > 0 && (
-              <div className="rc-tally__item is-assess"><b>{grouped.instructor.length}</b><span>to assess</span></div>
-            )}
-            <div className="rc-tally__item"><b>{grouped.other.length}</b><span>didn't apply</span></div>
+          <div className="rc-tally" role="tablist" aria-label="Which rules to list">
+            {TALLY.map((t) => {
+              const n = grouped[t.key].length;
+              return (
+                <button key={t.key} type="button" role="tab" aria-selected={view === t.key}
+                  className={"rc-tally__item is-" + t.key + (n ? "" : " is-zero") + (view === t.key ? " is-on" : "")}
+                  disabled={!n && t.key !== "fail"} onClick={() => pick(t.key)}
+                  title={n ? `List the rules that were ${t.title.toLowerCase()}` : undefined}>
+                  <b>{n}</b><span>{t.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <section className="rc-group">
-            <h3>
-              Rules broken
-              {timesBroken > 0 && <span className="rc-muted"> · {timesBroken} time{timesBroken === 1 ? "" : "s"} in total</span>}
-            </h3>
-            {grouped.fail.length ? grouped.fail.map(ruleRow)
-              : <div className="rc-allmet">✓ No rules broken{grouped.pass.length ? `: all ${grouped.pass.length} measured rules were met` : ""}. Nice flying.</div>}
+            {view === "fail" ? (
+              <>
+                <h3>
+                  Rules broken
+                  {timesBroken > 0 && <span className="rc-muted"> · {timesBroken} time{timesBroken === 1 ? "" : "s"} in total</span>}
+                </h3>
+                {grouped.fail.length ? grouped.fail.map(ruleRow)
+                  : <div className="rc-allmet">✓ No rules broken{grouped.pass.length ? `: all ${grouped.pass.length} measured rules were met` : ""}. Nice flying.</div>}
+              </>
+            ) : (
+              <>
+                <h3>
+                  {GROUPS.find((g) => g.key === view).title} <span className="rc-muted">({grouped[view].length})</span>
+                  <button type="button" className="rc-linkbtn rc-back" onClick={() => setView("fail")}>← Back to rules broken</button>
+                </h3>
+                {grouped[view].length ? grouped[view].map(ruleRow) : <div className="rc-muted">None.</div>}
+              </>
+            )}
           </section>
-
-          {nOthers > 0 && (
-            <label className="rc-showall">
-              <input type="checkbox" checked={showAll} onChange={(e) => toggleShowAll(e.target.checked)} />
-              Show the other {nOthers} rule{nOthers === 1 ? "" : "s"}
-              <span className="rc-muted">
-                {" "}({[grouped.pass.length && `${grouped.pass.length} met`,
-                  grouped.instructor.length && `${grouped.instructor.length} to assess`,
-                  grouped.other.length && `${grouped.other.length} didn't apply`].filter(Boolean).join(", ")})
-              </span>
-            </label>
-          )}
-          {showAll && GROUPS.filter((g) => g.key !== "fail").map((g) => grouped[g.key].length > 0 && (
-            <section key={g.key} className="rc-group">
-              <h3>{g.title} <span className="rc-muted">({grouped[g.key].length})</span></h3>
-              {grouped[g.key].map(ruleRow)}
-            </section>
-          ))}
         </>
       )}
 

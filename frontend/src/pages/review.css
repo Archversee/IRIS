@@ -52,7 +52,7 @@
 }
 .rev-dock {
   position: relative;
-  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px;
+  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.5fr); gap: 10px;
   padding: 10px 12px 12px 0; min-height: 0;
 }
 /* the drag handle sits in the gutter between the videos and the column */
@@ -893,30 +893,38 @@
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
 
 /* ---- SOP rule checks: counts strip, broken-rule cards, show-all toggle ---- */
-.rc-tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; margin-bottom: 4px; }
+.rc-tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; margin-bottom: 12px; }
 .rc-tally__item {
+  font: inherit; cursor: pointer; position: relative;
   display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: 8px;
   background: var(--rev-panel-2); border: 1px solid var(--rev-line); color: var(--rev-muted);
+  transition: border-color .12s, background .12s;
 }
+.rc-tally__item:hover:not(:disabled) { border-color: var(--border-strong, var(--rev-line)); background: var(--hover, var(--rev-panel)); }
+.rc-tally__item:disabled { cursor: default; opacity: .55; }
 .rc-tally__item b { font-size: 20px; line-height: 1.1; color: var(--rev-text); font-variant-numeric: tabular-nums; }
 .rc-tally__item span { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-.rc-tally__item.is-fail { border-color: rgba(255, 92, 92, .55); background: rgba(255, 92, 92, .08); }
 .rc-tally__item.is-fail b { color: #ff6b6b; }
-.rc-tally__item.is-fail.is-zero { border-color: var(--rev-line); background: var(--rev-panel-2); }
 .rc-tally__item.is-fail.is-zero b { color: var(--rev-green); }
 .rc-tally__item.is-pass b { color: var(--rev-green); }
-.rc-tally__item.is-assess b { color: var(--rev-violet); }
+.rc-tally__item.is-instructor b { color: var(--rev-violet); }
+/* the selected tile: tinted, outlined in its colour, with a notch pointing at the list */
+.rc-tally__item.is-on { --tc: var(--rev-muted); border-color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, var(--rev-panel-2)); }
+.rc-tally__item.is-on span { color: var(--rev-text); }
+.rc-tally__item.is-on::after {
+  content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; margin-left: -5px;
+  background: inherit; border: inherit; border-top: 0; border-left: 0; transform: rotate(45deg);
+}
+.rc-tally__item.is-fail.is-on { --tc: #ff5c5c; }
+.rc-tally__item.is-fail.is-zero.is-on { --tc: var(--rev-green); }
+.rc-tally__item.is-pass.is-on { --tc: var(--rev-green); }
+.rc-tally__item.is-instructor.is-on { --tc: var(--rev-violet); }
+.rc-group h3 .rc-back { float: right; font-weight: 500; }
 
 .rc-allmet {
   padding: 10px 12px; border-radius: 8px; color: var(--rev-green);
   background: rgba(74, 222, 128, .08); border: 1px solid rgba(74, 222, 128, .4);
 }
-.rc-showall {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; padding: 8px 10px;
-  border: 1px dashed var(--rev-line); border-radius: 8px; cursor: pointer; user-select: none;
-}
-.rc-showall:hover { border-color: var(--border-strong, var(--rev-line)); }
-.rc-showall input { margin: 0; width: auto; flex: none; }
 /* instructor's verdict + note on one line under each rule */
 .rc-judge select { width: auto; flex: 0 1 170px; min-width: 0; }
 .rc-judge input { width: auto; }
