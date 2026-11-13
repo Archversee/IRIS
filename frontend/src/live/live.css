@@ -640,19 +640,6 @@
 .mg-act:hover { color: var(--accent); border-color: var(--accent); }
 .mg-act--del:hover { color: #e5484d; border-color: #e5484d; }
 
-.mg-pager {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
-  margin-top: 16px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
-}
-.mg-pager__btns { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.mg-pager__btns button {
-  min-width: 34px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  background: transparent; color: var(--muted); border: 1px solid var(--border);
-}
-.mg-pager__btns button:hover:not(:disabled) { color: var(--text); }
-.mg-pager__btns button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-.mg-pager__btns button:disabled { opacity: .4; cursor: default; }
-.mg-pager__gap { padding: 0 4px; }
 
 .mg-scoring .mavis-guide-list { font-size: 14px; line-height: 1.8; padding-left: 0; list-style: none; }
 .mg-scoring .mavis-guide-table { font-size: 13px; }

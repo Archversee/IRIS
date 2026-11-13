@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import Pager from "../components/Pager.jsx";
 
 const POLL_INTERVAL_MS = 5000;
+const PAGE_SIZE = 10;
 
 export default function Sessions() {
   const [sessions, setSessions] = useState([]);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
 
   // `quiet` refreshes in place (background poll) without the Loading… flash.
   async function load({ quiet = false } = {}) {
@@ -40,6 +43,13 @@ export default function Sessions() {
     load();
   }
 
+  // Newest first (the API's order), PAGE_SIZE per page. If the list shrinks
+  // (a delete, or the last row of the last page going away) step back to the
+  // last page that still exists rather than showing an empty one.
+  const pages = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
+  const shownPage = Math.min(page, pages);
+  const pageRows = sessions.slice((shownPage - 1) * PAGE_SIZE, shownPage * PAGE_SIZE);
+
   return (
     <div className="card">
       <h2>Sessions</h2>
@@ -64,7 +74,7 @@ export default function Sessions() {
             </tr>
           </thead>
           <tbody>
-            {sessions.map((s) => (
+            {pageRows.map((s) => (
               <tr key={s.id}>
                 <td>{s.name}</td>
                 <td>{s.pilot_name || "—"}</td>
@@ -82,6 +92,10 @@ export default function Sessions() {
             ))}
           </tbody>
         </table>
+      )}
+      {!loading && (
+        <Pager page={shownPage} pageSize={PAGE_SIZE} total={sessions.length} shown={pageRows.length}
+          onPage={setPage} label="Session pages" />
       )}
     </div>
   );

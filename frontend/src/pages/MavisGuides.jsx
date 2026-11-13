@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
+import Pager from "../components/Pager.jsx";
 import { ScoringGuideContent } from "../live/components/ScoringGuide.jsx";
 import "../live/live.css";
 
@@ -27,18 +28,6 @@ function GuidePage({ title, sub, wide, children }) {
 // One board per mode; the search matches name, curriculum or aircraft.
 const MODES = [["visitor", "Visitor"], ["trainee", "Trainee"], ["pilot", "Pilot"]];
 const PAGE_SIZE = 20;
-
-// 1 … 4 5 [6] 7 8 … 20
-function pageList(page, pages) {
-  const want = new Set([1, pages, page - 2, page - 1, page, page + 1, page + 2]);
-  const out = [];
-  for (let p = 1; p <= pages; p++) {
-    if (!want.has(p)) continue;
-    if (out.length && p - out[out.length - 1] > 1) out.push("…");
-    out.push(p);
-  }
-  return out;
-}
 
 export function LeaderboardPage() {
   const [query, setQuery] = useState("");
@@ -79,8 +68,6 @@ export function LeaderboardPage() {
 
   const rows = data?.rows || [];
   const total = data?.total || 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
   // action column: View (rows linked to a session) and Delete (own runs / admin)
   const anyActions = rows.some((e) => e.session_id || canDelete(e));
 
@@ -137,18 +124,8 @@ export function LeaderboardPage() {
         </div>
       )}
 
-      {total > 0 && (
-        <nav className="mg-pager" aria-label="Leaderboard pages">
-          <span className="mg-pager__info">{first}–{first + rows.length - 1} of {total}</span>
-          <div className="mg-pager__btns">
-            <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>‹ Prev</button>
-            {pageList(page, pages).map((p, i) => p === "…"
-              ? <span key={`gap${i}`} className="mg-pager__gap">…</span>
-              : <button key={p} type="button" className={p === page ? "is-on" : ""} onClick={() => setPage(p)}>{p}</button>)}
-            <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next ›</button>
-          </div>
-        </nav>
-      )}
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} shown={rows.length}
+        onPage={setPage} label="Leaderboard pages" />
     </GuidePage>
   );
 }
