@@ -49,15 +49,19 @@ export default function LessonTree() {
   return (
     <div className="sidebar__lesson-tree">
       {catalog.modules.map((mod, i) => {
-        // flying lessons highlight only while on /live
-        const isOn = (l) => pathname.startsWith("/live") && l.kind !== "reading" && l.id === activeLessonId;
+        // The lesson on screen -- reading (?reading=<id>) or flying (MAVIS's
+        // lesson_id) -- is lit, and its module stays open. activeLessonId is
+        // already null anywhere but plain /live, so nothing lights elsewhere.
+        const isOn = (l) => !!activeLessonId && l.id === activeLessonId;
         const open = openModule === i || (openModule === null && mod.lessons.some(isOn));
         return (
           <Fragment key={mod.title ?? i}>
           <div className="sidebar__module">
             <button
               type="button"
-              className="sidebar__module-head"
+              // an open module's heading is lit too
+              className={"sidebar__module-head" + (open ? " is-active" : "")}
+              aria-expanded={open}
               onClick={() => setOpenModule(open ? -1 : i)}
             >
               {mod.title}

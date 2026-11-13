@@ -108,6 +108,7 @@ a { color: var(--accent); text-decoration: none; }
   padding: 6px 18px 6px 26px; cursor: pointer;
 }
 .sidebar__module-head:hover { color: var(--text); }
+.sidebar__module-head.is-active:hover { color: var(--accent); }
 .sidebar__module-lessons { display: flex; flex-direction: column; }
 .sidebar__lesson {
   text-align: left; background: none; border: none;
