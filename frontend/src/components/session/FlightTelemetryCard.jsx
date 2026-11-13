@@ -74,7 +74,11 @@ function Tape({ label, unit, value, min, max, title, band, live }) {
         <b className="ft-tape__mx">{max}</b>
         {zeroPct != null && <div className="ft-tape__zero" style={{ bottom: `${zeroPct}%` }} />}
         {band?.target != null && <div className="ft-tape__tgt" style={{ bottom: `${at(band.target)}%` }} />}
-        <div className={"ft-tape__ptr" + (ok === false ? " is-out" : "")} style={{ bottom: `${pct}%` }} />
+        {/* moved with transform (a full-height track slid down), not `bottom`,
+            so animating it between samples doesn't re-lay-out the page */}
+        <div className="ft-tape__ptr-track" style={{ transform: `translateY(${100 - pct}%)` }}>
+          <div className={"ft-tape__ptr" + (ok === false ? " is-out" : "")} />
+        </div>
         <b className="ft-tape__mn">{min}</b>
       </div>
       <div className={"ft-tape__val" + (ok === false ? " is-out" : ok ? " is-ok" : "")}>{v == null ? "--" : Math.round(v)}</div>
@@ -211,7 +215,7 @@ function VBar({ label, value, color, text, title }) {
   return (
     <div className="ft-ctl" title={title}>
       <div className="ft-vbar">
-        <div className="ft-vbar__fill" style={{ height: `${clamp01(v ?? 0) * 100}%`, background: color }} />
+        <div className="ft-vbar__fill" style={{ transform: `scaleY(${clamp01(v ?? 0)})`, background: color }} />
       </div>
       <div className="ft-ctl__cap">{label}</div>
       <div className="ft-ctl__val">{v == null ? "--" : text}</div>
@@ -223,15 +227,16 @@ function VBar({ label, value, color, text, title }) {
 function CenterBar({ label, value, horizontal, text, title }) {
   const v = num(value);
   const x = Math.max(-1, Math.min(1, v ?? 0));
-  const size = `${Math.abs(x) * 50}%`;
-  const style = horizontal
-    ? { width: size, [x >= 0 ? "left" : "right"]: "50%" }
-    : { height: size, [x >= 0 ? "bottom" : "top"]: "50%" };
+  // one half-bar each way from the middle, scaled (transform, not size, so
+  // animating between samples doesn't re-lay-out the page)
+  const scale = (n) => ({ transform: `${horizontal ? "scaleX" : "scaleY"}(${n})` });
+  const fill = horizontal ? "ft-hbar__fill" : "ft-vbar__fill ft-vbar__fill--center";
   return (
     <div className="ft-ctl" title={title}>
       <div className={horizontal ? "ft-hbar" : "ft-vbar"}>
         <div className={horizontal ? "ft-hbar__mid" : "ft-vbar__mid"} />
-        <div className={horizontal ? "ft-hbar__fill" : "ft-vbar__fill ft-vbar__fill--center"} style={style} />
+        <div className={`${fill} is-pos`} style={scale(Math.max(0, x))} />
+        <div className={`${fill} is-neg`} style={scale(Math.max(0, -x))} />
       </div>
       <div className="ft-ctl__cap">{label}</div>
       <div className="ft-ctl__val">{v == null ? "--" : text(x)}</div>
@@ -252,7 +257,10 @@ function StickPad({ aileron, elevator }) {
     <div className="ft-ctl ft-ctl--stick"
       title="The dot is the control stick: left/right = roll, up/down = pushed forward (nose down) or pulled back (nose up).">
       <div className="ft-stick">
-        <div className="ft-stick__dot" style={{ left: `${x}%`, top: `${y}%` }} />
+        {/* a full-size layer slid by transform carries the dot (not left/top) */}
+        <div className="ft-stick__track" style={{ transform: `translate(${x}%, ${y}%)` }}>
+          <div className="ft-stick__dot" />
+        </div>
       </div>
       <div className="ft-ctl__cap">STICK</div>
       <div className="ft-ctl__val">{a == null && e == null ? "--" : words.join(" · ") || "center"}</div>

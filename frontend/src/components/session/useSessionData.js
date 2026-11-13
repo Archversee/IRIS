@@ -9,6 +9,8 @@ const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW 
 // frame; the heavier panels (scan log, region pie, gaze trail, ground track)
 // follow a copy of it refreshed this often, so they don't re-render 60x/s.
 const SLOW_VIEW_MS = 125;
+// longest the playback clock waits for a buffering video before carrying on without it
+const BUFFER_WAIT_MS = 3000;
 
 // Mean gaze point (1920x1080 space of that screen) over one glance, using
 // samples whose raw area is `rawAoi` ("OTW" or "Instruments"), or null.
@@ -605,10 +607,23 @@ export function useSessionData({ id, live }) {
     if (!playing || !flight.length) return;
     virtualT.current = curT;
     setSlowPlayhead(curT);
-    let last = performance.now(), lastSlow = last, raf;
+    let last = performance.now(), lastSlow = last, raf, stalledSince = null;
+    // A linked recording that's buffering (slow connection) or still seeking:
+    // hold the clock so gaze/timer don't run ahead and the video doesn't get
+    // yanked forward (which makes it buffer again). Recorded files only --
+    // live capture streams have no currentSrc.
+    const videoBuffering = () => !live && [instrumentVideoRef, otwVideoRef].some(({ current: v }) =>
+      v && v.currentSrc && !v.paused && !v.ended && !v.error && v.readyState < 3);
     const step = (now) => {
-      virtualT.current += (Math.max(0, now - last) / 1000) * speed;
+      const dt = Math.max(0, now - last);
       last = now;
+      if (videoBuffering()) {
+        stalledSince ??= now;
+      } else {
+        stalledSince = null;
+      }
+      // ...but never wait on a video for more than BUFFER_WAIT_MS at a time
+      if (stalledSince == null || now - stalledSince > BUFFER_WAIT_MS) virtualT.current += (dt / 1000) * speed;
       if (virtualT.current >= totalT) virtualT.current = 0;
       setPlayhead(virtualT.current);
       if (now - lastSlow >= SLOW_VIEW_MS) { lastSlow = now; setSlowPlayhead(virtualT.current); }

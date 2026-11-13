@@ -517,10 +517,16 @@
   position: relative; width: 38px; flex: 1; min-height: 90px;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
+/* Gauges glide between 5 Hz flight samples. They animate `transform` only
+   (GPU, no layout): animating left/top/height/width/bottom re-lays-out the
+   page every frame and made Review playback stutter. */
+.ft-tape__ptr-track {
+  position: absolute; inset: 0; pointer-events: none;
+  transition: transform .2s linear;
+}
 .ft-tape__ptr {
-  position: absolute; left: 0; right: 0; height: 3px; margin-bottom: -1.5px;
+  position: absolute; top: 0; left: 0; right: 0; height: 3px; margin-top: -1.5px;
   background: var(--rev-cyan); box-shadow: 0 0 8px rgba(56, 189, 248, .7);
-  transition: bottom .2s linear;
 }
 .ft-tape__zero { position: absolute; left: 0; right: 0; height: 1px; background: var(--border-strong); }
 .ft-tape__mx, .ft-tape__mn {
@@ -551,15 +557,25 @@
   position: relative; width: 28px; flex: 1; min-height: 90px;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
-.ft-vbar__fill { position: absolute; bottom: 0; left: 0; right: 0; transition: height .2s linear; }
-.ft-vbar__fill--center { background: var(--rev-cyan); bottom: auto; }
+.ft-vbar__fill {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+  transform-origin: bottom; transition: transform .2s linear;
+}
+.ft-vbar__fill--center { background: var(--rev-cyan); }
+.ft-vbar__fill--center.is-pos { bottom: 50%; }
+.ft-vbar__fill--center.is-neg { top: 50%; transform-origin: top; }
 .ft-vbar__mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border-strong); }
 
 .ft-hbar {
   position: relative; width: 84px; height: 28px; margin: auto 0;
   background: var(--inset); border: 1px solid var(--rev-line); border-radius: 10px; overflow: hidden;
 }
-.ft-hbar__fill { position: absolute; top: 0; bottom: 0; background: var(--rev-cyan); transition: width .2s linear; }
+.ft-hbar__fill {
+  position: absolute; top: 0; bottom: 0; background: var(--rev-cyan);
+  transition: transform .2s linear;
+}
+.ft-hbar__fill.is-pos { left: 50%; right: 0; transform-origin: left; }
+.ft-hbar__fill.is-neg { left: 0; right: 50%; transform-origin: right; }
 .ft-hbar__mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border-strong); }
 
 /* Fixed-size square, centred vertically in the space the bars stretch into. */
@@ -570,10 +586,14 @@
 .ft-stick::before, .ft-stick::after { content: ""; position: absolute; background: var(--border-strong); }
 .ft-stick::before { left: 50%; top: 6%; bottom: 6%; width: 1px; }
 .ft-stick::after { top: 50%; left: 6%; right: 6%; height: 1px; }
+.ft-stick__track {
+  position: absolute; inset: 0; pointer-events: none;
+  transition: transform .12s linear;
+}
 .ft-stick__dot {
-  position: absolute; width: 15px; height: 15px; border-radius: 50%;
+  position: absolute; top: 0; left: 0; width: 15px; height: 15px; border-radius: 50%;
   background: var(--rev-cyan); box-shadow: 0 0 10px rgba(56, 189, 248, .75);
-  transform: translate(-50%, -50%); transition: left .12s linear, top .12s linear;
+  transform: translate(-50%, -50%);
 }
 
 /* Wrap by the card's own width, so it works full-width (Live Monitor) and
