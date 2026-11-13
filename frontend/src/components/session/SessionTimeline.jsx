@@ -182,11 +182,19 @@ export default function SessionTimeline({
           workloadBands={workloadBands} flightPhases={flightPhases}
           chartMinT={chartMinT} chartMaxT={chartMaxT} totalT={totalT}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} />
+        {/* Clip box = the plot area plus 2px each side (so the line shows at
+            the very ends); the track inside is exactly the plot width, so
+            translateX(pct * 100%) puts its left edge -- the line -- on the
+            time. Moved by transform only: no layout or repaint per frame. */}
         {playheadPct != null && (
-          <div className="tl-playhead" style={{
-            left: `calc(${PLOT_LEFT}px + (100% - ${PLOT_LEFT + CHART_MARGIN.right}px) * ${playheadPct})`,
+          <div className="tl-playhead-clip" style={{
+            left: PLOT_LEFT - 2, right: CHART_MARGIN.right - 2,
             top: CHART_MARGIN.top, height: CHART_H - CHART_MARGIN.top - CHART_MARGIN.bottom - X_AXIS_H,
-          }} />
+          }}>
+            <div className="tl-playhead-track" style={{ transform: `translateX(${playheadPct * 100}%)` }}>
+              <div className="tl-playhead" />
+            </div>
+          </div>
         )}
       </div>
       {!readOnly && flightPhases.length > 0 && (

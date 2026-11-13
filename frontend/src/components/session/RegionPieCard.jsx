@@ -25,7 +25,8 @@ export default memo(function RegionPieCard({ regions }) {
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
               <Pie data={regions} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                innerRadius={30} outerRadius={62} paddingAngle={2} stroke="none">
+                innerRadius={30} outerRadius={62} paddingAngle={2} stroke="none"
+                isAnimationActive={false /* changes ~8x/s while playing; re-animating each time kept it repainting */}>
                 {regions.map((r, i) => <Cell key={i} fill={r.color} />)}
               </Pie>
               <Tooltip content={<PieTip />} />

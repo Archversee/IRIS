@@ -86,6 +86,27 @@ const ScanTrail = memo(function ScanTrail({ trail: raw, boxes, maxLen }) {
   );
 });
 
+// The gaze halo. An HTML layer moved only by `transform` (no SVG, no
+// filter), so the browser slides an already-drawn circle each frame instead
+// of repainting the whole video-sized overlay -- that repaint was the
+// playback stutter. The track is the size of the screen body, so translate
+// percentages are of the body: x/1920, y/1080. `eased` (live view, gaze
+// arrives in ~250ms batches) glides between points; replay moves per frame.
+const ROUND = { angleDeg: 0, factor: 1 };
+function GazeHalo({ gaze, stretch, eased }) {
+  if (gaze?.x == null || gaze?.y == null) return null;
+  const s = stretch || ROUND;
+  return (
+    <div className="gaze-layer">
+      <div className={"gaze-track" + (eased ? " gaze-track--eased" : "")}
+        style={{ transform: `translate(${gaze.x / 19.2}%, ${gaze.y / 10.8}%)` }}>
+        <div className="gaze-halo"
+          style={{ transform: `translate(-50%, -50%) rotate(${s.angleDeg}deg) scale(${s.factor}, ${1 / Math.sqrt(s.factor)})` }} />
+      </div>
+    </div>
+  );
+}
+
 // Where the OTW and Instruments screen bodies sit inside the screens row,
 // in the row's own on-screen pixels (re-measured on resize). Using one
 // coordinate space for the row lets trail arrows cross between screens.
@@ -189,16 +210,7 @@ export default function ScreensPanel({
             <video ref={otwVideoRef} src={otwVideoSrc} className="screen-video"
               muted playsInline preload="auto" />
           ) : null}
-          {hasOtw && lookingAtOtw && gaze?.x != null && gaze?.y != null && (
-            <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-              <g className={"gaze-cursor" + (live ? " gaze-cursor--eased" : "")}
-                style={{
-                  transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
-                }}>
-                <circle r="70" className="gaze-halo" />
-              </g>
-            </svg>
-          )}
+          {hasOtw && lookingAtOtw && <GazeHalo gaze={gaze} stretch={gazeStretch} eased={live} />}
         </div>
       </div>
 
@@ -240,16 +252,9 @@ export default function ScreensPanel({
                     opacity={active ? "0.95" : "0.55"} />
                 );
               })}
-              {lookingAtInstruments && gaze?.x != null && gaze?.y != null && (
-                <g className={"gaze-cursor" + (live ? " gaze-cursor--eased" : "")}
-                  style={{
-                    transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
-                  }}>
-                  <circle r="70" className="gaze-halo" />
-                </g>
-              )}
             </svg>
           )}
+          {showInstrumentOverlay && lookingAtInstruments && <GazeHalo gaze={gaze} stretch={gazeStretch} eased={live} />}
         </div>
       </div>
 
