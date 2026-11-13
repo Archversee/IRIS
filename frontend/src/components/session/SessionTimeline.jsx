@@ -1,3 +1,4 @@
+import { memo, useCallback, useMemo, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
 } from "recharts";
@@ -29,6 +30,9 @@ function TLTooltip({ active, payload }) {
   );
 }
 
+const METRICS_NO_INDEX = METRICS.filter((m) => !m.needs);
+const NO_ZONES = [];
+
 // Workload's y position on the chart (it's drawn on the fixed WL_MIN..WL_MAX scale)
 const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
 
@@ -36,6 +40,77 @@ const wlY = (wl) => (wl - WL_MIN) / (WL_MAX - WL_MIN);
 function unavailable(m, hasIndex) {
   return m.needs === "index" && !hasIndex;
 }
+
+// Chart geometry. The plot area starts after the left margin + y-axis and
+// stops before the right margin / above the x-axis; the playhead overlay
+// below uses the same numbers to sit exactly on the time axis.
+const CHART_H = 150;
+const CHART_MARGIN = { top: 4, right: 8, bottom: 0, left: -28 };
+const Y_AXIS_W = 30;
+const X_AXIS_H = 30;
+const PLOT_LEFT = CHART_MARGIN.left + Y_AXIS_W;
+
+// The trend chart itself (recharts, up to CHART_MAX_POINTS points per line).
+// Memoised: during playback only the playhead moves, and redrawing this
+// every frame is what made playback stutter.
+const TimelineChart = memo(function TimelineChart({
+  readOnly, metrics, chartSeries, timelineTicks, filters, hasIndex, zones, workloadBands,
+  flightPhases, chartMinT, chartMaxT, totalT, onMouseDown, onMouseMove, onMouseUp,
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={CHART_H}>
+      <LineChart data={chartSeries} margin={CHART_MARGIN}
+        style={{ cursor: readOnly ? "default" : "pointer" }}
+        onMouseDown={readOnly ? undefined : onMouseDown}
+        onMouseMove={readOnly ? undefined : onMouseMove}
+        onMouseUp={readOnly ? undefined : onMouseUp}
+      >
+        <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
+        <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
+          stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" height={X_AXIS_H} />
+        <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={Y_AXIS_W} />
+        <Tooltip content={<TLTooltip />} />
+        {zones.map((z) => (
+          <ReferenceArea key={`zone-${z.band}`} y1={z.y1} y2={z.y2} fill={WL_BAND_COLOR[z.band]} fillOpacity={z.opacity}
+            stroke="none" style={{ pointerEvents: "none" }} ifOverflow="hidden"
+            label={{ value: `${WL_BAND_LABEL[z.band]} workload`, position: "insideTopRight",
+                     fill: WL_BAND_COLOR[z.band], fillOpacity: 0.75, fontSize: 10 }} />
+        ))}
+        {filters.events !== false && flightPhases.map((p) => {
+          const minSpan = Math.max(1, totalT * 0.008);
+          let x1 = p.start, x2 = p.end;
+          if (x2 - x1 < minSpan) {
+            const pad = (minSpan - (x2 - x1)) / 2;
+            x1 = Math.max(chartMinT, p.start - pad);
+            x2 = Math.min(chartMaxT, p.end + pad);
+            if (x2 - x1 < minSpan) {
+              if (x1 === chartMinT) x2 = Math.min(chartMaxT, x1 + minSpan);
+              else if (x2 === chartMaxT) x1 = Math.max(chartMinT, x2 - minSpan);
+            }
+          }
+          // display only: the shaded event boxes let clicks and drags through
+          // to the chart underneath, so scrubbing works across them (the
+          // event buttons below the chart are what you click to open one)
+          return (
+            <ReferenceArea key={p.key} x1={x1} x2={x2} className="tl-event-area"
+              fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
+              style={{ pointerEvents: "none" }}
+              label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
+          );
+        })}
+        {metrics.map((m) =>
+          filters[m.key] && !unavailable(m, hasIndex) ? (
+            <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
+              dot={false} strokeWidth={1.6} isAnimationActive={false} />
+          ) : null
+        )}
+        {workloadBands && filters.workload && [workloadBands.medium, workloadBands.high].map((v) => (
+          <ReferenceLine key={v} y={wlY(v)} stroke="#f5a623" strokeOpacity={0.45} strokeDasharray="4 4" />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+});
 
 // Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
 // or a takeoff/landing guess for sessions without any).
@@ -52,14 +127,23 @@ export default function SessionTimeline({
   live, followingLive, goLive,
 }) {
   // the Live Monitor (readOnly) leaves out what comes from the after-flight workload index
-  const metrics = readOnly ? METRICS.filter((m) => !m.needs) : METRICS;
+  const metrics = readOnly ? METRICS_NO_INDEX : METRICS;
+  // The page hands over fresh handler functions every render; pass the chart
+  // stable ones that call the latest, so its memo holds.
+  const handlers = useRef({});
+  handlers.current = { onChartMouseDown, onChartMouseMove, onChartMouseUp };
+  const onDown = useCallback((e) => handlers.current.onChartMouseDown?.(e), []);
+  const onMove = useCallback((e) => handlers.current.onChartMouseMove?.(e), []);
+  const onUp = useCallback((e) => handlers.current.onChartMouseUp?.(e), []);
+  const span = chartMaxT - chartMinT;
+  const playheadPct = span > 0 ? Math.min(1, Math.max(0, (curT - chartMinT) / span)) : null;
   // workload bands: shaded Low / Medium / High zones behind the chart
   const showBands = !!workloadBands && filters.workload && hasIndex;
-  const zones = showBands ? [
+  const zones = useMemo(() => (showBands ? [
     { band: "low", y1: 0, y2: wlY(workloadBands.medium), opacity: 0.05 },
     { band: "medium", y1: wlY(workloadBands.medium), y2: wlY(workloadBands.high), opacity: 0.08 },
     { band: "high", y1: wlY(workloadBands.high), y2: 1, opacity: 0.1 },
-  ] : [];
+  ] : NO_ZONES), [showBands, workloadBands]);
   return (
     <div className="rev-timeline">
       <div className="tl-head">
@@ -90,58 +174,21 @@ export default function SessionTimeline({
           )}
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={150}>
-        <LineChart data={chartSeries} margin={{ top: 4, right: 8, bottom: 0, left: -28 }}
-          style={{ cursor: readOnly ? "default" : "pointer" }}
-          onMouseDown={readOnly ? undefined : onChartMouseDown}
-          onMouseMove={readOnly ? undefined : onChartMouseMove}
-          onMouseUp={readOnly ? undefined : onChartMouseUp}
-        >
-          <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
-          <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
-            stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" />
-          <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={30} />
-          <Tooltip content={<TLTooltip />} />
-          {zones.map((z) => (
-            <ReferenceArea key={`zone-${z.band}`} y1={z.y1} y2={z.y2} fill={WL_BAND_COLOR[z.band]} fillOpacity={z.opacity}
-              stroke="none" style={{ pointerEvents: "none" }} ifOverflow="hidden"
-              label={{ value: `${WL_BAND_LABEL[z.band]} workload`, position: "insideTopRight",
-                       fill: WL_BAND_COLOR[z.band], fillOpacity: 0.75, fontSize: 10 }} />
-          ))}
-          {filters.events !== false && flightPhases.map((p) => {
-            const minSpan = Math.max(1, totalT * 0.008);
-            let x1 = p.start, x2 = p.end;
-            if (x2 - x1 < minSpan) {
-              const pad = (minSpan - (x2 - x1)) / 2;
-              x1 = Math.max(chartMinT, p.start - pad);
-              x2 = Math.min(chartMaxT, p.end + pad);
-              if (x2 - x1 < minSpan) {
-                if (x1 === chartMinT) x2 = Math.min(chartMaxT, x1 + minSpan);
-                else if (x2 === chartMaxT) x1 = Math.max(chartMinT, x2 - minSpan);
-              }
-            }
-            // display only: the shaded event boxes let clicks and drags through
-            // to the chart underneath, so scrubbing works across them (the
-            // event buttons below the chart are what you click to open one)
-            return (
-              <ReferenceArea key={p.key} x1={x1} x2={x2} className="tl-event-area"
-                fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
-                style={{ pointerEvents: "none" }}
-                label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
-            );
-          })}
-          {metrics.map((m) =>
-            filters[m.key] && !unavailable(m, hasIndex) ? (
-              <Line key={m.key} type="monotone" dataKey={m.key} stroke={m.color}
-                dot={false} strokeWidth={1.6} isAnimationActive={false} />
-            ) : null
-          )}
-          {workloadBands && filters.workload && [workloadBands.medium, workloadBands.high].map((v) => (
-            <ReferenceLine key={v} y={wlY(v)} stroke="#f5a623" strokeOpacity={0.45} strokeDasharray="4 4" />
-          ))}
-          <ReferenceLine x={+curT.toFixed(1)} stroke="#ff5c5c" strokeWidth={1.5} />
-        </LineChart>
-      </ResponsiveContainer>
+      {/* The chart only redraws when its data or filters change -- never per
+          frame -- and the red playhead is drawn over it on its own. */}
+      <div className="tl-chart">
+        <TimelineChart readOnly={readOnly} metrics={metrics} chartSeries={chartSeries}
+          timelineTicks={timelineTicks} filters={filters} hasIndex={hasIndex} zones={zones}
+          workloadBands={workloadBands} flightPhases={flightPhases}
+          chartMinT={chartMinT} chartMaxT={chartMaxT} totalT={totalT}
+          onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} />
+        {playheadPct != null && (
+          <div className="tl-playhead" style={{
+            left: `calc(${PLOT_LEFT}px + (100% - ${PLOT_LEFT + CHART_MARGIN.right}px) * ${playheadPct})`,
+            top: CHART_MARGIN.top, height: CHART_H - CHART_MARGIN.top - CHART_MARGIN.bottom - X_AXIS_H,
+          }} />
+        )}
+      </div>
       {!readOnly && flightPhases.length > 0 && (
         <>
           <div className="phase-buttons-label">Events:</div>

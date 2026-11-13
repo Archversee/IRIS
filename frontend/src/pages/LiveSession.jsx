@@ -147,7 +147,6 @@ export default function LiveSession() {
     ? liveFlights[liveFlights.length - 1].title
     : (mavisHere && mavis?.active_lesson?.title)
       || (summary?.flights || []).map((f) => f.title).filter(Boolean).pop();
-  const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
     <div className="rev rev--embedded">
@@ -187,7 +186,7 @@ export default function LiveSession() {
         />
         <SessionTimeline {...timeline} readOnly />
 
-        <FlightTelemetryCard {...liveState} altMax={altMax} live
+        <FlightTelemetryCard {...liveState} live
           bands={mavisHere ? mavis?.bands : null} />
       </div>
     </div>

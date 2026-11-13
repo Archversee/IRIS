@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // Binds a live MediaStream (browser screen-capture) to a <video> ref --
 // srcObject can't be set as a JSX attribute like src can.
@@ -24,7 +24,8 @@ function useStreamBinding(ref, stream) {
 // is kept exactly 16:9), so 1920x1080 maps straight onto it.
 const toScreen = (box, x, y) => ({ x: box.x + (x / 1920) * box.w, y: box.y + (y / 1080) * box.h });
 
-function ScanTrail({ trail: raw, boxes, maxLen }) {
+// Memoised: the trail changes at the slower view rate, the gaze dot every frame.
+const ScanTrail = memo(function ScanTrail({ trail: raw, boxes, maxLen }) {
   if (!raw?.length || !boxes?.instrument || !boxes?.otw) return null;
   const n = raw.length;
   const u = boxes.instrument.w / 1920;                 // 1920-space units -> px
@@ -83,7 +84,7 @@ function ScanTrail({ trail: raw, boxes, maxLen }) {
       ))}
     </g>
   );
-}
+});
 
 // Where the OTW and Instruments screen bodies sit inside the screens row,
 // in the row's own on-screen pixels (re-measured on resize). Using one
@@ -190,7 +191,7 @@ export default function ScreensPanel({
           ) : null}
           {hasOtw && lookingAtOtw && gaze?.x != null && gaze?.y != null && (
             <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="aoi-overlay-svg">
-              <g className="gaze-cursor"
+              <g className={"gaze-cursor" + (live ? " gaze-cursor--eased" : "")}
                 style={{
                   transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
                 }}>
@@ -240,7 +241,7 @@ export default function ScreensPanel({
                 );
               })}
               {lookingAtInstruments && gaze?.x != null && gaze?.y != null && (
-                <g className="gaze-cursor"
+                <g className={"gaze-cursor" + (live ? " gaze-cursor--eased" : "")}
                   style={{
                     transform: `translate(${gaze.x}px, ${gaze.y}px) rotate(${gazeStretch.angleDeg}deg) scale(${gazeStretch.factor}, ${1 / Math.sqrt(gazeStretch.factor)})`,
                   }}>

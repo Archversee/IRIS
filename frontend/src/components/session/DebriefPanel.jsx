@@ -3,7 +3,7 @@
 // Written automatically when the flight ends or Review is first opened (with a
 // note for each broken rule).
 // Backend: app/routers/debrief.py, prompt in app/flight_summary.py.
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { api } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 
@@ -40,7 +40,7 @@ export function DebriefChip({ onClick, job }) {
   );
 }
 
-export default function DebriefPanel({ sessionId }) {
+function DebriefPanel({ sessionId }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [d, setD] = useState(null);
@@ -175,3 +175,6 @@ function Facts({ f }) {
     </section>
   );
 }
+
+// Memoised: Review re-renders every playback frame; this doesn't depend on the playhead.
+export default memo(DebriefPanel);

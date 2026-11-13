@@ -48,6 +48,31 @@ export function interpolatedGaze(eyeArr, timeline, t) {
   };
 }
 
+// How much to stretch the gaze halo along its direction of travel at time t:
+// from the gaze speed between the two eye samples either side of t (1920x1080
+// px per second of flight time). Worked out straight from the data, so it
+// needs no extra render per frame. No movement (a blink, a jump between
+// areas, the very ends) = a round halo.
+export function gazeStretchAt(eyeArr, timeline, t) {
+  const round = { angleDeg: 0, factor: 1 };
+  if (eyeArr.length < 2) return round;
+  let j = nearestIndexForTime(timeline, t);
+  if (timeline[j].t < t && j + 1 < eyeArr.length) j += 1;   // j = first sample at/after t
+  const i = j - 1;
+  if (i < 0) return round;
+  const a = eyeArr[i], b = eyeArr[j];
+  const dt = timeline[j].t - timeline[i].t;
+  if (dt <= 0 || a.blink || b.blink || a.aoi !== b.aoi
+      || a.gaze_point_x == null || b.gaze_point_x == null) return round;
+  const dx = b.gaze_point_x - a.gaze_point_x, dy = b.gaze_point_y - a.gaze_point_y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 0.5) return round;
+  return {
+    angleDeg: Math.atan2(dy, dx) * (180 / Math.PI),
+    factor: 1 + Math.min(1.8, dist / dt / 4000),
+  };
+}
+
 export function zoneForPoint(zones, x, y) {
   for (const z of zones) {
     const xMin = Math.min(z.x1, z.x2), xMax = Math.max(z.x1, z.x2);

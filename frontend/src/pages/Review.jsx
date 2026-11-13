@@ -103,7 +103,6 @@ export default function Review() {
     );
 
   const curriculum = [...new Set((summary.flights || []).map((f) => f.title).filter(Boolean))].join(" · ");
-  const altMax = flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0);
 
   return (
     <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom80" + (dockDragging ? " is-dock-dragging" : "")}
@@ -137,7 +136,7 @@ export default function Review() {
         <div className="rev-bottom rev-bottom--telemetry">
           <ScanPathCard {...scanPath} />
           <RegionPieCard {...regionPie} />
-          <FlightTelemetryCard {...liveState} altMax={altMax} />
+          <FlightTelemetryCard {...liveState} />
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client.js";
 import { sopApi } from "../../sop/sopApi.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
@@ -56,7 +56,7 @@ export function RuleChecksChip({ evaluation, missing, onClick }) {
   );
 }
 
-export default function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, flightStartMs }) {
+function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, flightStartMs }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [presets, setPresets] = useState(null);
@@ -407,3 +407,6 @@ function Judge({ r, onSaved }) {
     </div>
   );
 }
+
+// Memoised: Review re-renders every playback frame; this doesn't depend on the playhead.
+export default memo(RuleChecksPanel);

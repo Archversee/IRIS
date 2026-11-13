@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { fmt } from "./utils.js";
 
 // Flight telemetry for Live Monitor and Review (the current instant), drawn the way MAVIS's own in-flight
@@ -310,7 +310,7 @@ function withDerived(row) {
 
 // `live` (Live Monitor): the bank + heading dials, the step's allowed ranges
 // (`bands`) and the tighter layout. Review leaves it off: the plain card.
-export default function FlightTelemetryCard({ cur: rawCur, altMax, bands, live = false }) {
+function FlightTelemetryCard({ cur: rawCur, altMax, bands, live = false }) {
   const cur = withDerived(rawCur);
   const [view, setView] = useState("gauges");
   // Height tape: 0 .. a bit over the highest point; while the step asks for a
@@ -383,3 +383,7 @@ export default function FlightTelemetryCard({ cur: rawCur, altMax, bands, live =
     </div>
   );
 }
+
+// Memoised: on Review it only re-renders when the nearest flight sample changes,
+// not on every playback frame.
+export default memo(FlightTelemetryCard);

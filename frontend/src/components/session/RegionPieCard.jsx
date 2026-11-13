@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 function PieTip({ active, payload }) {
@@ -12,7 +13,8 @@ function PieTip({ active, payload }) {
 
 // Cumulative percentage of time spent looking at each AOI, up to the
 // current playback position.
-export default function RegionPieCard({ regions }) {
+// Memoised: `regions` only changes at the slower view rate (useSessionData.js).
+export default memo(function RegionPieCard({ regions }) {
   return (
     <div className="rev-card">
       <h3>Region viewing %</h3>
@@ -41,4 +43,4 @@ export default function RegionPieCard({ regions }) {
       )}
     </div>
   );
-}
+});

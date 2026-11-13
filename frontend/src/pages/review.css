@@ -214,6 +214,14 @@
 .filter-chip.on { color: var(--rev-text); border-color: var(--border-strong); background: var(--rev-panel-2); }
 .filter-chip:disabled { opacity: .4; cursor: not-allowed; }
 
+/* The red playhead, drawn over the chart (SessionTimeline.jsx) so moving it
+   doesn't redraw the chart; left/top/height come from the chart geometry. */
+.tl-chart { position: relative; }
+.tl-playhead {
+  position: absolute; width: 1.5px; margin-left: -0.75px;
+  background: #ff5c5c; pointer-events: none;
+}
+
 .tl-clock {
   text-align: center; font-variant-numeric: tabular-nums;
   color: var(--rev-cyan); font-size: 13px; font-weight: 600;
@@ -396,7 +404,9 @@
 }
 
 /* ---- gaze animation ---- */
-.gaze-cursor {
+/* Replay moves the dot every frame, so it needs no easing. The live view
+   only gets new gaze every ~250ms (batched), so there it glides between. */
+.gaze-cursor--eased {
   transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .gaze-halo {

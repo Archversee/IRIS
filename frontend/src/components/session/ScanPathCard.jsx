@@ -1,6 +1,9 @@
+import { memo } from "react";
+
 // Gaze fixation log: which AOI the pilot was looking at, in order, up to
 // the current playback position, with a filter menu and minimum-dwell input.
-export default function ScanPathCard({
+// Memoised: its inputs only change at the slower view rate (useSessionData.js).
+export default memo(function ScanPathCard({
   curEye, curAoi,
   aoiFilterOpen, setAoiFilterOpen, aoiFilterRef,
   allAois, hiddenAois, toggleAoiHidden, scanLogColor,
@@ -70,4 +73,4 @@ export default function ScanPathCard({
       )}
     </div>
   );
-}
+});

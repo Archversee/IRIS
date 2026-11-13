@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client.js";
 import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS, WL_MIN, WL_MAX } from "./constants.js";
-import { bounds, norm, nearestIndexForTime, interpolatedGaze, effectiveAoi, buildScanRuns } from "./utils.js";
-import { useSyncedVideo, useGazeStretch } from "./hooks.js";
+import { bounds, norm, nearestIndexForTime, interpolatedGaze, gazeStretchAt, effectiveAoi, buildScanRuns } from "./utils.js";
+import { useSyncedVideo } from "./hooks.js";
 
 const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW screens)
+// While playing, the gaze dot, clock and videos follow the playhead every
+// frame; the heavier panels (scan log, region pie, gaze trail, ground track)
+// follow a copy of it refreshed this often, so they don't re-render 60x/s.
+const SLOW_VIEW_MS = 125;
 
 // Mean gaze point (1920x1080 space of that screen) over one glance, using
 // samples whose raw area is `rawAoi` ("OTW" or "Instruments"), or null.
@@ -42,7 +46,12 @@ export function useSessionData({ id, live }) {
   // MAVIS planned circuits (GET /routes); the one this session flew is drawn under its track.
   const [routes, setRoutes] = useState([]);
   const [err, setErr] = useState(null);
-  const [cursor, setCursor] = useState(0);
+  // Playhead: seconds since the first flight sample. Continuous -- not
+  // snapped to flight samples -- so the gaze dot and clock move smoothly
+  // between samples (the flight readouts use the nearest sample, `cursor`).
+  const [playhead, setPlayhead] = useState(0);
+  // the playhead as the heavier panels see it while playing (see SLOW_VIEW_MS); null when not playing
+  const [slowPlayhead, setSlowPlayhead] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -78,7 +87,6 @@ export function useSessionData({ id, live }) {
   const [aoiFilterOpen, setAoiFilterOpen] = useState(false);
   const aoiFilterRef = useRef(null);
   const minAoiDwellSec = Math.max(0, parseFloat(minAoiDwellInput) || 0);
-  const timer = useRef(null);
   const virtualT = useRef(0);
   const instrumentVideoRef = useRef(null);
   const otwVideoRef = useRef(null);
@@ -240,20 +248,19 @@ export function useSessionData({ id, live }) {
     };
   }, [id, live]);
 
-  // live mode only: snap to the newest sample whenever new data lands, unless the user has scrubbed into history
-  useEffect(() => {
-    if (live && followingLive && flight.length) setCursor(flight.length - 1);
-  }, [flight.length, followingLive, live]);
-
   const t0 = flight.length ? new Date(flight[0].ts).getTime() : 0;
   const elapsed = (ts) => (new Date(ts).getTime() - t0) / 1000;
-  const curT = flight.length ? elapsed(flight[Math.min(cursor, flight.length - 1)].ts) : 0;
   const totalT = flight.length ? elapsed(flight[flight.length - 1].ts) : 0;
+  // live mode follows the newest sample unless the user has scrubbed into history
+  const curT = live && followingLive ? totalT : Math.min(playhead, totalT);
+  const viewT = slowPlayhead == null ? curT : Math.min(slowPlayhead, totalT);
 
   const eyeTimeline = useMemo(() => eye.map((e) => ({ t: elapsed(e.ts) })), [eye]);
   const flightTimeline = useMemo(() => flight.map((r) => ({ t: elapsed(r.ts) })), [flight]);
+  const cursor = nearestIndexForTime(flightTimeline, curT);
   const gaze = eyeTimeline.length ? interpolatedGaze(eye, eyeTimeline, curT) : null;
-  const gazeStretch = useGazeStretch(gaze, curT);
+  const gazeStretch = eyeTimeline.length ? gazeStretchAt(eye, eyeTimeline, curT) : null;
+  const altMax = useMemo(() => flight.reduce((m, r) => (r.altitude_ft > m ? r.altitude_ft : m), 0), [flight]);
 
 
   // the index's point (one per second) nearest each flight sample, or null
@@ -342,15 +349,15 @@ export function useSessionData({ id, live }) {
 
   const regions = useMemo(() => {
     const durations = {};
-    for (let i = 0; i < runs.length && runs[i].t <= curT; i++) {
-      const end = i + 1 < runs.length ? Math.min(runs[i + 1].t, curT) : curT;
+    for (let i = 0; i < runs.length && runs[i].t <= viewT; i++) {
+      const end = i + 1 < runs.length ? Math.min(runs[i + 1].t, viewT) : viewT;
       durations[runs[i].aoi] = (durations[runs[i].aoi] || 0) + Math.max(0, end - runs[i].t);
     }
     const total = Object.values(durations).reduce((a, b) => a + b, 0) || 1;
     return Object.entries(durations)
       .sort((a, b) => b[1] - a[1])
       .map(([name, d], i) => ({ name, value: d, pct: (d / total) * 100, color: aoiColor(name, i) }));
-  }, [runs, curT]);
+  }, [runs, viewT]);
 
   // The reference route is not a choice: it's the circuit this exact session
   // flew, or nothing. The session's lessons come from its flights (MAVIS logs
@@ -423,7 +430,7 @@ export function useSessionData({ id, live }) {
     () => groundTrack.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
     [groundTrack]
   );
-  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, curT) : -1;
+  const groundFlownIdx = groundTrack.length ? nearestIndexForTime(groundTrack, viewT) : -1;
   const groundFlownPath = useMemo(() => {
     if (groundFlownIdx < 0) return "";
     return groundTrack.slice(0, groundFlownIdx + 1).map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -528,16 +535,16 @@ export function useSessionData({ id, live }) {
     let latest = null; // the run the gaze is in right now (labelled or not)
     for (let i = scanLog.length - 1; i >= 0; i--) {
       const r = scanLog[i];
-      if (r.start > curT) continue;
+      if (r.start > viewT) continue;
       if (!latest) latest = r;
       if (hiddenAois.has(r.aoi) || !labelled(r.aoi)) continue;
-      const end = Math.min(r.end, curT), dur = Math.max(0, end - r.start);
+      const end = Math.min(r.end, viewT), dur = Math.max(0, end - r.start);
       const head = steps[0];
       if (head && head.aoi === r.aoi) {          // same area again -> one glance
         head.start = r.start; head.id = r.order; head.dur += dur; continue;
       }
       if (steps.length === SCAN_TRAIL_LEN) break;
-      steps.unshift({ id: r.order, aoi: r.aoi, start: r.start, end, dur, isCurrent: r === latest && curT < r.end });
+      steps.unshift({ id: r.order, aoi: r.aoi, start: r.start, end, dur, isCurrent: r === latest && viewT < r.end });
     }
     return steps.map((st) => {
       const isOtw = st.aoi === "OTW";
@@ -552,20 +559,20 @@ export function useSessionData({ id, live }) {
         dur: st.dur, isCurrent: st.isCurrent,
       };
     });
-  }, [scanLog, curT, hiddenAois, aoiZones, scanLogColor, eye, eyeTimeline]);
+  }, [scanLog, viewT, hiddenAois, aoiZones, scanLogColor, eye, eyeTimeline]);
 
   const scanLogRows = useMemo(() => {
     const rows = [];
     for (let i = scanLog.length - 1; i >= 0; i--) {
       const r = scanLog[i];
-      if (r.start > curT) continue;
+      if (r.start > viewT) continue;
       if (hiddenAois.has(r.aoi)) continue;
-      const isCurrent = curT < r.end;
-      const end = isCurrent ? curT : r.end;
+      const isCurrent = viewT < r.end;
+      const end = isCurrent ? viewT : r.end;
       rows.push({ ...r, end, dur: Math.max(0, end - r.start), isCurrent });
     }
     return rows;
-  }, [scanLog, curT, hiddenAois]);
+  }, [scanLog, viewT, hiddenAois]);
 
   useEffect(() => {
     if (!aoiFilterOpen) return;
@@ -576,13 +583,13 @@ export function useSessionData({ id, live }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [aoiFilterOpen]);
 
-  const toggleAoiHidden = (name) => {
+  const toggleAoiHidden = useCallback((name) => {
     setHiddenAois((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
-  };
+  }, []);
 
   useEffect(() => {
     if (!scrubbing) return;
@@ -591,22 +598,26 @@ export function useSessionData({ id, live }) {
     return () => window.removeEventListener("mouseup", stop);
   }, [scrubbing]);
 
+  // Playback: advance the playhead once per display frame by real elapsed
+  // time x speed, looping at the end. The heavier panels' copy of it
+  // (slowPlayhead) only moves every SLOW_VIEW_MS.
   useEffect(() => {
-    if (playing && flight.length) {
-      virtualT.current = curT;
-      let lastTick = performance.now();
-      timer.current = setInterval(() => {
-        const now = performance.now();
-        const dtSec = (now - lastTick) / 1000;
-        lastTick = now;
-        virtualT.current += dtSec * speed;
-        if (virtualT.current >= totalT) virtualT.current = 0;
-        setCursor(nearestIndexForTime(flightTimeline, virtualT.current));
-      }, 16);
-    }
-    return () => clearInterval(timer.current);
+    if (!playing || !flight.length) return;
+    virtualT.current = curT;
+    setSlowPlayhead(curT);
+    let last = performance.now(), lastSlow = last, raf;
+    const step = (now) => {
+      virtualT.current += (Math.max(0, now - last) / 1000) * speed;
+      last = now;
+      if (virtualT.current >= totalT) virtualT.current = 0;
+      setPlayhead(virtualT.current);
+      if (now - lastSlow >= SLOW_VIEW_MS) { lastSlow = now; setSlowPlayhead(virtualT.current); }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { cancelAnimationFrame(raf); setSlowPlayhead(null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, speed, flight.length, totalT, flightTimeline]);
+  }, [playing, speed, flight.length, totalT]);
 
   useSyncedVideo(instrumentVideoRef, instrumentVideoSrc, instrumentOffsetSec, curT, playing, speed);
   useSyncedVideo(otwVideoRef, otwVideoSrc, otwOffsetSec, curT, playing, speed);
@@ -616,22 +627,26 @@ export function useSessionData({ id, live }) {
   const cur = ready ? flight[cursor] : null;
   const curEye = ready && eyeTimeline.length ? eye[nearestIndexForTime(eyeTimeline, curT)] : null;
   const curAoi = curEye && !curEye.blink ? effectiveAoi(curEye, aoiZones) : null;
+  // the scan-path card's "gaze ·" tag follows the slower view clock
+  const viewEye = ready && eyeTimeline.length ? eye[nearestIndexForTime(eyeTimeline, viewT)] : null;
+  const viewAoi = viewEye && !viewEye.blink ? effectiveAoi(viewEye, aoiZones) : null;
   const lookingAtOtw = !!(curEye && !curEye.blink && curEye.aoi === "OTW");
   const lookingAtInstruments = !!(curEye && !curEye.blink && curEye.aoi === "Instruments");
 
   // any manual jump means the user wants to look at history, not the live edge
-  const seekTo = (targetT) => {
+  // stable between renders, so the memoised panels it's passed to don't re-render every frame
+  const seekTo = useCallback((targetT) => {
     if (live) setFollowingLive(false);
     const clamped = Math.max(0, Math.min(totalT, targetT));
     virtualT.current = clamped;
-    setCursor(nearestIndexForTime(flightTimeline, clamped));
-  };
+    setPlayhead(clamped);
+    setSlowPlayhead((s) => (s == null ? null : clamped));
+  }, [live, totalT]);
   const seek = (deltaSec) => seekTo(curT + deltaSec);
 
   const goLive = () => {
     setFollowingLive(true);
     setPlaying(false);
-    if (flight.length) setCursor(flight.length - 1);
   };
 
   const seekToChartEvent = (chartEvent) => {
@@ -729,21 +744,26 @@ export function useSessionData({ id, live }) {
       onChartMouseMove: (e) => { if (scrubbing) seekToChartEvent(e); },
       onChartMouseUp: () => setScrubbing(false),
       seekTo, openPhase,
-      playing, onTogglePlay: () => { setPlaying((p) => !p); if (live) setFollowingLive(false); },
+      playing,
+      onTogglePlay: () => {
+        setPlaying((p) => !p);
+        // leaving the live edge: carry on from where it was, not from the old playhead
+        if (live) { if (followingLive) setPlayhead(totalT); setFollowingLive(false); }
+      },
       seek, onRestart: () => { seekTo(0); setPlaying(false); },
       speed, setSpeed,
       live, followingLive, goLive,
     },
 
     scanPath: {
-      curEye, curAoi,
+      curEye: viewEye, curAoi: viewAoi,
       aoiFilterOpen, setAoiFilterOpen, aoiFilterRef,
       allAois, hiddenAois, toggleAoiHidden, scanLogColor,
       minAoiDwellInput, setMinAoiDwellInput,
       scanLogRows, seekTo,
     },
 
-    liveState: { cur },
+    liveState: { cur, altMax },
     regionPie: { regions },
 
     phases: {
