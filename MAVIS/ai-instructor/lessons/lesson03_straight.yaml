@@ -61,7 +61,7 @@ exercises:
   climb_to_ft: 500          # target = start height + this, a round hundred
   climb_speed_band_kt: [70, 90]   # climb and level off: any speed in here is fine
   descend_to_ft: 500
-  level_band_ft: 100        # "levelled at the target" = within this
+  level_band_ft: 200        # "levelled at the target" = within this
   level_hold_s: 5           # ...and steady there this long
   glide_kt: 68              # C172 best glide
   glide_band_kt: [60, 80]   # glide: any speed in here is fine
