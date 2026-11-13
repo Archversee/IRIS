@@ -64,7 +64,8 @@ export default function LessonTree() {
             </button>
             {open && (
               <div className="sidebar__module-lessons">
-                {mod.lessons.map((les) => (
+                {/* Lessons are numbered within their module (1, 2, 3...). */}
+                {mod.lessons.map((les, n) => (
                   <button
                     type="button"
                     key={les.id}
@@ -72,7 +73,8 @@ export default function LessonTree() {
                     disabled={les.available === false}
                     onClick={() => pick(les)}
                   >
-                    {les.title}
+                    <span className="sidebar__lesson-num">{n + 1}.</span>
+                    <span>{les.title}</span>
                   </button>
                 ))}
               </div>

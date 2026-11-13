@@ -113,7 +113,10 @@ a { color: var(--accent); text-decoration: none; }
   text-align: left; background: none; border: none;
   color: var(--muted); font-size: 12px;
   padding: 5px 18px 5px 38px; cursor: pointer;
+  display: flex; gap: 6px;
 }
+/* Fixed-width number so wrapped titles line up under the text. */
+.sidebar__lesson-num { flex: none; min-width: 1.4em; font-variant-numeric: tabular-nums; }
 .sidebar__lesson:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
 .sidebar__lesson.is-active { color: var(--accent); font-weight: 600; }
 .sidebar__lesson:disabled { opacity: 0.4; cursor: not-allowed; }
