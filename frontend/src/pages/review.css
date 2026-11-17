@@ -89,6 +89,9 @@
 .rev--docked .rev-bottom--telemetry > .rev-card:not(:has(.aoi-filter)) { contain: size; }
 .rev--docked .card-head { flex-wrap: wrap; row-gap: 4px; }
 .rev--docked .card-head h3 { white-space: nowrap; }
+/* the live "gaze · <area>" tag shortens with "…" instead of wrapping the head:
+   its text changes during playback, and a wrap would make the bottom row jump */
+.rev--docked .card-head .tag { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container revmain (max-width: 980px) {
   .rev-titlebar { flex-wrap: wrap; row-gap: 4px; }
   .rev-titlebar h1, .rev-titlebar .sub { white-space: nowrap; }
@@ -233,6 +236,16 @@
 /* contain: the drawn chart's own height mustn't count towards the row's
    minimum, or it could only ever grow (never shrink back on a smaller window) */
 .rev--docked .tl-chart { flex: 1 0 150px; height: auto; contain: size; }
+
+/* Live Monitor: the same scale (.rev--zoom) and proportions as Review --
+   the telemetry card is the height of Review's bottom row (its 10-entry scan
+   path: 440px), taller only if the gauges wrap onto more rows; the timeline
+   takes the spare height; a short window scrolls. */
+.rev--live .rev-main { display: flex; flex-direction: column; overflow-y: auto; }
+.rev--live .rev-main > * { flex: none; }
+.rev--live .rev-timeline { flex: 1 0 auto; display: flex; flex-direction: column; }
+.rev--live .tl-chart { flex: 1 0 150px; height: auto; contain: size; }
+.rev--live .ft-card { min-height: 440px; }
 .tl-playhead-clip { position: absolute; overflow: hidden; pointer-events: none; }
 .tl-playhead-track { position: absolute; top: 0; bottom: 0; left: 2px; right: 2px; will-change: transform; }
 .tl-playhead {

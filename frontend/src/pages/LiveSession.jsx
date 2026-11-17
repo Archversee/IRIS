@@ -149,7 +149,7 @@ export default function LiveSession() {
       || (summary?.flights || []).map((f) => f.title).filter(Boolean).pop();
 
   return (
-    <div className="rev rev--embedded">
+    <div className="rev rev--embedded rev--zoom rev--live">
       <div className="rev-rail">
         <a className="rail-btn" title="Analytics" onClick={() => nav(`/sessions/${sessionId}/analytics`)} href="#">▦</a>
         <div className="rail-sep" />
