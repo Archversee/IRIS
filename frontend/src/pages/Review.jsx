@@ -105,7 +105,7 @@ export default function Review() {
   const curriculum = [...new Set((summary.flights || []).map((f) => f.title).filter(Boolean))].join(" · ");
 
   return (
-    <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom80" + (dockDragging ? " is-dock-dragging" : "")}
+    <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom" + (dockDragging ? " is-dock-dragging" : "")}
       style={dockFrac != null ? { "--dock-w": `${(dockFrac * 100).toFixed(2)}%` } : undefined}>
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}

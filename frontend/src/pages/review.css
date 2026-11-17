@@ -37,7 +37,7 @@
 /* Session Review: debrief, SOP rule checks and incidents always on screen in a
    column beside the videos -- no drawers to find and open.
    The column is resizable (Review.jsx sets --dock-w while dragging). Default
-   D = clamp(340px, 27%, 520px); it can be dragged down to 260px, and up until
+   D = clamp(300px, 21%, 400px); it can be dragged down to 260px, and up until
    the ground track is gone: D + one screen's width (W) + the gap, so OTW and
    Instruments never shrink. W = the screens' share at the default width:
    (100% - D - 24px main padding - 20px gaps) / 3. */
@@ -47,8 +47,8 @@
 @property --rev-scr-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
 .rev--docked {
   container-type: inline-size;   /* 100cqw on .rev-main = this page's width, for W */
-  grid-template-columns: minmax(0, 1fr) clamp(260px, var(--dock-w, clamp(340px, 27%, 520px)),
-    calc(clamp(340px, 27%, 520px) + (100% - clamp(340px, 27%, 520px) - 44px) / 3 + 10px));
+  grid-template-columns: minmax(0, 1fr) clamp(260px, var(--dock-w, clamp(300px, 21%, 400px)),
+    calc(clamp(300px, 21%, 400px) + (100% - clamp(300px, 21%, 400px) - 44px) / 3 + 10px));
 }
 .rev-dock {
   position: relative;
@@ -67,7 +67,7 @@
    narrower); when it gets wider the ground track gives up its width first
    (shrink weight 1000 vs 1), then ScreensPanel hides it. */
 .rev--docked .rev-screens { display: flex; }
-.rev--docked .rev-main { --rev-scr-w: calc((100cqw - clamp(340px, 27cqw, 520px) - 44px) / 3); }
+.rev--docked .rev-main { --rev-scr-w: calc((100cqw - clamp(300px, 21cqw, 400px) - 44px) / 3); }
 .rev--docked .rev-screen { flex: 1 1 var(--rev-scr-w); min-width: 0; }
 .rev--docked .rev-screen--ground { flex-shrink: 1000; }
 .rev--docked .rev-screens.is-ground-hidden { justify-content: center; }
@@ -100,9 +100,9 @@
 .rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
 /* a title-bar chip was clicked: point at its pane */
 .rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }
-/* Session Review only: everything at 80% scale so the dense layout fits.
+/* Session Review only: everything at 88% scale so the dense layout fits.
    (Percentage sizes aren't scaled by zoom, so the box still fills the page.) */
-.rev--zoom80 { zoom: 0.8; }
+.rev--zoom { zoom: 0.88; }
 
 /* ---- left toolbar rail ---- */
 .rev-rail {
@@ -196,8 +196,8 @@
      and the AOI/gaze overlays (which assume an exact 16:9 box) drifted. */
   width: 100%; max-width: calc(var(--screen-max-h, 38vh) * 16 / 9); margin: 0 auto;
 }
-/* The 80%-zoomed Review keeps the same on-screen height limit. */
-.rev--zoom80 { --screen-max-h: 47.5vh; }
+/* Review: screens may be up to 44% of the window tall (44vh / the 0.88 zoom). */
+.rev--zoom { --screen-max-h: 50vh; }
 .screen-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;

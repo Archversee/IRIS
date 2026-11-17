@@ -282,10 +282,10 @@ export default function ScreensPanel({
                   <line {...groundRoute.runway} className="ground-route__runway" />
                 </g>
               )}
-              <polyline points={groundFullPath} fill="none" stroke="#263341" strokeWidth="1" />
-              <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+              <polyline points={groundFullPath} fill="none" stroke="#33465a" strokeWidth="1.6" strokeLinejoin="round" />
+              <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
               {groundCurPoint && (
-                <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="2.2" fill="#ff5c5c" />
+                <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="3" fill="#ff5c5c" />
               )}
             </svg>
           ) : (
