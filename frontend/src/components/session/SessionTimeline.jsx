@@ -43,8 +43,9 @@ function unavailable(m, hasIndex) {
 
 // Chart geometry. The plot area starts after the left margin + y-axis and
 // stops before the right margin / above the x-axis; the playhead overlay
-// below uses the same numbers to sit exactly on the time axis.
-const CHART_H = 150;
+// below uses the same numbers to sit exactly on the time axis. The chart's
+// height comes from .tl-chart (review.css): 150px, or on Review whatever
+// height the page has left over.
 const CHART_MARGIN = { top: 4, right: 8, bottom: 0, left: -28 };
 const Y_AXIS_W = 30;
 const X_AXIS_H = 30;
@@ -58,7 +59,7 @@ const TimelineChart = memo(function TimelineChart({
   flightPhases, chartMinT, chartMaxT, totalT, onMouseDown, onMouseMove, onMouseUp,
 }) {
   return (
-    <ResponsiveContainer width="100%" height={CHART_H}>
+    <ResponsiveContainer width="100%" height="100%">
       <LineChart data={chartSeries} margin={CHART_MARGIN}
         style={{ cursor: readOnly ? "default" : "pointer" }}
         onMouseDown={readOnly ? undefined : onMouseDown}
@@ -189,7 +190,7 @@ export default function SessionTimeline({
         {playheadPct != null && (
           <div className="tl-playhead-clip" style={{
             left: PLOT_LEFT - 2, right: CHART_MARGIN.right - 2,
-            top: CHART_MARGIN.top, height: CHART_H - CHART_MARGIN.top - CHART_MARGIN.bottom - X_AXIS_H,
+            top: CHART_MARGIN.top, bottom: CHART_MARGIN.bottom + X_AXIS_H,
           }}>
             <div className="tl-playhead-track" style={{ transform: `translateX(${playheadPct * 100}%)` }}>
               <div className="tl-playhead" />
