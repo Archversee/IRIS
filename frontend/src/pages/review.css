@@ -77,6 +77,13 @@
    below ~980px the title bar wraps, and scan path + region viewing stack in
    one column so flight telemetry keeps a usable width. */
 .rev--docked .rev-main { container: revmain / inline-size; }
+/* Short windows: the bottom row (scan path, regions, gauges) keeps a usable
+   height and the column scrolls, instead of the cards being crushed and the
+   gauges cut off. Tall windows: unchanged -- the row takes what's left.
+   The rows above are max-content: an `auto` row may shrink when space runs
+   out, which squashed the screens and cut off their 16:9 picture. */
+.rev--docked .rev-main { grid-template-rows: max-content max-content max-content minmax(auto, 1fr); overflow-y: auto; }
+.rev--docked .rev-bottom--telemetry { min-height: 440px; }
 .rev--docked .card-head { flex-wrap: wrap; row-gap: 4px; }
 .rev--docked .card-head h3 { white-space: nowrap; }
 @container revmain (max-width: 980px) {
@@ -86,6 +93,8 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
   .rev--docked .rev-bottom--telemetry > .ft-card { grid-column: 2; grid-row: 1 / span 2; }
+  /* narrow: the gauges stack in three rows (tapes, attitude, controls) */
+  .rev--docked .rev-bottom--telemetry { min-height: 620px; }
 }
 .rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
 /* a title-bar chip was clicked: point at its pane */
@@ -329,6 +338,9 @@
   text-align: left;
 }
 .scan-log-row:last-child { border-bottom: none; }
+/* Review: the log fills its card's height (whatever the window) instead of a fixed 220px */
+.rev--docked .rev-card:has(> .scan-log) { display: flex; flex-direction: column; }
+.rev--docked .rev-card > .scan-log { flex: 1 1 0; min-height: 120px; max-height: none; }
 .scan-log-row:hover { background: var(--rev-panel-2); }
 .scan-log-row.current { background: #16202b; border-left: 2px solid var(--rev-cyan); padding-left: 2px; }
 .scan-log-row .badge {
@@ -400,6 +412,9 @@
   .rev-dock { grid-template-rows: none; padding: 0 12px 12px; }
   .rev-dock__resizer { display: none; }
   .rev--docked .rev-screens { flex-direction: column; }
+  /* stacked, a flex-basis would set each screen's HEIGHT (squashing it into a
+     strip and cutting off its 16:9 body) -- let the body's own shape decide */
+  .rev--docked .rev-screen { flex: none; }
   .rev-dock__slot { max-height: 70vh; }
   .rev-main { grid-template-rows: auto auto auto auto; overflow: auto; }
   .rev { position: static; height: auto; }
@@ -553,7 +568,11 @@
    group's free space without asking for any, and the circle is drawn at the
    smaller of its width and height, so it never spills out or stretches the row. */
 .ft-card:not(.ft-card--live) .ft-att { flex: 1 1 0; min-width: 0; justify-content: center; }
-.ft-card:not(.ft-card--live) .ft-att__svg { flex: 1 1 0; width: 100%; height: 0; min-height: 0; aspect-ratio: auto; }
+.ft-card:not(.ft-card--live) .ft-att__svg { flex: 1 1 0; width: 100%; height: 0; min-height: 96px; aspect-ratio: auto; }
+/* Tall windows: each gauge column stops growing at a readable height
+   (instead of the bars turning into long thin strips) and sits centred in
+   its group; all columns stay the same height, so the captions line up. */
+.ft-card:not(.ft-card--live) .ft-group > * { height: 100%; max-height: 300px; align-self: center; }
 .ft-att__vals small { font-size: 10px; font-weight: 400; color: var(--rev-muted); }
 
 .ft-ctl { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 56px; }

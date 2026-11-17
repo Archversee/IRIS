@@ -110,7 +110,10 @@ function GazeHalo({ gaze, stretch, eased }) {
 // Where the OTW and Instruments screen bodies sit inside the screens row,
 // in the row's own on-screen pixels (re-measured on resize). Using one
 // coordinate space for the row lets trail arrows cross between screens.
-function useScreenBoxes(rowRef, otwRef, instRef) {
+// Re-measured when the row or either screen body changes size, and when
+// `layoutKey` changes (the ground track hiding moves the screens over
+// without resizing anything).
+function useScreenBoxes(rowRef, otwRef, instRef, layoutKey) {
   const [boxes, setBoxes] = useState(null);
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -126,9 +129,9 @@ function useScreenBoxes(rowRef, otwRef, instRef) {
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(row);
+    for (const el of [row, otwRef.current, instRef.current]) if (el) ro.observe(el);
     return () => ro.disconnect();
-  }, [rowRef, otwRef, instRef]);
+  }, [rowRef, otwRef, instRef, layoutKey]);
   return boxes;
 }
 
@@ -184,8 +187,8 @@ export default function ScreensPanel({
   const hasInstrument = !!(instrumentStream || instrumentFeed || instrumentVideoSrc);
   const [showTrail, setShowTrail] = useState(true);
   const rowRef = useRef(null), otwBodyRef = useRef(null), instBodyRef = useRef(null);
-  const boxes = useScreenBoxes(rowRef, otwBodyRef, instBodyRef);
   const groundHidden = useGroundHidden(fitGround, rowRef);
+  const boxes = useScreenBoxes(rowRef, otwBodyRef, instBodyRef, groundHidden);
   // Draw zones + trail even without a linked recording -- the layout of
   // the zones alone still shows where the eyes went.
   const showInstrumentOverlay = hasInstrument || (scanTrail?.length > 0 && aoiZones.length > 0);

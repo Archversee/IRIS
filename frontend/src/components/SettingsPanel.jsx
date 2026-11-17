@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTheme, setTheme } from "../theme.js";
-import { TrophyIcon, ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
+import { ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { SOP_ROLES } from "./Sidebar.jsx";
 
