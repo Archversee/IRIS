@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { getTheme, setTheme } from "../theme.js";
-import { ChecklistIcon, UploadIcon, TargetIcon } from "./SidebarIcons.jsx";
-import { useAuth } from "../auth/AuthContext.jsx";
-import { SOP_ROLES } from "./Sidebar.jsx";
+import { useTour } from "../tour/TourProvider.jsx";
 
 // Settings drawer, opened from the sidebar's gear. Only Theme is wired up;
 // everything else is a placeholder (selectable, but not saved or applied
 // anywhere yet) -- marked "Soon". Add new rows under the relevant section.
+// Pages (Scoring Guide, Upload, AOI Zones, SOP) live in the sidebar's Tools
+// group, not here: this drawer is preferences only.
 
 function Segmented({ options, value, onChange }) {
   return (
@@ -37,8 +36,9 @@ function Field({ label, soon, help, children }) {
 }
 
 export default function SettingsPanel({ onClose }) {
-  const { user } = useAuth();
   const [theme, setThemeState] = useState(getTheme);
+  const tour = useTour();
+  const [resetDone, setResetDone] = useState(false);
   // placeholders -- local only
   const [timeFmt, setTimeFmt] = useState("24");
   const [dateFmt, setDateFmt] = useState("DD-MMM-YYYY");
@@ -114,49 +114,23 @@ export default function SettingsPanel({ onClose }) {
             </Field>
           </section>
           <section className="set-section">
-            <h3>MAVIS</h3>
-            <nav className="set-links">
-              <Link to="/scoring" className="set-link" onClick={onClose}>
-                <ChecklistIcon />
-                <span>Scoring Guide</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
-            </nav>
+            <h3>Help &amp; Guidance</h3>
+            <Field label="Page tours"
+              help="A short guide the first time you open each page. The ? button next to Settings shows the current page's tour anytime, even when this is off.">
+              <Segmented value={tour.enabled ? "on" : "off"} onChange={(v) => tour.setEnabled(v === "on")} options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]} />
+            </Field>
+            <Field label="Reset tours" help="Show every page's guide again, as if you were new.">
+              <div className="set-btn-row">
+                <button type="button" className="secondary" onClick={async () => { await tour.resetSeen(); setResetDone(true); }}>
+                  Reset tours
+                </button>
+                {resetDone && <span className="set-done" role="status">Done — tours will show again.</span>}
+              </div>
+            </Field>
           </section>
-          <section className="set-section">
-            <h3>IRIS</h3>
-            <nav className="set-links">
-              <Link to="/upload" className="set-link" onClick={onClose}>
-                <UploadIcon />
-                <span>Upload</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
-              <Link to="/aoi-zones" className="set-link" onClick={onClose}>
-                <TargetIcon />
-                <span>AOI Zones</span>
-                <span className="set-link__chev" aria-hidden="true">›</span>
-              </Link>
-            </nav>
-          </section>
-          {/* SOP -> flight rules: instructor tools, hidden from trainees
-              (App.jsx also sends a trainee who opens /sop/* home). */}
-          {SOP_ROLES.includes(user?.role) && (
-            <section className="set-section">
-              <h3>SOP</h3>
-              <nav className="set-links">
-                <Link to="/sop/new" className="set-link" onClick={onClose}>
-                  <UploadIcon />
-                  <span>SOP Upload</span>
-                  <span className="set-link__chev" aria-hidden="true">›</span>
-                </Link>
-                <Link to="/sop/rules" className="set-link" onClick={onClose}>
-                  <ChecklistIcon />
-                  <span>SOP Rules</span>
-                  <span className="set-link__chev" aria-hidden="true">›</span>
-                </Link>
-              </nav>
-            </section>
-          )}
           {/* More sections go here. */}
         </div>
       </aside>

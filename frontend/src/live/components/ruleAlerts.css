@@ -2,7 +2,7 @@
    Kept to ONE line: items never wrap, long text is cut with an ellipsis (full
    text on hover), extra broken rules go behind "+N more". */
 .mavis-rules {
-  display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; font-size: 13px;
+  display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; font-size: var(--fs-md);
   min-width: 0; position: relative;
 }
 .mavis-rules__label { color: var(--muted, #8b98a5); white-space: nowrap; flex: none; }

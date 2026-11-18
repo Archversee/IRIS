@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import { METRICS, WL_BAND_COLOR, WL_BAND_LABEL, WL_MAX, WL_MIN } from "./constants.js";
 import { fmt } from "./utils.js";
+import { C } from "../../palette.js";
 
 function TLTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
@@ -18,11 +19,11 @@ function TLTooltip({ active, payload }) {
       ["Pupil activity (LHIPA)", fmt(d.lhipaR, 2), "/s"]);
   }
   return (
-    <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
-      <div style={{ color: "#8194a6", marginBottom: 4 }}>T + {d.t}s</div>
+    <div className="chart-tip">
+      <div className="chart-tip__k" style={{ marginBottom: 4 }}>T + {d.t}s</div>
       {rows.map(([k, v, u], i) => (
         <div key={i} style={{ display: "flex", gap: 12, justifyContent: "space-between" }}>
-          <span style={{ color: "#8194a6" }}>{k}</span>
+          <span className="chart-tip__k">{k}</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{v} {u}</span>
         </div>
       ))}
@@ -66,16 +67,16 @@ const TimelineChart = memo(function TimelineChart({
         onMouseMove={readOnly ? undefined : onMouseMove}
         onMouseUp={readOnly ? undefined : onMouseUp}
       >
-        <CartesianGrid stroke="#1b2530" strokeDasharray="3 3" />
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
         <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} ticks={timelineTicks} interval={0}
-          stroke="#5c6f82" tick={{ fontSize: 11 }} unit="s" height={X_AXIS_H} />
-        <YAxis stroke="#5c6f82" tick={false} domain={[0, 1]} width={Y_AXIS_W} />
+          stroke="var(--border-strong)" tick={{ fontSize: 12, fill: "var(--muted)" }} unit="s" height={X_AXIS_H} />
+        <YAxis stroke="var(--border-strong)" tick={false} domain={[0, 1]} width={Y_AXIS_W} />
         <Tooltip content={<TLTooltip />} />
         {zones.map((z) => (
           <ReferenceArea key={`zone-${z.band}`} y1={z.y1} y2={z.y2} fill={WL_BAND_COLOR[z.band]} fillOpacity={z.opacity}
             stroke="none" style={{ pointerEvents: "none" }} ifOverflow="hidden"
             label={{ value: `${WL_BAND_LABEL[z.band]} workload`, position: "insideTopRight",
-                     fill: WL_BAND_COLOR[z.band], fillOpacity: 0.75, fontSize: 10 }} />
+                     fill: WL_BAND_COLOR[z.band], fillOpacity: 0.85, fontSize: 12 }} />
         ))}
         {filters.events !== false && flightPhases.map((p) => {
           const minSpan = Math.max(1, totalT * 0.008);
@@ -96,7 +97,7 @@ const TimelineChart = memo(function TimelineChart({
             <ReferenceArea key={p.key} x1={x1} x2={x2} className="tl-event-area"
               fill={p.color} fillOpacity={0.16} stroke={p.color} strokeOpacity={0.6}
               style={{ pointerEvents: "none" }}
-              label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 11, fontWeight: 600 }} />
+              label={{ value: p.label, position: "insideTop", fill: p.color, fontSize: 12, fontWeight: 600 }} />
           );
         })}
         {metrics.map((m) =>
@@ -106,7 +107,7 @@ const TimelineChart = memo(function TimelineChart({
           ) : null
         )}
         {workloadBands && filters.workload && [workloadBands.medium, workloadBands.high].map((v) => (
-          <ReferenceLine key={v} y={wlY(v)} stroke="#f5a623" strokeOpacity={0.45} strokeDasharray="4 4" />
+          <ReferenceLine key={v} y={wlY(v)} stroke={C.amber} strokeOpacity={0.45} strokeDasharray="4 4" />
         ))}
       </LineChart>
     </ResponsiveContainer>
@@ -169,7 +170,7 @@ export default function SessionTimeline({
             <button className={"filter-chip" + (filters.events !== false ? " on" : "")}
               title="Show or hide the shaded event boxes on the chart (the event buttons below stay)"
               onClick={() => setFilters((f) => ({ ...f, events: f.events === false }))}>
-              <span className="swatch" style={{ background: "repeating-linear-gradient(45deg, #38bdf8 0 2px, #a78bfa 2px 4px)" }} />
+              <span className="swatch" style={{ background: "repeating-linear-gradient(45deg, var(--data-cyan) 0 2px, var(--data-violet) 2px 4px)" }} />
               Events
             </button>
           )}

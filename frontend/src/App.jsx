@@ -19,6 +19,7 @@ import SopNew from "./sop/SopNew.jsx";
 import SopRules from "./sop/SopRules.jsx";
 import ServiceBanner from "./components/ServiceBanner.jsx";
 import UpdateNotice from "./components/UpdateNotice.jsx";
+import { TourProvider } from "./tour/TourProvider.jsx";
 
 export default function App() {
   const { user, checking } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
   }
 
   return (
+    <TourProvider>
     <div className="shell">
       {!isLanding && <Sidebar />}
       <main className="shell__main">
@@ -66,5 +68,6 @@ export default function App() {
         </Routes>
       </main>
     </div>
+    </TourProvider>
   );
 }

@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { C } from "../../palette.js";
 
 // Binds a live MediaStream (browser screen-capture) to a <video> ref --
 // srcObject can't be set as a JSX attribute like src can.
@@ -249,7 +250,7 @@ export default function ScreensPanel({
                   <rect key={z.id} x={Math.min(z.x1, z.x2)} y={Math.min(z.y1, z.y2)}
                     width={Math.abs(z.x2 - z.x1)} height={Math.abs(z.y2 - z.y1)}
                     fill={active ? "rgba(74,222,128,0.25)" : "none"}
-                    stroke={active ? "#4ade80" : "#38bdf8"}
+                    stroke={active ? C.green : C.cyan}
                     strokeWidth={active ? "4" : "2.5"}
                     strokeDasharray={active ? "none" : "10 6"}
                     opacity={active ? "0.95" : "0.55"} />
@@ -282,10 +283,10 @@ export default function ScreensPanel({
                   <line {...groundRoute.runway} className="ground-route__runway" />
                 </g>
               )}
-              <polyline points={groundFullPath} fill="none" stroke="#33465a" strokeWidth="1.6" strokeLinejoin="round" />
-              <polyline points={groundFlownPath} fill="none" stroke="#38bdf8" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+              <polyline points={groundFullPath} fill="none" stroke="var(--border-strong)" strokeWidth="1.6" strokeLinejoin="round" />
+              <polyline points={groundFlownPath} fill="none" stroke={C.cyan} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
               {groundCurPoint && (
-                <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="3" fill="#ff5c5c" />
+                <circle cx={groundCurPoint.x} cy={groundCurPoint.y} r="3" fill="var(--danger)" />
               )}
             </svg>
           ) : (

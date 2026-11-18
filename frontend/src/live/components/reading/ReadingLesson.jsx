@@ -71,7 +71,7 @@ export default function ReadingLesson({ lessonId, data }) {
 
   return (
     <div>
-      <div className="mavis-topbar">
+      <div className="mavis-topbar" data-tour="rl-head">
         <div>
           <h2 style={{ margin: 0 }}>{data?.title}</h2>
           <p className="muted" style={{ margin: 0 }}>{cfg.blurb}</p>
@@ -79,29 +79,35 @@ export default function ReadingLesson({ lessonId, data }) {
       </div>
 
       <div className="row" style={{ marginBottom: 10, alignItems: "center" }}>
+        <span className="row" data-tour="rl-tabs">
         <button type="button" className={tab === "3d" ? "" : "secondary"} onClick={() => setTab("3d")}>
           {cfg.camera === "fixed" ? "3D cockpit" : "3D walk-around"}
         </button>
         <button type="button" className={tab === "list" ? "" : "secondary"} onClick={() => setTab("list")}>
           Checklist
         </button>
+        </span>
         <span className="spacer" />
+        <span className="row" style={{ alignItems: "center" }} data-tour="rl-steps">
         <button type="button" className="secondary" onClick={() => step(-1)} disabled={idx <= 0}>‹ Prev</button>
         <span className="muted">{checkpoints.length ? (idx < 0 ? `/ ${checkpoints.length}` : `${idx + 1} / ${checkpoints.length}`) : ""}</span>
         <button type="button" className="secondary" onClick={() => step(1)} disabled={!checkpoints.length || idx >= checkpoints.length - 1}>Next ›</button>
         <button type="button" onClick={togglePlayAll}>{playAll ? "⏸ Stop" : "▶ Play all"}</button>
+        </span>
       </div>
 
       {tab === "3d" ? (
         <>
+          <div data-tour="rl-viewer">
           <CockpitViewer lessonId={lessonId} checkpoints={checkpoints} selectedId={selectedId} onPick={select} />
+          </div>
           <p className="muted" style={{ marginTop: 8 }}>{cfg.hint}</p>
           {selectedId ? (
             (() => {
               const cp = checkpoints.find((c) => c.id === selectedId);
               if (!cp) return null;
               return (
-                <div className="card" style={{ marginTop: 10 }}>
+                <div className="card" style={{ marginTop: 10 }} data-tour="rl-card">
                   <div className="mavis-pf-item__head">
                     <h4 style={{ margin: 0 }}>{cp.title}</h4>
                     <button type="button" className="secondary" onClick={() => playCheckpoint(cp.id)}>
@@ -114,7 +120,7 @@ export default function ReadingLesson({ lessonId, data }) {
               );
             })()
           ) : (
-            <p className="muted card" style={{ marginTop: 10 }}>Click a highlighted point on the aircraft to bring up its checkpoint.</p>
+            <p className="muted card" style={{ marginTop: 10 }} data-tour="rl-card">Click a highlighted point on the aircraft to bring up its checkpoint.</p>
           )}
         </>
       ) : (

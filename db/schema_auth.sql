@@ -31,3 +31,8 @@ create table if not exists auth_tokens (
     expires_at  timestamptz not null
 );
 create index if not exists auth_tokens_user on auth_tokens (user_id);
+
+-- Per-user UI preferences (page tours: on/off + which pages' tours were
+-- seen). Saved on the account, not the browser, because trainees share
+-- the sim PC. Shape: {"tours_enabled": bool, "tours_seen": ["sessions", ...]}
+alter table users add column if not exists ui_prefs jsonb not null default '{}'::jsonb;

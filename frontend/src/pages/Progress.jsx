@@ -10,22 +10,22 @@ import {
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import "./progress.css";
+import { AXIS, C, TOOLTIP } from "../palette.js";
 
 const INSIGHT_TITLE = {
   improving: "Improving", persistent: "Keeps happening", regression: "Slipped back", forgetting: "Between lessons",
   cause: "Why it happens", scan: "Scan", handling: "Handling", coaching: "Coaching", info: "",
 };
 const KIND = {
-  perception: { label: "Seeing it (scan / attention)", color: "#60a5fa" },
-  action: { label: "Acting on it", color: "#f5a623" },
-  handling: { label: "Handling (over-correcting)", color: "#a78bfa" },
-  workload: { label: "Workload", color: "#94a3b8" },
+  perception: { label: "Seeing it (scan / attention)", color: C.blue },
+  action: { label: "Acting on it", color: C.amber },
+  handling: { label: "Handling (over-correcting)", color: C.violet },
+  workload: { label: "Workload", color: C.gray },
 };
 const PHASES = ["CLIMB_OUT", "CROSSWIND", "DOWNWIND", "BASE", "FINAL"];
 const phaseName = (p) => p.replace("_", " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-const AXIS = { stroke: "var(--muted)", tick: { fontSize: 11 } };
 const XAXIS = { ...AXIS, interval: 0, padding: { left: 24, right: 24 } };
-const TIP = { contentStyle: { background: "var(--panel)", border: "1px solid var(--border)" } };
+const TIP = TOOLTIP;
 const pct = (v) => (v == null ? "–" : `${Math.round(v * 100)}%`);
 const num = (v, d = 1, unit = "") => (v == null ? "–" : `${v.toFixed(d)}${unit}`);
 const shortLabel = (f) => f.label.split(" · ")[0];
@@ -53,7 +53,7 @@ export default function Progress() {
         <div className="pg-head">
           <h2>Progress</h2>
           {isInstructor && (
-            <div className="pg-tabs">
+            <div className="pg-tabs" data-tour="pg-tabs">
               <button className={tab === "pilot" ? "" : "secondary"} onClick={() => setTab("pilot")}>Trainee</button>
               <button className={tab === "group" ? "" : "secondary"} onClick={() => setTab("group")}>Instructor dashboard</button>
             </div>
@@ -68,7 +68,7 @@ export default function Progress() {
           pilots.length === 0
             ? <p className="muted">No flights with a pilot name yet.</p>
             : pilots.length > 1 && (
-              <label className="pg-pick">
+              <label className="pg-pick" data-tour="pg-pick">
                 Trainee{" "}
                 <select value={name} onChange={(e) => setName(e.target.value)}>
                   <option value="">Choose…</option>
@@ -111,9 +111,9 @@ function Pending({ n }) {
   return n > 0 ? <p className="pg-pending">Still working through {n} older item{n === 1 ? "" : "s"}…</p> : null;
 }
 
-function Section({ title, sub, children }) {
+function Section({ title, sub, tour, children }) {
   return (
-    <div className="card">
+    <div className="card" data-tour={tour}>
       <h3>{title}</h3>
       {sub && <p className="muted pg-note pg-section-sub">{sub}</p>}
       {children}
@@ -129,7 +129,7 @@ function PilotView({ name }) {
   const checked = d.flights.filter((f) => f.checked);
   return (
     <>
-      <Section title={`${d.pilot}: what stands out`}>
+      <Section title={`${d.pilot}: what stands out`} tour="pg-insights">
         <Pending n={d.pending} />
         <ul className="pg-insights">
           {d.insights.map((i, k) => (
@@ -161,10 +161,10 @@ function gapDays(a, b) {
 function LearningCurves({ flights, curve }) {
   const data = flights.map((f) => ({ name: shortLabel(f), breaches: f.breaches }));
   const top = curve.filter((r) => r.broken > 0).slice(0, 4);
-  const colors = ["#f87171", "#f5a623", "#60a5fa", "#a78bfa"];
+  const colors = [C.red, C.amber, C.blue, C.violet];
   top.forEach((r, k) => r.series.forEach((v, i) => { data[i][`r${k}`] = v; }));
   return (
-    <Section title="Learning curves"
+    <Section title="Learning curves" tour="pg-curves"
       sub="How often each rule was broken, flight by flight. A long run of ✗ = the mistake repeats; met then broken after a break = forgotten between lessons.">
       <ResponsiveContainer width="100%" height={210}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -172,7 +172,7 @@ function LearningCurves({ flights, curve }) {
           <XAxis dataKey="name" {...XAXIS} />
           <YAxis allowDecimals={false} {...AXIS} width={30} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="breaches" name="All rules: times broken" fill="var(--border-strong)" />
           {top.map((r, k) => (
             <Line key={r.title} dataKey={`r${k}`} name={r.title} stroke={colors[k]} strokeWidth={2} connectNulls isAnimationActive={false} />
@@ -234,14 +234,14 @@ function CauseChart({ flights, causes, kinds }) {
   for (const f of flights.slice(-5)) for (const [c, n] of Object.entries(f.causes)) if (causes[c]) totals[c] = (totals[c] || 0) + n;
   const top = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   return (
-    <Section title="Why rules were broken" sub="What the analysis of each broken rule found (one can have more than one cause).">
+    <Section title="Why rules were broken" tour="pg-causes" sub="What the analysis of each broken rule found (one can have more than one cause).">
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
           <XAxis dataKey="name" {...XAXIS} />
           <YAxis allowDecimals={false} {...AXIS} width={30} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
           {used.map((k) => <Bar key={k} dataKey={k} name={KIND[k].label} stackId="c" fill={KIND[k].color} />)}
           <Line dataKey="breaches" name="Times a rule was broken" stroke="var(--danger)" strokeWidth={2} isAnimationActive={false} />
         </ComposedChart>
@@ -287,7 +287,7 @@ function ScanSection({ flights, table }) {
     return <Section title="Scan pattern"><p className="muted">No eye-tracking data in these flights yet.</p></Section>;
   }
   return (
-    <Section title="Scan pattern"
+    <Section title="Scan pattern" tour="pg-scan"
       sub={`Per phase, the last 3 flights against the expert flights (${table.expert_flights || "none marked yet"}). Red = clearly behind the experts.`}>
       <table className="pg-table">
         <thead>
@@ -325,10 +325,10 @@ function ScanSection({ flights, table }) {
               <XAxis dataKey="name" {...XAXIS} />
               <YAxis {...AXIS} width={30} />
               <Tooltip {...TIP} formatter={(v) => `${v} s`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {ex?.airspeed_every_s != null && <ReferenceLine y={ex.airspeed_every_s} stroke="#60a5fa" strokeDasharray="4 3" />}
-              <Line dataKey="asi" name="Airspeed" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
-              <Line dataKey="alt" name="Altimeter" stroke="#4ade80" strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Legend wrapperStyle={{ fontSize: 13 }} />
+              {ex?.airspeed_every_s != null && <ReferenceLine y={ex.airspeed_every_s} stroke={C.blue} strokeDasharray="4 3" />}
+              <Line dataKey="asi" name="Airspeed" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Line dataKey="alt" name="Altimeter" stroke={C.green} strokeWidth={2} connectNulls isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -340,10 +340,10 @@ function ScanSection({ flights, table }) {
               <XAxis dataKey="name" {...XAXIS} />
               <YAxis domain={[0, 100]} {...AXIS} width={30} />
               <Tooltip {...TIP} formatter={(v) => `${v}%`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {ex?.outside != null && <ReferenceLine y={Math.round(ex.outside * 100)} stroke="#f5a623" strokeDasharray="4 3" />}
-              <Line dataKey="outside" name="Outside" stroke="#f5a623" strokeWidth={2} connectNulls isAnimationActive={false} />
-              <Line dataKey="spread" name="Spread" stroke="#a78bfa" strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Legend wrapperStyle={{ fontSize: 13 }} />
+              {ex?.outside != null && <ReferenceLine y={Math.round(ex.outside * 100)} stroke={C.amber} strokeDasharray="4 3" />}
+              <Line dataKey="outside" name="Outside" stroke={C.amber} strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Line dataKey="spread" name="Spread" stroke={C.violet} strokeWidth={2} connectNulls isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -399,7 +399,7 @@ function CoachingSection({ flights, coaching }) {
     fixed: f.stats?.callouts?.judged ? Math.round((f.stats.callouts.helped / f.stats.callouts.judged) * 100) : null,
   }));
   return (
-    <Section title="Does the coaching work?"
+    <Section title="Does the coaching work?" tour="pg-coaching"
       sub="Each MAVIS correction callout: how long until a control input, and whether what it was about got better.">
       <CoachingTable rows={coaching} />
       <ResponsiveContainer width="100%" height={180}>
@@ -409,8 +409,8 @@ function CoachingSection({ flights, coaching }) {
           <YAxis yAxisId="s" {...AXIS} width={30} />
           <YAxis yAxisId="p" orientation="right" domain={[0, 100]} {...AXIS} width={34} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line yAxisId="s" dataKey="react" name="Typical response (s)" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Line yAxisId="s" dataKey="react" name="Typical response (s)" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
           <Line yAxisId="p" dataKey="fixed" name="Fixed it (%)" stroke="var(--good)" strokeWidth={2} connectNulls isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -429,7 +429,7 @@ function HandlingSection({ flights, table }) {
     ? Math.sqrt(tds.reduce((s, v) => s + (v - tds.reduce((a, b) => a + b, 0) / tds.length) ** 2, 0) / tds.length) : null;
   if (!phases.length) return null;
   return (
-    <Section title="Handling" sub="How steadily speed, height and sink rate were held in each phase, and how busy the hands were (last 3 flights / expert).">
+    <Section title="Handling" tour="pg-handling" sub="How steadily speed, height and sink rate were held in each phase, and how busy the hands were (last 3 flights / expert).">
       <table className="pg-table">
         <thead>
           <tr><th>Phase</th><th>Speed held within ±</th><th>Height held within ±</th><th>Sink rate within ±</th>
@@ -458,9 +458,9 @@ function HandlingSection({ flights, table }) {
           <YAxis yAxisId="kt" {...AXIS} width={30} />
           <YAxis yAxisId="fpm" orientation="right" {...AXIS} width={40} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line yAxisId="kt" dataKey="ias_sd" name="Final approach speed ± (kt)" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
-          <Line yAxisId="fpm" dataKey="td" name="Touchdown sink rate (ft/min)" stroke="#f5a623" strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Line yAxisId="kt" dataKey="ias_sd" name="Final approach speed ± (kt)" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Line yAxisId="fpm" dataKey="td" name="Touchdown sink rate (ft/min)" stroke={C.amber} strokeWidth={2} connectNulls isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
       {tdSpread != null && (
@@ -478,7 +478,7 @@ function GroupView() {
   const maxCause = Math.max(1, ...d.causes.map((c) => c.count));
   return (
     <>
-      <Section title="Pilots side by side"
+      <Section title="Pilots side by side" tour="pg-group"
         sub={`Each trainee's last ${d.last} checked flights: ${d.pilots.length} trainee${d.pilots.length === 1 ? "" : "s"}, ${d.flights} flight${d.flights === 1 ? "" : "s"}.`}>
         <Pending n={d.pending} />
         <div className="pg-grid-wrap">

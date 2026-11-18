@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import { api } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
+import { C } from "../../palette.js";
 
 // The 30 s before and after one broken rule (backend app/incidents.py):
 // the value against its limits, and what it adds up to. t = 0 is the moment
@@ -12,20 +13,20 @@ import { useAuth } from "../../auth/AuthContext.jsx";
 // looking (a pie of the last few seconds) and what the controls were doing.
 
 const ROLE_COLOR = {
-  outside: "#14b8a6", instruments: "#38bdf8", airspeed: "#4ade80", altimeter: "#f5a623",
-  attitude: "#a78bfa", vsi: "#60a5fa", heading: "#fb7185", turn: "#f472b6", engine: "#facc15",
+  outside: C.teal, instruments: C.cyan, airspeed: C.green, altimeter: C.amber,
+  attitude: C.violet, vsi: C.blue, heading: C.rose, turn: C.pink, engine: C.yellow,
 };
-const OTHER = ["#94a3b8", "#cbd5e1", "#64748b", "#a3a3a3"];
+const OTHER = [C.gray, C.grayLight, C.slate, C.neutral];
 const KIND = {
   perception: { label: "Seeing it", cls: "bad" }, action: { label: "Acting on it", cls: "bad" },
   handling: { label: "Handling", cls: "bad" }, workload: { label: "Workload", cls: "warn" },
   context: { label: "Context", cls: "info" }, positive: { label: "Good", cls: "good" }, data: { label: "Data", cls: "muted" },
 };
 const CONTROLS = [
-  { key: "throttle", label: "Throttle", color: "#facc15", scale: 0.01 },
-  { key: "elevator", label: "Stick fore/aft", color: "#38bdf8", scale: 1 },
-  { key: "aileron", label: "Stick left/right", color: "#a78bfa", scale: 1 },
-  { key: "rudder", label: "Rudder", color: "#fb7185", scale: 1 },
+  { key: "throttle", label: "Throttle", color: C.yellow, scale: 0.01 },
+  { key: "elevator", label: "Stick fore/aft", color: C.cyan, scale: 1 },
+  { key: "aileron", label: "Stick left/right", color: C.violet, scale: 1 },
+  { key: "rudder", label: "Rudder", color: C.rose, scale: 1 },
 ];
 const GAZE_LOOKBACK_S = 5;    // the hover pie: where the eyes went in the seconds up to that moment
 const s1 = (v) => (v == null ? "–" : `${v > 0 ? "+" : ""}${v.toFixed(1)} s`);
@@ -131,34 +132,34 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
                 <ComposedChart data={series} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--rev-line)" strokeDasharray="3 3" />
                   <XAxis dataKey="t" type="number" domain={[a.window.from_s, a.window.to_s]} unit="s"
-                    stroke="var(--rev-muted)" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="var(--rev-muted)" tick={{ fontSize: 11 }} width={44} domain={["auto", "auto"]} />
+                    stroke="var(--rev-muted)" tick={{ fontSize: 12, fill: "var(--rev-muted)" }} />
+                  <YAxis stroke="var(--rev-muted)" tick={{ fontSize: 12, fill: "var(--rev-muted)" }} width={44} domain={["auto", "auto"]} />
                   <Tooltip content={<MomentTip a={a} colorOf={colorOf} />} isAnimationActive={false}
                     cursor={{ stroke: "var(--rev-cyan)", strokeWidth: 1 }} wrapperStyle={{ zIndex: 5, pointerEvents: "none" }}
                     allowEscapeViewBox={{ x: false, y: true }} />
                   {(a.bounds.lo != null || a.bounds.hi != null) && (
                     <ReferenceArea y1={a.bounds.lo ?? undefined} y2={a.bounds.hi ?? undefined} ifOverflow="extendDomain"
-                      fill="#4ade80" fillOpacity={0.08} stroke="#4ade80" strokeOpacity={0.35} strokeDasharray="4 3" />
+                      fill={C.green} fillOpacity={0.08} stroke={C.green} strokeOpacity={0.35} strokeDasharray="4 3" />
                   )}
-                  <ReferenceArea x1={0} x2={a.breach.dur_s} fill="#ff5c5c" fillOpacity={0.1} />
-                  <ReferenceLine x={a.onset.t} stroke="#f5a623" strokeDasharray="5 4" />
-                  <ReferenceLine x={0} stroke="#ff5c5c" />
-                  <ReferenceLine x={a.breach.dur_s} stroke="#4ade80" strokeDasharray="5 4" />
-                  {a.response.first_input && <ReferenceLine x={a.response.first_input.t} stroke="#facc15" />}
+                  <ReferenceArea x1={0} x2={a.breach.dur_s} fill="var(--danger)" fillOpacity={0.1} />
+                  <ReferenceLine x={a.onset.t} stroke={C.amber} strokeDasharray="5 4" />
+                  <ReferenceLine x={0} stroke="var(--danger)" />
+                  <ReferenceLine x={a.breach.dur_s} stroke={C.green} strokeDasharray="5 4" />
+                  {a.response.first_input && <ReferenceLine x={a.response.first_input.t} stroke={C.yellow} />}
                   {a.context.callouts.filter((c) => c.who !== "trainee").map((c, i) => (
-                    <ReferenceLine key={i} x={c.t} stroke="#a78bfa" strokeDasharray="2 3" />
+                    <ReferenceLine key={i} x={c.t} stroke={C.violet} strokeDasharray="2 3" />
                   ))}
-                  <Line dataKey="v" stroke="#e8eef8" dot={false} strokeWidth={1.8} isAnimationActive={false} connectNulls
+                  <Line dataKey="v" stroke="var(--text)" dot={false} strokeWidth={1.8} isAnimationActive={false} connectNulls
                     activeDot={{ r: 4, fill: "var(--rev-cyan)", stroke: "#fff", strokeWidth: 1 }} />
                 </ComposedChart>
               </ResponsiveContainer>
               {/* line key under the chart: labels on the chart collide when moments are close */}
               <div className="inc-legend inc-legend--marks">
-                <span><i className="dash" style={{ borderColor: "#f5a623" }} />build-up starts ({s1(a.onset.t)})</span>
-                <span><i style={{ background: "#ff5c5c" }} />limit crossed (0 s)</span>
-                {a.response.first_input && <span><i style={{ background: "#facc15" }} />first input ({s1(a.response.first_input.t)})</span>}
-                <span><i className="dash" style={{ borderColor: "#4ade80" }} />back within limits ({s1(a.breach.dur_s)})</span>
-                {a.context.callouts.some((c) => c.who !== "trainee") && <span><i className="dash" style={{ borderColor: "#a78bfa" }} />MAVIS callout</span>}
+                <span><i className="dash" style={{ borderColor: C.amber }} />build-up starts ({s1(a.onset.t)})</span>
+                <span><i style={{ background: "var(--danger)" }} />limit crossed (0 s)</span>
+                {a.response.first_input && <span><i style={{ background: C.yellow }} />first input ({s1(a.response.first_input.t)})</span>}
+                <span><i className="dash" style={{ borderColor: C.green }} />back within limits ({s1(a.breach.dur_s)})</span>
+                {a.context.callouts.some((c) => c.who !== "trainee") && <span><i className="dash" style={{ borderColor: C.violet }} />MAVIS callout</span>}
               </div>
             </section>
 

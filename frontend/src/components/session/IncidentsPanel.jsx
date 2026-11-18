@@ -7,11 +7,12 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client.js";
 import IncidentView from "./IncidentView.jsx";
 import { RUNNING } from "./DebriefPanel.jsx";
+import { C } from "../../palette.js";
 
 const LEAD_S = 5;      // start the video this long before the limit was crossed
 const KIND_COLOR = {
-  perception: "#60a5fa", action: "#f5a623", handling: "#a78bfa", workload: "#94a3b8",
-  context: "#64748b", positive: "#4ade80",
+  perception: C.blue, action: C.amber, handling: C.violet, workload: C.gray,
+  context: C.slate, positive: C.green,
 };
 
 export function IncidentsChip({ count, onClick }) {
@@ -93,7 +94,7 @@ export default function IncidentsPanel({ sessionId, seekTo, flightStartMs, onCou
                 : shown.length > 0 && (
                   <ul className="inc-item__findings">
                     {shown.slice(0, 3).map((f) => (
-                      <li key={f.code}><span className="inc-item__dot" style={{ background: KIND_COLOR[f.kind] || "#64748b" }} />{f.text}</li>
+                      <li key={f.code}><span className="inc-item__dot" style={{ background: KIND_COLOR[f.kind] || C.slate }} />{f.text}</li>
                     ))}
                     {shown.length > 3 && <li className="rc-muted">+{shown.length - 3} more</li>}
                   </ul>
