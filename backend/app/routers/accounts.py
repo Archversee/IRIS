@@ -5,6 +5,7 @@
   GET    /auth/me               signed-in user + their instructor / trainees
   PATCH  /auth/me               {full_name?, email?}
   POST   /auth/me/password      {current_password, new_password}
+  PATCH  /auth/me/prefs         {tours_enabled?, tours_seen_add?, tours_reset?}
 
   GET    /users/pilots          any signed-in user: trainee names (pilot dropdown)
   GET    /users                 admin: every account
@@ -15,6 +16,7 @@
 Rules: only admins create/remove accounts; a trainee has at most one
 instructor (users.instructor_id), an instructor can have many trainees.
 """
+import json
 from uuid import UUID
 
 import asyncpg
@@ -38,6 +40,23 @@ class LoginBody(BaseModel):
 class ProfileUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
     email: str | None = Field(default=None, max_length=200)
+
+
+class PrefsUpdate(BaseModel):
+    """Page tours (frontend/src/tour). Only the fields sent are changed."""
+    tours_enabled: bool | None = None
+    tours_seen_add: list[str] | None = Field(default=None, max_length=50)  # page ids just finished/skipped
+    tours_reset: bool | None = None  # forget every seen tour, so each page shows its tour again
+
+
+def _load_prefs(raw) -> dict:
+    """users.ui_prefs comes back from asyncpg as a JSON string."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    return raw if isinstance(raw, dict) else {}
 
 
 class PasswordChange(BaseModel):
@@ -79,6 +98,7 @@ async def _check_instructor(conn, instructor_id: UUID | None) -> None:
 async def _profile(conn, user_id) -> dict:
     """User row plus who they're linked to, for /auth/me and the admin list."""
     u = dict(await conn.fetchrow(f"select {USER_FIELDS} from users where id = $1", user_id))
+    u["ui_prefs"] = _load_prefs(await conn.fetchval("select ui_prefs from users where id = $1", user_id))
     u["instructor"] = None
     u["trainees"] = []
     if u["instructor_id"]:
@@ -126,6 +146,24 @@ async def update_me(body: ProfileUpdate, user: dict = Depends(current_user)):
         if fields:
             sets = ", ".join(f"{k} = ${i}" for i, k in enumerate(fields, start=2))
             await conn.execute(f"update users set {sets} where id = $1", user["id"], *fields.values())
+        return await _profile(conn, user["id"])
+
+
+@router.patch("/auth/me/prefs")
+async def update_prefs(body: PrefsUpdate, user: dict = Depends(current_user)):
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            prefs = _load_prefs(await conn.fetchval(
+                "select ui_prefs from users where id = $1 for update", user["id"]))
+            if body.tours_enabled is not None:
+                prefs["tours_enabled"] = body.tours_enabled
+            seen = [] if body.tours_reset else list(prefs.get("tours_seen") or [])
+            for page in body.tours_seen_add or []:
+                page = page.strip()[:60]
+                if page and page not in seen:
+                    seen.append(page)
+            prefs["tours_seen"] = seen
+            await conn.execute("update users set ui_prefs = $2::jsonb where id = $1", user["id"], json.dumps(prefs))
         return await _profile(conn, user["id"])
 
 

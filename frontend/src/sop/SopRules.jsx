@@ -48,7 +48,7 @@ export default function SopRules() {
     <div className="sop">
       <header className="sop-head">
         <div>
-          <div className="sop-crumb">Settings · SOP</div>
+          <div className="sop-crumb">Tools · SOP</div>
           <h1>SOP rules</h1>
         </div>
         <div className="spacer" />

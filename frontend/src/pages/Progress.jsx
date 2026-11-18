@@ -53,7 +53,7 @@ export default function Progress() {
         <div className="pg-head">
           <h2>Progress</h2>
           {isInstructor && (
-            <div className="pg-tabs">
+            <div className="pg-tabs" data-tour="pg-tabs">
               <button className={tab === "pilot" ? "" : "secondary"} onClick={() => setTab("pilot")}>Trainee</button>
               <button className={tab === "group" ? "" : "secondary"} onClick={() => setTab("group")}>Instructor dashboard</button>
             </div>
@@ -68,7 +68,7 @@ export default function Progress() {
           pilots.length === 0
             ? <p className="muted">No flights with a pilot name yet.</p>
             : pilots.length > 1 && (
-              <label className="pg-pick">
+              <label className="pg-pick" data-tour="pg-pick">
                 Trainee{" "}
                 <select value={name} onChange={(e) => setName(e.target.value)}>
                   <option value="">Choose…</option>
@@ -111,9 +111,9 @@ function Pending({ n }) {
   return n > 0 ? <p className="pg-pending">Still working through {n} older item{n === 1 ? "" : "s"}…</p> : null;
 }
 
-function Section({ title, sub, children }) {
+function Section({ title, sub, tour, children }) {
   return (
-    <div className="card">
+    <div className="card" data-tour={tour}>
       <h3>{title}</h3>
       {sub && <p className="muted pg-note pg-section-sub">{sub}</p>}
       {children}
@@ -129,7 +129,7 @@ function PilotView({ name }) {
   const checked = d.flights.filter((f) => f.checked);
   return (
     <>
-      <Section title={`${d.pilot}: what stands out`}>
+      <Section title={`${d.pilot}: what stands out`} tour="pg-insights">
         <Pending n={d.pending} />
         <ul className="pg-insights">
           {d.insights.map((i, k) => (
@@ -164,7 +164,7 @@ function LearningCurves({ flights, curve }) {
   const colors = [C.red, C.amber, C.blue, C.violet];
   top.forEach((r, k) => r.series.forEach((v, i) => { data[i][`r${k}`] = v; }));
   return (
-    <Section title="Learning curves"
+    <Section title="Learning curves" tour="pg-curves"
       sub="How often each rule was broken, flight by flight. A long run of ✗ = the mistake repeats; met then broken after a break = forgotten between lessons.">
       <ResponsiveContainer width="100%" height={210}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -234,7 +234,7 @@ function CauseChart({ flights, causes, kinds }) {
   for (const f of flights.slice(-5)) for (const [c, n] of Object.entries(f.causes)) if (causes[c]) totals[c] = (totals[c] || 0) + n;
   const top = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   return (
-    <Section title="Why rules were broken" sub="What the analysis of each broken rule found (one can have more than one cause).">
+    <Section title="Why rules were broken" tour="pg-causes" sub="What the analysis of each broken rule found (one can have more than one cause).">
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
@@ -287,7 +287,7 @@ function ScanSection({ flights, table }) {
     return <Section title="Scan pattern"><p className="muted">No eye-tracking data in these flights yet.</p></Section>;
   }
   return (
-    <Section title="Scan pattern"
+    <Section title="Scan pattern" tour="pg-scan"
       sub={`Per phase, the last 3 flights against the expert flights (${table.expert_flights || "none marked yet"}). Red = clearly behind the experts.`}>
       <table className="pg-table">
         <thead>
@@ -399,7 +399,7 @@ function CoachingSection({ flights, coaching }) {
     fixed: f.stats?.callouts?.judged ? Math.round((f.stats.callouts.helped / f.stats.callouts.judged) * 100) : null,
   }));
   return (
-    <Section title="Does the coaching work?"
+    <Section title="Does the coaching work?" tour="pg-coaching"
       sub="Each MAVIS correction callout: how long until a control input, and whether what it was about got better.">
       <CoachingTable rows={coaching} />
       <ResponsiveContainer width="100%" height={180}>
@@ -429,7 +429,7 @@ function HandlingSection({ flights, table }) {
     ? Math.sqrt(tds.reduce((s, v) => s + (v - tds.reduce((a, b) => a + b, 0) / tds.length) ** 2, 0) / tds.length) : null;
   if (!phases.length) return null;
   return (
-    <Section title="Handling" sub="How steadily speed, height and sink rate were held in each phase, and how busy the hands were (last 3 flights / expert).">
+    <Section title="Handling" tour="pg-handling" sub="How steadily speed, height and sink rate were held in each phase, and how busy the hands were (last 3 flights / expert).">
       <table className="pg-table">
         <thead>
           <tr><th>Phase</th><th>Speed held within ±</th><th>Height held within ±</th><th>Sink rate within ±</th>
@@ -478,7 +478,7 @@ function GroupView() {
   const maxCause = Math.max(1, ...d.causes.map((c) => c.count));
   return (
     <>
-      <Section title="Pilots side by side"
+      <Section title="Pilots side by side" tour="pg-group"
         sub={`Each trainee's last ${d.last} checked flights: ${d.pilots.length} trainee${d.pilots.length === 1 ? "" : "s"}, ${d.flights} flight${d.flights === 1 ? "" : "s"}.`}>
         <Pending n={d.pending} />
         <div className="pg-grid-wrap">

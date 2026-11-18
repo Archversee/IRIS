@@ -1,0 +1,60 @@
+/* Page tours (tour/TourOverlay.jsx). Uses the theme tokens in styles.css. */
+.tour { position: fixed; inset: 0; z-index: 1000; }
+.tour__catch { position: absolute; inset: 0; }
+.tour__dim { position: absolute; inset: 0; background: rgba(4, 8, 14, 0.62); animation: tour-fade .2s ease; }
+/* The lit window: a transparent box whose huge shadow dims everything else. */
+.tour__hole {
+  position: fixed; border-radius: var(--r-md); pointer-events: none;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px rgba(4, 8, 14, 0.62);
+  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease;
+  animation: tour-fade .2s ease;
+}
+.tour__card {
+  position: fixed; box-sizing: border-box;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4);
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--r-lg);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-sans); font-size: var(--fs-base); line-height: var(--lh);
+  transition: left .25s ease, top .25s ease;
+  animation: tour-pop .2s ease;
+}
+.tour__card:focus, .tour__card:focus-visible { outline: none; }
+.tour__meta {
+  display: flex; justify-content: space-between; gap: var(--sp-3);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: var(--sp-2);
+}
+.tour__meta span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tour__title { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); font-weight: 700; line-height: var(--lh-tight); }
+.tour__body { color: var(--text); }
+.tour__body p { margin: 0 0 var(--sp-2); }
+.tour__body p:last-child { margin-bottom: 0; }
+.tour__body ul { margin: var(--sp-1) 0 0; padding-left: 1.2em; }
+.tour__body li { margin: 2px 0; }
+.tour__body b { font-weight: 700; }
+.tour__dots { display: flex; gap: 5px; margin: var(--sp-4) 0 var(--sp-3); }
+.tour__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
+.tour__dots i.is-done { background: var(--accent-dim); }
+.tour__dots i.is-on { width: 18px; border-radius: 3px; background: var(--accent); }
+.tour__foot { display: flex; align-items: center; gap: var(--sp-2); }
+.tour__foot .spacer { flex: 1; }
+.tour__foot button { padding: 7px 14px; }
+.tour__dont {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0;
+  font-size: var(--fs-sm); color: var(--muted); cursor: pointer;
+}
+.tour__dont input { width: auto; margin: 0; }
+@keyframes tour-fade { from { opacity: 0; } }
+@keyframes tour-pop { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .tour__hole, .tour__card { transition: none; animation: none; }
+}
+
+/* Sidebar "?" (replay this page's tour) -- sits with Settings and the Leaderboard. */
+.sidebar__help { flex: none; padding-left: 9px; padding-right: 9px; border: 0; border-radius: 0; background: none; font: inherit; cursor: pointer; }
+.sidebar__help:hover { color: var(--accent); }
+
+/* Settings > Help & Guidance */
+.set-btn-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.set-done { font-size: var(--fs-sm); color: var(--good); }

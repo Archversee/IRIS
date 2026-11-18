@@ -84,6 +84,8 @@ export const api = {
   logout: () => req("/auth/logout", { method: "POST" }),
   me: () => req("/auth/me"),
   updateMe: (body) => req("/auth/me", json("PATCH", body)),
+  // Page tours (src/tour): {tours_enabled?, tours_seen_add?: [pageId], tours_reset?} -> profile
+  updatePrefs: (body) => req("/auth/me/prefs", json("PATCH", body)),
   changePassword: (current_password, new_password) =>
     req("/auth/me/password", json("POST", { current_password, new_password })),
   listUsers: () => req("/users"),

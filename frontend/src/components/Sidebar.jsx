@@ -3,7 +3,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon, PodiumIcon, TrendIcon, TargetIcon, ToolsIcon, ChevronIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon, PodiumIcon, TrendIcon, TargetIcon, ToolsIcon, ChevronIcon, HelpIcon } from "./SidebarIcons.jsx";
+import { useTour } from "../tour/TourProvider.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -80,6 +81,7 @@ export default function Sidebar() {
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(loadToolsOpen);
+  const tour = useTour();
   const { user } = useAuth();
   const tools = TOOLS.filter((t) => !t.roles || t.roles.includes(user.role));
   const onToolPage = tools.some((t) => pathname.startsWith(t.to));
@@ -205,6 +207,13 @@ export default function Sidebar() {
             <GearIcon />
             <span className="sidebar__text">Settings</span>
           </button>
+          {/* "?" -- replay this page's tour (only on pages that have one) */}
+          {tour.available && (
+            <button type="button" className="sidebar__link sidebar__help" onClick={tour.start}
+              title="Show the tour for this page" aria-label="Show the tour for this page">
+              <HelpIcon />
+            </button>
+          )}
           <NavLink to="/leaderboard" className="sidebar__link sidebar__lb" title="Leaderboard" aria-label="Leaderboard">
             <PodiumIcon />
           </NavLink>

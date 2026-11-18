@@ -126,7 +126,7 @@ export default function Upload() {
 
   return (
     <>
-      <div className="card">
+      <div className="card" data-tour="up-session">
         <h2>1. Session</h2>
         <div className="row">
           <div className="col">
@@ -203,7 +203,7 @@ export default function Upload() {
         )}
       </div>
 
-      <div className="card">
+      <div className="card" data-tour="up-files">
         <h2>2. Data files (CSV)</h2>
         <div className="row">
           <div className="col">
@@ -221,7 +221,7 @@ export default function Upload() {
         </button>
       </div>
 
-      <div className="card">
+      <div className="card" data-tour="up-videos">
         <h2>3. Videos</h2>
         <VideoLinker files={videoFiles} links={videoLinks} setLinks={setVideoLinks} />
         {videoFiles.length > 0 && (

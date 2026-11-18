@@ -353,7 +353,8 @@ tbody tr:hover td { background: var(--inset); }
    collapsed, the sidebar is too narrow for both, so they stack. */
 .sidebar__settings-row { display: flex; align-items: stretch; }
 .sidebar__settings-row .sidebar__settings { flex: 1; min-width: 0; }
-.sidebar__lb { flex: none; padding-left: 14px; padding-right: 14px; }
+.sidebar__lb { flex: none; padding-left: 9px; padding-right: 12px; }
+.sidebar__settings-row .sidebar__settings { padding-right: 4px; }
 .sidebar.is-collapsed .sidebar__settings-row { flex-direction: column; }
 
 .set-backdrop {

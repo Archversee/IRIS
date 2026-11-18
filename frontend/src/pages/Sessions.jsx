@@ -61,7 +61,7 @@ export default function Sessions() {
           No sessions yet. <Link to="/upload">Upload some data →</Link>
         </p>
       ) : (
-        <table>
+        <table data-tour="sessions-table">
           <thead>
             <tr>
               <th>Name</th>
@@ -83,8 +83,8 @@ export default function Sessions() {
                 <td>{s.sim_source || "—"}</td>
                 <td>{s.started_at ? new Date(s.started_at).toLocaleString() : "—"}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <Link to={`/sessions/${s.id}/review`}>Review</Link>{" · "}
-                  <a href="#" onClick={(e) => { e.preventDefault(); remove(s.id); }}>
+                  <Link to={`/sessions/${s.id}/review`} data-tour="sessions-review">Review</Link>{" · "}
+                  <a href="#" data-tour="sessions-delete" onClick={(e) => { e.preventDefault(); remove(s.id); }}>
                     Delete
                   </a>
                 </td>

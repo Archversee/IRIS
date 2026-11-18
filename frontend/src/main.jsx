@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import "./styles.css";
+import "./tour/tour.css";
 import { applyTheme, getTheme } from "./theme.js";
 
 applyTheme(getTheme()); // before first render, so there's no dark->light flash

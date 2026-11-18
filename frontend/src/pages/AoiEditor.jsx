@@ -136,7 +136,7 @@ export default function AoiEditor() {
         all sessions, since the panel layout doesn't change between recordings.
       </p>
 
-      <div className="row">
+      <div className="row" data-tour="aoi-session">
         <div className="col">
           <label>Session</label>
           <select value={sessionId} onChange={(e) => pickSession(e.target.value)}>
@@ -153,7 +153,7 @@ export default function AoiEditor() {
           <video ref={videoRef} src={videoUrl} style={{ display: "none" }}
             crossOrigin="anonymous" muted playsInline
             onLoadedMetadata={onLoadedMetadata} onSeeked={captureFrame} />
-          <div className="row" style={{ alignItems: "center", margin: "10px 0" }}>
+          <div className="row" style={{ alignItems: "center", margin: "10px 0" }} data-tour="aoi-frame">
             <div className="col" style={{ flex: 1 }}>
               <label>Frame ({previewTime.toFixed(1)}s / {duration.toFixed(1)}s)</label>
               <input type="range" min={0} max={duration || 0} step={0.1} value={previewTime}
@@ -165,7 +165,7 @@ export default function AoiEditor() {
       )}
 
       {videoUrl && (
-        <div
+        <div data-tour="aoi-canvas"
           style={{ position: "relative", width: "100%", maxWidth: 960, aspectRatio: "16 / 9", cursor: "crosshair" }}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
         >
@@ -195,7 +195,7 @@ export default function AoiEditor() {
         </div>
       )}
 
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card" style={{ marginTop: 16 }} data-tour="aoi-zones">
         <h3>Zones ({zones.length})</h3>
         {zones.length === 0 ? (
           <p className="muted">No zones defined yet.</p>

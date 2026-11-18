@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getTheme, setTheme } from "../theme.js";
+import { useTour } from "../tour/TourProvider.jsx";
 
 // Settings drawer, opened from the sidebar's gear. Only Theme is wired up;
 // everything else is a placeholder (selectable, but not saved or applied
@@ -36,6 +37,8 @@ function Field({ label, soon, help, children }) {
 
 export default function SettingsPanel({ onClose }) {
   const [theme, setThemeState] = useState(getTheme);
+  const tour = useTour();
+  const [resetDone, setResetDone] = useState(false);
   // placeholders -- local only
   const [timeFmt, setTimeFmt] = useState("24");
   const [dateFmt, setDateFmt] = useState("DD-MMM-YYYY");
@@ -108,6 +111,24 @@ export default function SettingsPanel({ onClose }) {
                 { value: "off", label: "Off" },
                 { value: "on", label: "On" },
               ]} />
+            </Field>
+          </section>
+          <section className="set-section">
+            <h3>Help &amp; Guidance</h3>
+            <Field label="Page tours"
+              help="A short guide the first time you open each page. The ? button next to Settings shows the current page's tour anytime, even when this is off.">
+              <Segmented value={tour.enabled ? "on" : "off"} onChange={(v) => tour.setEnabled(v === "on")} options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]} />
+            </Field>
+            <Field label="Reset tours" help="Show every page's guide again, as if you were new.">
+              <div className="set-btn-row">
+                <button type="button" className="secondary" onClick={async () => { await tour.resetSeen(); setResetDone(true); }}>
+                  Reset tours
+                </button>
+                {resetDone && <span className="set-done" role="status">Done — tours will show again.</span>}
+              </div>
             </Field>
           </section>
           {/* More sections go here. */}
