@@ -5,7 +5,7 @@ function PieTip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: "#0f1a24", border: "1px solid #263341", borderRadius: 6, padding: "6px 10px", fontSize: 12 }}>
+    <div className="chart-tip">
       {d.name}: {d.pct.toFixed(1)}%
     </div>
   );

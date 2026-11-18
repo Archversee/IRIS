@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import LessonTree from "./LessonTree.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { RoleTag, ROLE_LABELS, useAuth } from "../auth/AuthContext.jsx";
-import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon, PodiumIcon, TrendIcon } from "./SidebarIcons.jsx";
+import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon, UploadIcon, ChecklistIcon, PodiumIcon, TrendIcon, TargetIcon, ToolsIcon, ChevronIcon } from "./SidebarIcons.jsx";
 
 // The app's one main menu: MAVIS (live -- flying and coaching, the only
 // thing that ever starts a session or logs anything) grouped separately
@@ -16,11 +16,13 @@ import { HomeIcon, PlaneIcon, BookIcon, PulseIcon, ListIcon, GearIcon, UsersIcon
 // Curriculum defaults to Preflight & Cockpit (the walk-around) rather than
 // the bare mode-selection screen -- that's the natural first stop before
 // "Basic Flight", matching how the curriculum is meant to be entered.
-// Scoring Guide, Upload and AOI Zones are reached from the Settings drawer;
-// the Leaderboard is the podium icon on the Settings row, flush right.
+// Scoring Guide, Upload, AOI Zones and the SOP pages live in the collapsible
+// Tools group under IRIS (open/closed is remembered per browser; it opens by
+// itself when you're on one of its pages). The Leaderboard is the podium icon
+// on the Settings row, flush right.
 // SOP Upload / SOP Rules (turning an aircraft SOP or training handbook into
-// flight rules) are instructor tools: they're reached from the Settings
-// drawer, which shows them only to SOP_ROLES; App.jsx guards the routes too.
+// flight rules) are instructor tools: Tools lists them only for SOP_ROLES;
+// App.jsx guards the routes too.
 export const SOP_ROLES = ["instructor", "admin"];
 const SECTIONS = [
   {
@@ -42,8 +44,18 @@ const SECTIONS = [
   },
 ];
 
-// Pages opened from the Settings drawer -- the gear lights up on these.
-const SETTINGS_PATHS = ["/leaderboard", "/scoring", "/upload", "/aoi-zones", "/sop"];
+const TOOLS = [
+  { to: "/scoring", label: "Scoring Guide", icon: <ChecklistIcon /> },
+  { to: "/upload", label: "Upload", icon: <UploadIcon /> },
+  { to: "/aoi-zones", label: "AOI Zones", icon: <TargetIcon /> },
+  { to: "/sop/new", label: "SOP Upload", icon: <UploadIcon />, roles: SOP_ROLES },
+  { to: "/sop/rules", label: "SOP Rules", icon: <ChecklistIcon />, roles: SOP_ROLES },
+];
+const TOOLS_KEY = "sidebarToolsOpen";
+
+function loadToolsOpen() {
+  try { return localStorage.getItem(TOOLS_KEY) === "1"; } catch { return false; }
+}
 
 // Drag the right edge to resize. Released below COLLAPSE_BELOW it snaps to
 // icon-only; otherwise it stays at the dragged width and shows full names.
@@ -67,7 +79,10 @@ export default function Sidebar() {
   const [width, setWidth] = useState(loadWidth);
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(loadToolsOpen);
   const { user } = useAuth();
+  const tools = TOOLS.filter((t) => !t.roles || t.roles.includes(user.role));
+  const onToolPage = tools.some((t) => pathname.startsWith(t.to));
   const displayName = user.full_name || user.username;
   const initials = (displayName.match(/\b\w/g) || ["?"]).slice(0, 2).join("").toUpperCase();
   const lastExpanded = useRef(width > COLLAPSED_W ? width : DEFAULT_W);
@@ -97,6 +112,12 @@ export default function Sidebar() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   }
+
+  // Landing on a tool page (link, back button) opens the group so you can see where you are.
+  useEffect(() => { if (onToolPage) setToolsOpen(true); }, [onToolPage]);
+  useEffect(() => {
+    try { localStorage.setItem(TOOLS_KEY, toolsOpen ? "1" : "0"); } catch { /* storage unavailable -- fine */ }
+  }, [toolsOpen]);
 
   // Double-clicking the edge flips between icon-only and the last full width.
   function toggle() {
@@ -142,6 +163,25 @@ export default function Sidebar() {
           </div>
         );
       })}
+      <div className={"sidebar__section sidebar__tools" + (onToolPage ? " is-active" : "") + (toolsOpen ? " is-open" : "")}>
+        <button type="button" className="sidebar__tools-toggle" aria-expanded={toolsOpen}
+          aria-controls="sidebar-tools" title={collapsed ? (toolsOpen ? "Hide tools" : "Show tools") : undefined}
+          onClick={() => setToolsOpen((o) => !o)}>
+          <ToolsIcon />
+          <span className="sidebar__section-label sidebar__text">TOOLS</span>
+          <span className="sidebar__tools-chev"><ChevronIcon /></span>
+        </button>
+        {toolsOpen && (
+          <div id="sidebar-tools" className="sidebar__tools-list">
+            {tools.map((t) => (
+              <NavLink key={t.to} to={t.to} className="sidebar__link" title={collapsed ? t.label : undefined}>
+                {t.icon}
+                <span className="sidebar__text">{t.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="sidebar__footer">
         {user.role === "admin" && (
           <NavLink to="/accounts" className="sidebar__link" title={collapsed ? "Accounts" : undefined}>
@@ -160,7 +200,7 @@ export default function Sidebar() {
         </NavLink>
         <div className="sidebar__settings-row">
           <button type="button" className={"sidebar__link sidebar__settings"
-            + (settingsOpen || SETTINGS_PATHS.some((p) => pathname.startsWith(p)) ? " active" : "")}
+            + (settingsOpen ? " active" : "")}
             title={collapsed ? "Settings" : undefined} onClick={() => setSettingsOpen(true)}>
             <GearIcon />
             <span className="sidebar__text">Settings</span>

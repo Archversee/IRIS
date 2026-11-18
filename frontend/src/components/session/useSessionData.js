@@ -3,6 +3,7 @@ import { api } from "../../api/client.js";
 import { aoiColor, eventColor, MIN_AOI_DWELL_SEC_DEFAULT, CHART_MAX_POINTS, WL_MIN, WL_MAX } from "./constants.js";
 import { bounds, norm, nearestIndexForTime, interpolatedGaze, gazeStretchAt, effectiveAoi, buildScanRuns } from "./utils.js";
 import { useSyncedVideo } from "./hooks.js";
+import { C } from "../../palette.js";
 
 const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW screens)
 // While playing, the gaze dot, clock and videos follow the playhead every
@@ -458,7 +459,7 @@ export function useSessionData({ id, live }) {
         }
         const start = +elapsed(flight[rollStart].ts).toFixed(1);
         const end = +elapsed(flight[climbIdx].ts).toFixed(1);
-        if (end > start) phases.push({ key: "takeoff", label: "Takeoff", start, end, color: "#f5a623" });
+        if (end > start) phases.push({ key: "takeoff", label: "Takeoff", start, end, color: C.amber });
       }
     }
 
@@ -474,7 +475,7 @@ export function useSessionData({ id, live }) {
       if (descentIdx >= 0 && descentIdx < lastIdx) {
         const start = +elapsed(flight[descentIdx].ts).toFixed(1);
         const end = +elapsed(flight[lastIdx].ts).toFixed(1);
-        if (end > start) phases.push({ key: "landing", label: "Landing", start, end, color: "#38bdf8" });
+        if (end > start) phases.push({ key: "landing", label: "Landing", start, end, color: C.cyan });
       }
     }
 

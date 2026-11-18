@@ -196,7 +196,7 @@ function Attitude({ pitch, bank, heading }) {
             ))}
           </g>
         </g>
-        <circle r="48" fill="none" stroke="#2d3a48" strokeWidth="2" />
+        <circle r="48" fill="none" stroke="var(--border)" strokeWidth="2" />
         <path d="M-24 0 H-8 L0 6 L8 0 H24" fill="none" stroke="#ffb64d" strokeWidth="2.4" strokeLinejoin="round" />
         <circle r="1.8" fill="#ffb64d" />
       </svg>

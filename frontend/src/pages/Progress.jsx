@@ -10,22 +10,22 @@ import {
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import "./progress.css";
+import { AXIS, C, TOOLTIP } from "../palette.js";
 
 const INSIGHT_TITLE = {
   improving: "Improving", persistent: "Keeps happening", regression: "Slipped back", forgetting: "Between lessons",
   cause: "Why it happens", scan: "Scan", handling: "Handling", coaching: "Coaching", info: "",
 };
 const KIND = {
-  perception: { label: "Seeing it (scan / attention)", color: "#60a5fa" },
-  action: { label: "Acting on it", color: "#f5a623" },
-  handling: { label: "Handling (over-correcting)", color: "#a78bfa" },
-  workload: { label: "Workload", color: "#94a3b8" },
+  perception: { label: "Seeing it (scan / attention)", color: C.blue },
+  action: { label: "Acting on it", color: C.amber },
+  handling: { label: "Handling (over-correcting)", color: C.violet },
+  workload: { label: "Workload", color: C.gray },
 };
 const PHASES = ["CLIMB_OUT", "CROSSWIND", "DOWNWIND", "BASE", "FINAL"];
 const phaseName = (p) => p.replace("_", " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-const AXIS = { stroke: "var(--muted)", tick: { fontSize: 11 } };
 const XAXIS = { ...AXIS, interval: 0, padding: { left: 24, right: 24 } };
-const TIP = { contentStyle: { background: "var(--panel)", border: "1px solid var(--border)" } };
+const TIP = TOOLTIP;
 const pct = (v) => (v == null ? "–" : `${Math.round(v * 100)}%`);
 const num = (v, d = 1, unit = "") => (v == null ? "–" : `${v.toFixed(d)}${unit}`);
 const shortLabel = (f) => f.label.split(" · ")[0];
@@ -161,7 +161,7 @@ function gapDays(a, b) {
 function LearningCurves({ flights, curve }) {
   const data = flights.map((f) => ({ name: shortLabel(f), breaches: f.breaches }));
   const top = curve.filter((r) => r.broken > 0).slice(0, 4);
-  const colors = ["#f87171", "#f5a623", "#60a5fa", "#a78bfa"];
+  const colors = [C.red, C.amber, C.blue, C.violet];
   top.forEach((r, k) => r.series.forEach((v, i) => { data[i][`r${k}`] = v; }));
   return (
     <Section title="Learning curves"
@@ -172,7 +172,7 @@ function LearningCurves({ flights, curve }) {
           <XAxis dataKey="name" {...XAXIS} />
           <YAxis allowDecimals={false} {...AXIS} width={30} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="breaches" name="All rules: times broken" fill="var(--border-strong)" />
           {top.map((r, k) => (
             <Line key={r.title} dataKey={`r${k}`} name={r.title} stroke={colors[k]} strokeWidth={2} connectNulls isAnimationActive={false} />
@@ -241,7 +241,7 @@ function CauseChart({ flights, causes, kinds }) {
           <XAxis dataKey="name" {...XAXIS} />
           <YAxis allowDecimals={false} {...AXIS} width={30} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
           {used.map((k) => <Bar key={k} dataKey={k} name={KIND[k].label} stackId="c" fill={KIND[k].color} />)}
           <Line dataKey="breaches" name="Times a rule was broken" stroke="var(--danger)" strokeWidth={2} isAnimationActive={false} />
         </ComposedChart>
@@ -325,10 +325,10 @@ function ScanSection({ flights, table }) {
               <XAxis dataKey="name" {...XAXIS} />
               <YAxis {...AXIS} width={30} />
               <Tooltip {...TIP} formatter={(v) => `${v} s`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {ex?.airspeed_every_s != null && <ReferenceLine y={ex.airspeed_every_s} stroke="#60a5fa" strokeDasharray="4 3" />}
-              <Line dataKey="asi" name="Airspeed" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
-              <Line dataKey="alt" name="Altimeter" stroke="#4ade80" strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Legend wrapperStyle={{ fontSize: 13 }} />
+              {ex?.airspeed_every_s != null && <ReferenceLine y={ex.airspeed_every_s} stroke={C.blue} strokeDasharray="4 3" />}
+              <Line dataKey="asi" name="Airspeed" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Line dataKey="alt" name="Altimeter" stroke={C.green} strokeWidth={2} connectNulls isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -340,10 +340,10 @@ function ScanSection({ flights, table }) {
               <XAxis dataKey="name" {...XAXIS} />
               <YAxis domain={[0, 100]} {...AXIS} width={30} />
               <Tooltip {...TIP} formatter={(v) => `${v}%`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {ex?.outside != null && <ReferenceLine y={Math.round(ex.outside * 100)} stroke="#f5a623" strokeDasharray="4 3" />}
-              <Line dataKey="outside" name="Outside" stroke="#f5a623" strokeWidth={2} connectNulls isAnimationActive={false} />
-              <Line dataKey="spread" name="Spread" stroke="#a78bfa" strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Legend wrapperStyle={{ fontSize: 13 }} />
+              {ex?.outside != null && <ReferenceLine y={Math.round(ex.outside * 100)} stroke={C.amber} strokeDasharray="4 3" />}
+              <Line dataKey="outside" name="Outside" stroke={C.amber} strokeWidth={2} connectNulls isAnimationActive={false} />
+              <Line dataKey="spread" name="Spread" stroke={C.violet} strokeWidth={2} connectNulls isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -409,8 +409,8 @@ function CoachingSection({ flights, coaching }) {
           <YAxis yAxisId="s" {...AXIS} width={30} />
           <YAxis yAxisId="p" orientation="right" domain={[0, 100]} {...AXIS} width={34} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line yAxisId="s" dataKey="react" name="Typical response (s)" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Line yAxisId="s" dataKey="react" name="Typical response (s)" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
           <Line yAxisId="p" dataKey="fixed" name="Fixed it (%)" stroke="var(--good)" strokeWidth={2} connectNulls isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -458,9 +458,9 @@ function HandlingSection({ flights, table }) {
           <YAxis yAxisId="kt" {...AXIS} width={30} />
           <YAxis yAxisId="fpm" orientation="right" {...AXIS} width={40} />
           <Tooltip {...TIP} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line yAxisId="kt" dataKey="ias_sd" name="Final approach speed ± (kt)" stroke="#60a5fa" strokeWidth={2} connectNulls isAnimationActive={false} />
-          <Line yAxisId="fpm" dataKey="td" name="Touchdown sink rate (ft/min)" stroke="#f5a623" strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Line yAxisId="kt" dataKey="ias_sd" name="Final approach speed ± (kt)" stroke={C.blue} strokeWidth={2} connectNulls isAnimationActive={false} />
+          <Line yAxisId="fpm" dataKey="td" name="Touchdown sink rate (ft/min)" stroke={C.amber} strokeWidth={2} connectNulls isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
       {tdSpread != null && (

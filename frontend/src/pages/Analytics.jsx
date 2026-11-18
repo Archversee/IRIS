@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { api } from "../api/client.js";
 import CrossCheckCard from "../components/session/CrossCheckCard.jsx";
+import { AXIS, GRID, TOOLTIP } from "../palette.js";
 
 const num = (v, d = 2) => (v == null ? "—" : Number(v).toFixed(d));
 const pct = (v) => (v == null ? "—" : (Number(v) * 100).toFixed(1) + "%");
@@ -64,11 +65,11 @@ export default function Analytics() {
         ) : (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={dwell} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
-              <CartesianGrid stroke="#2d3a48" strokeDasharray="3 3" />
-              <XAxis dataKey="aoi" stroke="#8b98a5" tick={{ fontSize: 12 }} />
-              <YAxis stroke="#8b98a5" tick={{ fontSize: 11 }} unit="s" />
-              <Tooltip contentStyle={{ background: "#1a222c", border: "1px solid #2d3a48" }} />
-              <Bar dataKey="seconds" fill="#4aa8ff" />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="aoi" {...AXIS} />
+              <YAxis {...AXIS} unit="s" />
+              <Tooltip {...TOOLTIP} cursor={{ fill: "var(--accent-soft)" }} />
+              <Bar dataKey="seconds" fill="var(--accent)" />
             </BarChart>
           </ResponsiveContainer>
         )}
