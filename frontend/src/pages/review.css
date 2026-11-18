@@ -246,6 +246,15 @@
 .rev--live .rev-timeline { flex: 1 0 auto; display: flex; flex-direction: column; }
 .rev--live .tl-chart { flex: 1 0 150px; height: auto; contain: size; }
 .rev--live .ft-card { min-height: 440px; }
+/* Live has no playback controls under its chart, so it has ~60px more height
+   than Review; it goes to the screens (so the chart matches Review). The
+   screens can only get taller by getting wider, so OTW + Instruments take more
+   of the row and the ground track narrows -- its map fits any box (meet), so it
+   just fills the screens' height. Side by side only (stacked below 900px). */
+@media (min-width: 901px) {
+  .rev--live .rev-screens { grid-template-columns: 1fr 1fr minmax(0, 0.55fr); }
+  .rev--live .rev-screen--ground .body { flex: 1; aspect-ratio: auto; max-width: none; }
+}
 .tl-playhead-clip { position: absolute; overflow: hidden; pointer-events: none; }
 .tl-playhead-track { position: absolute; top: 0; bottom: 0; left: 2px; right: 2px; will-change: transform; }
 .tl-playhead {
@@ -683,6 +692,13 @@
 .ft-card--live .ft-group { gap: 8px; justify-content: space-evenly; padding: 8px 10px; }
 .ft-card--live .ft-group:first-child { flex: 0 0 auto; }
 .ft-card--live .ft-group--dials { flex: 1.5; }
+/* The dials stop growing at their max size: lay them out on one shared row
+   centred in the group's height (instead of stuck at the top with empty space
+   below), all the same height so their titles line up. */
+.ft-card--live .ft-group--dials {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center;
+}
+.ft-card--live .ft-group--dials > * { width: 100%; min-width: 0; margin-inline: auto; }
 .ft-card--live .ft-group--controls { flex: 2.2; }
 
 .ft-card--live .ft-tape { gap: 5px; flex: 0 0 auto; width: 74px; min-width: 0; }
