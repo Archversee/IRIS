@@ -475,19 +475,23 @@ def build_flight_flow(rt):
                 rt.demo_ctl["shown"].add(step)
             skipped = skipped or rt.demo_ctl["skip"].is_set()
         finally:
-            if flew and gen == rt.run_gen["n"]:
-                rt.event_log.close(rt._sim_now(), "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
-                rt._publish_events()
             await rt.loop.run_in_executor(None, rt.sim.demo_control, {"ap": False, "rudder": 0.0})
             rt.state["demo"] = None
             rt.state["look_at"] = None
             if flew and gen == rt.run_gen["n"]:
-                await _set_frozen(True)
-                ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
-                    tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
-                    throttle_pct=base_th * 100.0))
-                if not ok:
-                    log.warning("demo: couldn't put the aircraft back at the start")
+                try:
+                    await _set_frozen(True)
+                    ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
+                        tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
+                        throttle_pct=base_th * 100.0))
+                    if not ok:
+                        log.warning("demo: couldn't put the aircraft back at the start")
+                finally:
+                    # the demo event ends only once the aircraft is back at the start,
+                    # so IRIS's ground track (which leaves the demo out) never draws
+                    # the jump back from where the demo finished
+                    rt.event_log.close(rt._sim_now(), "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
+                    rt._publish_events()
         if gen == rt.run_gen["n"] and rt.demo_ctl["shown"]:
             await rt.coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))
 

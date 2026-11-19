@@ -70,14 +70,18 @@ export function useSessionData({ id, live }) {
   // Review leaves out MAVIS's own demonstration flying (the airborne lessons'
   // "MAVIS demonstration" event, kind "demo"): it isn't the trainee's flight,
   // so its samples, gaze and timeline event are all hidden. The live view
-  // shows everything as it happens.
-  const demoSpans = useMemo(() => (live ? [] : flightEvents
+  // shows everything as it happens, except the ground track: that only
+  // starts once the demo is over, in both views.
+  const allDemoSpans = useMemo(() => flightEvents
     .filter((e) => e.kind === "demo")
-    .map((e) => [Date.parse(e.start_ts), e.end_ts ? Date.parse(e.end_ts) : Infinity])), [flightEvents, live]);
-  const flight = useMemo(() => {
-    if (!demoSpans.length) return flightAll;
-    return flightAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });
-  }, [flightAll, demoSpans]);
+    .map((e) => [Date.parse(e.start_ts), e.end_ts ? Date.parse(e.end_ts) : Infinity]), [flightEvents]);
+  const demoSpans = live ? [] : allDemoSpans;
+  const notDemo = (rows, spans) => (spans.length
+    ? rows.filter((r) => { const t = Date.parse(r.ts); return !spans.some(([a, b]) => t >= a && t < b); })
+    : rows);
+  const flight = useMemo(() => notDemo(flightAll, demoSpans), [flightAll, demoSpans]);
+  const trackFlight = useMemo(() => (live ? notDemo(flightAll, allDemoSpans) : flight),
+    [live, flightAll, allDemoSpans, flight]);
   const eye = useMemo(() => {
     if (!demoSpans.length) return eyeAll;
     return eyeAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });
@@ -395,7 +399,7 @@ export function useSessionData({ id, live }) {
   // Ground track in a 100x100 box. The view fits the flown path AND the
   // reference route (if one is shown), so both use the same projection.
   const groundGeo = useMemo(() => {
-    const pts = flight
+    const pts = trackFlight
       .map((r) => ({ lat: r.latitude, lon: r.longitude, t: elapsed(r.ts) }))
       .filter((p) => p.lat != null && p.lon != null);
     if (pts.length < 2) return { track: [], project: null };
@@ -417,7 +421,7 @@ export function useSessionData({ id, live }) {
     });
     return { track: pts.map((p) => ({ ...project(p.lat, p.lon), t: p.t })), project };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flight, route]);
+  }, [trackFlight, route]);
   const groundTrack = groundGeo.track;
 
   const toPoints = (arr) => arr.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
