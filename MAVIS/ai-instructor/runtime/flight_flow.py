@@ -429,7 +429,6 @@ def build_flight_flow(rt):
         weight = {s: (3.0 if s in DEMO_LONG_STEPS else 1.0) for s in steps}
         unit = (float(rt.lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
         rt.demo_ctl["skip"].clear()
-        rt.demo_ctl["no_track"] = True      # cleared by _fam_opening as the trainee takes over
         rt.state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
         flew = skipped = False
         try:
@@ -488,6 +487,11 @@ def build_flight_flow(rt):
                 rt.demo_ctl["shown"].add(step)
             skipped = skipped or rt.demo_ctl["skip"].is_set()
         finally:
+            # the demo is over (flown or skipped): its track is wiped, and nothing
+            # is tracked again until the trainee takes over (_fam_opening)
+            if gen == rt.run_gen["n"]:          # not after a Restart: that run is already reset
+                rt.demo_ctl["no_track"] = True
+                rt.state["track"] = [[]]
             await rt.loop.run_in_executor(None, rt.sim.demo_control, {"ap": False, "rudder": 0.0})
             rt.state["demo"] = None
             rt.state["look_at"] = None

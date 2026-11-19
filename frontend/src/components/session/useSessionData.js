@@ -92,10 +92,13 @@ export function useSessionData({ id, live }) {
     const starts = flightEvents.map((e) => Date.parse(e.start_ts)).filter((t) => t >= attempt);
     return starts.length ? Math.min(...starts) : Infinity;
   }, [live, sessionFlights, flightEvents]);
+  // Live: the demo is drawn while it flies, and wiped once it has ended
+  // (flown or skipped) -- only finished demos are cut out
+  const doneDemoSpans = useMemo(() => allDemoSpans.filter(([, b]) => b !== Infinity), [allDemoSpans]);
   const trackFlight = useMemo(() => {
     if (!live) return flight;
-    return notDemo(flightAll, allDemoSpans).filter((r) => Date.parse(r.ts) >= trackStart);
-  }, [live, flightAll, allDemoSpans, flight, trackStart]);
+    return notDemo(flightAll, doneDemoSpans).filter((r) => Date.parse(r.ts) >= trackStart);
+  }, [live, flightAll, doneDemoSpans, flight, trackStart]);
   const eye = useMemo(() => {
     if (!demoSpans.length) return eyeAll;
     return eyeAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });

@@ -183,9 +183,10 @@ def append_track(rt, tel, t0, spike, last_track):
     # flights are thinned rather than trimmed: past TRACK_MAX points
     # the older part is halved, so the full path stays on the map
     # (just coarser at the start) and the payload stays bounded.
-    # MAVIS's demonstration (and the reset back to the start after it) is
-    # never tracked: the line starts with the trainee's own flying
-    if rt.demo_ctl.get("no_track") or rt.state.get("demo"):
+    # MAVIS's demonstration is drawn while it flies and wiped when it ends
+    # (flight_flow._fam_demo_all); from then until the trainee takes over
+    # (the reset back to the start) nothing is tracked
+    if rt.demo_ctl.get("no_track"):
         return last_track
     if not rt.scored["done"] and t0 - last_track > 1.0 and not spike \
             and abs(tel.lat) > 0.01:
