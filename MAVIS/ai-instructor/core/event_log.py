@@ -66,8 +66,12 @@ class EventLog:
 
     def restart_attempt(self, t: float) -> None:
         """Restart mid-flight: the attempt in progress ends as "restarted"; the flight
-        (and its session) carry on, and the next attempt's events count as try 2, 3..."""
+        (and its session) carry on, and the next attempt's events count as try 2, 3...
+        restart_t marks where the new attempt's data starts (IRIS's live ground
+        track shows only the current attempt)."""
         self.close(t, "restarted")
+        if self._flight is not None:
+            self._flight["restart_t"] = t
 
     def end_flight(self, t: float, outcome: str) -> None:
         """The flight ends (completed / abandoned / restarted); closes any open

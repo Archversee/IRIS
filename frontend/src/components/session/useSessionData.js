@@ -80,8 +80,22 @@ export function useSessionData({ id, live }) {
     ? rows.filter((r) => { const t = Date.parse(r.ts); return !spans.some(([a, b]) => t >= a && t < b); })
     : rows);
   const flight = useMemo(() => notDemo(flightAll, demoSpans), [flightAll, demoSpans]);
-  const trackFlight = useMemo(() => (live ? notDemo(flightAll, allDemoSpans) : flight),
-    [live, flightAll, allDemoSpans, flight]);
+  // Live: the ground track shows only the current attempt, not what was flown
+  // before it. The attempt starts at the latest flight's start or its last
+  // Restart, but its track only from the first MAVIS event after that (the
+  // lesson actually under way): the aircraft being put back at the start in
+  // between is never drawn. Sessions without MAVIS flights show everything.
+  const trackStart = useMemo(() => {
+    if (!live || !sessionFlights.length) return -Infinity;
+    const attempt = Math.max(...sessionFlights
+      .flatMap((f) => [f.start_ts, f.restart_ts]).filter(Boolean).map(Date.parse));
+    const starts = flightEvents.map((e) => Date.parse(e.start_ts)).filter((t) => t >= attempt);
+    return starts.length ? Math.min(...starts) : Infinity;
+  }, [live, sessionFlights, flightEvents]);
+  const trackFlight = useMemo(() => {
+    if (!live) return flight;
+    return notDemo(flightAll, allDemoSpans).filter((r) => Date.parse(r.ts) >= trackStart);
+  }, [live, flightAll, allDemoSpans, flight, trackStart]);
   const eye = useMemo(() => {
     if (!demoSpans.length) return eyeAll;
     return eyeAll.filter((r) => { const t = Date.parse(r.ts); return !demoSpans.some(([a, b]) => t >= a && t < b); });

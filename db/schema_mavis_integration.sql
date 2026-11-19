@@ -179,5 +179,8 @@ create table if not exists session_flights (
     start_ts    timestamptz not null,
     end_ts      timestamptz,
     outcome     text,
+    restart_ts  timestamptz,             -- last Restart: where the current attempt's data starts
     primary key (session_id, flight)
 );
+-- Added after session_flights was first created (idempotent either way):
+alter table session_flights add column if not exists restart_ts timestamptz;

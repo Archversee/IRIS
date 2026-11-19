@@ -382,17 +382,30 @@ def build_flight_flow(rt):
             # hand-over: no separate "You have control" after it.
             # Controls stay locked from the demo's start until then.
             await _lock_controls(False)
+            # the ground track starts here, with the trainee's own flying:
+            # nothing from the demo (skipped or not) or the reset back to the start
+            rt.state["track"] = [[]]
+            rt.state["demo_track"] = []
+            rt.demo_ctl["no_track"] = False
             if rt.demo_ctl["shown"]:
-                # the ground track starts here, with the trainee's own flying:
-                # nothing from the demo or the reset back to the start
-                rt.state["track"] = [[]]
-                rt.state["demo_track"] = []
-                rt.demo_ctl["no_track"] = False
                 await _set_frozen(False)
             rt.engine.start_flying()
         finally:
             rt.demo_ctl["no_track"] = False
             await _lock_controls(False)     # whatever happened: never leave them locked
+
+    async def _wait_back_at(lat: float, lon: float, timeout_s: float = 6.0) -> float | None:
+        """After set_position: the sim can keep reporting the old position for a
+        moment. Waits (up to timeout_s) for telemetry within ~100 m of lat/lon and
+        returns that sample's time, or None if it never arrived."""
+        end = time.time() + timeout_s
+        while time.time() < end:
+            tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+            if abs(tel.lat - lat) + abs(tel.lon - lon) < 1e-3:
+                return tel.t
+            await asyncio.sleep(0.2)
+        log.warning("demo: the sim didn't report the aircraft back at the start in %.0f s", timeout_s)
+        return None
 
     async def _fam_demo_all(gen: int):
         """"I have control": the sim flies every step in order while MAVIS
@@ -479,6 +492,7 @@ def build_flight_flow(rt):
             rt.state["demo"] = None
             rt.state["look_at"] = None
             if flew and gen == rt.run_gen["n"]:
+                back_t = None
                 try:
                     await _set_frozen(True)
                     ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
@@ -486,11 +500,14 @@ def build_flight_flow(rt):
                         throttle_pct=base_th * 100.0))
                     if not ok:
                         log.warning("demo: couldn't put the aircraft back at the start")
+                    else:
+                        back_t = await _wait_back_at(tel0["lat"], tel0["lon"])
                 finally:
-                    # the demo event ends only once the aircraft is back at the start,
-                    # so IRIS's ground track (which leaves the demo out) never draws
-                    # the jump back from where the demo finished
-                    rt.event_log.close(rt._sim_now(), "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
+                    # the demo event ends only once the sim reports the aircraft back
+                    # at the start, so IRIS's ground track (which leaves the demo out)
+                    # never draws the jump back from where the demo finished
+                    rt.event_log.close(back_t or rt._sim_now(),
+                                       "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
                     rt._publish_events()
         if gen == rt.run_gen["n"] and rt.demo_ctl["shown"]:
             await rt.coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))

@@ -52,7 +52,7 @@ FLIGHT_EVENT_COLUMNS = [
 ]
 SESSION_FLIGHT_COLUMNS = [
     "session_id", "flight", "lesson_id", "title", "curriculum", "module", "mode",
-    "start_ts", "end_ts", "outcome",
+    "start_ts", "end_ts", "outcome", "restart_ts",
 ]
 SCORECARD_COLUMNS = [
     "session_id", "lesson_id", "mode",
@@ -162,7 +162,7 @@ def map_session_flights(session_id: UUID, flights: list[dict]) -> list[tuple]:
             continue
         rows.append((session_id, f["flight"], f.get("lesson_id"), f.get("title") or "",
                      f.get("curriculum") or "lesson", f.get("module"), f.get("mode"),
-                     start, _to_utc(f.get("end_t")), f.get("outcome")))
+                     start, _to_utc(f.get("end_t")), f.get("outcome"), _to_utc(f.get("restart_t"))))
     return rows
 
 
@@ -429,6 +429,7 @@ async def ensure_schema() -> None:
                     score integer, grade text, detail jsonb,
                     primary key (session_id, seq))""")
             await conn.execute("alter table flight_events add column if not exists flight integer not null default 1")
+            await conn.execute("alter table session_flights add column if not exists restart_ts timestamptz")
             await conn.execute("alter table flight_data add column if not exists rudder_trim_pct double precision")
             await conn.execute("alter table flight_data add column if not exists aileron_trim_pct double precision")
     except Exception as e:  # sessions table not created yet -- run db/schema.sql first
