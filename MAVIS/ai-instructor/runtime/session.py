@@ -44,6 +44,7 @@ def build_session(rt):
             await rt._set_vacuum(True)         # Partial Panel: the gauges fail as it starts
         rt.state["look_at"] = None
         rt.demo_ctl["shown"] = set()
+        rt.demo_ctl["no_track"] = False
         rt.started.set()
         asyncio.create_task(rt._load_sop())     # never blocks the start of the lesson
         new_session = not (keep_session and rt.session.get("session_id"))

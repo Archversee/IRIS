@@ -383,9 +383,15 @@ def build_flight_flow(rt):
             # Controls stay locked from the demo's start until then.
             await _lock_controls(False)
             if rt.demo_ctl["shown"]:
+                # the ground track starts here, with the trainee's own flying:
+                # nothing from the demo or the reset back to the start
+                rt.state["track"] = [[]]
+                rt.state["demo_track"] = []
+                rt.demo_ctl["no_track"] = False
                 await _set_frozen(False)
             rt.engine.start_flying()
         finally:
+            rt.demo_ctl["no_track"] = False
             await _lock_controls(False)     # whatever happened: never leave them locked
 
     async def _fam_demo_all(gen: int):
@@ -410,6 +416,7 @@ def build_flight_flow(rt):
         weight = {s: (3.0 if s in DEMO_LONG_STEPS else 1.0) for s in steps}
         unit = (float(rt.lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
         rt.demo_ctl["skip"].clear()
+        rt.demo_ctl["no_track"] = True      # cleared by _fam_opening as the trainee takes over
         rt.state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
         flew = skipped = False
         try:
@@ -481,7 +488,6 @@ def build_flight_flow(rt):
                     throttle_pct=base_th * 100.0))
                 if not ok:
                     log.warning("demo: couldn't put the aircraft back at the start")
-                rt.state["track"].append([])      # the trainee's own flight starts a fresh line
         if gen == rt.run_gen["n"] and rt.demo_ctl["shown"]:
             await rt.coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))
 
