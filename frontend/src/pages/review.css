@@ -105,23 +105,73 @@
    On the page: no column, the videos/timeline take the full width. */
 .rev--docked.rev--popped { grid-template-columns: minmax(0, 1fr); }
 .rev--docked.rev--popped .rev-main { --rev-scr-w: calc((100cqw - 44px) / 3); }
-.rev-popbtn { white-space: nowrap; }
-/* In the window: a slim header, then the two panes -- stacked when narrow,
-   side by side on a wide monitor. */
-.popout-body { margin: 0; background: var(--bg); color: var(--text); }
+.rev-popbtn, .rev-putback { white-space: nowrap; }
+.rc-head .rev-popbtn { padding: 3px 10px; font-size: var(--fs-sm); }
+/* ---- The pop-out window: fills whatever monitor/size it's given ----
+   - text scales with the window (bigger on a big monitor, readable from a step back)
+   - narrow or portrait: the two panes stacked, each scrolling on its own
+   - landscape: side by side (Debrief : SOP = 1 : 1.35)
+   - very wide: the lists inside also go into columns, and long lines are capped */
+.popout-body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden; }
 #popout-root:empty::before {
   content: "Open a session's Review to see its Debrief and SOP rule checks here.";
   display: block; padding: 48px 24px; text-align: center; color: var(--muted); font-family: var(--font-sans);
+  font-size: var(--fs-base);
 }
-.rev.rev--popout { position: static; display: flex; flex-direction: column; height: 100vh; }
+.rev.rev--popout {
+  --fs-md: clamp(14px, 0.35vw + 8.5px, 19px);
+  --fs-xs: calc(var(--fs-md) - 2px);
+  --fs-sm: calc(var(--fs-md) - 1px);
+  --fs-base: calc(var(--fs-md) + 1px);
+  --fs-lg: calc(var(--fs-md) + 3px);
+  --fs-xl: calc(var(--fs-md) + 4px);
+  --fs-2xl: calc(var(--fs-md) + 6px);
+  --pop-gap: clamp(8px, 0.6vw, 16px);
+  position: static; display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh; width: 100%;
+  font-size: var(--fs-md);
+}
 .rev-popout__head {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px 0;
-  font-size: var(--fs-md); color: var(--rev-text);
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px;
+  padding: var(--pop-gap) var(--pop-gap) 0; color: var(--rev-text);
 }
-.rev-popout__head .spacer { flex: 1; }
-.rev-dock.rev-dock--popout { flex: 1; min-height: 0; padding: 10px 12px 12px; }
-@media (min-width: 1100px) {
-  .rev-dock.rev-dock--popout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: minmax(0, 1fr); }
+.rev-popout__head h1 { margin: 0; font-size: var(--fs-xl); font-weight: 700; white-space: nowrap; }
+.rev-popout__meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-sm); color: var(--rev-text); }
+.rev-popout__meta small {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--rev-muted); margin-right: 4px;
+}
+.rev-dock.rev-dock--popout {
+  flex: 1; min-height: 0; padding: var(--pop-gap); gap: var(--pop-gap);
+  /* stacked: Debrief only as tall as it needs (at most ~45%), SOP checks get the rest */
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: fit-content(45%) minmax(0, 1fr);
+}
+.rev--popout .rc-pane { padding: 0 clamp(12px, 0.8vw, 20px) clamp(12px, 0.8vw, 20px); }
+.rev--popout .rc-pane > .rc-head { margin: 0 calc(-1 * clamp(12px, 0.8vw, 20px)) 10px; padding: 10px clamp(12px, 0.8vw, 20px); }
+.rev--popout .rc-pane > .rc-head h2 { font-size: var(--fs-lg); }
+/* Debrief: the "flight at a glance" tiles use the width */
+.rev--popout .db-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 8px; }
+.rev--popout .db-tile { padding: 8px 10px; }
+/* comfortable reading width for the written debrief */
+.rev--popout .db-p, .rev--popout .db-points { max-width: 80ch; }
+/* landscape, wide enough: side by side */
+@media (orientation: landscape) and (min-width: 900px) {
+  .rev-dock.rev-dock--popout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); grid-template-rows: minmax(0, 1fr); }
+}
+/* a big monitor: the rule lists go into columns too */
+@media (min-width: 1700px) {
+  .rev--popout #rev-dock-rules .rc-group {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 0 var(--pop-gap); align-items: start;
+  }
+  .rev--popout #rev-dock-rules .rc-group > h3, .rev--popout #rev-dock-rules .rc-group > .rc-allmet,
+  .rev--popout #rev-dock-rules .rc-group > .rc-muted { grid-column: 1 / -1; }
+  .rev--popout .rc-signoff textarea { min-height: 90px; }
+}
+/* very short windows: one scroll for both panes instead of two cramped ones */
+@media (max-height: 560px) {
+  .popout-body { overflow: auto; }
+  .rev.rev--popout { height: auto; min-height: 100vh; }
+  .rev-dock.rev-dock--popout { grid-template-rows: none; }
+  .rev--popout .rc-pane { overflow: visible; }
 }
 /* a title-bar chip was clicked: point at its pane */
 .rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }

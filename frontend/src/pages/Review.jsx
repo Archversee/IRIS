@@ -41,6 +41,8 @@ export default function Review() {
   // The column can be popped out to its own window (another monitor); then the
   // videos and timeline take the whole page, until that window is closed.
   const popout = usePopout();
+  const popTitleRef = useRef("");
+  const onPop = useCallback(() => popOut(popTitleRef.current), []);
   const showDock = (which) => {
     if (popout) popout.focus();
     (popout?.document || document).getElementById(`rev-dock-${which}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -108,10 +110,12 @@ export default function Review() {
 
   const curriculum = [...new Set((summary.flights || []).map((f) => f.title).filter(Boolean))].join(" · ");
   const popTitle = `Debrief & SOP checks · ${summary.session.name}`;
+  popTitleRef.current = popTitle;
   const dockSlots = (
     <>
       <div id="rev-dock-debrief" className={"rev-dock__slot" + (flash === "debrief" ? " is-flash" : "")}>
-        <DebriefPanel sessionId={id} />
+        {/* the Pop out / Put back button sits on the Debrief pane, so it's clear what moves */}
+        <DebriefPanel sessionId={id} popped={!!popout} onPop={onPop} onPutBack={putBack} />
       </div>
       <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
         <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
@@ -145,12 +149,10 @@ export default function Review() {
           <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
             onClick={() => showDock("rules")} />
           <DebriefChip job={debriefJob} onClick={() => showDock("debrief")} />
-          {popout ? (
-            <button type="button" className="rc-chip rev-popbtn" onClick={putBack}
-              title="Close the other window and put Debrief and SOP rule checks back on this page">⇲ Put back</button>
-          ) : (
-            <button type="button" className="rc-chip rev-popbtn" onClick={() => popOut(popTitle)}
-              title="Move Debrief and SOP rule checks to their own window, e.g. on another monitor">⧉ Pop out</button>
+          {/* popped out: the Debrief pane (and its button) is in the other window, so offer the way back here */}
+          {popout && (
+            <button type="button" className="rc-chip rev-putback" onClick={putBack}
+              title="Close the other window and put Debrief and SOP rule checks back on this page">⇲ Put back Debrief &amp; SOP</button>
           )}
         </div>
 
@@ -167,14 +169,14 @@ export default function Review() {
       {popout ? (
         <PopoutPortal title={popTitle}>
           <div className="rev rev--popout">
+            {/* which flight this is, at a glance from across the room */}
             <header className="rev-popout__head">
-              <div>
-                <b>{summary.session.name}</b>
-                <span className="rc-muted"> · Debrief &amp; SOP rule checks</span>
-              </div>
-              <span className="spacer" />
-              <button type="button" className="rc-btn" onClick={putBack}
-                title="Close this window and put these back on the Review page">⇲ Put back</button>
+              <h1>{summary.session.name}</h1>
+              <span className="rev-popout__meta">
+                {summary.pilot && <span><small>Pilot</small> {summary.pilot}</span>}
+                {summary.score?.grade && <span><small>Grade</small> {summary.score.grade}</span>}
+                {curriculum && <span><small>Curriculum</small> {curriculum}</span>}
+              </span>
             </header>
             <div className="rev-dock rev-dock--popout">{dockSlots}</div>
           </div>

@@ -40,7 +40,9 @@ export function DebriefChip({ onClick, job }) {
   );
 }
 
-function DebriefPanel({ sessionId }) {
+// Review passes onPop / onPutBack (stable): the pane's title row then has the
+// button that moves Debrief + SOP rule checks to their own window and back.
+function DebriefPanel({ sessionId, popped = false, onPop, onPutBack }) {
   const { user } = useAuth() || {};
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
   const [d, setD] = useState(null);
@@ -71,6 +73,18 @@ function DebriefPanel({ sessionId }) {
     <div className="rc-pane" role="region" aria-label="Flight debrief">
       <div className="rc-head">
         <h2>Debrief</h2>
+        {onPop && (
+          <>
+            <span className="spacer" />
+            {popped ? (
+              <button type="button" className="rc-btn rev-popbtn" onClick={onPutBack}
+                title="Close this window and put Debrief and SOP rule checks back on the Review page">⇲ Put back</button>
+            ) : (
+              <button type="button" className="rc-btn rev-popbtn" onClick={onPop}
+                title="Open Debrief and SOP rule checks in their own window, e.g. on another monitor">⧉ Pop out</button>
+            )}
+          </>
+        )}
       </div>
       {err && <div className="rc-err">{err}</div>}
       {!d && !err && <div className="rc-empty">Loading…</div>}
