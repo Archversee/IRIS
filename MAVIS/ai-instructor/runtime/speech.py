@@ -60,6 +60,8 @@ def build_speech(rt):
     media = Path(rt.cfg["web"]["media_dir"])
     lipsync = LipsyncLibrary(media if media.is_absolute() else HERE / media, HERE / "data")
     rt.lipsync = lipsync
+    # off: every sentence is synthesised and the tablet shows its talking loop instead
+    use_clips = (rt.cfg.get("avatar_lipsync") or {}).get("enabled", True)
     # text -> wav already made for it (most callouts are scripted and repeat every circuit)
     said: OrderedDict[str, Path] = OrderedDict()
     SAID_MAX = 300
@@ -148,7 +150,7 @@ def build_speech(rt):
                 # when the tablet will be done with what it has (it plays clips back to back)
                 done_at = t0
                 for i, part in enumerate(parts):
-                    clip = lipsync.lookup(part)
+                    clip = lipsync.lookup(part) if use_clips else None
                     if clip:
                         # a fixed sentence with its own clip: its WAV (what the lips were
                         # matched to), and the avatar video saying it
@@ -158,7 +160,8 @@ def build_speech(rt):
                         done_at = max(done_at, rt.loop.time()) + dur
                         publish(clip["wav_url"], done_at, video=clip["video_url"])
                         continue
-                    lipsync.heard(part)
+                    if use_clips:
+                        lipsync.heard(part)
                     wav = await make_wav(part)       # the tablet is still playing the one before
                     if gen != rt.speak_gen["n"]:
                         return

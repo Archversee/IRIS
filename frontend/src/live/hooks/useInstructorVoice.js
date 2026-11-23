@@ -9,8 +9,9 @@ import { setFace } from "../voice/faceSync.js";
 // waits for it instead of cutting it off. clips lists only what MAVIS is
 // saying now. gen changes only when MAVIS is cut off (a more urgent callout,
 // a new session, stop): then playback stops and the queue is dropped. URLs are MAVIS-origin paths, re-based through the /mavis proxy.
-// A fixed sentence with a pre-made lip-sync clip comes with `video`: while it
-// plays, the avatar shows that clip in step with this audio (voice/faceSync.js).
+// While a sentence plays, the avatar shows its talking loop (voice/faceSync.js);
+// a fixed sentence with a pre-made lip-sync clip comes with `video`, and then
+// the avatar shows that clip in step with this audio instead.
 const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
 const MAX_QUEUE = 10;     // far behind (tablet asleep, network stall): skip to the newest
 
@@ -50,7 +51,8 @@ export function useInstructorVoice(audio, active) {
       if (!clip) { playingRef.current = false; setFace(null); return; }
       playingRef.current = true;
       voice.src = "/mavis" + clip.url;
-      setFace(clip.video ? { video: "/mavis" + clip.video, audio: voice, seq: clip.seq } : null);
+      // every sentence: the avatar talks while it plays (its own lip-sync clip if it has one)
+      setFace({ video: clip.video ? "/mavis" + clip.video : null, audio: voice, seq: clip.seq });
       voice.play().catch((e) => {
         console.warn("MAVIS voice blocked by the browser:", e);
         playingRef.current = false;

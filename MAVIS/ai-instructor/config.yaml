@@ -147,6 +147,7 @@ instructor:
 # avatar/lines folder, {source}, {limit} and {here} (this folder). Set up here for
 # MuseTalk v1.5, installed with its own venv at C:\Users\admin\lipsync\MuseTalk.
 avatar_lipsync:
+  enabled: false           # off for now: the avatar plays its talking loop (intro.mp4) whenever MAVIS speaks
   batch_cmd: '"C:\Users\admin\lipsync\MuseTalk\.venv\Scripts\python.exe" -I "{here}\tools\musetalk_batch.py" --musetalk "C:\Users\admin\lipsync\MuseTalk" --lines "{lines}" --source "{source}" --limit {limit}'
   cmd: ""
   cwd: ""

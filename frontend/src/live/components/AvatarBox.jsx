@@ -3,14 +3,16 @@ import { mediaUrl } from "../api/mavisApi.js";
 import { useFace } from "../voice/faceSync.js";
 
 // Idle-loop avatar video, muted (autoplay requires it), with a speaking
-// glow driven by state.speaking. When MAVIS says a fixed sentence that has a
-// pre-made lip-sync clip (MAVIS voice/lipsync.py), that clip plays over the
-// idle loop, muted -- the sound is the voice's own audio -- and is kept on the
-// audio's position, so the lips stay on the words however late either started.
-// Back to the idle loop the moment the sentence ends. Intro clips / unmuted
-// playback aren't ported yet -- see docs/LIVE_REBUILD_PLAN.md.
+// glow driven by state.speaking. While MAVIS's voice is actually playing
+// (voice/faceSync.js, set by useInstructorVoice), a talking loop plays over
+// the idle loop instead -- TALK_VIDEO, muted: the sound is the voice's own
+// audio -- and fades back to the idle loop when MAVIS stops talking.
+// A sentence MAVIS sent with a pre-made lip-sync clip (MAVIS voice/lipsync.py,
+// config avatar_lipsync.enabled) shows that clip instead, kept on the audio's
+// position so the lips stay on the words however late either started.
 // Falls back to a plain placeholder if no avatar video is configured on
 // disk, rather than showing a browser's broken-video icon.
+const TALK_VIDEO = "/media/avatar/intro.mp4";
 const SEEK_IF_OFF_S = 0.25;    // further apart than this: jump the video to the audio
 const NUDGE_RATE = 0.5;        // closer: speed the video up / slow it down to catch up
 // The clips are drawn on the first CLIP_SOURCE_S of idle.mp4, played forward then
@@ -28,30 +30,42 @@ function idleTimeAt(t) {
 
 export default function AvatarBox({ speaking }) {
   const videoRef = useRef(null);
+  const talkRef = useRef(null);
   const faceRef = useRef(null);
   const [broken, setBroken] = useState(false);
-  const [talking, setTalking] = useState(false);   // the lip-sync clip is on screen
+  const [lipsync, setLipsync] = useState(false);   // a lip-sync clip is on screen
   const face = useFace();
+  const clip = face?.video || null;
+  const talking = !!face && !clip;                  // talking loop, no clip for this sentence
 
   useEffect(() => {
     videoRef.current?.play().catch(() => {}); // autoplay can be blocked until a user gesture
   }, []);
 
+  // the talking loop: carries on from where it was, so sentences don't all start alike
+  useEffect(() => {
+    const t = talkRef.current;
+    if (!t) return;
+    if (talking) t.play().catch(() => {});
+    else t.pause();
+  }, [talking]);
+
+  // a sentence's own lip-sync clip
   useEffect(() => {
     const v = faceRef.current;
     if (!v) return;
-    if (!face) {
+    if (!clip) {
       const idle = videoRef.current;
-      if (idle && v.readyState >= 2 && v.currentTime > 0) {
+      if (lipsyncShown(v) && idle) {
         idle.currentTime = idleTimeAt(v.currentTime);   // same pose under the clip as it fades out
       }
-      setTalking(false);
+      setLipsync(false);
       v.pause();
       return;
     }
     const a = face.audio;
     let raf = 0;
-    v.src = face.video;
+    v.src = clip;
     v.currentTime = 0;
     v.playbackRate = 1;
     const follow = () => {
@@ -63,8 +77,8 @@ export default function AvatarBox({ speaking }) {
       else v.playbackRate = Math.min(1.1, Math.max(0.9, 1 + off * NUDGE_RATE));
       if (v.paused && !v.ended) v.play().catch(() => {});
     };
-    const shown = () => setTalking(true);
-    const failed = () => setTalking(false);           // no clip after all: just the idle loop
+    const shown = () => setLipsync(true);
+    const failed = () => setLipsync(false);           // no clip after all: just the idle loop
     v.addEventListener("playing", shown);
     v.addEventListener("error", failed);
     raf = requestAnimationFrame(follow);
@@ -73,7 +87,8 @@ export default function AvatarBox({ speaking }) {
       v.removeEventListener("playing", shown);
       v.removeEventListener("error", failed);
     };
-  }, [face]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip, face?.seq]);
 
   return (
     <div className={"mavis-avatar" + (speaking ? " is-speaking" : "")}>
@@ -90,8 +105,18 @@ export default function AvatarBox({ speaking }) {
             onError={() => setBroken(true)}
           />
           <video
-            ref={faceRef}
+            ref={talkRef}
             className={"mavis-avatar__face" + (talking ? " is-on" : "")}
+            src={mediaUrl(TALK_VIDEO)}
+            loop
+            muted
+            playsInline
+            preload="auto"
+            aria-hidden="true"
+          />
+          <video
+            ref={faceRef}
+            className={"mavis-avatar__face" + (lipsync && clip ? " is-on" : "")}
             muted
             playsInline
             preload="auto"
@@ -101,4 +126,9 @@ export default function AvatarBox({ speaking }) {
       )}
     </div>
   );
+}
+
+// a lip-sync clip had been playing in this element
+function lipsyncShown(v) {
+  return !!v.getAttribute("src") && v.readyState >= 2 && v.currentTime > 0;
 }
