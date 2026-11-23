@@ -540,10 +540,11 @@ export const TOURS = [
           <b> active</b> rules, live and again after landing, and the results show in each flight's review.</p>,
       },
       {
-        target: ".sop-livechecks",
-        title: "Live rule checks",
-        body: <p>Choose whether rules are checked <b>during</b> circuit flights, not just afterwards. Changes apply
-          from the next flight.</p>,
+        target: ".sop-viewtabs",
+        title: "Rules per lesson",
+        body: <p><b>Rules per lesson</b> sets which rules each circuit / lesson checks. MAVIS recommends the rules
+          for the phases that lesson flies (e.g. Landing: final, flare, roll-out); add or remove any, or switch a
+          lesson's checks off. Free Flight always checks every rule.</p>,
       },
       {
         target: ".sop-actabs",

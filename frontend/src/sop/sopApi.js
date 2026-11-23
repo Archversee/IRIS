@@ -90,7 +90,10 @@ export const sopApi = {
   strictness: () => req("/strictness"),
   // strictness: lenient | standard | strict, or omitted (keep the session's / trainee's / mode's)
   evaluate: (sessionId, body) => req(`/evaluate/${sessionId}`, { method: "POST", body: body || {} }),
-  // which flights are checked live: {circuit_flights, free_flight (always true)}
-  getCheckSettings: () => req("/check-settings"),
-  putCheckSettings: (body) => req("/check-settings", { method: "PUT", body }),
+  // which rules each curriculum lesson checks (MAVIS sop/lesson_plans.py); Free Flight checks every rule
+  lessonPlans: (aircraft) => req(`/lesson-plans${aircraft ? `?aircraft=${encodeURIComponent(aircraft)}` : ""}`),
+  lessonPlan: (lessonId, aircraft) =>
+    req(`/lesson-plans/${encodeURIComponent(lessonId)}${aircraft ? `?aircraft=${encodeURIComponent(aircraft)}` : ""}`),
+  // body: {checks_on?, include?: [ruleId], exclude?: [ruleId], reset?, aircraft?}
+  editLessonPlan: (lessonId, body) => req(`/lesson-plans/${encodeURIComponent(lessonId)}`, { method: "PATCH", body }),
 };

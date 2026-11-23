@@ -6,12 +6,13 @@ import RuleEditor from "./RuleEditor.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import { RuleRow, EditorName, useKeyNav, TagFilter, tagMatch, LlmNote, ExportMenu, LessonFilter, lessonMatch } from "./parts.jsx";
 import ConfirmDialog from "../live/components/ConfirmDialog.jsx";
-import LiveChecksToggle from "./LiveChecksToggle.jsx";
+import { LessonRulesView } from "./LessonRules.jsx";
 import "../live/live.css";
 import "./sop.css";
 
 // /sop/rules -- saved flight rules per aircraft, plus the training-handbook
-// rules (tab "_general") that apply to every aircraft. Rules are edited in
+// rules (tab "_general") that apply to every aircraft. Second view
+// (?view=lessons): which of those rules each curriculum lesson checks. Rules are edited in
 // place; every change is recorded in flight_rule_history (History tab).
 // Rules that were set aside (in the draft, or here) are kept with the set:
 // never used in a lesson, editable even while incomplete, and can be added
@@ -25,6 +26,7 @@ export default function SopRules() {
   const aircraft = params.get("aircraft") || meta?.aircraft?.[0]?.id || "";
   const setId = params.get("set");
   const justSaved = params.get("saved") === "1";
+  const view = params.get("view") === "lessons" ? "lessons" : "sets";
 
   useEffect(() => { sopApi.meta().then(setMeta).catch((e) => setErr(e.message)); }, []);
   const loadSets = useCallback(() => {
@@ -55,9 +57,19 @@ export default function SopRules() {
         <EditorName />
         <Link to="/sop/new" className="sop-link-btn sop-link-btn--primary">Upload SOP</Link>
       </header>
-      <LiveChecksToggle />
+      <div className="sop-viewtabs" role="tablist" aria-label="What to show">
+        <button type="button" role="tab" aria-selected={view === "sets"} className={view === "sets" ? "is-on" : ""}
+          onClick={() => setParams(aircraft ? { aircraft } : {})}>
+          Rule sets <span>the rules from each SOP and handbook</span>
+        </button>
+        <button type="button" role="tab" aria-selected={view === "lessons"} className={view === "lessons" ? "is-on" : ""}
+          onClick={() => setParams({ view: "lessons" })}>
+          Rules per lesson <span>which rules each circuit / lesson checks</span>
+        </button>
+      </div>
       {err && <div className="sop-error">{err}</div>}
-      {meta && sets && (
+      {view === "lessons" && meta && <LessonRulesView meta={meta} />}
+      {view === "sets" && meta && sets && (
         <>
           <nav className="sop-actabs" aria-label="Aircraft">
             {meta.aircraft.map((a) => {

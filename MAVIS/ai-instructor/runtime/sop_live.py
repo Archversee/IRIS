@@ -47,7 +47,8 @@ def build_sop_live(rt):
             except Exception as e:
                 log.info("aircraft ident failed: %s", e)
         _publish_aircraft(ident)
-        rt.state["sop"] = await sop_rt.load(ident)
+        # the lesson actually selected says which kind of rules it uses (normal / emergency / instrument)
+        rt.state["sop"] = await sop_rt.load(ident, (rt.lesson or {}).get("rules_lesson_type"))
         log.info("SOP for this flight: %s", rt.state["sop"])
         try:
             await _start_rule_checks()
@@ -66,16 +67,17 @@ def build_sop_live(rt):
     try:
         from sop.evaluate import RuleEvaluator, sample_from_telemetry, summarize
         from sop.results import ResultStore, aircraft_note, snapshot
-        from sop import check_settings
+        from sop.lesson_plans import LessonPlans
         rule_results = ResultStore(sop_rt.store, rt.cfg) if sop_rt is not None else None
+        lesson_plans = LessonPlans(sop_rt.store) if sop_rt is not None else None
     except ImportError as e:
         log.info("live rule checks disabled (%s)", e)
         rule_results = None
 
     def _rules_disabled() -> dict:
-        """Switched off on purpose (SOP Rules page): the live views show nothing."""
-        log.info("live rule checks switched off for circuit flights (SOP Rules page)")
-        return {"status": "disabled", "reason": "Rule checks are switched off for circuit flights.",
+        """Switched off on purpose for this lesson (SOP Rules > Rules per lesson): the live views show nothing."""
+        log.info("rule checks switched off for lesson %s (SOP Rules > Rules per lesson)", rt.lesson_id)
+        return {"status": "disabled", "reason": "Rule checks are switched off for this lesson.",
                 "n_rules": 0, "active": [], "recent": [], "n_findings": 0, "summary": None}
 
     def _rules_off(reason: str) -> dict:
@@ -105,17 +107,27 @@ def build_sop_live(rt):
         if rule_results is None:
             rt.state["sop_live"] = _rules_off("Rule checks are disabled in MAVIS (needs asyncpg; see the startup log).")
             return
-        # an instructor can switch checks off for circuit flights; Free Flight is always checked
-        if not check_settings.checks_on_for(rt.cfg, bool(rt.session.get("free_flight"))):
-            rt.state["sop_live"] = _rules_disabled()
-            return
         act = sop_rt.active if sop_rt is not None else None
         if not act or not act.get("rules"):
             rt.state["sop_live"] = _rules_off(_why_no_rules())
             return
+        rules, plan = act["rules"], None
+        # A curriculum lesson checks only the rules on its own list (SOP Rules > Rules per lesson),
+        # or none if its checks are switched off. Free Flight is always checked against every rule.
+        if not rt.session.get("free_flight") and lesson_plans is not None:
+            try:
+                rules, plan = await lesson_plans.rules_for_flight(rt.lesson_id, rules)
+            except Exception as e:      # DB hiccup: say so rather than silently check everything
+                rt.state["sop_live"] = _rules_off(f"Couldn't read this lesson's rule list: {e}")
+                return
+            if rules is None:
+                rt.state["sop_live"] = _rules_disabled()
+                return
+            if not rules:
+                rt.state["sop_live"] = _rules_off("No rules are on this lesson's list (SOP Rules > Rules per lesson).")
+                return
         strictness, why = await rule_results.strictness_for(
             rt.session.get("name"), rt.session.get("mode"), rt.session.get("strictness"))
-        rules = act["rules"]
         live_rules["ctx"] = {
             "aircraft_profile": (rt.state.get("sop") or {}).get("aircraft_id"), "lesson_id": rt.lesson_id,
             "lesson_type": (rt.state.get("sop") or {}).get("lesson_type"),
@@ -125,9 +137,10 @@ def build_sop_live(rt):
         live_rules["ev"] = RuleEvaluator(rules, strictness)
         rt.state["sop_live"] = {"status": "checking", "strictness": strictness, "strictness_why": why,
                              "aircraft_note": live_rules["ctx"]["aircraft_note"],
-                             "n_rules": len(rules),
+                             "n_rules": len(rules), "lesson_plan": plan,
                              "active": [], "recent": [], "n_findings": 0, "summary": None}
-        log.info("checking %d rule(s) live, %s (%s)", len(rules), strictness, why)
+        log.info("checking %d rule(s) live, %s (%s)%s", len(rules), strictness, why,
+                 f"; lesson list: {plan['n_left_off']} rule(s) left off" if plan else "")
 
     def _check_rules_live(tel) -> None:
         ev = live_rules["ev"]
