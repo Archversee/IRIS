@@ -263,7 +263,7 @@
 .mavis-chat__list {
   flex: 1; overflow-y: auto; padding: 12px 12px 6px;
   display: flex; flex-direction: column; gap: 4px;
-  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+  /* scrollbar: the app-wide style in styles.css */
 }
 .mavis-chat__empty { margin: auto; max-width: 220px; text-align: center; font-size: var(--fs-sm); color: var(--faint); line-height: 1.5; }
 

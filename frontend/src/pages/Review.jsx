@@ -8,7 +8,6 @@ import SessionTimeline from "../components/session/SessionTimeline.jsx";
 import ScanPathCard from "../components/session/ScanPathCard.jsx";
 import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
-import PhaseModal from "../components/session/PhaseModal.jsx";
 import RuleChecksPanel, { RuleChecksChip } from "../components/session/RuleChecksPanel.jsx";
 import DebriefPanel, { DebriefChip, useDebriefJob } from "../components/session/DebriefPanel.jsx";
 import "./review.css";
@@ -28,7 +27,7 @@ function loadDockFrac() {
 export default function Review() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie, phases } =
+  const { err, summary, flight, flightLoaded, loadProgress, screens, timeline, scanPath, liveState, regionPie } =
     useSessionData({ id, live: false });
   // SOP rule checks, the AI debrief and the incidents sit in a column docked
   // beside the videos -- always on screen, nothing to open. The title-bar
@@ -153,14 +152,6 @@ export default function Review() {
         </div>
       </aside>
 
-      {phases.openPhases.map((w) => (
-        <PhaseModal key={w.winId} w={w}
-          onClose={() => phases.onClose(w.winId)}
-          onMouseDown={() => phases.onBringToFront(w.winId)}
-          onDragStart={(e) => phases.onDragStart(w.winId, e)}
-          seekTo={phases.seekTo}
-        />
-      ))}
     </div>
   );
 }

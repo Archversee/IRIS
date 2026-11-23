@@ -1,17 +1,15 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client.js";
-import { sopApi } from "../../sop/sopApi.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import IncidentView from "./IncidentView.jsx";
 
 // SOP / handbook rule checks of one session (MAVIS sop/evaluate.py, stored by
 // sop/results.py; instructor verdicts via backend/app/routers/rule_results.py).
-// Instructors see every rule, can re-check, mark each rule Met / Not met with
-// one click, and sign the results off (which takes them back to Sessions for
+// Instructors see every rule, mark each rule Met / Not met with one click, and sign the results off (which takes them back to Sessions for
 // the next flight). Trainees see what to work on first, and whether their
-// instructor has reviewed it yet. Strictness isn't shown or changed here, and
-// rules that didn't apply aren't listed.
+// instructor has reviewed it yet. No strictness or re-check controls here
+// (MAVIS checks every flight itself), and rules that didn't apply aren't listed.
 
 const VERDICT = {
   fail: { label: "Not met", cls: "fail" },
@@ -62,7 +60,6 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
   const { user } = useAuth() || {};
   const nav = useNavigate();
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
-  const [useCurrent, setUseCurrent] = useState(false);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [comment, setComment] = useState("");
@@ -78,10 +75,6 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
     finally { setBusy(""); }
   }, [reload]);
 
-  // strictness is left as it is (the trainee's / mode default)
-  const recheck = () => run("Checking…", () => sopApi.evaluate(sessionId, {
-    use_current_rules: useCurrent || !evaluation,
-  }));
   // Signing off finishes this flight's review: back to Sessions to pick the next one.
   const signOff = async () => {
     setBusy("Signing…"); setErr("");
@@ -134,7 +127,7 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
       {missing && !evaluation && (
         <div className="rc-empty">
           This flight hasn't been checked against its rules yet.
-          {!isInstructor && <div className="rc-muted">Your instructor can run the check.</div>}
+          <div className="rc-muted">The results show here once MAVIS has checked it.</div>
         </div>
       )}
 
@@ -165,8 +158,8 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
           <b>No rules were checked.</b> When this flight was checked, {evaluation.aircraft_profile || "the aircraft"} had
           no active rule set with rules for {evaluation.lesson_type || "normal"} lessons, and no training handbook
           was active. {isInstructor
-            ? <>Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page, then press Re-check.</>
-            : "Your instructor can activate a rule set and re-check this flight."}
+            ? <>Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page; flights after that are checked against it.</>
+            : "Your instructor can activate a rule set for the next flights."}
         </div>
       )}
       {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length) && (
@@ -223,19 +216,6 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
         </>
       )}
 
-      {isInstructor && (
-        <div className="rc-tools rc-tools--recheck">
-          {evaluation && (
-            <label className="rc-check">
-              <input type="checkbox" checked={useCurrent} onChange={(e) => setUseCurrent(e.target.checked)} />
-              Use the rules as they are now
-            </label>
-          )}
-          <button className="rc-btn" disabled={!!busy} onClick={recheck}>
-            {busy === "Checking…" ? busy : evaluation ? "Re-check" : "Check now"}
-          </button>
-        </div>
-      )}
       {evaluation && isInstructor && (
         <div className="rc-signoff">
           <h3>Sign off</h3>

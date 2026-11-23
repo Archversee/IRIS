@@ -317,12 +317,6 @@ export const TOURS = [
           are drawn over time.</p>,
       },
       {
-        target: ".rev .phase-buttons-row",
-        title: "Each part of the lesson",
-        body: <p>Each button is one step of the lesson, coloured by its grade. <b>Click one</b> to see how that
-          part went.</p>,
-      },
-      {
         target: ".rev .tl-transport",
         title: "Play it back",
         body: <p>Play, pause, skip 10 seconds, or change the speed.</p>,

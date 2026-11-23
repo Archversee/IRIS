@@ -469,26 +469,6 @@
   box-shadow: 0 0 calc(8cqw / 19.2) rgba(255, 46, 99, 0.8), inset 0 0 calc(8cqw / 19.2) rgba(255, 46, 99, 0.8);
 }
 
-/* ---- events row (below the timeline chart) -- each button is positioned
-   by the same time-domain fraction as its ReferenceArea, left-padded/
-   right-padded to match the chart's own margin+YAxis width, so a button
-   lines up directly under the left edge of its highlighted band ---- */
-.phase-buttons-label {
-  margin-top: 8px; font-size: var(--fs-xs); font-weight: 600;
-  color: var(--rev-muted); letter-spacing: .03em;
-}
-.phase-buttons-row {
-  position: relative; height: 24px; margin-top: 4px;
-  padding-left: 2px; padding-right: 8px;
-}
-.phase-btn {
-  position: absolute; top: 0;
-  font-size: var(--fs-xs); font-weight: 600; padding: 3px 10px; border-radius: 999px;
-  background: var(--rev-panel-2); border: 1px solid; cursor: pointer;
-  white-space: nowrap;
-}
-.phase-btn:hover { filter: brightness(1.25); }
-.phase-btn.ev { overflow: hidden; text-overflow: ellipsis; text-align: center; padding: 3px 4px; }
 /* Session timeline: the shaded event areas over the chart are display only --
    clicks and drags pass straight through to the chart (scrubbing). */
 .rev-timeline .recharts-reference-area,
@@ -949,7 +929,6 @@
 .rc-tools select, .rc-judge select, .rc-judge input, .rc-signoff textarea {
   font: inherit; background: var(--rev-bg); color: var(--rev-text); border: 1px solid var(--rev-line); border-radius: 6px; padding: 4px 8px;
 }
-.rc-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .rc-btn {
   font: inherit; cursor: pointer; padding: 4px 12px; border-radius: 6px;
   background: var(--rev-panel); border: 1px solid var(--border-strong, var(--rev-line)); color: var(--rev-text);
@@ -1036,7 +1015,6 @@
 /* instructor's verdict + note on one line under each rule */
 .rc-judge select { width: auto; flex: 0 1 170px; min-width: 0; }
 .rc-judge input { width: auto; }
-.rc-tools--recheck { margin-top: 14px; }
 
 /* a broken rule: big "N×" on the left (coloured by severity), what the rule
    asks and what happened on the right, then each time it was broken */
