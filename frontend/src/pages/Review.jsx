@@ -149,7 +149,7 @@ export default function Review() {
         </div>
         <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
           <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
-            seekTo={timeline.seekTo} flightStartMs={timeline.flightStartMs} />
+            seekTo={timeline.seekTo} playFrom={timeline.playFrom} flightStartMs={timeline.flightStartMs} />
         </div>
       </aside>
 

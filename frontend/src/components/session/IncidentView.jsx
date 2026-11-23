@@ -154,12 +154,13 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
                 </ComposedChart>
               </ResponsiveContainer>
               {/* line key under the chart: labels on the chart collide when moments are close */}
+              {/* order: build-up, first input, limit crossed, MAVIS callout, back within limits */}
               <div className="inc-legend inc-legend--marks">
                 <span><i className="dash" style={{ borderColor: C.amber }} />build-up starts ({s1(a.onset.t)})</span>
-                <span><i style={{ background: "var(--danger)" }} />limit crossed (0 s)</span>
                 {a.response.first_input && <span><i style={{ background: C.yellow }} />first input ({s1(a.response.first_input.t)})</span>}
-                <span><i className="dash" style={{ borderColor: C.green }} />back within limits ({s1(a.breach.dur_s)})</span>
+                <span><i style={{ background: "var(--danger)" }} />limit crossed (0 s)</span>
                 {a.context.callouts.some((c) => c.who !== "trainee") && <span><i className="dash" style={{ borderColor: C.violet }} />MAVIS callout</span>}
+                <span><i className="dash" style={{ borderColor: C.green }} />back within limits ({s1(a.breach.dur_s)})</span>
               </div>
             </section>
 
@@ -243,11 +244,12 @@ function Explanation({ a, win, job, onChange }) {
     <section className="inc-explain">
       <div className="inc-explain__head">
         <h3>Debrief note</h3>
-        {e && <span className="rc-muted">{e.model}{e.reasoned ? " · reasoned" : ""} · {new Date(e.created_at).toLocaleString()}</span>}
+        {e && <span className="rc-muted">{new Date(e.created_at).toLocaleString()}</span>}
         <span className="spacer" />
-        {isInstructor && (
+        {/* only when there's no note yet: no "Explain again" once it's written */}
+        {isInstructor && !e && (
           <button className="rc-btn" disabled={busy} onClick={generate}>
-            {busy ? "Thinking… (can take a minute)" : e ? "Explain again" : "Explain with AI"}
+            {busy ? "Thinking… (can take a minute)" : "Explain with AI"}
           </button>
         )}
       </div>

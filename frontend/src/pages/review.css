@@ -950,7 +950,6 @@
   font: inherit; background: var(--rev-bg); color: var(--rev-text); border: 1px solid var(--rev-line); border-radius: 6px; padding: 4px 8px;
 }
 .rc-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-.rc-preset { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-sm); }
 .rc-btn {
   font: inherit; cursor: pointer; padding: 4px 12px; border-radius: 6px;
   background: var(--rev-panel); border: 1px solid var(--border-strong, var(--rev-line)); color: var(--rev-text);
@@ -967,8 +966,8 @@
 .rc-rule.sev-warning { border-left-color: #ff5c5c; }
 .rc-rule.sev-caution { border-left-color: var(--rev-amber); }
 .rc-rule.sev-advisory { border-left-color: var(--rev-cyan); }
-.rc-rule-head { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-.rc-title { font-weight: 600; flex: 1; }
+.rc-rule-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; cursor: pointer; }
+.rc-title { font-weight: 600; flex: 1 1 140px; min-width: 0; }
 .rc-pill { font-size: var(--fs-sm); font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
 .rc-pill.pass { color: var(--rev-green); }
 .rc-pill.fail { color: var(--danger); }
@@ -989,6 +988,14 @@
 .rc-detail blockquote { margin: 0 0 4px; padding-left: 10px; border-left: 2px solid var(--rev-line); color: var(--rev-muted); }
 .rc-judge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .rc-judge input { flex: 1; min-width: 140px; }
+/* Met / Not met: one click saves; the current verdict is filled in */
+.rc-judge__btns { display: flex; align-items: center; gap: 6px; flex: none; }
+.rc-judge__btns .rc-btn { min-width: 86px; font-weight: 600; }
+.rc-judge__met:hover:not(:disabled) { border-color: var(--good); color: var(--good); }
+.rc-judge__notmet:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.rc-judge__met.is-on { background: color-mix(in srgb, var(--good) 18%, transparent); border-color: var(--good); color: var(--good); }
+.rc-judge__notmet.is-on { background: color-mix(in srgb, var(--danger) 16%, transparent); border-color: var(--danger); color: var(--danger); }
+.rc-judge__btns .rc-btn.is-on:disabled { opacity: 1; }
 .rc-signoff textarea { width: 100%; resize: vertical; }
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
 
@@ -1019,7 +1026,8 @@
 .rc-tally__item.is-fail.is-zero.is-on { --tc: var(--rev-green); }
 .rc-tally__item.is-pass.is-on { --tc: var(--rev-green); }
 .rc-tally__item.is-instructor.is-on { --tc: var(--rev-violet); }
-.rc-group h3 .rc-back { float: right; font-weight: 500; }
+.rc-group h3:has(.rc-back) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.rc-group h3 .rc-back { margin-left: auto; font-weight: 500; }
 
 .rc-allmet {
   padding: 10px 12px; border-radius: 8px; color: var(--rev-green);
