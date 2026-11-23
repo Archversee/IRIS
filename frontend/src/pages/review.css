@@ -101,6 +101,28 @@
   .rev--docked .rev-bottom--telemetry > .ft-card { grid-column: 2; grid-row: 1 / span 2; }
 }
 .rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
+/* ---- Debrief + SOP column popped out to its own window (DockPopout.jsx) ----
+   On the page: no column, the videos/timeline take the full width. */
+.rev--docked.rev--popped { grid-template-columns: minmax(0, 1fr); }
+.rev--docked.rev--popped .rev-main { --rev-scr-w: calc((100cqw - 44px) / 3); }
+.rev-popbtn { white-space: nowrap; }
+/* In the window: a slim header, then the two panes -- stacked when narrow,
+   side by side on a wide monitor. */
+.popout-body { margin: 0; background: var(--bg); color: var(--text); }
+#popout-root:empty::before {
+  content: "Open a session's Review to see its Debrief and SOP rule checks here.";
+  display: block; padding: 48px 24px; text-align: center; color: var(--muted); font-family: var(--font-sans);
+}
+.rev.rev--popout { position: static; display: flex; flex-direction: column; height: 100vh; }
+.rev-popout__head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px 0;
+  font-size: var(--fs-md); color: var(--rev-text);
+}
+.rev-popout__head .spacer { flex: 1; }
+.rev-dock.rev-dock--popout { flex: 1; min-height: 0; padding: 10px 12px 12px; }
+@media (min-width: 1100px) {
+  .rev-dock.rev-dock--popout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: minmax(0, 1fr); }
+}
 /* a title-bar chip was clicked: point at its pane */
 .rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }
 /* Session Review only: everything at 88% scale so the dense layout fits.

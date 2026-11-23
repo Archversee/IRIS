@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, CartesianGrid,
 } from "recharts";
@@ -59,10 +59,13 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
     api.incident(resultId, index, win).then((x) => x.explanation && setA((p) => p && ({ ...p, explanation: x.explanation })))
       .catch(() => {});
   }, [debriefJob?.done, debriefJob?.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Escape closes it -- in whichever window it's shown (Review, or the popped-out column)
+  const boxRef = useRef(null);
   useEffect(() => {
+    const view = boxRef.current?.ownerDocument?.defaultView || window;
     const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    view.addEventListener("keydown", onKey);
+    return () => view.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   const colorOf = useMemo(() => {
@@ -81,7 +84,7 @@ export default function IncidentView({ resultId, index, onClose, onWatch, debrie
   })), [a]);
 
   return (
-    <div className="inc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={boxRef} className="inc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="inc" role="dialog" aria-modal="true" aria-label="What happened around this broken rule">
         <header className="inc-head">
           <div>

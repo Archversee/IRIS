@@ -10,6 +10,7 @@ import FlightTelemetryCard from "../components/session/FlightTelemetryCard.jsx";
 import RegionPieCard from "../components/session/RegionPieCard.jsx";
 import RuleChecksPanel, { RuleChecksChip } from "../components/session/RuleChecksPanel.jsx";
 import DebriefPanel, { DebriefChip, useDebriefJob } from "../components/session/DebriefPanel.jsx";
+import { PopoutPortal, popOut, putBack, usePopout } from "../components/session/DockPopout.jsx";
 import "./review.css";
 
 // The docked column's width, as a share of the page (the CSS clamps it, see
@@ -37,8 +38,12 @@ export default function Review() {
   const debriefJob = useDebriefJob(id);
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
+  // The column can be popped out to its own window (another monitor); then the
+  // videos and timeline take the whole page, until that window is closed.
+  const popout = usePopout();
   const showDock = (which) => {
-    document.getElementById(`rev-dock-${which}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (popout) popout.focus();
+    (popout?.document || document).getElementById(`rev-dock-${which}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     setFlash(which);
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 1200);
@@ -102,9 +107,22 @@ export default function Review() {
     );
 
   const curriculum = [...new Set((summary.flights || []).map((f) => f.title).filter(Boolean))].join(" · ");
+  const popTitle = `Debrief & SOP checks · ${summary.session.name}`;
+  const dockSlots = (
+    <>
+      <div id="rev-dock-debrief" className={"rev-dock__slot" + (flash === "debrief" ? " is-flash" : "")}>
+        <DebriefPanel sessionId={id} />
+      </div>
+      <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
+        <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
+          seekTo={timeline.seekTo} playFrom={timeline.playFrom} flightStartMs={timeline.flightStartMs} />
+      </div>
+    </>
+  );
 
   return (
-    <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom" + (dockDragging ? " is-dock-dragging" : "")}
+    <div ref={revRef} className={"rev rev--embedded rev--no-rail rev--docked rev--zoom" + (popout ? " rev--popped" : "")
+      + (dockDragging ? " is-dock-dragging" : "")}
       style={dockFrac != null ? { "--dock-w": `${(dockFrac * 100).toFixed(2)}%` } : undefined}>
       {/* No rail here -- the sidebar (outside .rev) already covers
           Sessions/Analytics/AOI Zones now that this view is embedded. */}
@@ -127,6 +145,13 @@ export default function Review() {
           <RuleChecksChip evaluation={rules.evaluation} missing={rules.missing}
             onClick={() => showDock("rules")} />
           <DebriefChip job={debriefJob} onClick={() => showDock("debrief")} />
+          {popout ? (
+            <button type="button" className="rc-chip rev-popbtn" onClick={putBack}
+              title="Close the other window and put Debrief and SOP rule checks back on this page">⇲ Put back</button>
+          ) : (
+            <button type="button" className="rc-chip rev-popbtn" onClick={() => popOut(popTitle)}
+              title="Move Debrief and SOP rule checks to their own window, e.g. on another monitor">⧉ Pop out</button>
+          )}
         </div>
 
         <ScreensPanel {...screens} fitGround />
@@ -139,18 +164,29 @@ export default function Review() {
         </div>
       </div>
 
-      <aside className="rev-dock" ref={dockRef} aria-label="Debrief and SOP rule checks">
-        <div className="rev-dock__resizer" role="separator" aria-orientation="vertical"
-          title="Drag to resize · double-click to reset"
-          onPointerDown={startDockDrag} onDoubleClick={() => setDockFrac(null)} />
-        <div id="rev-dock-debrief" className={"rev-dock__slot" + (flash === "debrief" ? " is-flash" : "")}>
-          <DebriefPanel sessionId={id} />
-        </div>
-        <div id="rev-dock-rules" className={"rev-dock__slot" + (flash === "rules" ? " is-flash" : "")}>
-          <RuleChecksPanel sessionId={id} evaluation={rules.evaluation} missing={rules.missing} reload={loadRules}
-            seekTo={timeline.seekTo} playFrom={timeline.playFrom} flightStartMs={timeline.flightStartMs} />
-        </div>
-      </aside>
+      {popout ? (
+        <PopoutPortal title={popTitle}>
+          <div className="rev rev--popout">
+            <header className="rev-popout__head">
+              <div>
+                <b>{summary.session.name}</b>
+                <span className="rc-muted"> · Debrief &amp; SOP rule checks</span>
+              </div>
+              <span className="spacer" />
+              <button type="button" className="rc-btn" onClick={putBack}
+                title="Close this window and put these back on the Review page">⇲ Put back</button>
+            </header>
+            <div className="rev-dock rev-dock--popout">{dockSlots}</div>
+          </div>
+        </PopoutPortal>
+      ) : (
+        <aside className="rev-dock" ref={dockRef} aria-label="Debrief and SOP rule checks">
+          <div className="rev-dock__resizer" role="separator" aria-orientation="vertical"
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startDockDrag} onDoubleClick={() => setDockFrac(null)} />
+          {dockSlots}
+        </aside>
+      )}
 
     </div>
   );
