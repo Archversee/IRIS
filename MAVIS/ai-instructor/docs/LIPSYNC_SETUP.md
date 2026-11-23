@@ -1,5 +1,10 @@
 # Setting up live lip-sync (MuseTalk) on a new PC
 
+> **Quick way:** double-click `MAVIS\ai-instructor\tools\setup_lipsync.bat`. It does every
+> step below by itself: checks, download, install, models, avatar, config and speed test.
+> Run it again after fixing a problem; finished steps are skipped. The rest of this file is
+> the same steps done by hand, plus troubleshooting.
+
 These instructions are for an assistant (or a person) setting up MAVIS's live lip-sync on
 a Windows PC with an NVIDIA GPU. Follow the steps in order. Run each check and confirm it
 passes before going on. If a step fails, look in **Troubleshooting** at the bottom before
