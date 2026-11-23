@@ -22,3 +22,8 @@ frontend/public/media/videos/
 
 # instructor-uploaded SOP PDFs (may be proprietary) -- see MAVIS/ai-instructor/docs/sop-rules.md
 MAVIS/ai-instructor/data/sop/
+
+# avatar lip-sync clips made on this PC (MAVIS tools/avatar_lines.py), and the
+# count of sentences MAVIS has spoken without one -- both local
+frontend/public/media/avatar/lines/
+MAVIS/ai-instructor/data/avatar_lines/

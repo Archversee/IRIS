@@ -6,7 +6,10 @@ A line of several sentences is made and played a sentence at a time: the
 tablet starts on the first while the next is being made. Lines said before
 (scripted callouts: "Turn base now") come from a cache, with no synthesis.
 
-What the tablet gets: state["audio"] = {gen, clips: [{seq, url}, ...], seq, url}.
+What the tablet gets: state["audio"] = {gen, clips: [{seq, url, video?}, ...], seq, url}.
+A sentence with a pre-made lip-sync clip (voice/lipsync.py) plays that clip's
+WAV, and its entry carries `video`: the avatar saying it, which the tablet
+plays in the avatar box locked to the audio.
 It plays every clip it hasn't played yet, in order, one after the other (so a
 sentence is never cut off by the next one arriving, however late the tablet
 hears about it); gen changes only when stop_speech() cuts MAVIS off, and then
@@ -25,7 +28,8 @@ import wave
 from collections import OrderedDict
 from pathlib import Path
 
-from runtime.bootstrap import READING_LESSONS
+from runtime.bootstrap import HERE, READING_LESSONS
+from voice.lipsync import LipsyncLibrary
 from voice.tts import TTS, split_sentences
 
 log = logging.getLogger("main")     # same logger name as before the move: log lines unchanged
@@ -52,6 +56,10 @@ def build_speech(rt):
     reading_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mavis-tts-reading")
     reading_audio_cache: dict[tuple[str, str], str] = {}
     to_tablet = rt.cfg["voice"].get("output", "tablet") == "tablet"
+    # pre-made lip-sync clips for the fixed sentences (tablet only: the avatar is there)
+    media = Path(rt.cfg["web"]["media_dir"])
+    lipsync = LipsyncLibrary(media if media.is_absolute() else HERE / media, HERE / "data")
+    rt.lipsync = lipsync
     # text -> wav already made for it (most callouts are scripted and repeat every circuit)
     said: OrderedDict[str, Path] = OrderedDict()
     SAID_MAX = 300
@@ -68,10 +76,10 @@ def build_speech(rt):
         rt.state["audio"] = {"gen": rt.speak_gen["n"], "clips": clips,
                              **({"seq": clips[-1]["seq"], "url": clips[-1]["url"]} if clips else {})}
 
-    def publish(wav: Path, until: float) -> None:
+    def publish(url: str, until: float, video: str | None = None) -> None:
         tts_seq["n"] += 1
         set_clips(current_clips(rt.loop.time())
-                  + [{"seq": tts_seq["n"], "url": f"/tts/{wav.name}", "until": until}])
+                  + [{"seq": tts_seq["n"], "url": url, "until": until, **({"video": video} if video else {})}])
 
     making: dict[str, asyncio.Future] = {}     # text -> its synthesis in progress (prewarm or a line)
 
@@ -140,6 +148,17 @@ def build_speech(rt):
                 # when the tablet will be done with what it has (it plays clips back to back)
                 done_at = t0
                 for i, part in enumerate(parts):
+                    clip = lipsync.lookup(part)
+                    if clip:
+                        # a fixed sentence with its own clip: its WAV (what the lips were
+                        # matched to), and the avatar video saying it
+                        dur = clip["dur"] or _wav_seconds(clip["wav_path"])
+                        if i == 0:
+                            log.info("lip-sync clip -> tablet %s (%.1fs)", clip["video_url"], dur)
+                        done_at = max(done_at, rt.loop.time()) + dur
+                        publish(clip["wav_url"], done_at, video=clip["video_url"])
+                        continue
+                    lipsync.heard(part)
                     wav = await make_wav(part)       # the tablet is still playing the one before
                     if gen != rt.speak_gen["n"]:
                         return
@@ -152,7 +171,7 @@ def build_speech(rt):
                         log.info("TTS -> tablet %s (%.1fs audio, ready after %.2fs%s)", wav.name, dur,
                                  rt.loop.time() - t0, f", {len(parts)} parts" if len(parts) > 1 else "")
                     done_at = max(done_at, rt.loop.time()) + dur
-                    publish(wav, done_at)
+                    publish(f"/tts/{wav.name}", done_at)
                 # wait until the tablet has said it all, unless stop_speech() cuts it off: the
                 # coach's next line (and its "is something more urgent waiting" check) comes after
                 end = done_at + LAG_S
@@ -169,6 +188,7 @@ def build_speech(rt):
                 rt.state["speaking"] = False
 
     def stop_speech():
+        lipsync.flush()                       # (only writes if a new sentence was heard)
         rt.speak_gen["n"] += 1
         rt.state["speaking"] = False
         # a new gen with nothing in it: the tablet stops what it's playing and drops its queue
