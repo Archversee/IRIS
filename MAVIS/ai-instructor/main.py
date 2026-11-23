@@ -399,6 +399,8 @@ async def amain(cfg):
             except asyncio.TimeoutError:
                 log.warning("Shutdown timed out.")
         rt.tts_pool.shutdown(wait=False, cancel_futures=True)
+        if rt.lipsync_live:
+            rt.lipsync_live.stop()            # (MuseTalk runs as its own process)
         log.info("Stopped.")
 
 

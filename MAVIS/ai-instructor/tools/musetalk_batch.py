@@ -27,7 +27,7 @@ from pathlib import Path
 
 ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
 ap.add_argument("--musetalk", required=True, help="the MuseTalk checkout")
-ap.add_argument("--lines", required=True, help="the avatar/lines folder (WAVs in, MP4s out)")
+ap.add_argument("--lines", help="the avatar/lines folder (WAVs in, MP4s out); not needed with --prepare-only")
 ap.add_argument("--source", required=True, help="the avatar video the mouth is drawn onto")
 ap.add_argument("--source-seconds", type=float, default=8.0,
                 help="use only the start of the source (it ping-pongs, so long sentences still fit)")
@@ -36,12 +36,16 @@ ap.add_argument("--fps", type=int, default=25)
 ap.add_argument("--batch-size", type=int, default=16)
 ap.add_argument("--limit", type=int, default=0, help="only this many sentences (try a few first)")
 ap.add_argument("--redo-avatar", action="store_true", help="prepare the avatar again (new source video)")
+ap.add_argument("--prepare-only", action="store_true",
+                help="just prepare the avatar (what live lip-sync, tools/musetalk_live.py, needs) and stop")
 cli = ap.parse_args()
 for _s in (sys.stdout, sys.stderr):            # MuseTalk prints CJK brackets; Windows consoles are cp1252
     _s.reconfigure(encoding="utf-8", errors="replace")
 
 MT = Path(cli.musetalk).resolve()
-LINES = Path(cli.lines).resolve()
+if not (cli.lines or cli.prepare_only):
+    ap.error("--lines is needed (or --prepare-only)")
+LINES = Path(cli.lines).resolve() if cli.lines else None
 SOURCE = Path(cli.source).resolve()
 os.chdir(MT)                                   # MuseTalk loads its models from ./models, ./musetalk
 sys.path[:0] = [str(MT), str(MT / "musetalk" / "utils")]
@@ -150,6 +154,9 @@ if prepare:
     print(f"preparing the avatar from {SOURCE.name} (first {cli.source_seconds:g} s) ...")
 avatar = rti.Avatar(avatar_id=cli.avatar_id, video_path=str(src), bbox_shift=0,
                     batch_size=cli.batch_size, preparation=prepare)
+if cli.prepare_only:
+    print(f"avatar ready: {avatar_dir}")
+    sys.exit(0)
 
 # which sentences: the enabled ones in lines.json that have a WAV and no MP4 yet
 listed = json.loads((LINES / "lines.json").read_text(encoding="utf-8"))["lines"]

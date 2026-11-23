@@ -9,7 +9,10 @@ tablet starts on the first while the next is being made. Lines said before
 What the tablet gets: state["audio"] = {gen, clips: [{seq, url, video?}, ...], seq, url}.
 A sentence with a pre-made lip-sync clip (voice/lipsync.py) plays that clip's
 WAV, and its entry carries `video`: the avatar saying it, which the tablet
-plays in the avatar box locked to the audio.
+plays in the avatar box locked to the audio. With live lip-sync on
+(voice/lipsync_live.py: MuseTalk running beside MAVIS), every other sentence
+gets its `video` made as it is said; a sentence whose video isn't ready in
+time goes out without one, and the tablet shows its talking loop.
 It plays every clip it hasn't played yet, in order, one after the other (so a
 sentence is never cut off by the next one arriving, however late the tablet
 hears about it); gen changes only when stop_speech() cuts MAVIS off, and then
@@ -30,6 +33,7 @@ from pathlib import Path
 
 from runtime.bootstrap import HERE, READING_LESSONS
 from voice.lipsync import LipsyncLibrary
+from voice.lipsync_live import LiveLipsync
 from voice.tts import TTS, split_sentences
 
 log = logging.getLogger("main")     # same logger name as before the move: log lines unchanged
@@ -60,8 +64,16 @@ def build_speech(rt):
     media = Path(rt.cfg["web"]["media_dir"])
     lipsync = LipsyncLibrary(media if media.is_absolute() else HERE / media, HERE / "data")
     rt.lipsync = lipsync
+    lip_cfg = rt.cfg.get("avatar_lipsync") or {}
     # off: every sentence is synthesised and the tablet shows its talking loop instead
-    use_clips = (rt.cfg.get("avatar_lipsync") or {}).get("enabled", True)
+    use_clips = lip_cfg.get("enabled", True)
+    # MuseTalk beside MAVIS: the avatar saying each sentence, made as it is said
+    live = LiveLipsync(lip_cfg, HERE) if to_tablet and lip_cfg.get("live") else None
+    rt.lipsync_live = live
+    if live:
+        live.start()
+    live_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="mavis-lipsync")
+    rendering: dict[Path, asyncio.Future] = {}   # wav -> its video in progress
     # text -> wav already made for it (most callouts are scripted and repeat every circuit)
     said: OrderedDict[str, Path] = OrderedDict()
     SAID_MAX = 300
@@ -100,6 +112,7 @@ def build_speech(rt):
         while len(said) > SAID_MAX:
             _, old = said.popitem(last=False)
             old.unlink(missing_ok=True)
+            old.with_suffix(".mp4").unlink(missing_ok=True)
         return wav
 
     async def make_wav(text: str) -> Path | None:
@@ -113,6 +126,28 @@ def build_speech(rt):
             fut.add_done_callback(lambda _f, t=text: making.pop(t, None))
         return await asyncio.shield(fut)    # a cut-off line doesn't cancel a clip a prewarm also wants
 
+    async def live_video(wav: Path, wait: bool = True) -> Path | None:
+        """The avatar saying this WAV (MuseTalk, made once and kept beside it), or
+        None if live lip-sync is off / not up yet / too slow: waits at most
+        live.max_wait_s, and a video that comes later is kept for next time."""
+        if not live or not live.ready:
+            return None
+        mp4 = wav.with_suffix(".mp4")
+        if mp4.exists():
+            return mp4
+        fut = rendering.get(wav)
+        if fut is None:
+            fut = rendering[wav] = asyncio.ensure_future(rt.loop.run_in_executor(live_pool, live.render, wav, mp4))
+            fut.add_done_callback(lambda _f, w=wav: rendering.pop(w, None))
+        if not wait:
+            return None
+        try:
+            ok = await asyncio.wait_for(asyncio.shield(fut), timeout=live.max_wait_s)
+        except asyncio.TimeoutError:
+            log.info("live lip-sync too slow for %s: sent without video", wav.name)
+            return None
+        return mp4 if ok else None
+
     def prewarm_speech(texts: list[str]) -> None:
         """Make these lines now (e.g. the briefing, while the intro video plays), so
         they play at once when said. Same text as speak() will get: units normalised."""
@@ -123,7 +158,9 @@ def build_speech(rt):
         async def go():
             for t in texts:
                 for part in split_sentences(standard_units(t)):
-                    await make_wav(part)
+                    wav = await make_wav(part)
+                    if wav is not None and not (use_clips and lipsync.lookup(part)):
+                        await live_video(wav)
         asyncio.ensure_future(go())
 
     async def init_tts():
@@ -169,12 +206,16 @@ def build_speech(rt):
                         log.warning("TTS synth failed. No audio: %s", part[:80])
                         done_at = max(done_at, rt.loop.time()) + min(6.0, 0.4 + len(part) / 15)  # console mode
                         continue
+                    mp4 = await live_video(wav)      # (None at once when live lip-sync is off)
+                    if gen != rt.speak_gen["n"]:
+                        return
                     dur = _wav_seconds(wav)
                     if i == 0:
-                        log.info("TTS -> tablet %s (%.1fs audio, ready after %.2fs%s)", wav.name, dur,
-                                 rt.loop.time() - t0, f", {len(parts)} parts" if len(parts) > 1 else "")
+                        log.info("TTS -> tablet %s (%.1fs audio, ready after %.2fs%s%s)", wav.name, dur,
+                                 rt.loop.time() - t0, f", {len(parts)} parts" if len(parts) > 1 else "",
+                                 ", lip-synced" if mp4 else "")
                     done_at = max(done_at, rt.loop.time()) + dur
-                    publish(f"/tts/{wav.name}", done_at)
+                    publish(f"/tts/{wav.name}", done_at, video=f"/tts/{mp4.name}" if mp4 else None)
                 # wait until the tablet has said it all, unless stop_speech() cuts it off: the
                 # coach's next line (and its "is something more urgent waiting" check) comes after
                 end = done_at + LAG_S
