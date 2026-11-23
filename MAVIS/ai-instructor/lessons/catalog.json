@@ -95,9 +95,9 @@
       ]
     },
     {
-      "id": "circuit",
-      "title": "Circuit Variations",
-      "subtitle": "Pattern work & emergencies",
+      "id": "advanced",
+      "title": "Advanced Flight",
+      "subtitle": "Circuit variations · navigation · instruments",
       "lessons": [
         {
           "id": "lesson07_garound",
@@ -129,14 +129,7 @@
           "subtitle": "Lighting cues · black-hole approach",
           "available": true,
           "duration_min": 24
-        }
-      ]
-    },
-    {
-      "id": "nav",
-      "title": "Navigation",
-      "subtitle": "Visual pilotage · WSAP area",
-      "lessons": [
+        },
         {
           "id": "lesson11_pilotage",
           "title": "Map Reading & Pilotage",
@@ -152,14 +145,7 @@
           "available": true,
           "duration_min": 15,
           "start_note": "Starts in the air at about 2,000 ft, 3 nm south of Paya Lebar. Divert to Seletar, then practise being lost and find Paya Lebar. No landing."
-        }
-      ]
-    },
-    {
-      "id": "instrument",
-      "title": "Instrument Basics",
-      "subtitle": "Partial panel · unusual attitudes",
-      "lessons": [
+        },
         {
           "id": "lesson13_partial",
           "title": "Partial Panel Flying",
