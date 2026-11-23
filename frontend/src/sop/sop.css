@@ -345,6 +345,14 @@ kbd { font: inherit; font-size: var(--fs-xs); padding: 0 5px; border: 1px solid 
   font-size: var(--fs-xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill); border: 1px solid var(--border-strong); color: var(--muted);
 }
 .sop-lr__src--book { color: var(--data-violet); border-color: color-mix(in srgb, var(--data-violet) 50%, transparent); }
+.sop-lr__who {
+  font-size: var(--fs-xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); color: var(--good);
+}
+.sop-lr__who--eyes { color: var(--data-cyan); border-color: color-mix(in srgb, var(--data-cyan) 45%, transparent); }
+.sop-lr__who--instructor { color: var(--data-violet); border-color: color-mix(in srgb, var(--data-violet) 45%, transparent); }
+.sop-lr__why.is-na { color: var(--warn); }
+.sop-lr__split { color: var(--muted); font-size: var(--fs-sm); }
 .sop-lr__changed { font-size: var(--fs-xs); font-weight: 700; color: var(--warn); }
 .sop-lr__btn {
   flex: none; padding: 5px 12px; font-size: var(--fs-sm); background: var(--panel-2); color: var(--text); border: 1px solid var(--border);

@@ -31,7 +31,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import APP_ROOT, LESSON_TYPES
+from .schema import APP_ROOT, LESSON_TYPES, aircraft_profiles, resolve_ref
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,22 @@ PHASE_WORDS = {
     "FLARE_TOUCHDOWN": "flare and touchdown", "ROLLOUT": "roll-out", "GO_AROUND": "go-around",
 }
 _CAPTURE_NEEDS = {"liftoff": "TAKEOFF_ROLL", "touchdown": "FLARE_TOUCHDOWN"}
+
+
+def checked_by(rule: dict) -> str:
+    """Who judges it: 'mavis' (flight data), 'eyes' (eye tracker, after the
+    flight) or 'instructor' (can't be measured: radio calls, checklists)."""
+    k = rule.get("kind")
+    return "instructor" if k == "unobservable" else "eyes" if k == "gaze" else "mavis"
+
+
+def missing_speed(rule: dict, aircraft_id: str | None) -> str | None:
+    """A rule written against an aircraft speed ('1.3 VSO') that this aircraft's
+    profile doesn't give is never loaded for a flight: say which speed."""
+    if not rule.get("ref_speed"):
+        return None
+    speeds = next((a["profile"].get("v_speeds") or {} for a in aircraft_profiles() if a["id"] == aircraft_id), {})
+    return None if resolve_ref(rule, speeds) is not None else str(rule.get("ref_speed"))
 
 
 def words(phases) -> str:
@@ -156,14 +172,22 @@ class LessonPlans:
         for r in act["rules"]:
             rec, why = recommend(r, phases)
             rid = int(r["id"])
-            inc = (rec and rid not in removed) or rid in added
-            rules.append({**r, "recommended": rec, "why": why, "included": inc,
-                          "changed": (rid in added and not rec) or (rid in removed and rec)})
+            no_speed = missing_speed(r, aircraft_id)
+            if no_speed:                 # never loaded for this aircraft: can't be on any list
+                rec, why = False, f"Can't be checked: this aircraft's profile has no {no_speed.upper()} speed"
+            inc = not no_speed and ((rec and rid not in removed) or rid in added)
+            rules.append({**r, "recommended": rec, "why": why, "included": inc, "unavailable": bool(no_speed),
+                          "checked_by": checked_by(r),
+                          "changed": not no_speed and ((rid in added and not rec) or (rid in removed and rec))})
         return {"lesson_id": lesson_id, "lesson_name": lesson.get("name") or lesson_id, "lesson_type": lt,
                 "phases": phases, "phase_words": words(phases) if phases else None,
                 "aircraft_id": aircraft_id, "layers": act.get("layers") or [],
                 "checks_on": row["checks_on"], "updated_by": row["updated_by"], "updated_at": row.get("updated_at"),
                 "n_included": sum(1 for r in rules if r["included"]),
+                # who judges the rules on the list: MAVIS from flight data / the eye tracker, or the instructor
+                "n_mavis": sum(1 for r in rules if r["included"] and r["checked_by"] == "mavis"),
+                "n_eyes": sum(1 for r in rules if r["included"] and r["checked_by"] == "eyes"),
+                "n_instructor": sum(1 for r in rules if r["included"] and r["checked_by"] == "instructor"),
                 "n_recommended": sum(1 for r in rules if r["recommended"]),
                 "n_changed": sum(1 for r in rules if r["changed"]),
                 "rules": rules}
@@ -218,6 +242,7 @@ class LessonPlans:
             row = rows.get(les["id"]) or {"checks_on": True, "added": [], "removed": [], "updated_by": None}
             p = await self.plan(les["id"], aircraft_id, row)
             out.append({**les, "checks_on": p["checks_on"], "n_included": p["n_included"],
+                        "n_mavis": p["n_mavis"], "n_eyes": p["n_eyes"], "n_instructor": p["n_instructor"],
                         "n_recommended": p["n_recommended"], "n_changed": p["n_changed"],
                         "phase_words": p["phase_words"]})
         return out

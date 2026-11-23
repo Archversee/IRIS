@@ -13,6 +13,21 @@ import { describe } from "./ruleText.js";
 //  <LessonRuleList lessonId ... /> one lesson's list (also on the lesson start screen)
 
 const SEV_TITLE = { warning: "Warning", caution: "Caution", advisory: "Advisory" };
+// who judges a rule (MAVIS sop/lesson_plans.py checked_by)
+const BY = {
+  mavis: { label: "Measured by MAVIS", title: "Judged from the flight data, live" },
+  eyes: { label: "Eye tracker", title: "Judged from the eye tracker and the AOI zones, after the flight" },
+  instructor: { label: "Instructor checks", title: "Can't be measured: the instructor marks it Met or Not met in Review" },
+};
+
+/** "13 measured by MAVIS · 4 eye tracker · 11 for the instructor" */
+export function splitText(p) {
+  return [
+    p.n_mavis ? `${p.n_mavis} measured by MAVIS` : null,
+    p.n_eyes ? `${p.n_eyes} by the eye tracker` : null,
+    p.n_instructor ? `${p.n_instructor} for the instructor` : null,
+  ].filter(Boolean).join(" · ");
+}
 
 export function LessonRulesView({ meta }) {
   const [aircraft, setAircraft] = useState("");
@@ -68,7 +83,7 @@ export function LessonRulesView({ meta }) {
                     <span className="sop-lr__lesson-title">{l.title}</span>
                     <span className="sop-lr__lesson-sub">
                       {l.checks_on
-                        ? <>{l.n_included} rule{l.n_included === 1 ? "" : "s"}{l.n_changed ? " · edited" : ""}</>
+                        ? <span title={splitText(l)}>{l.n_included} rule{l.n_included === 1 ? "" : "s"}{l.n_changed ? " · edited" : ""}</span>
                         : <span className="sop-lr__off">Checks off</span>}
                     </span>
                   </button>
@@ -124,13 +139,16 @@ export function LessonRuleList({ lessonId, aircraft, meta, editable = false, com
           <span className={"sop-lr__src sop-lr__src--" + (r.layer === "general" ? "book" : "ac")}>
             {r.layer === "general" ? "Training handbook" : "Aircraft SOP"}
           </span>
+          {r.checked_by && BY[r.checked_by] && (
+            <span className={"sop-lr__who sop-lr__who--" + r.checked_by} title={BY[r.checked_by].title}>{BY[r.checked_by].label}</span>
+          )}
           {r.changed && editable && <span className="sop-lr__changed">{r.included ? "Added by instructor" : "Removed by instructor"}</span>}
         </div>
         {meta && <div className="sop-lr__rule-sum">{describe(meta, r)}</div>}
         {/* why it was (not) recommended: for whoever edits the list */}
         {editable && (
-          <div className={"sop-lr__why" + (r.recommended ? " is-rec" : "")}>
-            {r.recommended ? "Recommended · " : "Not recommended · "}{r.why}
+          <div className={"sop-lr__why" + (r.recommended ? " is-rec" : "") + (r.unavailable ? " is-na" : "")}>
+            {r.unavailable ? "" : r.recommended ? "Recommended · " : "Not recommended · "}{r.why}
           </div>
         )}
       </div>
@@ -141,8 +159,9 @@ export function LessonRuleList({ lessonId, aircraft, meta, editable = false, com
             {busy === r.id ? "…" : "Remove"}
           </button>
         ) : (
-          <button type="button" className="sop-lr__btn sop-lr__btn--add" disabled={!!busy || !plan.checks_on}
-            onClick={() => edit(r.id, { include: [r.id] })} title="Check this rule in this lesson too">
+          <button type="button" className="sop-lr__btn sop-lr__btn--add" disabled={!!busy || !plan.checks_on || r.unavailable}
+            onClick={() => edit(r.id, { include: [r.id] })}
+            title={r.unavailable ? "This rule can't be loaded for this aircraft" : "Check this rule in this lesson too"}>
             {busy === r.id ? "…" : "+ Add"}
           </button>
         )
@@ -177,6 +196,7 @@ export function LessonRuleList({ lessonId, aircraft, meta, editable = false, com
         <>
           <div className="sop-lr__bar">
             <b>{plan.n_included} rule{plan.n_included === 1 ? "" : "s"} will be checked</b>
+            {plan.n_included > 0 && <span className="sop-lr__split">{splitText(plan)}</span>}
             {editable && (
               <span className="muted">
                 {" "}· {plan.n_recommended} recommended{plan.n_changed ? ` · ${plan.n_changed} changed by an instructor` : ""}
@@ -249,7 +269,8 @@ export function LessonRulesCard({ lessonId, editable = false }) {
         <span className="lr-card__text">
           {!plan ? "Checking which SOP rules this lesson uses…"
             : !plan.checks_on ? "SOP rule checks are off for this lesson"
-              : <><b>{n} SOP rule{n === 1 ? "" : "s"}</b> will be checked in this lesson</>}
+              : <><b>{n} SOP rule{n === 1 ? "" : "s"}</b> will be checked in this lesson
+                  {n > 0 && <span className="lr-card__split">{splitText(plan)}</span>}</>}
         </span>
         <span className="lr-card__more">{open ? "Hide" : editable ? "Show / change" : "Show"}</span>
       </button>

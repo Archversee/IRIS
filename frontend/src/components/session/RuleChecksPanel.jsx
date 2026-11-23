@@ -19,6 +19,12 @@ const VERDICT = {
   insufficient_data: { label: "No data", cls: "na" },
   not_evaluated: { label: "Not checked yet", cls: "na" },
 };
+// why a rule on the flight's list has no Met / Not met / To assess (shown under the tiles)
+const UNJUDGED = {
+  not_applicable: "Didn't apply",
+  insufficient_data: "No data",
+  not_evaluated: "Not checked yet",
+};
 const SEVERITY_ORDER = { warning: 0, caution: 1, advisory: 2 };
 const GROUPS = [
   { key: "fail", title: "Not met" },
@@ -102,6 +108,7 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
   // The count tiles double as tabs: the broken rules by default, and a click
   // on Met / To assess / Didn't apply lists those instead (again: back to broken).
   const [view, setView] = useState("fail");
+  const [showUnjudged, setShowUnjudged] = useState(false);
   const pick = (key) => setView((cur) => (cur === key && key !== "fail" ? "fail" : key));
   const ruleRow = (r) => (
     <RuleRow key={r.id} r={r} isInstructor={isInstructor} toT={toT}
@@ -192,6 +199,28 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playF
               );
             })}
           </div>
+
+          {/* rules that were checked but couldn't be judged in this flight -- no tile of their
+              own (they need no action), but counted and explained so the totals add up */}
+          {grouped.other.length > 0 && (
+            <div className="rc-unjudged">
+              <button type="button" className="rc-unjudged__toggle" aria-expanded={showUnjudged}
+                onClick={() => setShowUnjudged((x) => !x)}>
+                {grouped.other.length} more couldn't be judged in this flight · {showUnjudged ? "hide" : "show why"}
+              </button>
+              {showUnjudged && (
+                <ul className="rc-unjudged__list">
+                  {grouped.other.map((r) => (
+                    <li key={r.id}>
+                      <span className="rc-unjudged__what">{UNJUDGED[r.final_verdict] || "Not judged"}</span>
+                      <b>{r.title}</b>
+                      <span className="rc-muted">{r.summary}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <section className="rc-group">
             {view === "fail" ? (
@@ -299,7 +328,9 @@ function RuleRow({ r, isInstructor, toT, watch, onSaved, onAnalyse }) {
           {r.requirement && <div className="rc-brk__req">Limit: <b>{r.requirement}</b></div>}
           <div className="rc-brk__sum">
             {r.summary}
-            {outFor > 0 && <span className="rc-muted"> · outside the limit for {outFor.toFixed(0)} s in total</span>}
+            {outFor > 0 && <span className="rc-muted"> · {r.kind === "gaze" && r.summary?.includes("without looking")
+              ? `${outFor.toFixed(0)} s without a look in total`
+              : `outside the limit for ${outFor.toFixed(0)} s in total`}</span>}
           </div>
           {r.instructor_verdict && (
             <div className="rc-muted rc-brk__by">Marked not met by the instructor{r.verdict !== "fail" ? ` (computed: ${VERDICT[r.verdict]?.label})` : ""}</div>
@@ -318,8 +349,11 @@ function RuleRow({ r, isInstructor, toT, watch, onSaved, onAnalyse }) {
                 {x.dur_s != null && <span className="rc-muted"> · {x.dur_s.toFixed(0)} s</span>}
               </span>
               <button className="rc-vbtn" onClick={() => watch(x.t0)} title="Jump to this moment and play">▶ Watch</button>
-              <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
-                title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+              {/* eye-tracking rules: no flight value to analyse, Watch shows the moment */}
+              {r.kind !== "gaze" && (
+                <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
+                  title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+              )}
             </li>
           ))}
           {viol.length > MAX_SHOWN && (

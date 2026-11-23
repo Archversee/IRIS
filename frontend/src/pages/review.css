@@ -1037,6 +1037,23 @@
 }
 .rc-detail { margin-top: 6px; }
 .rc-detail blockquote { margin: 0 0 4px; padding-left: 10px; border-left: 2px solid var(--rev-line); color: var(--rev-muted); }
+/* "N more couldn't be judged in this flight" under the tally tiles */
+.rc-unjudged { margin: 2px 0 8px; }
+.rc-unjudged__toggle {
+  background: none; border: 0; padding: 2px 0; color: var(--rev-muted); font: inherit; font-size: var(--fs-sm);
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer;
+}
+.rc-unjudged__toggle:hover { color: var(--rev-text); }
+.rc-unjudged__list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rc-unjudged__list li {
+  display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 6px 8px; border-radius: 6px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); font-size: var(--fs-sm);
+}
+.rc-unjudged__list li .rc-muted { grid-column: 2; }
+.rc-unjudged__what {
+  grid-row: span 2; align-self: start; padding: 0 7px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600;
+  border: 1px solid var(--rev-line); color: var(--rev-muted); white-space: nowrap;
+}
 .rc-judge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .rc-judge input { flex: 1; min-width: 140px; }
 /* Met / Not met: one click saves; the current verdict is filled in */

@@ -75,6 +75,8 @@ async def load_incident(result_id: int, index: int, before: float | None = None,
         rr = await conn.fetchrow("select * from rule_results where id=$1", result_id)
         if rr is None:
             raise HTTPException(404, "No such rule result")
+        if rr["kind"] == "gaze":       # eye-tracking rule (MAVIS sop/gaze.py): no flight value to analyse
+            raise HTTPException(422, "Eye-tracking rules have no flight-data analysis: use Watch to see the moment.")
         violations = _j(rr["violations"]) or []
         if not 0 <= index < len(violations):
             raise HTTPException(404, "This rule wasn't broken that many times")
