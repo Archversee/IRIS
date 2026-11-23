@@ -214,11 +214,13 @@ class MockAdapter:
     def comply(self, code: str, data: dict):
         if self._free:
             # step plans ride on PHASE_ENTER; the stall callout carries the recovery
-            m = data.get("mock") if (code.startswith("PHASE_ENTER_") or code == "FAM_STALL") else None
+            m = (data.get("mock") if (code.startswith("PHASE_ENTER_") or code in ("FAM_STALL", "FAM_STALL_FLAPS"))
+                 else None)
             if m:
                 self._tgt["hdg"] = wrap(self.hdg + m.get("hdg_delta", 0.0))
                 self._tgt["alt"] = self.alt + m.get("alt_delta_ft", 0.0) * FT2M
                 self._tgt["spd"] = float(m.get("spd", self._tgt["spd"]))
+                self._tgt["flaps"] = float(m.get("flaps", 0.0))      # slow flight / stall with flaps
                 self._tgt["home"] = bool(m.get("home"))
                 # banked turn: this many degrees (+ right) at this bank, then roll out
                 self._tgt["turn_rem"] = float(m.get("turn_deg", 0.0))
@@ -288,7 +290,7 @@ class MockAdapter:
                 mid = self._runway_length_m / 2.0
                 e_m, n_m = self._pt(mid, 0.0)
                 hdg = wrap(math.degrees(math.atan2(e_m - self.e, n_m - self.n)))
-            self._fly_heading(hdg, t["spd"], t["alt"], 0.0, dt)
+            self._fly_heading(hdg, t["spd"], t["alt"], t.get("flaps", 0.0), dt)
             return
         if self.stopping:
             self.alt = 0.0

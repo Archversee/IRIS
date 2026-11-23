@@ -46,17 +46,16 @@ flying a Cessna 172 traffic pattern (circuit) at Paya Lebar. MAVIS stands for
 
 PERSONA_LAYMAN = PERSONA   # the default persona defined above
 
-# Pilot-mode "indirect" coaching: hint at the control / scan item, not the number.
-# Used when session policy guidance == "indirect" (Serious Pilot menu mode).
+# Pilot-mode "indirect" coaching: name what to check, not the number or the fix.
+# Used when session policy guidance == "indirect" (Pilot menu mode).
 PERSONA_INDIRECT = f"""You are MAVIS, a calm examiner-style flight instructor beside an
 experienced student pilot flying a Cessna 172 circuit at Paya Lebar. MAVIS stands for
 {MAVIS_ACRONYM}. Say so plainly if asked. Style rules:
 - One short spoken sentence (max ~18 words), read aloud by TTS.
 - Use standard aviation phraseology.
 - When correcting, do NOT name the symptom number (no "you're at 95 knots", no
-  "you're 100 feet high"). Instead, prompt them to check the likely control or
-  scan item that caused it, e.g. power/throttle for speed, pitch/attitude for
-  climb or descent, heading for centreline drift.
+  "you're 100 feet high") and do NOT say how to fix it. Only remind them what to
+  check, e.g. "Check your speed.", "Check your altitude.", "Check your bank."
 - Be concise and professional. Never say "wrong" or "please".
 - Units in full words, always: "knots" (never kt or kts), "feet" (never ft), "degrees"
   (never deg or the ° sign), "feet per minute" (never fpm), "percent", "nautical miles"."""
@@ -163,6 +162,10 @@ TEMPLATES = {
     "FAM_TURN_REMIND": ["Ease the stick {dir}, {bank_lo} to {bank_hi} degrees."],
     "FAM_YAW_REMIND": ["Gently press the {dir} pedal and watch the nose swing {dir}."],
     "FAM_STALL": ["That's the stall. Nose down, full power, then level off."],
+    "FAM_STALL_FLAPS": ["That's the stall. Nose down, full power, flaps up to {recover_flaps}, then level off."],
+    "FAM_STALL_GOOD": ["Nicely recovered, only about {lost} feet lost."],
+    "FAM_STALL_LOST": ["Recovered, but that cost about {lost} feet. Next time, lower the nose just enough, "
+                       "and add the power straight away."],
     "FAM_ROLL_OUT": ["That's enough, now roll the wings level."],
     "FAM_CENTRE_PEDALS": ["Good, now feet level again."],
     "FAM_THROTTLE_BACK": ["Good, now bring the throttle back to where it was."],
@@ -290,6 +293,10 @@ PILOT_TEMPLATES = {
     "FAM_TURN_REMIND": ["Commence the {dir} turn, {bank_lo} to {bank_hi} degrees."],
     "FAM_YAW_REMIND": ["Apply {dir} rudder. Note the yaw, then the roll that follows."],
     "FAM_STALL": ["Stall. Recover: nose down, full power, wings level."],
+    "FAM_STALL_FLAPS": ["Stall. Recover: nose down, full power, flaps {recover_flaps}, wings level."],
+    "FAM_STALL_GOOD": ["Recovered. Height loss about {lost} feet. Good."],
+    "FAM_STALL_LOST": ["Recovered. Height loss about {lost} feet, aim for under {lost_ok}. "
+                       "Reduce the angle of attack, don't dive."],
     "FAM_ROLL_OUT": ["Roll out, wings level."],
     "FAM_CENTRE_PEDALS": ["Centralise the rudder."],
     "FAM_THROTTLE_BACK": ["Power back to cruise."],
@@ -347,23 +354,74 @@ PILOT_TEMPLATES = {
                         "final, full stop. Fly it cleanly; trainees will match this path."],
 }
 
-# Indirect overlays (pilot jargon): symptom → check the control. Applied on top of
-# PILOT_TEMPLATES when configure(..., guidance="indirect").
+# Drift cues: the aircraft has drifted off what the step / leg asks for (speed,
+# height, bank, sink, track, flaps...). Every mode hears these, worded by mode:
+#   Visitor  (TEMPLATES / PILOT_TEMPLATES): the number and how to fix it
+#   Trainee  (WARN_TEMPLATES, guidance "warn"): what's off, no number, no fix
+#   Pilot    (INDIRECT_TEMPLATES, guidance "indirect"): only what to check
+# core.modes.allow_coach_event lets them through Trainee / Pilot's quiet filter.
+DRIFT_CUES = frozenset({
+    "SPEED_FAST", "SPEED_SLOW", "SPEED_FAST_LEVEL", "SPEED_SLOW_LEVEL",
+    "ALT_HIGH", "ALT_LOW", "ALT_LOW_FAST", "ALT_HIGH_SLOW",
+    "SINK_HIGH", "SINK_HIGH_FAST", "BANK_STEEP", "OFF_TRACK", "FLAPS_REMINDER",
+    "SMOOTH_HANDS", "ROTATE_LATE",
+    "FAM_SLOW", "FAM_FAST", "FAM_FAST_DIVE", "FAM_STEEP",
+    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_TARGET_HINT", "FAM_FIELD_HINT",
+})
+
+# Trainee: a heads-up on what's drifting -- they work out the fix themselves.
+WARN_TEMPLATES = {
+    "SPEED_FAST": ["Watch your speed, you're getting fast."],
+    "SPEED_SLOW": ["Watch your speed, you're getting slow."],
+    "SPEED_FAST_LEVEL": ["Watch your speed, you're getting fast."],
+    "SPEED_SLOW_LEVEL": ["Watch your speed, you're getting slow."],
+    "ALT_HIGH": ["Watch your altitude, you're high."],
+    "ALT_LOW": ["Watch your altitude, you're low."],
+    "ALT_LOW_FAST": ["Watch it, you're low and fast."],
+    "ALT_HIGH_SLOW": ["Watch it, you're high and slow."],
+    "SINK_HIGH": ["Watch your sink rate, you're coming down fast."],
+    "SINK_HIGH_FAST": ["Watch your sink rate, you're coming down fast."],
+    "BANK_STEEP": ["Watch your bank, it's getting steep."],
+    "OFF_TRACK": ["Watch your track, you're drifting off the line."],
+    "FLAPS_REMINDER": ["Watch your flaps, they're not set yet."],
+    "SMOOTH_HANDS": ["Watch your inputs, keep them small."],
+    "ROTATE_LATE": ["Watch your speed, you're past rotate."],
+    "FAM_SLOW": ["Watch your speed, you're getting slow."],
+    "FAM_FAST": ["Watch your speed, you're getting fast."],
+    "FAM_FAST_DIVE": ["Watch your speed, you're getting fast."],
+    "FAM_STEEP": ["Watch your bank, it's getting steep."],
+    "FAM_TURN_REMIND": ["Watch it, the {dir} turn hasn't started yet."],
+    "FAM_YAW_REMIND": ["Watch it, no {dir} yaw yet."],
+    "FAM_TARGET_HINT": ["Watch your heading, {tgt_name} is off to your {tgt_dir}."],
+    "FAM_FIELD_HINT": ["Watch your heading, Paya Lebar is at your {clock} o'clock."],
+}
+
+# Pilot: a reminder of what to check, never the number or the fix -- a pilot
+# knows what to do with it.
 INDIRECT_TEMPLATES = {
-    "SPEED_FAST": ["Check your power."],
-    "SPEED_SLOW": ["Check your attitude and power."],
-    "ALT_HIGH": ["Check your pitch and power."],
-    "ALT_LOW": ["Check your power."],
-    "ALT_LOW_FAST": ["Check your pitch."],
-    "ALT_HIGH_SLOW": ["Check your pitch."],
-    "SPEED_FAST_LEVEL": ["Check your power."],
-    "SPEED_SLOW_LEVEL": ["Check your power."],
-    "SINK_HIGH_FAST": ["Check your attitude."],
-    "OFF_TRACK": ["Check your track."],
-    "SINK_HIGH": ["Check your power and attitude."],
+    "SPEED_FAST": ["Check your speed."],
+    "SPEED_SLOW": ["Check your speed."],
+    "SPEED_FAST_LEVEL": ["Check your speed."],
+    "SPEED_SLOW_LEVEL": ["Check your speed."],
+    "ALT_HIGH": ["Check your altitude."],
+    "ALT_LOW": ["Check your altitude."],
+    "ALT_LOW_FAST": ["Check your altitude and speed."],
+    "ALT_HIGH_SLOW": ["Check your altitude and speed."],
+    "SINK_HIGH": ["Check your sink rate."],
+    "SINK_HIGH_FAST": ["Check your sink rate."],
     "BANK_STEEP": ["Check your bank."],
-    "SMOOTH_HANDS": ["Check your grip."],
-    "ROTATE_LATE": ["Check your attitude."],
+    "OFF_TRACK": ["Check your track."],
+    "FLAPS_REMINDER": ["Check your flaps."],
+    "SMOOTH_HANDS": ["Check your inputs."],
+    "ROTATE_LATE": ["Check your speed."],
+    "FAM_SLOW": ["Check your speed."],
+    "FAM_FAST": ["Check your speed."],
+    "FAM_FAST_DIVE": ["Check your speed."],
+    "FAM_STEEP": ["Check your bank."],
+    "FAM_TURN_REMIND": ["Check your turn."],
+    "FAM_YAW_REMIND": ["Check your rudder."],
+    "FAM_TARGET_HINT": ["Check your heading."],
+    "FAM_FIELD_HINT": ["Check your heading."],
 }
 
 # Hardcore tone (Settings → Instructor tone). Harsh WTF-level corrections.
@@ -444,13 +502,16 @@ LAYMAN_TEMPLATES = {k: list(v) for k, v in TEMPLATES.items()}
 def configure(flap_style: str = "notches", jargon: str = "layman",
               guidance: str = "direct", tone: str = "warm"):
     """Select instruction wording. jargon 'layman'|'pilot'; flap_style 'notches'|'switch';
-    guidance 'direct'|'indirect'; tone 'warm'|'drill'. Rebuilds PERSONA + TEMPLATES."""
-    global PERSONA, TEMPLATES, _JARGON
+    guidance 'direct' (Visitor) | 'warn' (Trainee) | 'indirect' (Pilot); tone
+    'warm'|'drill'. Rebuilds PERSONA + TEMPLATES."""
+    global PERSONA, TEMPLATES, _JARGON, _GUIDANCE
     _JARGON = "pilot" if jargon == "pilot" else "layman"
-    use_indirect = jargon == "pilot" and guidance == "indirect"
+    _GUIDANCE = guidance if guidance in ("warn", "indirect") else "direct"
+    use_indirect = _GUIDANCE == "indirect"
+    use_warn = _GUIDANCE == "warn"
     # Hardcore tone only with Pilot jargon (Trainee/Pilot sessions enforce this in main)
     use_drill = tone == "drill" and jargon == "pilot"
-    if use_drill and use_indirect:
+    if use_drill and (use_indirect or use_warn):
         PERSONA = PERSONA_DRILL_INDIRECT
     elif use_drill:
         PERSONA = PERSONA_DRILL
@@ -467,15 +528,22 @@ def configure(flap_style: str = "notches", jargon: str = "layman",
         t.update(PILOT_TEMPLATES)
     if use_indirect:
         t.update(INDIRECT_TEMPLATES)
+    elif use_warn:
+        t.update(WARN_TEMPLATES)
     if use_drill:
-        if use_indirect:
-            t.update(DRILL_INDIRECT_TEMPLATES)
-        else:
-            t.update(DRILL_TEMPLATES)
+        # no numbers in the hardcore lines either, once the mode leaves them out
+        t.update(DRILL_INDIRECT_TEMPLATES if (use_indirect or use_warn) else DRILL_TEMPLATES)
     TEMPLATES = t
+
+
+def fixed_wording(code: str) -> bool:
+    """A drift cue in Trainee / Pilot: said exactly as written, never handed to
+    the LLM -- a rewording would put back the number or the fix the mode leaves out."""
+    return _GUIDANCE != "direct" and code in DRIFT_CUES
 
 _NOTCHES = {10: "first notch", 20: "second notch", 30: "last notch"}
 _JARGON = "layman"   # last configure() jargon; selects lesson-authored text variants
+_GUIDANCE = "direct"  # last configure() guidance: how drift cues are worded (DRIFT_CUES)
 
 
 def intro_code(mode: str) -> str:

@@ -48,10 +48,10 @@
         {
           "id": "lesson05_slowflight",
           "title": "Slow Flight & Stalls",
-          "subtitle": "Slow flight · stall recognition and recovery",
+          "subtitle": "Slow flight & turns · power-off, power-on and flaps-down stalls",
           "available": true,
-          "duration_min": 22,
-          "start_note": "Starts in the air at about 3,500 ft, 3 nm south of Paya Lebar. MAVIS flies the slow flight and talks you through the stall, then it's your turn. No landing."
+          "duration_min": 30,
+          "start_note": "Starts in the air at about 3,500 ft, 3 nm south of Paya Lebar. MAVIS flies the slow flight and turns, and talks you through the stalls, then it's your turn. No landing."
         },
         {
           "id": "lesson06_steep",

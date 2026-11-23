@@ -7,7 +7,7 @@ LLM elsewhere (main.py); this module never asks the model for a number.
 
 Five metrics (0-100 each): track, speed, altitude, landing, smoothness.
 Retries are a count that HARD-CAPS the grade when score_caps is on
-(trainee / pilot modes, spec §14.5).
+(visitor / trainee / pilot alike, spec §14.5).
 Weights / tolerances / caps / grade bands come from the lesson YAML `scoring:`
 block, with the defaults below.
 """
@@ -327,9 +327,10 @@ class Scorer:
         v_inc = self.variation.incomplete() if self.variation else None
         if v_inc is not None:
             incomplete = v_inc
-        # Trainee / pilot (and legacy serious) apply retry caps; visitor / exam do not.
+        # Visitor / trainee / pilot (and legacy serious) are scored alike: retry caps
+        # in all of them; exam does not.
         if score_caps is None:
-            score_caps = mode in ("trainee", "pilot", "serious")
+            score_caps = mode in ("visitor", "trainee", "pilot", "serious", "casual")
         total, capped = self._total(scores, score_caps)
         card = ScoreCard(name or "", mode, lesson_name, time.time(), scores,
                          self.retries, total, self._grade(total, scores, incomplete), capped, practice,

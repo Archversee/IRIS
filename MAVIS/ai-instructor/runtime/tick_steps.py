@@ -159,6 +159,11 @@ def score_tick(rt, tel, ctrl, prev_on_ground):
 
 
 def publish_state(rt, tel, ctrl) -> None:
+    # during the up-front demo the to-do list follows MAVIS's flying
+    # (flight_flow._fam_demo_all), not the lesson waiting for the trainee
+    demo_todo = rt.demo_ctl.get("todo")
+    if demo_todo is not None:
+        demo_todo.demo_tick(tel)
     rt.state.update(
         tel=tel.as_dict(), ctrl=ctrl.as_dict(), phase=rt._flight_phase(),
         circuit=rt.engine.circuit, total_circuits=rt.engine.detector.total_circuits,
@@ -170,7 +175,8 @@ def publish_state(rt, tel, ctrl) -> None:
         night=not (6.0 < tel.local_time_h < 18.5),
         transcript=rt.transcript[-60:], llm_ok=rt.coach.llm_ok,
         # (none in Free Flight either: that to-do list is the lesson's, not this flight's)
-        fam_todo=(rt.engine.todo() if rt.started.is_set() and not rt.session.get("free_flight")
+        fam_todo=((demo_todo or rt.engine).todo()
+                  if rt.started.is_set() and not rt.session.get("free_flight")
                   and hasattr(rt.engine, "todo") else None),
         geom={"along": rt.engine.geom.along, "cross": rt.engine.geom.cross}
              if rt.engine.geom else None)

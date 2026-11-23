@@ -36,19 +36,39 @@ airborne_start:
   ias_kt: 95
   throttle_pct: 70
 
+# Clean first: slow flight, then turning in it, then the two clean stalls
+# (power off, then power on). Then the landing configuration: slow flight with
+# full flaps, and the stall from there -- the one that matters most on an
+# approach. Each stall is judged on the height it costs.
 steps:
   - SLOW_FLIGHT
+  - SLOW_TURN_LEFT
+  - SLOW_TURN_RIGHT
   - STALL
+  - STALL_POWER_ON
+  - SLOW_FLIGHT_FLAPS
+  - STALL_FLAPS
 
 exercises:
   slow_flight_kt: 60        # what the demo aims for
   slow_flight_band_kt: [50, 70]   # anywhere in here counts (never below 50: it stalls at 48)
-  slow_flight_hold_s: 10
+  slow_flight_hold_s: 15
+  slow_turn_bank_deg: 15    # turns in slow flight: gentle, 10-20 degrees
+  slow_turn_deg: 90
+  slow_flight_flaps_kt: 52
+  slow_flight_flaps_band_kt: [45, 60]   # full flaps stall at about 40
+  flaps_full_min_deg: 25    # "full flaps": at least this
   height_band_ft: 300       # slow flight: height within +/- this counts
   stall_kt: 55              # counts as stalled at or below this (or nose over 8 deg up and sinking)
+  stall_flaps_kt: 50        # ...with full flaps
+  stall_power_min: 0.65     # stall with power on: throttle at least this
   recover_kt: 60            # recovered: back above this...
   recover_max_sink_fpm: 500 # ...and sinking slower than this
+  recover_flaps_max_deg: 20 # flaps-down stall: flaps back to this or less
+  stall_height_loss_ok_ft: 200    # a recovery losing no more than this is a good one
   step_timeout_s: 210
+
+demo_max_s: 240             # seven steps: a longer demo than the usual two minutes
 
 freeze_during_instructions: true
 
@@ -56,20 +76,26 @@ end_reposition:
   along_m: 60
 
 debrief_summary: >-
-  slow flight and stalls exercise (airborne start; flying slowly near the
-  stall at a steady height, then a stall with power off and the recovery:
-  nose down, full power, level off; no take-off or landing)
+  slow flight and stalls exercise (airborne start; slow flight at a steady
+  height, gentle turns each way in slow flight, a power-off stall and a
+  power-on stall with flaps up, then slow flight with full flaps and a stall
+  from there; each recovery: nose down, full power, level off, judged on the
+  height lost; no take-off or landing)
 
 briefing:
   layman: >-
     Slow flight and stalls. We're up at about {alt} feet, south of Paya Lebar,
-    higher than usual because a stall loses some height. First flying very
-    slowly without losing height, then the stall itself, and how to get out of
-    it. It sounds scary but it's very gentle in this aeroplane.
+    higher than usual because a stall loses some height. First we fly very
+    slowly without losing height, and turn gently while we're slow. Then the
+    stall itself, with the power off and then with the power on, and how to
+    get out of it losing as little height as we can. Last, the same with the
+    flaps down, the way you'd be set up to land. It sounds scary but it's very
+    gentle in this aeroplane.
   pilot: >-
     Slow flight and stalls, airborne at {alt} feet south of Paya Lebar. Slow
-    flight at 50 to 60 knots holding altitude, then a power-off stall and
-    recovery.
+    flight holding altitude, 15-degree turns each way in slow flight, a
+    power-off and a power-on stall clean, then slow flight and a stall in the
+    landing configuration. Minimum height loss on every recovery.
 
 # See lesson00_familiarization.yaml for the step_notes format. demo_layman /
 # demo_pilot: what MAVIS says instead in the up-front demo, for a step the
@@ -85,18 +111,97 @@ step_notes:
       Slow flight: power back, raise the nose, and hold {sf_lo} to {sf_hi} knots at {alt_now:,} feet.
     pilot: >-
       Slow flight, {sf_lo} to {sf_hi} knots, hold {alt_now:,} feet.
+  SLOW_TURN_LEFT:
+    title: "Slow flight: turn left"
+    todo:
+      - "Stay at {sf_lo}-{sf_hi} kt and {alt_now:,} ft"
+      - "Bank left {slow_bank_lo}-{slow_bank_hi}°, a little more power"
+      - "Roll level after about {slow_turn_deg}°"
+    look: [attitude, airspeed]
+    layman: >-
+      Still slow, a gentle turn to the left. Only a little bank, {slow_bank_lo} to {slow_bank_hi} degrees,
+      and a touch more power, because turning makes the stall come sooner.
+    pilot: >-
+      Slow flight, turn left {slow_turn_deg} degrees, bank {slow_bank_lo} to {slow_bank_hi}, hold altitude and speed.
+  SLOW_TURN_RIGHT:
+    title: "Slow flight: turn right"
+    todo:
+      - "Stay at {sf_lo}-{sf_hi} kt and {alt_now:,} ft"
+      - "Bank right {slow_bank_lo}-{slow_bank_hi}°, a little more power"
+      - "Roll level after about {slow_turn_deg}°"
+    look: [attitude, airspeed]
+    layman: >-
+      Now the same to the right. Gentle bank, a touch more power, keep the height.
+    pilot: >-
+      Slow flight, turn right {slow_turn_deg} degrees, bank {slow_bank_lo} to {slow_bank_hi}, hold altitude and speed.
   STALL:
-    title: Stall and recover
+    title: "Stall, power off"
     todo:
       - "Throttle to idle, keep raising the nose slowly"
       - "When it stalls: nose down, full power"
-      - "Level off once the speed is back"
+      - "Level off once the speed is back, lose under {lost_ok} ft"
     look: [airspeed, attitude]
     layman: >-
-      The stall: idle, ease the stick back until the nose drops. Then nose down, full power.
+      The stall: idle, ease the stick back until the nose drops. Then nose down, full power,
+      and level off. Try to lose less than {lost_ok} feet.
     pilot: >-
-      Power-off stall, then recover: lower the nose, full power.
+      Power-off stall, then recover: lower the nose, full power. Minimum height loss.
     demo_layman: >-
       The autopilot can't stall, so just listen: idle, stick back until the nose drops, then nose down, full power.
     demo_pilot: >-
       No autopilot demo: power-off stall, recover with nose down and full power.
+  STALL_POWER_ON:
+    title: "Stall, power on"
+    todo:
+      - "Throttle to {power_pct}% or more"
+      - "Raise the nose steadily, well above the horizon"
+      - "When it stalls: nose down, full power, level off"
+    look: [attitude, airspeed]
+    layman: >-
+      Now a stall with the power on, like climbing away too steeply after take-off.
+      Power up, raise the nose high and hold it there until it stalls. The nose will
+      be much higher this time, and it may drop a wing: keep the wings level with
+      your feet. Then nose down, full power, level off.
+    pilot: >-
+      Power-on stall: at least {power_pct} percent, raise the nose until it stalls,
+      recover with nose down, full power, wings level with rudder.
+    demo_layman: >-
+      Just listen for this one: power up, nose well up until it stalls, then nose down and level off.
+      With power on it can drop a wing, so keep it level with your feet.
+    demo_pilot: >-
+      No autopilot demo: power-on stall, recover nose down, full power, rudder for a wing drop.
+  SLOW_FLIGHT_FLAPS:
+    title: "Slow flight, flaps down"
+    todo:
+      - "Flaps all the way down"
+      - "Hold {alt_now:,} ft, settle at {sff_lo}-{sff_hi} kt"
+      - "Expect more power to stay level"
+    look: [airspeed, altitude]
+    layman: >-
+      Now the way you'd be set up to land: flaps all the way down. The flaps let us fly
+      even slower, {sff_lo} to {sff_hi} knots, but it needs more power to hold the height.
+    pilot: >-
+      Landing configuration, full flaps. Slow flight {sff_lo} to {sff_hi} knots, hold {alt_now:,} feet.
+    demo_layman: >-
+      I'll just describe this one: flaps all the way down, keep the height, and let the
+      speed settle at {sff_lo} to {sff_hi} knots. You'll need more power than before.
+    demo_pilot: >-
+      No autopilot demo: full flaps, slow flight {sff_lo} to {sff_hi} knots at altitude.
+  STALL_FLAPS:
+    title: "Stall, flaps down"
+    todo:
+      - "Keep the flaps down, throttle to idle"
+      - "Raise the nose slowly until it stalls"
+      - "Nose down, full power, flaps up to {recover_flaps}°, level off"
+    look: [airspeed, attitude]
+    layman: >-
+      Last one, the stall on the way in to land. Flaps still down, idle, raise the nose until it
+      stalls. Then nose down, full power, and bring the flaps up one notch to {recover_flaps}
+      so we can climb away.
+    pilot: >-
+      Approach stall, full flaps, power off. Recover: nose down, full power, flaps {recover_flaps}, level off.
+    demo_layman: >-
+      Just listen: flaps down, idle, nose up until it stalls. Then nose down, full power,
+      and flaps up to {recover_flaps}.
+    demo_pilot: >-
+      No autopilot demo: power-off stall in landing configuration, recover with flaps {recover_flaps}.

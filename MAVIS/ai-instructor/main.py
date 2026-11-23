@@ -143,7 +143,8 @@ async def amain(cfg):
     rt.run_gen = run_gen
     # up-front demonstration of an airborne lesson (core/demo.py): Skip ends
     # it; `shown` = steps the trainee watched (they then get a short cue, no hold)
-    demo_ctl = {"skip": asyncio.Event(), "shown": set(), "no_track": False}
+    demo_ctl = {"skip": asyncio.Event(), "shown": set(), "no_track": False,
+                "todo": None}   # the demo's to-do tracker while MAVIS flies it
     rt.demo_ctl = demo_ctl
     pending: dict = {"card": None, "posted": False}
     rt.pending = pending
