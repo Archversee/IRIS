@@ -401,5 +401,3 @@ When it's done, it prints:
  Dashboard:  http://localhost:3000
  Tablets:    http://192.168.0.103:3000/live
 ```
-
-I
