@@ -175,7 +175,7 @@ py -3.12 -m venv .venv
 cd ..
 ```
 
-### 4.5 OBS/Smart Eye adapter (optional)
+### 4.5 OBS/Smart Eye adapter
 
 ```powershell
 cd Sim_Data_Adapter
