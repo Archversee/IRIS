@@ -164,7 +164,15 @@ The second install line is the Windows/sim-PC-only part:
 - `pyttsx3`: a basic Windows voice used as a fallback.
 
 The first start downloads the Kokoro voice, the Whisper speech-to-text model
-and the speaker-ID model, so it needs internet once.
+and the speaker-ID model, so it needs internet once. The Kokoro download is
+about 330 MB and has been seen to stall. Fetching it once by hand, with a
+progress bar, avoids that:
+
+```powershell
+cd MAVIS\ai-instructor
+.venv\Scripts\python -c "from huggingface_hub import snapshot_download; print(snapshot_download('hexgrad/Kokoro-82M'))"
+cd ..\..
+```
 
 ### 4.4 Proxy
 
@@ -475,6 +483,7 @@ requirements.txt`. If a `db/*.sql` file was added, apply it as in §3.
 | Tablet can't open the page | Same network (not guest Wi-Fi)? Network set to Private (§8.1)? Rule for TCP 3000 (§8.2)? A python Block rule (§8.5)? Launcher not run with `-LocalOnly`? |
 | Page loads but shows "MAVIS/backend unavailable" | `logs/launcher/*.err.log` on the sim PC. |
 | Tablet is silent | Tap once after loading. Is `voice.output` set to `tablet`? Is the device's media volume up? |
+| No voice anywhere; MAVIS logs *"TTS still loading … Shown in chat only"* | The Kokoro voice model hasn't finished downloading (first start on a new PC). If `logs/launcher/MAVIS.err.log` never reaches `Kokoro on cpu, warm-up` / `TTS engine: kokoro`, download it by hand (§4.3) and restart. |
 | Mic button says the mic is unavailable | The HTTPS rule in §9.1, step 4. |
 | Only template coaching, no LLM answers | `curl.exe http://<llm-pc-ip>:11434/api/tags` from the sim PC; `OLLAMA_HOST` and firewall on the LLM PC (§6.2, §8.3). |
 | MAVIS keeps retrying SimConnect | Is MSFS running with a flight loaded? `SimConnect.xml` has the IPv4/500 section and MSFS was restarted (§6.1). |
