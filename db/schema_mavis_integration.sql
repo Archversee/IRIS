@@ -191,3 +191,10 @@ create table if not exists session_flights (
 );
 -- Added after session_flights was first created (idempotent either way):
 alter table session_flights add column if not exists restart_ts timestamptz;
+
+-- Deleted sessions (Finish & discard): MAVIS keeps publishing the id until the next
+-- Start, and the bridge must not create the session again (backend/app/deleted_sessions.py).
+create table if not exists deleted_sessions (
+    session_id  uuid primary key,
+    deleted_at  timestamptz not null default now()
+);

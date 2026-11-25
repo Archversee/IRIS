@@ -3,9 +3,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from .. import db, mavis_bridge, videos
+from .. import db, deleted_sessions, mavis_bridge, videos
 from ..catalog import lesson_title
 from ..schemas import Session, SessionCreate, SessionUpdate
+from . import stream
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -100,6 +101,7 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         # state push from MAVIS (which otherwise keeps polling/broadcasting
         # telemetry regardless of whether a lesson was quit).
         mavis_bridge.mark_ended(session_id)
+        await stream.set_ended(session_id, True)     # and the gaze
         # the flight is over: write the AI debrief (summary + a note per broken rule) in the
         # background, so it's ready when Review is opened (routers/debrief.py)
         from .debrief import on_session_ended   # here: debrief imports half the routers
@@ -108,6 +110,7 @@ async def update_session(session_id: UUID, body: SessionUpdate):
         # cleared (null): "Fly again" after a lesson ended on its own --
         # flying again under the same session, LiveAdapter.py records again
         mavis_bridge.mark_reopened(session_id)
+        await stream.set_ended(session_id, False)
     return dict(row)
 
 
@@ -115,9 +118,16 @@ async def update_session(session_id: UUID, body: SessionUpdate):
 async def delete_session(session_id: UUID):
     """Deletes the session, all its data (cascade), and its video files:
     linked videos + OBS recordings no other session uses (see videos.py)."""
-    async with db.acquire() as conn:
-        files = await videos.session_files(conn, session_id)
-        result = await conn.execute("delete from sessions where id = $1", session_id)
+    # before the delete: MAVIS and the eye bridge keep sending data for this session
+    deleted_sessions.add(session_id)
+    try:
+        async with db.acquire() as conn:
+            files = await videos.session_files(conn, session_id)
+            result = await conn.execute("delete from sessions where id = $1", session_id)
+    except BaseException:
+        deleted_sessions.discard(session_id)     # still there: keep saving its data
+        raise
     if result.endswith("0"):
         raise HTTPException(404, "Session not found")
+    await deleted_sessions.remember(session_id)
     videos.delete_files(files)

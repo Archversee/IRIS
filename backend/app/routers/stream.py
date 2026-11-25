@@ -46,7 +46,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from .. import db
+from .. import db, deleted_sessions
 from ..schemas import EyeSample, FlightSample
 
 log = logging.getLogger(__name__)
@@ -97,6 +97,33 @@ class _LiveBuffer:
 
 _live: dict[str, _LiveBuffer] = {}
 
+# Sessions that are over. LiveAdapter.py streams gaze to a session until the
+# next one starts, so without this whatever the trainee looks at after the
+# flight (scorecard, Save page) would be stored as part of it and counted by
+# Analytics and Workload. Flight data stops the same way (mavis_bridge.mark_ended).
+_ended: set[str] = set()
+
+
+async def set_ended(session_id: UUID, ended: bool) -> None:
+    """routers/sessions.py, when ended_at is set (or cleared again)."""
+    if not ended:
+        _ended.discard(str(session_id))
+        return
+    _ended.add(str(session_id))
+    buf = _live.get(str(session_id))
+    if buf is not None:
+        await _flush_eye_rows(session_id, buf)      # the flight's last samples
+
+
+async def _load_ended(session_id: UUID) -> None:
+    """The session may have ended before this process started."""
+    try:
+        async with db.acquire() as conn:
+            if await conn.fetchval("select ended_at is not null from sessions where id = $1", session_id):
+                _ended.add(str(session_id))
+    except Exception as e:
+        log.warning("[stream] couldn't check whether session %s has ended: %s", session_id, e)
+
 
 def _buffer(session_id: UUID) -> _LiveBuffer:
     return _live.setdefault(str(session_id), _LiveBuffer())
@@ -142,7 +169,7 @@ def _eye_sample_to_row(session_id: UUID, s: EyeSample) -> tuple:
     return tuple([session_id, d["ts"]] + [d[c] for c in db.EYE_COLUMNS[2:]])
 
 
-async def _flush_eye_rows(buf: _LiveBuffer) -> None:
+async def _flush_eye_rows(session_id: UUID, buf: _LiveBuffer) -> None:
     """Best-effort persist of whatever's buffered. Not fatal if it fails --
     e.g. a brief race where this session's `sessions` row hasn't been
     created yet by mavis_bridge (both it and LiveAdapter.py start watching
@@ -152,10 +179,14 @@ async def _flush_eye_rows(buf: _LiveBuffer) -> None:
     if not buf.eye_row_buffer:
         return
     rows, buf.eye_row_buffer = buf.eye_row_buffer, []
+    if deleted_sessions.contains(session_id):
+        return      # discarded while these were waiting
     try:
         async with db.acquire() as conn:
             await conn.executemany(_EYE_INSERT_SQL, rows)
     except Exception as e:
+        if deleted_sessions.contains(session_id):
+            return  # discarded during the write
         log.warning("[stream] eye sample flush failed (%d rows dropped): %s", len(rows), e)
 
 
@@ -195,6 +226,7 @@ async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
     (see _flush_eye_rows) so every session's Smart Eye data lands in the DB
     even if nothing ever views the live overlay for it."""
     await websocket.accept()
+    await _load_ended(session_id)
     buf = _buffer(session_id)
     buf.eye_connected = True
     try:
@@ -207,6 +239,8 @@ async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
             except Exception as e:
                 print(f"[stream] dropped malformed eye sample: {e}")
                 continue
+            if str(session_id) in _ended or deleted_sessions.contains(session_id):
+                continue    # over; LiveAdapter.py streams to it until the next session
             record = sample.model_dump(mode="json", exclude={"extra"})   # extra: stored, not shown live
             buf.eye_samples.append(record)
             buf.eye_row_buffer.append(_eye_sample_to_row(session_id, sample))
@@ -214,12 +248,12 @@ async def eye_stream_producer(websocket: WebSocket, session_id: UUID):
             now = time.monotonic()
             if now - buf.last_eye_flush >= _EYE_FLUSH_INTERVAL_S:
                 buf.last_eye_flush = now
-                await _flush_eye_rows(buf)
+                await _flush_eye_rows(session_id, buf)
     except WebSocketDisconnect:
         pass
     finally:
         buf.eye_connected = False
-        await _flush_eye_rows(buf)
+        await _flush_eye_rows(session_id, buf)
         _drop_if_idle(session_id, buf)
 
 

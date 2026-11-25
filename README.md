@@ -101,10 +101,10 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
    ```powershell
    $env:PGPASSWORD = "postgres"
    psql -U postgres -d postgres -f db/schema.sql
+   psql -U postgres -d postgres -f db/schema_auth.sql
    psql -U postgres -d postgres -f db/schema_mavis_integration.sql
    psql -U postgres -d postgres -f db/schema_sop_rules.sql
    psql -U postgres -d postgres -f db/schema_rule_results.sql
-   psql -U postgres -d postgres -f db/schema_auth.sql
    ```
 4. **Backend settings (optional).** The backend reads `backend/.env` if it
    exists. Create it only to change a default:
@@ -362,12 +362,12 @@ New-NetFirewallRule -DisplayName "Ollama 11434" -Direction Inbound -Protocol TCP
 |---|---|
 | 5432 Postgres, 8000 IRIS backend | Used only on the sim PC. |
 | 4455/4456 OBS | Used only on the sim PC. |
-| 6945 MAVIS | Tablets reach it through the proxy at `/mavis`. MAVIS itself listens on all interfaces, so Windows may ask about it on first start. Either answer is fine; opening 6945 only exposes MAVIS's old standalone page. |
+| 6945 MAVIS | Tablets reach it through the proxy at `/mavis`. MAVIS itself listens on all interfaces, so Windows may ask about it on first start: choose **Allow** on Private networks (§8.5). That only exposes MAVIS's old standalone page. |
 
 ### 8.5 The "Allow access?" pop-up trap
 
 The first time a Python service listens on the network, Windows asks whether
-to allow it. Clicking **Cancel** quietly creates an inbound **Block** rule for
+to allow it. Tick **Private networks** and choose **Allow**. Clicking **Cancel** quietly creates an inbound **Block** rule for
 `python.exe`, and a block rule overrides every allow rule above. If the
 tablet can't connect although the rules exist, look for one:
 

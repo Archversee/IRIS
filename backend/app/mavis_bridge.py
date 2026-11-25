@@ -20,9 +20,10 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID
 
+import asyncpg
 import websockets
 
-from . import db
+from . import db, deleted_sessions
 from .config import settings
 from .routers import adapter, leaderboard
 from .routers.stream import ingest_external_sample
@@ -238,10 +239,7 @@ class MavisBridge:
                             state = json.loads(raw)
                         except json.JSONDecodeError:
                             continue
-                        try:
-                            await self._handle_state(state)
-                        except Exception:
-                            log.exception("mavis_bridge: error handling state push")
+                        await self._handle_message(state)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -251,6 +249,16 @@ class MavisBridge:
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, _MAX_RECONNECT_DELAY_S)
 
+    async def _handle_message(self, state: dict) -> None:
+        try:
+            await self._handle_state(state)
+        except asyncpg.ForeignKeyViolationError:
+            # deleted while this push was being written: nothing left to save
+            if not deleted_sessions.contains(state.get("session_id")):
+                log.exception("mavis_bridge: error handling state push")
+        except Exception:
+            log.exception("mavis_bridge: error handling state push")
+
     async def _handle_state(self, state: dict) -> None:
         # before the session check: a score can be posted after the session is cleared
         await self._sync_leaderboard(state)
@@ -258,6 +266,8 @@ class MavisBridge:
         self.current_session = raw_sid or None
         if not raw_sid:
             return  # nothing minted yet (pre-Start) -- nothing to attach data to
+        if deleted_sessions.contains(raw_sid):
+            return  # discarded; MAVIS keeps publishing its id until the next Start
         session_id = UUID(raw_sid)
         cur = self._sessions.setdefault(raw_sid, _SessionCursor())
         if not cur.seen:
@@ -376,9 +386,12 @@ class MavisBridge:
 
     async def _flush_flight_rows(self) -> None:
         all_rows: list[tuple] = []
-        for cur in self._sessions.values():
+        for sid, cur in self._sessions.items():
             if cur.row_buffer:
-                all_rows.extend(cur.row_buffer)
+                # a deleted session's leftovers would fail the whole batch,
+                # taking the next session's rows with them
+                if not deleted_sessions.contains(sid):
+                    all_rows.extend(cur.row_buffer)
                 cur.row_buffer.clear()
         if all_rows:
             await db.copy_rows("flight_data", FLIGHT_COLUMNS, all_rows)

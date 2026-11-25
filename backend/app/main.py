@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, eye_clock, incident_explain, mavis_bridge, recordings, videos
+from . import auth, db, deleted_sessions, eye_clock, incident_explain, mavis_bridge, recordings, videos
 from .config import settings
 from .routers import (accounts, adapter, aoi_zones, analytics, capture, data, debrief, incidents, ingest, leaderboard, progress,
                       routes, rule_results, sessions, stream, workload)
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
         await workload.ensure_schema()  # cached eye-based workload index per session (Review timeline)
     except Exception as e:  # e.g. sessions table not created yet -- never block startup
         logging.getLogger(__name__).warning("rule results schema not applied: %s", e)
+    await deleted_sessions.ensure_schema()  # so the bridge never brings a discarded session back
     await mavis_bridge.ensure_schema()  # flight_events (MAVIS event start/end times)
     try:
         await leaderboard.ensure_schema()  # leaderboard_entries + its circuit/aircraft/expert columns
