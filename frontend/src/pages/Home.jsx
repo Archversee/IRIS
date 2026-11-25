@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { RoleTag, useAuth } from "../auth/AuthContext.jsx";
 import { SOP_ROLES } from "../components/Sidebar.jsx";
 
-// Full-screen landing after sign-in: one MARIE screen over splash-bg.jpeg
+// Full-screen landing after sign-in: one MIRIS screen over splash-bg.jpeg
 // (frontend/public/media, served by the frontend itself so it shows even
 // when MAVIS isn't running). Clicking anywhere enters the app at the place
 // that fits the role:
@@ -19,11 +19,12 @@ function startFor(role) {
     : { to: WALK_AROUND, cta: "Start the walk-around" };
 }
 
-// Full name with the acronym's letters (M·A·R·I·E) bolded and underlined.
-// [word, highlight first letter?] -- "&" isn't part of MARIE.
+// Full name with the acronym's letters (M·I·R·I·S) bolded and underlined:
+// live instruction (MAVIS) + review and insight (IRIS).
+// [word, highlight first letter?] -- "&" isn't part of MIRIS.
 const FULL_NAME = [
-  ["Multimodal", true], ["Aviation", true], ["Review", true], ["&", false],
-  ["Instruction", true], ["Engine", true],
+  ["Multimodal", true], ["Instruction,", true], ["Review", true], ["&", false],
+  ["Insight", true], ["System", true],
 ];
 
 export default function Home() {
@@ -44,7 +45,7 @@ export default function Home() {
 
       <button type="button" className="landing__enter" onClick={() => nav(start.to)}>
         <span className="landing__label">
-          <span className="landing__title">MARIE</span>
+          <span className="landing__title">MIRIS</span>
           <span className="landing__full">
             {FULL_NAME.map(([word, hl], i) => (
               <span key={i}>
