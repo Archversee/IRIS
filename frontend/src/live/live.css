@@ -52,8 +52,6 @@
   margin: 24px auto 0;
   padding: 20px;
   border-radius: 14px;
-  background-size: cover;
-  background-position: center;
 }
 
 /* ---- Lesson sidebar ---- */
@@ -119,11 +117,16 @@
 .mavis-menu__greeting { font-size: var(--fs-3xl); font-weight: 700; margin-bottom: 16px; }
 .mavis-menu__note { margin: -8px 0 16px; max-width: 640px; font-size: var(--fs-md); line-height: 1.45; opacity: 0.85; }
 .mavis-menu--solo { max-width: none; width: 100%; }
-/* who is flying: above the mode cards, readable over the menu photo */
+/* above the mode cards: the lesson's SOP rules, and who is flying beside them */
+.mavis-menu__setup { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.mavis-menu__setup > .lr-card { flex: 1 1 420px; max-width: none; margin: 0; }
+.mavis-menu__setup > .flown-by { flex: 0 1 auto; margin: 0; }
+.mavis-menu__setup > .flown-by, .mavis-menu__setup > .lr-card { min-height: 70px; box-sizing: border-box; }
+.mavis-menu__setup .lr-card__bar { min-height: 68px; }
 .flown-by {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
   margin-bottom: 16px; padding: 12px 16px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--border-strong); border-radius: 12px;
   font-size: var(--fs-md);
 }
 .flown-by.is-needed { border-color: var(--accent); }
@@ -182,13 +185,13 @@
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
-/* Menu screens (Basic Flight / Free Flight): menu-bg fills the whole
-   content area edge to edge, with the status bar floating over it. */
+/* Menu screens (Basic / Advanced Flight, Free Flight): the whole content area,
+   on the app's own background, with the status bar floating over it. */
 .mavis-shell--menu { position: relative; padding: 0; display: flex; flex-direction: column; }
 .mavis-shell--menu > .mavis-topbar { position: absolute; top: 12px; left: 16px; right: 16px; z-index: 2; margin: 0; }
 .mavis-shell--menu > .mavis-menu {
   flex: 1; max-width: none; margin: 0; border-radius: 0;
-  padding: 56px 32px 32px; background-color: var(--bg);
+  padding: 56px 32px 32px;
 }
 /* Mode cards stretch down to the bottom of the screen. */
 .mavis-shell--menu .mavis-menu__main { display: flex; flex-direction: column; }
@@ -691,8 +694,7 @@
 /* ---- Lesson start screen: which SOP rules this lesson checks (sop/LessonRules.jsx) ---- */
 .lr-card {
   max-width: 900px; margin: 0 0 16px; border-radius: 12px; overflow: hidden;
-  background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border-strong);
-  backdrop-filter: blur(6px); color: var(--text);
+  background: var(--panel); border: 1px solid var(--border-strong); color: var(--text);
 }
 .lr-card__bar {
   display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; border-radius: 0;

@@ -4,7 +4,7 @@ import FlownBy, { useFlownBy } from "./FlownBy.jsx";
 import { pilotIdentity } from "../../auth/AuthContext.jsx";
 
 // Same shell as MainMenu (Basic Flight) -- placeholder UI reusing the same
-// styling/background -- but no visitor/trainee/pilot cards: Free Flight
+// styling -- but no visitor/trainee/pilot cards: Free Flight
 // doesn't ask for an experience level, it just starts on a single explicit
 // button (Basic Flight auto-starts the instant a card is picked; Free
 // Flight waits for you to press Start). Mode is fixed to "pilot" (least
@@ -45,11 +45,10 @@ export default function FreeFlightMenu({ onStarting }) {
     }
   }
 
-  const menuBg = media?.["menu-bg"] ? mediaUrl(media["menu-bg"]) : null;
   const splashBg = media?.["splash-bg"] ? mediaUrl(media["splash-bg"]) : null;
 
   return (
-    <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
+    <div className="mavis-menu mavis-menu--solo">
       <div className="mavis-menu__main">
         <FlownBy {...flownBy} disabled={busy} />
         <div className="mavis-modes">

@@ -49,7 +49,7 @@ export default function FlownBy({ pilot, isTrainee, trainees, failed, value, cho
     <div className={"flown-by" + (pilot ? "" : " is-needed")}>
       <label className="flown-by__label" htmlFor="flown-by">Who is flying?</label>
       <select id="flown-by" value={value} disabled={disabled || !trainees} onChange={(e) => choose(e.target.value)}>
-        <option value="">{trainees ? "Select the pilot" : "Loading…"}</option>
+        <option value="">{trainees ? "Select the pilot to start" : "Loading…"}</option>
         {trainees?.length > 0 && (
           <optgroup label={user.role === "admin" ? "Trainees" : "Your trainees"}>
             {trainees.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
@@ -57,12 +57,11 @@ export default function FlownBy({ pilot, isTrainee, trainees, failed, value, cho
         )}
         <option value={ME}>{nameOf(user)} (me)</option>
       </select>
-      {!pilot && trainees && (
+      {!pilot && trainees?.length === 0 && (
         <span className="flown-by__hint">
           {failed ? "Couldn't load your trainees."
-            : trainees.length ? "Select the pilot to start."
-              : user.role === "admin" ? "There are no trainee accounts yet."
-                : "No trainees are assigned to you yet. An administrator can assign them in Accounts."}
+            : user.role === "admin" ? "There are no trainee accounts yet."
+              : "No trainees are assigned to you yet. An administrator can assign them in Accounts."}
         </span>
       )}
     </div>

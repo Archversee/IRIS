@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import ModeCards from "./ModeCards.jsx";
-import { mavisApi, mediaUrl } from "../api/mavisApi.js";
+import { mavisApi } from "../api/mavisApi.js";
 import FlownBy, { useFlownBy } from "./FlownBy.jsx";
 import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
 import { SOP_ROLES } from "../../components/Sidebar.jsx";
@@ -48,19 +48,19 @@ export default function MainMenu({ state, onStarting }) {
     }
   }
 
-  const menuBg = media?.["menu-bg"] ? mediaUrl(media["menu-bg"]) : null;
-
   return (
-    <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
+    <div className="mavis-menu mavis-menu--solo">
       <div className="mavis-menu__main">
         <div className="mavis-menu__greeting">{state?.active_lesson?.title || "Ready to fly"}</div>
         {state?.active_lesson?.start_note && (
           <div className="mavis-menu__note">{state.active_lesson.start_note}</div>
         )}
-        {/* before flying: which SOP rules this lesson checks (instructors can change the list here) */}
-        <LessonRulesCard lessonId={state?.lesson_id || state?.active_lesson?.id}
-          editable={SOP_ROLES.includes(user?.role)} />
-        <FlownBy {...flownBy} disabled={busy} />
+        {/* before flying: which SOP rules this lesson checks (instructors can change the list here), and who flies it */}
+        <div className="mavis-menu__setup">
+          <LessonRulesCard lessonId={state?.lesson_id || state?.active_lesson?.id}
+            editable={SOP_ROLES.includes(user?.role)} />
+          <FlownBy {...flownBy} disabled={busy} />
+        </div>
         <ModeCards onChoose={chooseMode} busy={busy || !flownBy.pilot} media={media} />
         {err && <div className="mavis-menu__error">{err}</div>}
       </div>
