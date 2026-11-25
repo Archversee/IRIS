@@ -30,10 +30,15 @@ NO_DEMO = {"FIND_AIRFIELD"}
 # explains them (the lesson's demo_layman / demo_pilot lines, if it has them).
 # Unusual attitudes aren't flown by the autopilot either: the demo sets the
 # attitude and moves it directly (runtime/flight_flow.py _demo_upset).
-DESCRIBE_ONLY = {"STALL", "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
+# Nor can the demo set the flaps, so the flaps-down steps are explained too.
+DESCRIBE_ONLY = {"STALL", "STALL_FLAPS", "STALL_POWER_ON", "SLOW_FLIGHT_FLAPS",
+                 "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
 # Steps that change height: they get a bigger share of the demo's minute.
 DEMO_LONG_STEPS = {"CLIMB", "DESCEND", "CLIMB_TO", "DESCEND_TO", "GLIDE",
-                   "PITCH_UP", "PITCH_DOWN", "SLOW_FLIGHT", "MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT"}
+                   "PITCH_UP", "PITCH_DOWN", "SLOW_FLIGHT", "MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT",
+                   "SLOW_TURN_LEFT", "SLOW_TURN_RIGHT"}
+# Flown slow on purpose: the demo's stall guard sits at the stall speed itself
+SLOW_DEMO = {"SLOW_FLIGHT", "SLOW_TURN_LEFT", "SLOW_TURN_RIGHT"}
 
 
 class DemoPilot:
@@ -51,7 +56,7 @@ class DemoPilot:
         # aircraft recovered (full power, hold the height). Slow flight is
         # flown slow on purpose, so its floor is the stall speed itself.
         stall = float(getattr(eng, "vs1", 48.0)) + 2.0
-        self.min_ias = stall if step == "SLOW_FLIGHT" else stall + 5.0
+        self.min_ias = stall if step in SLOW_DEMO else stall + 5.0
         self.rescued = False
         self.a0 = float(tel0.get("alt_msl", 0.0))
         self.h0 = float(tel0.get("hdg", 0.0))
@@ -161,6 +166,16 @@ class DemoPilot:
             return [{"cmd": {"ap": True, "hdg": h0, "alt": a0, "throttle": 0.3, "spd": eng.sf_kt},
                      "until": "speed", "tgt": eng.sf_kt, "max_s": 60},
                     {"cmd": {"throttle": 0.55, "spd": eng.sf_kt}, "min_s": 6, "max_s": 6}]
+        if p in ("SLOW_TURN_LEFT", "SLOW_TURN_RIGHT"):
+            # slow down as in slow flight (quick if it already is), a little
+            # extra power for the turn, then the autopilot's gentle turn
+            want = -1 if p.endswith("_LEFT") else 1
+            _, deg = eng.turn_target(p)
+            tgt = (h0 + want * deg) % 360
+            return [{"cmd": {"ap": True, "hdg": h0, "alt": a0, "throttle": 0.3, "spd": eng.sf_kt},
+                     "until": "speed", "tgt": eng.sf_kt, "max_s": 60},
+                    {"cmd": {"ap": True, "hdg": tgt, "alt": a0, "throttle": 0.6, "spd": eng.sf_kt},
+                     "until": "heading", "tgt": tgt, "min_s": 3, "max_s": 50}]
         if p in ("MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT"):
             # the autopilot turns the short way, so a half circle goes in two quarters
             want = -1 if p.endswith("_LEFT") else 1

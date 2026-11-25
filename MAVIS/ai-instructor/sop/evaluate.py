@@ -57,8 +57,9 @@ STRICTNESS: dict[str, dict] = {
                  "tol_mult": 1.0, "max_out_frac": 0.05},
 }
 DEFAULT_STRICTNESS = "standard"
-# MAVIS mode (profiles/modes.yaml) -> strictness when nobody chose one
-MODE_STRICTNESS = {"visitor": "lenient", "trainee": "standard", "pilot": "strict"}
+# MAVIS mode (profiles/modes.yaml) -> strictness when nobody chose one. The
+# same for every mode: the mode changes how MAVIS instructs, not how it judges.
+MODE_STRICTNESS = {"visitor": "standard", "trainee": "standard", "pilot": "standard"}
 STRICTNESS_HELP = {
     "debounce_s": "Ignore anything shorter than (s)",
     "sustain_s": "A band excursion fails after (s)",

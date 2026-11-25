@@ -4,12 +4,13 @@ Companion to lesson00_preflight.py, following phrases.py's spoken-content
 convention: plain Python rather than YAML, since this is narration text and not
 tunable config. See lessons/lesson00_cockpit_script_DRAFT.md for provenance.
 
-Content is written for the Cessna 172SP with the Garmin G1000 glass panel, per
-profiles/aircraft/c172sp_g1000.yaml. The panel-agnostic checkpoints (seating,
-engine controls, fuel, electrical, lighting, flaps, brakes) follow standard
-C172 cockpit references. The PFD and MFD checkpoints describe the G1000 layout
-and should be verified against the aircraft's own avionics documentation before
-being treated as authoritative.
+Content is written for the older, round-gauge Cessna 172 shown in the 3D view
+(web/static/models/cessna.glb), not the G1000 glass panel. The "pfd" and "mfd"
+ids are kept from the G1000 version of the lesson (the 3D viewers key their
+hotspots and cameras on them): "pfd" is now the flight instruments and "mfd" the
+radio stack. The model's dials are not in the standard six-pack order, so the
+narration says what each one reads rather than where it sits. Verify against the
+aircraft's own POH before treating this as authoritative.
 
 Note that flaps are described here as a lever with detents, which is what the
 physical cockpit has. The aircraft profile's flaps.control_style: switch is a
@@ -38,7 +39,7 @@ CHECKPOINTS = [
     {
         "id": "power_quadrant",
         "title": "Throttle and mixture",
-        "say": "In the middle of the panel, two levers control the engine. The "
+        "say": "In the middle of the panel, two push-pull knobs control the engine. The "
                "black one is the throttle. Push it in for more power, pull it "
                "out for less. The red one is the mixture. Push it in to richen "
                "the fuel mix, pull it out to lean it.",
@@ -51,63 +52,73 @@ CHECKPOINTS = [
         "title": "Starting the engine",
         "say": "Down on the lower left of the panel is the ignition switch: "
                "Off, Right, Left, Both, and Start, same as a car key with an "
-               "extra notch. Next to it, the master switches: battery gives the "
-               "aircraft electrical power, alternator keeps the battery charged "
-               "once the engine's running.",
+               "extra notch. Just above it, the red master switch comes in two "
+               "halves: battery gives the aircraft electrical power, alternator "
+               "keeps the battery charged once the engine's running.",
         "details": [
             "The ignition switch sits on Both once the engine is running.",
             "Battery and alternator switches are normally moved together.",
+            "The knob to the left is the primer. It pumps a little fuel into the "
+            "engine to help a cold start, and is locked back in afterwards.",
         ],
     },
     {
         "id": "fuel_system",
         "title": "Fuel system",
-        "say": "Down by your feet, or on the lower console, the fuel selector "
-               "picks which tank feeds the engine: Left, Both, or Right. "
-               "There's also an electric fuel pump switch on the panel, and a "
-               "shut-off valve for emergencies.",
+        "say": "Down on the floor between the seats, the fuel selector picks "
+               "which tank feeds the engine: Left, Both, or Right. The fourth "
+               "position, Off, cuts the fuel completely.",
         "details": [
             "Fuel selector on Both for take-off and landing.",
-            "The shut-off valve is pulled out to stop fuel reaching the engine.",
+            "Left and Right are for level flight only.",
+            "To reach Off you push the handle down and then turn it, so it can't "
+            "be selected by accident.",
         ],
     },
     {
         "id": "pfd",
-        "title": "The Primary Flight Display",
-        "say": "This big screen in front of you is the Primary Flight Display, and "
-               "everything you need to fly is on it. Airspeed on a tape down the "
-               "left side, the artificial horizon in the middle showing your "
-               "pitch and bank, altitude on a tape down the right, your climb or "
-               "descent rate next to that, and your heading on a compass rose "
-               "along the bottom.",
+        "title": "The flight instruments",
+        "say": "The round dials in front of you are the flight instruments, and "
+               "each one tells you one thing. The airspeed indicator shows how "
+               "fast you're going in knots. The attitude indicator, the blue and "
+               "black one, shows your pitch and bank. The altimeter shows how "
+               "high you are, the vertical speed indicator how quickly you're "
+               "climbing or descending, and the heading indicator which way "
+               "you're pointing.",
         "details": [
-            "The airspeed and altitude tapes replace the round dials you'd find "
-            "on an older aircraft.",
-            "The compass rose along the bottom carries a heading bug you can set.",
+            "In most Cessna 172s the main six, including a turn coordinator, sit in "
+            "two rows of three called the six-pack. The dials in this 3D model are "
+            "placed differently, so go by what each one reads.",
+            "The altimeter has to be set to the local pressure before you fly.",
+            "The heading indicator drifts, so check it against the magnetic "
+            "compass regularly.",
+            "Don't stare at one dial. Keep your eyes moving, and come back to the "
+            "attitude indicator each time.",
         ],
     },
     {
         "id": "mfd",
-        "title": "The Multi-Function Display",
-        "say": "The second screen, usually to the right, is the Multi-Function "
-               "Display. It shows a moving map of where you are, engine and "
-               "fuel information down the left side, and the radio frequencies "
-               "along the top.",
+        "title": "The radio stack",
+        "say": "In the middle of the panel is the radio stack, separate boxes one "
+               "above the other. The audio panel is at the top and picks which "
+               "radio you hear and talk on. Below it is the GPS, then two "
+               "combined radios, each with a communication side for talking and "
+               "a navigation side for beacons.",
         "details": [
-            "Engine information includes RPM, oil temperature and pressure, and "
-            "fuel quantity in each tank.",
-            "The radios and transponder are built into this screen, rather than "
-            "being separate boxes in the middle of the panel.",
+            "Each radio shows two frequencies, the one in use and the one on "
+            "standby. You set the standby, then swap them over.",
+            "The box at the bottom with the numbered buttons is the transponder, "
+            "which identifies you to air traffic control.",
         ],
     },
     {
         "id": "avionics",
         "title": "Avionics and electrical",
         "say": "Behind the yoke, the avionics master switch turns the radios and "
-               "displays on and off separately from the battery, which is useful so "
+               "GPS on and off separately from the battery, which is useful so "
                "you're not powering sensitive electronics during engine start.",
         "details": [
-            "Pitot heat stops ice blocking the tube that feeds your airspeed "
+            "Pitot heat, next to the light switches, stops ice blocking the tube that feeds your airspeed "
             "reading.",
             "The row of circuit breakers is the aircraft's fuse box. Pushed in "
             "is normal, popped out means something has tripped.",
@@ -116,7 +127,7 @@ CHECKPOINTS = [
     {
         "id": "lighting",
         "title": "Exterior lighting",
-        "say": "Five switches along here control the outside lights. The beacon "
+        "say": "The switches along here control the outside lights. The beacon "
                "is that red rotating light warning everyone the propeller is "
                "about to turn, and it goes on before you start.",
         "details": [
@@ -166,7 +177,7 @@ def find(checkpoint_id: str) -> dict | None:
 def speech_text(checkpoint: dict, step: int | None = None) -> str:
     """Full narration for one checkpoint: "Step N: title", then the intro
     line, then every detail (details carry the actual actionable specifics:
-    switch positions, what each display shows, not just supporting text). The
+    switch positions, what each instrument shows, not just supporting text). The
     step number + title are read first so Play All tells you which checkpoint
     you're on without needing to look at the screen."""
     title = checkpoint.get("title", "").rstrip()

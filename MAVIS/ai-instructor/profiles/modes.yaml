@@ -1,6 +1,14 @@
 # Training-mode policies (main menu). Config-over-code, see design doc §12.
 # Mode IDs: visitor | trainee | pilot | exam
 # Legacy aliases: casual → visitor, serious → pilot
+#
+# Scoring is the same in visitor / trainee / pilot (core/standards.py, retry
+# caps in all three): a mode only changes how MAVIS instructs.
+#   visitor  turn-by-turn, every number and how to fix it
+#   trainee  no step-by-step calls; a drift gets a short warning that says
+#            what's off, not the number or the fix ("Watch your speed, you're slow.")
+#   pilot    the same quiet filter; a drift gets only a reminder of what to
+#            check ("Check your speed.")
 
 visitor:
   label: Visitor
@@ -9,15 +17,15 @@ visitor:
   coaching: turn_by_turn   # TURN_* + PHASE_ENTER + direct nudges
   guidance: direct
   chat: true
-  score_caps: false
+  score_caps: true
   auto_practice_summary: false
 
 trainee:
   label: Trainee
   expected_jargon: pilot
   force_repeat: true
-  coaching: reactive       # clearance + safety only; no PHASE/TURN/nudge guidance
-  guidance: direct
+  coaching: reactive       # clearance, safety, lesson notes + drift warnings; no PHASE/TURN calls
+  guidance: warn           # coach.phrases WARN_TEMPLATES: "Watch your speed, you're slow."
   chat: true
   score_caps: true
   auto_practice_summary: false
@@ -26,8 +34,8 @@ pilot:
   label: Pilot
   expected_jargon: pilot
   force_repeat: true
-  coaching: reactive       # same quiet filter as trainee; guidance style unused while quiet
-  guidance: indirect
+  coaching: reactive       # same quiet filter as trainee
+  guidance: indirect       # coach.phrases INDIRECT_TEMPLATES: "Check your speed."
   chat: true
   score_caps: true
   auto_practice_summary: false

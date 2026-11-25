@@ -1,5 +1,10 @@
 # Cockpit Familiarisation: spoken checklist draft
 
+> **Superseded where it describes the G1000.** The 3D view now uses `cessna.glb`, an older
+> round-gauge 172, and `lesson00_cockpit.py` was rewritten to match (throttle and mixture
+> knobs, ignition, fuel selector, flight instruments, radio stack, avionics, lighting). The
+> module is the current text; this draft is kept for provenance.
+
 Working draft for `lesson00_cockpit` (catalog stub today: `available: false`, no `kind`,
 no content module). Companion to `lesson00_preflight_script_DRAFT.md`, same convention:
 this becomes `lessons/lesson00_cockpit.py`: plain Python, same shape as

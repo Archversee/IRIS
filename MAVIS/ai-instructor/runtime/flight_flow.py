@@ -430,6 +430,10 @@ def build_flight_flow(rt):
         unit = (float(rt.lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
         rt.demo_ctl["skip"].clear()
         rt.state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
+        # the to-do list follows the demo, step by step, as it will on the
+        # trainee's turn (FamiliarizationEngine.demo_tracker)
+        tracker = rt.engine.demo_tracker(steps) if hasattr(rt.engine, "demo_tracker") else None
+        rt.demo_ctl["todo"] = tracker
         flew = skipped = False
         try:
             await rt.coach.say(phrases.render("FAM_DEMO_START", {}))
@@ -447,6 +451,8 @@ def build_flight_flow(rt):
                     # shown for real: put in the attitude and recovered, frozen
                     rt.state["demo"] = {"n": i + 1, "of": len(steps), "describe": False,
                                         "title": (rt.engine.notes.get(step) or {}).get("title") or step}
+                    if tracker:
+                        tracker.demo_step(step, Telemetry(**dict(rt.state.get("tel") or tel0)))
                     await _set_frozen(True)
                     shown = await _demo_upset(step, gen)
                     skipped = rt.demo_ctl["skip"].is_set() or gen != rt.run_gen["n"]
@@ -466,6 +472,10 @@ def build_flight_flow(rt):
                                  "title": data.get("title") or STEP_TITLES.get(step, step),
                                  "describe": step in DESCRIBE_ONLY}
                 rt.state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
+                if tracker:
+                    tracker.demo_step(step, Telemetry(**tel), note=(
+                        "MAVIS explains this one \u2014 you fly it on your turn"
+                        if step in DESCRIBE_ONLY else ""))
                 pilot = DemoPilot(step, rt.engine, tel, mock=mock, base_throttle=base_th,
                                   max_s=max(4.0, unit * weight[step]))
                 speak = asyncio.create_task(rt.coach.say(phrases.render("LESSON_NOTE", data), phase=step))
@@ -495,6 +505,8 @@ def build_flight_flow(rt):
             await rt.loop.run_in_executor(None, rt.sim.demo_control, {"ap": False, "rudder": 0.0})
             rt.state["demo"] = None
             rt.state["look_at"] = None
+            if rt.demo_ctl.get("todo") is tracker:    # (not a newer run's: a Restart starts its own)
+                rt.demo_ctl["todo"] = None
             if flew and gen == rt.run_gen["n"]:
                 back_t = None
                 try:

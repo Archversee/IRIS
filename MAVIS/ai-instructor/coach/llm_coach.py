@@ -22,7 +22,8 @@ VERBATIM = frozenset({
     "PRE_TURN", "PRE_TURN_ALT",
     "ABEAM_FLAPS",
     "PHASE_ENTER_DEBRIEF",
-    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL",
+    "FAM_TURN_REMIND", "FAM_YAW_REMIND", "FAM_STALL", "FAM_STALL_FLAPS",
+    "FAM_STALL_GOOD", "FAM_STALL_LOST",   # the recovery and its height loss: never reworded
     "FAM_ROLL_OUT", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
     "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW", "FAM_UPSET_STALLED",
     "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET",   # the recovery order: never reworded
@@ -64,7 +65,8 @@ def rank(ev: CoachEvent) -> int:
 # behind a line already being spoken
 _PART_CUES = frozenset({"FAM_ROLL_OUT", "ROLL_OUT_LEG", "FAM_CENTRE_PEDALS", "FAM_THROTTLE_BACK", "FAM_LEVEL_OFF",
                         "FAM_UPSET_GOOD", "FAM_UPSET_FIX_HIGH", "FAM_UPSET_FIX_LOW",
-                        "FAM_UPSET_STALLED", "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET"})
+                        "FAM_UPSET_STALLED", "FAM_UPSET_FAST", "FAM_UPSET_NOT_SET",
+                        "FAM_STALL_GOOD", "FAM_STALL_LOST"})
 
 
 def clip_spoken(text: str, max_words: int = 30) -> str:
@@ -293,6 +295,7 @@ class Coach:
         fallback = phrases.render(ev.code, ev.data)
         # scripted / timing-critical lines are spoken verbatim
         if (ev.code in VERBATIM or ev.code.startswith(("PHASE_ENTER_", "VAR_"))
+                or phrases.fixed_wording(ev.code)     # Trainee / Pilot drift cue: as worded
                 or not self.llm_ok):
             return fallback
         prompt = (f"Event: {ev.code} severity={ev.severity} data={ev.data}.\n"

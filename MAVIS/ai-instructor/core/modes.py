@@ -63,8 +63,11 @@ def allow_coach_event(policy: dict, code: str, severity: str) -> bool:
 
     turn_by_turn  Visitor: every callout (PHASE_ENTER, TURN_*, nudges, …)
     reactive      Trainee/Pilot: prepared flyers; no scripted guidance.
-                   Only take-off clearance, end debrief cue, safety, and the
-                   lesson's own teaching points (LESSON_NOTE, e.g. night cues).
+                   Only take-off clearance, end debrief cue, safety, the
+                   lesson's own teaching points (LESSON_NOTE, e.g. night cues),
+                   and the drift cues (coach.phrases.DRIFT_CUES) -- worded per
+                   mode: Trainee "Watch your speed, you're slow.", Pilot
+                   "Check your speed." (coach.phrases.configure guidance)
     silent        Exam: safety-only
     """
     level = policy.get("coaching", "turn_by_turn")
@@ -73,6 +76,8 @@ def allow_coach_event(policy: dict, code: str, severity: str) -> bool:
     if level == "reactive":
         if severity == "safety":
             return True
-        return code in ("PHASE_ENTER_TAKEOFF_ROLL", "PHASE_ENTER_DEBRIEF", "LESSON_NOTE")
+        from coach.phrases import DRIFT_CUES
+        return (code in ("PHASE_ENTER_TAKEOFF_ROLL", "PHASE_ENTER_DEBRIEF", "LESSON_NOTE")
+                or code in DRIFT_CUES)
     # turn_by_turn: everything (including TURN_*)
     return True

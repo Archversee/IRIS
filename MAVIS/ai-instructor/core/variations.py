@@ -1,4 +1,4 @@
-"""Circuit variations (catalog module "Circuit Variations"): Go-Around,
+"""Circuit variations (catalog module "Advanced Flight"): Go-Around,
 Short-Field Landing and Soft-Field Technique. Each is a full circuit from
 runway 02 on the circuit engine (lesson_engine.py / phase_detector.py), with
 one extra piece picked by the lesson's `variation:` key:

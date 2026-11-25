@@ -44,5 +44,5 @@ class Runtime:
         # provided by runtime/sop_live.py
         "live_rules", "_check_rules_live", "_finish_rule_checks", "_load_sop",
         # provided by runtime/speech.py
-        "init_tts", "prewarm_speech", "reading_say", "speak", "stop_speech", "tts_dir", "tts_pool",
+        "init_tts", "lipsync", "lipsync_live", "prewarm_speech", "reading_say", "speak", "stop_speech", "tts_dir", "tts_pool",
     )

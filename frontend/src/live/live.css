@@ -240,6 +240,12 @@
   font-size: var(--fs-3xl); font-weight: 800; letter-spacing: 0.08em; color: var(--accent);
 }
 .mavis-avatar.is-speaking { box-shadow: 0 0 0 2px var(--accent), 0 0 24px 4px rgba(74,168,255,0.5); }
+/* a fixed sentence's lip-sync clip, laid over the idle loop while it plays */
+.mavis-avatar .mavis-avatar__face {
+  position: absolute; inset: 0;
+  opacity: 0; transition: opacity 120ms ease-out; pointer-events: none;
+}
+.mavis-avatar .mavis-avatar__face.is-on { opacity: 1; }
 
 /* ---- Chat ---- */
 .mavis-chat {

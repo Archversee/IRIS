@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { setFace } from "../voice/faceSync.js";
 
 // MAVIS doesn't play its voice itself when voice.output is "tablet" (the
 // default in config.yaml): it synthesises each line, a sentence at a time, to
@@ -8,6 +9,9 @@ import { useEffect, useRef } from "react";
 // waits for it instead of cutting it off. clips lists only what MAVIS is
 // saying now. gen changes only when MAVIS is cut off (a more urgent callout,
 // a new session, stop): then playback stops and the queue is dropped. URLs are MAVIS-origin paths, re-based through the /mavis proxy.
+// While a sentence plays, the avatar shows its talking loop (voice/faceSync.js);
+// a fixed sentence with a pre-made lip-sync clip comes with `video`, and then
+// the avatar shows that clip in step with this audio instead.
 const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
 const MAX_QUEUE = 10;     // far behind (tablet asleep, network stall): skip to the newest
 
@@ -18,7 +22,7 @@ export function useInstructorVoice(audio, active) {
   const voiceRef = useRef(null);
   const lastSeqRef = useRef(null);     // newest clip queued or played
   const genRef = useRef(null);
-  const queueRef = useRef([]);         // urls waiting their turn
+  const queueRef = useRef([]);         // clips ({url, video?, seq}) waiting their turn
   const playingRef = useRef(false);
   const nextRef = useRef(() => {});    // start the next queued clip
 
@@ -43,14 +47,17 @@ export function useInstructorVoice(audio, active) {
     const voice = voiceRef.current;
     if (!voice) return;
     const next = () => {
-      const url = queueRef.current.shift();
-      if (!url) { playingRef.current = false; return; }
+      const clip = queueRef.current.shift();
+      if (!clip) { playingRef.current = false; setFace(null); return; }
       playingRef.current = true;
-      voice.src = "/mavis" + url;
+      voice.src = "/mavis" + clip.url;
+      // every sentence: the avatar talks while it plays (its own lip-sync clip if it has one)
+      setFace({ video: clip.video ? "/mavis" + clip.video : null, audio: voice, seq: clip.seq });
       voice.play().catch((e) => {
         console.warn("MAVIS voice blocked by the browser:", e);
         playingRef.current = false;
         queueRef.current = [];
+        setFace(null);
       });
     };
     nextRef.current = next;
@@ -64,6 +71,7 @@ export function useInstructorVoice(audio, active) {
     queueRef.current = [];
     playingRef.current = false;
     voiceRef.current?.pause();
+    setFace(null);
   };
 
   // Starting to listen (lesson started, scorecard closed): MAVIS lists only
@@ -87,8 +95,7 @@ export function useInstructorVoice(audio, active) {
   // never fires "ended", so playingRef stayed true and every later line just
   // queued, silent. A real withdrawal (stop_speech) arrives as a new gen below.
   useEffect(() => {
-    if (audio && audio.gen == null && !audio.url) stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!audio?.url) { voiceRef.current?.pause(); setFace(null); }
   }, [audio?.url]);
 
   useEffect(() => {
@@ -102,11 +109,11 @@ export function useInstructorVoice(audio, active) {
     const fresh = clipsOf(audio).filter((c) => lastSeqRef.current == null || c.seq > lastSeqRef.current);
     if (!fresh.length) return;
     lastSeqRef.current = fresh[fresh.length - 1].seq;
-    queueRef.current.push(...fresh.map((c) => c.url));
+    queueRef.current.push(...fresh);
     if (queueRef.current.length > MAX_QUEUE) queueRef.current = queueRef.current.slice(-MAX_QUEUE);
     if (!playingRef.current) nextRef.current();
   }, [active, audio]);
 
   // Stop talking when leaving the page.
-  useEffect(() => () => voiceRef.current?.pause(), []);
+  useEffect(() => () => { voiceRef.current?.pause(); setFace(null); }, []);
 }

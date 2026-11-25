@@ -9,7 +9,7 @@ __pycache__/
 ai-instructor/data/models/ecapa/*.ckpt
 
 # Downloaded 3D assets (large binaries — keep locally, don't commit).
-# cockpit.glb (the preflight/cockpit walk-around model) goes here.
+# cessna.glb (the preflight/cockpit walk-around model) goes here.
 ai-instructor/web/static/models/*
 !ai-instructor/web/static/models/.gitkeep
 

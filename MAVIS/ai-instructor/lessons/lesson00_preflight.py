@@ -17,8 +17,8 @@ CHECKPOINTS = [
         "details": [
             "Remove the control lock if fitted.",
             "Master switch ON briefly: check exterior lights (nav, beacon, strobe, "
-            "landing light) and pitot heat, confirm the PFD powers up and fuel "
-            "gauges register, then OFF again before you go outside.",
+            "landing light) and pitot heat, confirm the fuel gauges "
+            "register, then OFF again before you go outside.",
             "Fuel selector to BOTH.",
             "Flaps down (gives access to check them on the walk-around).",
         ],

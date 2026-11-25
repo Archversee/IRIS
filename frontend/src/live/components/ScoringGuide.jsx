@@ -20,27 +20,21 @@ export function ScoringGuideContent() {
         <tbody><tr><td>Total</td><td>88+</td><td>76+</td><td>64+</td><td>50+</td><td>below 50</td></tr></tbody>
       </table>
       <p className="mavis-guide-intro">
-        How strict the judging is depends on your level. Every scorecard also shows how the
-        same flight would grade at the <b>check-ride standard</b> (the Pilot level).
+        Visitor, Trainee and Pilot are all judged the same way, at the lesson's own standard (a
+        pass, D, at about height ±100 ft and speed ±7 kt on average). Your mode only changes how
+        MAVIS instructs you. Every scorecard also shows how the same flight would grade at the
+        stricter <b>check-ride standard</b> (0.7× the lesson's tolerances, as in Exam mode).
       </p>
-      <table className="mavis-guide-table">
-        <thead><tr><th>Level</th><th>Tolerances</th><th>Still a pass (D) at about…</th></tr></thead>
-        <tbody>
-          <tr><td>Visitor</td><td>1.5× the lesson's</td><td>height ±150 ft, speed ±11 kt</td></tr>
-          <tr><td>Trainee</td><td>the lesson's own</td><td>height ±100 ft, speed ±7 kt</td></tr>
-          <tr><td>Pilot / Exam (check-ride)</td><td>0.7× the lesson's</td><td>height ±70 ft, speed ±5 kt</td></tr>
-        </tbody>
-      </table>
       <p className="mavis-guide-note">
         Examples are average errors over the whole flight in Your First Circuit; each lesson sets
         its own base tolerances (a short-field approach is tighter, for instance).
       </p>
-      <p className="mavis-guide-intro">Retries (in <b>Trainee</b> and <b>Pilot</b> modes) cap your best possible total:</p>
+      <p className="mavis-guide-intro">Retries (in <b>Visitor</b>, <b>Trainee</b> and <b>Pilot</b> modes) cap your best possible total:</p>
       <table className="mavis-guide-table">
         <thead><tr><th>Retries</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4+</th></tr></thead>
         <tbody><tr><td>Max total</td><td>100</td><td>85</td><td>78</td><td>70</td><td>60</td></tr></tbody>
       </table>
-      <p className="mavis-guide-note">In Visitor and Exam modes retries are shown but don't cap your score.</p>
+      <p className="mavis-guide-note">In Exam mode retries are shown but don't cap your score.</p>
       <p className="mavis-guide-easter">There's a rare top mark above A — you'll know it if you earn it.</p>
     </>
   );

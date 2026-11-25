@@ -31,7 +31,7 @@ export default function TodoCard({ todo }) {
   if (!todo?.steps?.length) return null;
   return (
     <div className="mavis-todo" aria-label="Lesson to-do list">
-      <div className="mavis-todo__title">{todo.complete ? "Exercise complete" : "To do"}</div>
+      <div className="mavis-todo__title">{todo.complete ? "Exercise complete" : todo.title || "To do"}</div>
       <ol className="mavis-todo__list">
         {todo.steps.map((s) => (
           <li key={s.id} className={"mavis-todo__step is-" + s.status}>

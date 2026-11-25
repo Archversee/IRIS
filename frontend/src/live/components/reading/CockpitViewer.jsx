@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { loadThree } from "./loadThree.js";
-import { readingCfg } from "./readingConfig.js";
+import { readingCfg, applySeeThrough } from "./readingConfig.js";
 
 // Ported from the original app's ensurePf3D()/buildHotspots()/animate()
 // (web/static/index.html). Same scene setup, same numbered-badge hotspots,
@@ -136,6 +136,7 @@ export default function CockpitViewer({ lessonId, checkpoints, selectedId, onPic
           "/mavis" + cfg.model,
           (gltf) => {
             if (cancelled) return;
+            applySeeThrough(gltf.scene, cfg.seeThrough);
             scene.add(gltf.scene);
             const box = new THREE.Box3().setFromObject(gltf.scene);
             const center = box.getCenter(new THREE.Vector3());
