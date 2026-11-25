@@ -164,6 +164,9 @@ async def amain(cfg):
                    # True from Start until quit/restart -- lets the web UI
                    # reattach to a running session after navigating away.
                    "lesson_running": False,
+                   # bumped by Finish & save / discard on any screen (close_run): every
+                   # other screen still showing that run goes back to its menu
+                   "closed": 0,
                    "flight_events": [],
                    "flights": [],
                    "sim_aircraft": None,   # aircraft loaded in the sim, read at lesson start (sop_live)
@@ -244,7 +247,7 @@ async def amain(cfg):
                "chat": chat, "mute": rt.mute, "intro": rt.intro, "retry": retry,
                "configure_session": rt.configure_session,
                "select_lesson": rt.select_lesson,
-               "quit": rt.quit_lesson, "score_submit": rt.score_submit, "score_drop": rt.score_drop,
+               "quit": rt.quit_lesson, "close": rt.close_run, "score_submit": rt.score_submit, "score_drop": rt.score_drop,
                "compare_reference": rt.compare_reference, "save_reference": rt.save_reference,
                "set_reference": rt.set_reference,
                "reading_say": rt.reading_say,

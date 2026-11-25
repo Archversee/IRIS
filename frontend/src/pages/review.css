@@ -101,6 +101,78 @@
   .rev--docked .rev-bottom--telemetry > .ft-card { grid-column: 2; grid-row: 1 / span 2; }
 }
 .rev-dock__slot { display: flex; flex-direction: column; min-height: 0; border-radius: 10px; transition: box-shadow .2s; }
+/* ---- Debrief + SOP column popped out to its own window (DockPopout.jsx) ----
+   On the page: no column, the videos/timeline take the full width. */
+.rev--docked.rev--popped { grid-template-columns: minmax(0, 1fr); }
+.rev--docked.rev--popped .rev-main { --rev-scr-w: calc((100cqw - 44px) / 3); }
+.rev-popbtn, .rev-putback { white-space: nowrap; }
+.rc-head .rev-popbtn { padding: 3px 10px; font-size: var(--fs-sm); }
+/* ---- The pop-out window: fills whatever monitor/size it's given ----
+   - text scales with the window (bigger on a big monitor, readable from a step back)
+   - narrow or portrait: the two panes stacked, each scrolling on its own
+   - landscape: side by side (Debrief : SOP = 1 : 1.35)
+   - very wide: the lists inside also go into columns, and long lines are capped */
+.popout-body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden; }
+#popout-root:empty::before {
+  content: "Open a session's Review to see its Debrief and SOP rule checks here.";
+  display: block; padding: 48px 24px; text-align: center; color: var(--muted); font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+.rev.rev--popout {
+  --fs-md: clamp(14px, 0.35vw + 8.5px, 19px);
+  --fs-xs: calc(var(--fs-md) - 2px);
+  --fs-sm: calc(var(--fs-md) - 1px);
+  --fs-base: calc(var(--fs-md) + 1px);
+  --fs-lg: calc(var(--fs-md) + 3px);
+  --fs-xl: calc(var(--fs-md) + 4px);
+  --fs-2xl: calc(var(--fs-md) + 6px);
+  --pop-gap: clamp(8px, 0.6vw, 16px);
+  position: static; display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh; width: 100%;
+  font-size: var(--fs-md);
+}
+.rev-popout__head {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px;
+  padding: var(--pop-gap) var(--pop-gap) 0; color: var(--rev-text);
+}
+.rev-popout__head h1 { margin: 0; font-size: var(--fs-xl); font-weight: 700; white-space: nowrap; }
+.rev-popout__meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-sm); color: var(--rev-text); }
+.rev-popout__meta small {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--rev-muted); margin-right: 4px;
+}
+.rev-dock.rev-dock--popout {
+  flex: 1; min-height: 0; padding: var(--pop-gap); gap: var(--pop-gap);
+  /* stacked: Debrief only as tall as it needs (at most ~45%), SOP checks get the rest */
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: fit-content(45%) minmax(0, 1fr);
+}
+.rev--popout .rc-pane { padding: 0 clamp(12px, 0.8vw, 20px) clamp(12px, 0.8vw, 20px); }
+.rev--popout .rc-pane > .rc-head { margin: 0 calc(-1 * clamp(12px, 0.8vw, 20px)) 10px; padding: 10px clamp(12px, 0.8vw, 20px); }
+.rev--popout .rc-pane > .rc-head h2 { font-size: var(--fs-lg); }
+/* Debrief: the "flight at a glance" tiles use the width */
+.rev--popout .db-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 8px; }
+.rev--popout .db-tile { padding: 8px 10px; }
+/* comfortable reading width for the written debrief */
+.rev--popout .db-p, .rev--popout .db-points { max-width: 80ch; }
+/* landscape, wide enough: side by side */
+@media (orientation: landscape) and (min-width: 900px) {
+  .rev-dock.rev-dock--popout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); grid-template-rows: minmax(0, 1fr); }
+}
+/* a big monitor: the rule lists go into columns too */
+@media (min-width: 1700px) {
+  .rev--popout #rev-dock-rules .rc-group {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 0 var(--pop-gap); align-items: start;
+  }
+  .rev--popout #rev-dock-rules .rc-group > h3, .rev--popout #rev-dock-rules .rc-group > .rc-allmet,
+  .rev--popout #rev-dock-rules .rc-group > .rc-muted { grid-column: 1 / -1; }
+  .rev--popout .rc-signoff textarea { min-height: 90px; }
+}
+/* very short windows: one scroll for both panes instead of two cramped ones */
+@media (max-height: 560px) {
+  .popout-body { overflow: auto; }
+  .rev.rev--popout { height: auto; min-height: 100vh; }
+  .rev-dock.rev-dock--popout { grid-template-rows: none; }
+  .rev--popout .rc-pane { overflow: visible; }
+}
 /* a title-bar chip was clicked: point at its pane */
 .rev-dock__slot.is-flash { box-shadow: 0 0 0 2px var(--rev-cyan); }
 /* Session Review only: everything at 88% scale so the dense layout fits.
@@ -469,26 +541,6 @@
   box-shadow: 0 0 calc(8cqw / 19.2) rgba(255, 46, 99, 0.8), inset 0 0 calc(8cqw / 19.2) rgba(255, 46, 99, 0.8);
 }
 
-/* ---- events row (below the timeline chart) -- each button is positioned
-   by the same time-domain fraction as its ReferenceArea, left-padded/
-   right-padded to match the chart's own margin+YAxis width, so a button
-   lines up directly under the left edge of its highlighted band ---- */
-.phase-buttons-label {
-  margin-top: 8px; font-size: var(--fs-xs); font-weight: 600;
-  color: var(--rev-muted); letter-spacing: .03em;
-}
-.phase-buttons-row {
-  position: relative; height: 24px; margin-top: 4px;
-  padding-left: 2px; padding-right: 8px;
-}
-.phase-btn {
-  position: absolute; top: 0;
-  font-size: var(--fs-xs); font-weight: 600; padding: 3px 10px; border-radius: 999px;
-  background: var(--rev-panel-2); border: 1px solid; cursor: pointer;
-  white-space: nowrap;
-}
-.phase-btn:hover { filter: brightness(1.25); }
-.phase-btn.ev { overflow: hidden; text-overflow: ellipsis; text-align: center; padding: 3px 4px; }
 /* Session timeline: the shaded event areas over the chart are display only --
    clicks and drags pass straight through to the chart (scrubbing). */
 .rev-timeline .recharts-reference-area,
@@ -949,8 +1001,6 @@
 .rc-tools select, .rc-judge select, .rc-judge input, .rc-signoff textarea {
   font: inherit; background: var(--rev-bg); color: var(--rev-text); border: 1px solid var(--rev-line); border-radius: 6px; padding: 4px 8px;
 }
-.rc-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-.rc-preset { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-sm); }
 .rc-btn {
   font: inherit; cursor: pointer; padding: 4px 12px; border-radius: 6px;
   background: var(--rev-panel); border: 1px solid var(--border-strong, var(--rev-line)); color: var(--rev-text);
@@ -967,8 +1017,8 @@
 .rc-rule.sev-warning { border-left-color: #ff5c5c; }
 .rc-rule.sev-caution { border-left-color: var(--rev-amber); }
 .rc-rule.sev-advisory { border-left-color: var(--rev-cyan); }
-.rc-rule-head { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-.rc-title { font-weight: 600; flex: 1; }
+.rc-rule-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; cursor: pointer; }
+.rc-title { font-weight: 600; flex: 1 1 140px; min-width: 0; }
 .rc-pill { font-size: var(--fs-sm); font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
 .rc-pill.pass { color: var(--rev-green); }
 .rc-pill.fail { color: var(--danger); }
@@ -987,8 +1037,33 @@
 }
 .rc-detail { margin-top: 6px; }
 .rc-detail blockquote { margin: 0 0 4px; padding-left: 10px; border-left: 2px solid var(--rev-line); color: var(--rev-muted); }
+/* "N more couldn't be judged in this flight" under the tally tiles */
+.rc-unjudged { margin: 2px 0 8px; }
+.rc-unjudged__toggle {
+  background: none; border: 0; padding: 2px 0; color: var(--rev-muted); font: inherit; font-size: var(--fs-sm);
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer;
+}
+.rc-unjudged__toggle:hover { color: var(--rev-text); }
+.rc-unjudged__list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rc-unjudged__list li {
+  display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 6px 8px; border-radius: 6px;
+  background: var(--rev-panel-2); border: 1px solid var(--rev-line); font-size: var(--fs-sm);
+}
+.rc-unjudged__list li .rc-muted { grid-column: 2; }
+.rc-unjudged__what {
+  grid-row: span 2; align-self: start; padding: 0 7px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600;
+  border: 1px solid var(--rev-line); color: var(--rev-muted); white-space: nowrap;
+}
 .rc-judge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .rc-judge input { flex: 1; min-width: 140px; }
+/* Met / Not met: one click saves; the current verdict is filled in */
+.rc-judge__btns { display: flex; align-items: center; gap: 6px; flex: none; }
+.rc-judge__btns .rc-btn { min-width: 86px; font-weight: 600; }
+.rc-judge__met:hover:not(:disabled) { border-color: var(--good); color: var(--good); }
+.rc-judge__notmet:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.rc-judge__met.is-on { background: color-mix(in srgb, var(--good) 18%, transparent); border-color: var(--good); color: var(--good); }
+.rc-judge__notmet.is-on { background: color-mix(in srgb, var(--danger) 16%, transparent); border-color: var(--danger); color: var(--danger); }
+.rc-judge__btns .rc-btn.is-on:disabled { opacity: 1; }
 .rc-signoff textarea { width: 100%; resize: vertical; }
 .rc-row { display: flex; gap: 8px; margin-top: 8px; }
 
@@ -1019,7 +1094,8 @@
 .rc-tally__item.is-fail.is-zero.is-on { --tc: var(--rev-green); }
 .rc-tally__item.is-pass.is-on { --tc: var(--rev-green); }
 .rc-tally__item.is-instructor.is-on { --tc: var(--rev-violet); }
-.rc-group h3 .rc-back { float: right; font-weight: 500; }
+.rc-group h3:has(.rc-back) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.rc-group h3 .rc-back { margin-left: auto; font-weight: 500; }
 
 .rc-allmet {
   padding: 10px 12px; border-radius: 8px; color: var(--rev-green);
@@ -1028,7 +1104,6 @@
 /* instructor's verdict + note on one line under each rule */
 .rc-judge select { width: auto; flex: 0 1 170px; min-width: 0; }
 .rc-judge input { width: auto; }
-.rc-tools--recheck { margin-top: 14px; }
 
 /* a broken rule: big "N×" on the left (coloured by severity), what the rule
    asks and what happened on the right, then each time it was broken */

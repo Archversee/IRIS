@@ -5,6 +5,7 @@ start (sop/runtime.py) and its rules run through the same evaluator IRIS's
 Review re-runs post-flight (sop/evaluate.py), so the two never disagree.
 The tick loop calls rt._check_rules_live(tel) once per tick."""
 from __future__ import annotations
+import asyncio
 import logging
 import time
 import uuid
@@ -47,7 +48,8 @@ def build_sop_live(rt):
             except Exception as e:
                 log.info("aircraft ident failed: %s", e)
         _publish_aircraft(ident)
-        rt.state["sop"] = await sop_rt.load(ident)
+        # the lesson actually selected says which kind of rules it uses (normal / emergency / instrument)
+        rt.state["sop"] = await sop_rt.load(ident, (rt.lesson or {}).get("rules_lesson_type"))
         log.info("SOP for this flight: %s", rt.state["sop"])
         try:
             await _start_rule_checks()
@@ -61,21 +63,24 @@ def build_sop_live(rt):
     # and advisories are shown; a broken WARNING rule is also spoken
     # (not in exam mode, at most once per rule every RULE_REPEAT_S).
     RULE_REPEAT_S = 30.0
-    live_rules: dict = {"ev": None, "ctx": None, "spoken": {}}
+    # eye samples reach IRIS's database in batches: wait this long after the flight before reading them
+    EYE_FLUSH_WAIT_S = 3.0
+    live_rules: dict = {"ev": None, "ctx": None, "spoken": {}, "phases": []}
     rt.state["sop_live"] = None
     try:
         from sop.evaluate import RuleEvaluator, sample_from_telemetry, summarize
         from sop.results import ResultStore, aircraft_note, snapshot
-        from sop import check_settings
+        from sop.lesson_plans import LessonPlans
         rule_results = ResultStore(sop_rt.store, rt.cfg) if sop_rt is not None else None
+        lesson_plans = LessonPlans(sop_rt.store) if sop_rt is not None else None
     except ImportError as e:
         log.info("live rule checks disabled (%s)", e)
         rule_results = None
 
     def _rules_disabled() -> dict:
-        """Switched off on purpose (SOP Rules page): the live views show nothing."""
-        log.info("live rule checks switched off for circuit flights (SOP Rules page)")
-        return {"status": "disabled", "reason": "Rule checks are switched off for circuit flights.",
+        """Switched off on purpose for this lesson (SOP Rules > Rules per lesson): the live views show nothing."""
+        log.info("rule checks switched off for lesson %s (SOP Rules > Rules per lesson)", rt.lesson_id)
+        return {"status": "disabled", "reason": "Rule checks are switched off for this lesson.",
                 "n_rules": 0, "active": [], "recent": [], "n_findings": 0, "summary": None}
 
     def _rules_off(reason: str) -> dict:
@@ -100,22 +105,32 @@ def build_sop_live(rt):
                 f"({sop.get('n_unresolved') or 0} left out for a missing aircraft speed).")
 
     async def _start_rule_checks():
-        live_rules.update(ev=None, ctx=None, spoken={})
+        live_rules.update(ev=None, ctx=None, spoken={}, phases=[])
         rt.state["sop_live"] = None
         if rule_results is None:
             rt.state["sop_live"] = _rules_off("Rule checks are disabled in MAVIS (needs asyncpg; see the startup log).")
-            return
-        # an instructor can switch checks off for circuit flights; Free Flight is always checked
-        if not check_settings.checks_on_for(rt.cfg, bool(rt.session.get("free_flight"))):
-            rt.state["sop_live"] = _rules_disabled()
             return
         act = sop_rt.active if sop_rt is not None else None
         if not act or not act.get("rules"):
             rt.state["sop_live"] = _rules_off(_why_no_rules())
             return
+        rules, plan = act["rules"], None
+        # A curriculum lesson checks only the rules on its own list (SOP Rules > Rules per lesson),
+        # or none if its checks are switched off. Free Flight is always checked against every rule.
+        if not rt.session.get("free_flight") and lesson_plans is not None:
+            try:
+                rules, plan = await lesson_plans.rules_for_flight(rt.lesson_id, rules)
+            except Exception as e:      # DB hiccup: say so rather than silently check everything
+                rt.state["sop_live"] = _rules_off(f"Couldn't read this lesson's rule list: {e}")
+                return
+            if rules is None:
+                rt.state["sop_live"] = _rules_disabled()
+                return
+            if not rules:
+                rt.state["sop_live"] = _rules_off("No rules are on this lesson's list (SOP Rules > Rules per lesson).")
+                return
         strictness, why = await rule_results.strictness_for(
             rt.session.get("name"), rt.session.get("mode"), rt.session.get("strictness"))
-        rules = act["rules"]
         live_rules["ctx"] = {
             "aircraft_profile": (rt.state.get("sop") or {}).get("aircraft_id"), "lesson_id": rt.lesson_id,
             "lesson_type": (rt.state.get("sop") or {}).get("lesson_type"),
@@ -125,16 +140,23 @@ def build_sop_live(rt):
         live_rules["ev"] = RuleEvaluator(rules, strictness)
         rt.state["sop_live"] = {"status": "checking", "strictness": strictness, "strictness_why": why,
                              "aircraft_note": live_rules["ctx"]["aircraft_note"],
-                             "n_rules": len(rules),
+                             "n_rules": len(rules), "lesson_plan": plan,
                              "active": [], "recent": [], "n_findings": 0, "summary": None}
-        log.info("checking %d rule(s) live, %s (%s)", len(rules), strictness, why)
+        log.info("checking %d rule(s) live, %s (%s)%s", len(rules), strictness, why,
+                 f"; lesson list: {plan['n_left_off']} rule(s) left off" if plan else "")
 
     def _check_rules_live(tel) -> None:
         ev = live_rules["ev"]
         sl = rt.state.get("sop_live")
         if ev is None or sl is None:
             return
-        found = ev.step(sample_from_telemetry(tel.as_dict(), rt._flight_phase()))
+        sample = sample_from_telemetry(tel.as_dict(), rt._flight_phase())
+        # phase changes over time, for the eye-tracking rules judged after the flight (sop/gaze.py)
+        ph = live_rules["phases"]
+        if not ph or ph[-1][1] != sample["phase"]:
+            ph.append((sample["t"], sample["phase"]))
+        live_rules["last_t"] = sample["t"]
+        found = ev.step(sample)
         sl["active"] = ev.active()
         if not found:
             return
@@ -159,9 +181,10 @@ def build_sop_live(rt):
         if ev is None or ctx is None:
             return
         res = ev.results()
+        sid = rt.session.get("session_id")
+        res = await _judge_gaze(res, ctx, sid, ev)
         if rt.state.get("sop_live") is not None:
             rt.state["sop_live"].update(active=[], summary=summarize(res))
-        sid = rt.session.get("session_id")
         if not sid or rule_results is None:
             return
         try:
@@ -170,6 +193,28 @@ def build_sop_live(rt):
                                     t_first=ev.t_first, t_last=ev.t_last)
         except Exception as e:      # IRIS not running (no sessions row) / DB down: live view still has it
             log.warning("couldn't store this flight's rule checks: %s", e)
+
+    async def _judge_gaze(res: list, ctx: dict, sid: str | None, ev) -> list:
+        """Eye-tracking rules can't be judged tick by tick (the eye samples go to
+        IRIS, not MAVIS): once the flight is over, read them back with the AOI
+        zones and judge each gaze rule over its phases (sop/gaze.py)."""
+        rules = [r for r in ctx.get("rules") or [] if r.get("kind") == "gaze"]
+        if not rules or not sid or sop_rt is None or ev.t_first is None:
+            return res
+        try:
+            from sop.evaluate import STRICTNESS
+            from sop.gaze import judge_all, load_eye, phase_spans
+            await asyncio.sleep(EYE_FLUSH_WAIT_S)
+            async with sop_rt.store.acquire() as c:
+                eye, zones = await load_eye(c, uuid.UUID(sid), ev.t_first, ev.t_last)
+            spans = phase_spans(list(live_rules["phases"]) + [(live_rules.get("last_t") or ev.t_last, None)])
+            gaze = judge_all(rules, spans, eye, zones, float(STRICTNESS[ctx["strictness"]]["tol_mult"]))
+            log.info("eye-tracking rules judged from %d eye sample(s): %s", len(eye),
+                     ", ".join(f"{g['title']}={g['verdict']}" for g in gaze.values()))
+            return [gaze.get(x["rule_id"], x) for x in res]
+        except Exception as e:      # DB down / no eye table: they stay "not checked"
+            log.warning("couldn't judge the eye-tracking rules: %s", e)
+            return res
 
     rt._check_rules_live = _check_rules_live
     rt._finish_rule_checks = _finish_rule_checks

@@ -166,14 +166,32 @@ def build_speech(rt):
     async def init_tts():
         """Voice engines (Kokoro) can take a minute to load - do it in the
         background so the web UI is reachable immediately."""
+        log.info("TTS loading (the first start downloads the Kokoro voice model, ~330 MB) ...")
         rt.tts = await rt.loop.run_in_executor(None, TTS, rt.cfg["voice"])
         rt.tts_ready.set()
+
+    TTS_WAIT_S = 10.0         # how long the first line waits for a voice engine still loading
+    tts_wait = {"gave_up": False}
 
     async def speak(text: str):
         if rt.state.get("muted"):
             return
         gen = rt.speak_gen["n"]
-        await rt.tts_ready.wait()
+        if not rt.tts_ready.is_set():
+            # The coach finishes speaking a line before it posts the next (chat
+            # included), so waiting here for a voice that never finishes loading
+            # (a stalled first-run model download) froze ALL coaching text, not
+            # just the voice. Wait briefly once; after that, lines are chat-only
+            # until the engine is ready.
+            if not tts_wait["gave_up"]:
+                try:
+                    await asyncio.wait_for(rt.tts_ready.wait(), timeout=TTS_WAIT_S)
+                except asyncio.TimeoutError:
+                    tts_wait["gave_up"] = True
+            if not rt.tts_ready.is_set():
+                log.warning("TTS still loading (no 'TTS engine:' log line yet). Shown in chat only: %s",
+                            text[:80])
+                return
         if gen != rt.speak_gen["n"]:
             return
         if not rt.tts or not rt.tts.engine:

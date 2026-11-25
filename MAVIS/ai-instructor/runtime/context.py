@@ -38,7 +38,7 @@ class Runtime:
         # provided by runtime/scoring_flow.py
         "finish_lesson", "score_submit", "score_drop", "_discard_card", "compare_reference", "save_reference",
         # provided by runtime/session.py
-        "configure_session", "intro", "mute", "quit_lesson", "relaunch", "relaunch_new",
+        "close_run", "configure_session", "intro", "mute", "quit_lesson", "relaunch", "relaunch_new",
         "restart", "select_lesson", "set_reference", "start", "_apply_reference",
         "_sync_refs_to_state",
         # provided by runtime/sop_live.py

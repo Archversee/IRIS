@@ -182,8 +182,10 @@ async def _missing_notes(sid: UUID, limit: int) -> list[tuple[int, int]]:
         except Exception:      # table not there yet
             have = set()
         out = []
+        # eye-tracking rules get no broken-rule note: there's no flight value to explain
         for r in await conn.fetch("select id, verdict, instructor_verdict, violations from rule_results "
-                                  "where evaluation_id=$1 order by sort_order, id", ev["id"]):
+                                  "where evaluation_id=$1 and kind is distinct from 'gaze' order by sort_order, id",
+                                  ev["id"]):
             if (r["instructor_verdict"] or r["verdict"]) != "fail":
                 continue
             for idx, _ in enumerate(_j(r["violations"]) or []):

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import ModeCards from "./ModeCards.jsx";
 import { mavisApi, mediaUrl } from "../api/mavisApi.js";
 import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
+import { SOP_ROLES } from "../../components/Sidebar.jsx";
+import { LessonRulesCard } from "../../sop/LessonRules.jsx";
+import "../../sop/sop.css";
 
 // Mirrors the original app's proceed(): configure the session, then start
 // flying immediately (the original also plays an intro video first --
@@ -51,6 +54,9 @@ export default function MainMenu({ state, onStarting }) {
         {state?.active_lesson?.start_note && (
           <div className="mavis-menu__note">{state.active_lesson.start_note}</div>
         )}
+        {/* before flying: which SOP rules this lesson checks (instructors can change the list here) */}
+        <LessonRulesCard lessonId={state?.lesson_id || state?.active_lesson?.id}
+          editable={SOP_ROLES.includes(user?.role)} />
         <ModeCards onChoose={chooseMode} busy={busy} media={media} />
         {err && <div className="mavis-menu__error">{err}</div>}
       </div>

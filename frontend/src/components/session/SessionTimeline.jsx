@@ -117,13 +117,14 @@ const TimelineChart = memo(function TimelineChart({
 // Chart + transport controls + flight event buttons (MAVIS to-do steps / phases,
 // or a takeoff/landing guess for sessions without any).
 // `readOnly` (Live Monitor) keeps just the trend chart: no scrubbing, no
-// clickable phases/event buttons, no playback transport.
+// playback transport. (No row of event buttons under the chart, on either page:
+// the shaded boxes on the chart show the events.)
 export default function SessionTimeline({
   readOnly = false,
   chartSeries, timelineTicks, filters, setFilters, hasIndex = false, workloadBands = null,
   flightPhases, chartMinT, chartMaxT, totalT, curT,
   onChartMouseDown, onChartMouseMove, onChartMouseUp,
-  seekTo, openPhase,
+  seekTo,
   playing, onTogglePlay, seek, onRestart,
   speed, setSpeed,
   live, followingLive, goLive,
@@ -168,7 +169,7 @@ export default function SessionTimeline({
           })}
           {flightPhases.length > 0 && (
             <button className={"filter-chip" + (filters.events !== false ? " on" : "")}
-              title="Show or hide the shaded event boxes on the chart (the event buttons below stay)"
+              title="Show or hide the shaded event boxes on the chart"
               onClick={() => setFilters((f) => ({ ...f, events: f.events === false }))}>
               <span className="swatch" style={{ background: "repeating-linear-gradient(45deg, var(--data-cyan) 0 2px, var(--data-violet) 2px 4px)" }} />
               Events
@@ -199,30 +200,6 @@ export default function SessionTimeline({
           </div>
         )}
       </div>
-      {!readOnly && flightPhases.length > 0 && (
-        <>
-          <div className="phase-buttons-label">Events:</div>
-          <div className="phase-buttons-row">
-            {flightPhases.map((p) => {
-              const span = chartMaxT - chartMinT;
-              const leftPct = span > 0 ? ((p.start - chartMinT) / span) * 100 : 0;
-              // MAVIS events tile the flight: draw each across its own start..end
-              const widthPct = p.event && span > 0 ? Math.max(0.5, ((p.end - p.start) / span) * 100) : null;
-              return (
-                <button key={p.key} className={"phase-btn" + (p.event ? " ev" : "")}
-                  style={{ left: `${leftPct}%`, ...(widthPct != null ? { width: `calc(${widthPct}% - 2px)` } : {}),
-                           borderColor: p.color, color: p.color }}
-                  onClick={() => openPhase(p)}
-                  title={`${p.label}${p.curriculum ? ` (${p.curriculum})` : ""}: ${p.start.toFixed(1)}s–${p.end.toFixed(1)}s`
-                    + (p.grade ? ` · grade ${p.grade}` : "")
-                    + (p.outcome && p.outcome !== "completed" ? ` · ${p.outcome}` : "")}>
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
       {!readOnly && <div className="tl-clock">{curT.toFixed(1)}s / {totalT.toFixed(1)}s</div>}
       {!readOnly && <div className="tl-transport">
         <button className="tl-btn" title="Restart" onClick={onRestart}>↺</button>

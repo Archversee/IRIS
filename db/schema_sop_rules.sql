@@ -260,3 +260,16 @@ alter table flight_rules add constraint flight_rules_lesson_types_check
 alter table flight_rules drop constraint if exists flight_rules_ref_check;
 alter table flight_rules add constraint flight_rules_ref_check
     check (ref_speed is null or (metric = 'ias' and kind in ('band', 'limit', 'event', 'capture')));
+
+-- Which rules each curriculum lesson checks (MAVIS sop/lesson_plans.py; MAVIS
+-- also creates this when first used). A lesson checks the rules recommended for
+-- it (their phases are flown in it), plus `added`, minus `removed`; with
+-- checks_on false it isn't checked at all. Free Flight checks every active rule.
+create table if not exists sop_lesson_plans (
+    lesson_id   text primary key,
+    checks_on   boolean not null default true,
+    added       bigint[] not null default '{}',
+    removed     bigint[] not null default '{}',
+    updated_by  text,
+    updated_at  timestamptz not null default now()
+);

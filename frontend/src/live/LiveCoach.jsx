@@ -179,9 +179,35 @@ export default function LiveCoach({ freeFlight = false }) {
       // best-effort
     }
     await markEnded();
+    await closeOtherScreens();
     setStartedHere(false);
     nav(sid ? `/sessions/${sid}/save` : "/upload");
   }
+
+  // Finish & save / discard: the other screens on this run (a second tablet,
+  // the sim PC) still have it open -- MAVIS tells them it's closed.
+  async function closeOtherScreens() {
+    try {
+      await mavisApi.close();
+    } catch {
+      // best-effort -- the other screens just stay on the scorecard
+    }
+  }
+
+  // ...and this is the other end: another screen closed the run (state.closed
+  // moved on since this page first saw it) -- leave the lesson for the menu.
+  const closed = state?.closed;
+  const closedSeenRef = useRef(null);
+  useEffect(() => {
+    if (closed == null) return;
+    const seen = closedSeenRef.current;
+    closedSeenRef.current = closed;
+    if (seen == null || seen === closed) return;
+    setEnding(false);
+    setConfirmingEnd(false);
+    setConfirmingRestart(false);
+    setStartedHere(false);
+  }, [closed]);
 
   // From the scorecard's "Finish & discard" button -- same quit as above,
   // but deletes the IRIS session record instead of going to Upload, then
@@ -206,6 +232,7 @@ export default function LiveCoach({ freeFlight = false }) {
         await markEnded();
       }
     }
+    await closeOtherScreens();
     setStartedHere(false);
   }
 

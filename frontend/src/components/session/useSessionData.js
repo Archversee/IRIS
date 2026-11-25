@@ -680,6 +680,12 @@ export function useSessionData({ id, live }) {
     setSlowPlayhead((s) => (s == null ? null : clamped));
   }, [live, totalT]);
   const seek = (deltaSec) => seekTo(curT + deltaSec);
+  // "▶ Watch" buttons (SOP rule checks, the broken-rule analysis): jump there
+  // and play, even if playback was paused. Stable, like seekTo.
+  const playFrom = useCallback((targetT) => {
+    seekTo(targetT);
+    setPlaying(true);
+  }, [seekTo]);
 
   const goLive = () => {
     setFollowingLive(true);
@@ -780,7 +786,7 @@ export function useSessionData({ id, live }) {
       onChartMouseDown: (e) => { setScrubbing(true); seekToChartEvent(e); },
       onChartMouseMove: (e) => { if (scrubbing) seekToChartEvent(e); },
       onChartMouseUp: () => setScrubbing(false),
-      seekTo, openPhase,
+      seekTo, playFrom, openPhase,
       playing,
       onTogglePlay: () => {
         setPlaying((p) => !p);

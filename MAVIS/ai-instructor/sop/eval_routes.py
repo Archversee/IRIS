@@ -6,8 +6,10 @@ tools), so flights can be checked on any machine that can reach Postgres.
     POST /sop/evaluate/{session_id}       check (or re-check) a session's flight
                                           body: {strictness?, use_current_rules?}
     GET  /sop/evaluations/{session_id}    the latest check, with the instructor's verdicts applied
-    GET  /sop/check-settings              which flights are checked live: {circuit_flights, free_flight}
-    PUT  /sop/check-settings              {circuit_flights: bool} -- Free Flight is always checked
+    GET  /sop/lesson-plans?aircraft=      every flying lesson: is it checked, how many rules (sop/lesson_plans.py)
+    GET  /sop/lesson-plans/{lesson_id}    that lesson's rule list: every usable rule, recommended (+why), included
+    PATCH /sop/lesson-plans/{lesson_id}   {checks_on?, include?: [rule ids], exclude?: [...], reset?, aircraft?}
+                                          Free Flight is always checked against every active rule.
 
 The instructor's verdicts and sign-off are written by IRIS (backend/app/
 routers/rule_results.py), which knows who is signed in and their role.
@@ -15,21 +17,28 @@ routers/rule_results.py), which knows who is signed in and their role.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from . import check_settings
+from core.lesson_catalog import load_catalog
+
 from .evaluate import MODE_STRICTNESS, STRICTNESS, STRICTNESS_HELP
+from .lesson_plans import LessonPlans, flying_lessons
 from .results import ResultStore
 from .store import DBUnavailable, RuleStore
 
 log = logging.getLogger(__name__)
 
 
-class CheckSettingsIn(BaseModel):
-    circuit_flights: bool
+class LessonPlanIn(BaseModel):
+    checks_on: bool | None = None
+    include: list[int] | None = None
+    exclude: list[int] | None = None
+    reset: bool = False
+    aircraft: str | None = None
 
 
 class EvaluateIn(BaseModel):
@@ -41,7 +50,13 @@ def build_eval_router(cfg: dict | None, store: RuleStore | None = None) -> tuple
     cfg = cfg or {}
     store = store or RuleStore((cfg.get("database") or {}).get("url"))
     results = ResultStore(store, cfg)
+    plans = LessonPlans(store)
     r = APIRouter(prefix="/sop", tags=["sop-evaluate"])
+
+    def default_aircraft() -> str | None:
+        """The aircraft the curriculum is flown in, unless the page picks another."""
+        return ((cfg.get("sop") or {}).get("aircraft_override") or "").strip() or \
+            (Path(str(cfg.get("aircraft_profile") or "")).stem or None)
 
     async def db(coro):
         try:
@@ -59,16 +74,24 @@ def build_eval_router(cfg: dict | None, store: RuleStore | None = None) -> tuple
     async def strictness():
         return {"presets": STRICTNESS, "mode_defaults": MODE_STRICTNESS, "help": STRICTNESS_HELP}
 
-    @r.get("/check-settings")
-    async def get_check_settings():
-        return check_settings.as_dict(cfg)
+    @r.get("/lesson-plans")
+    async def lesson_plans(aircraft: str | None = None):
+        ac = aircraft or default_aircraft()
+        return {"aircraft_id": ac, "lessons": await db(plans.summaries(load_catalog(), ac))}
 
-    @r.put("/check-settings")
-    async def put_check_settings(body: CheckSettingsIn, x_sop_editor: str | None = Header(None)):
-        check_settings.set_circuit_flights_checked(cfg, body.circuit_flights)
-        log.info("live rule checks for circuit flights %s (by %s)",
-                 "ON" if body.circuit_flights else "OFF", x_sop_editor or "?")
-        return check_settings.as_dict(cfg)
+    @r.get("/lesson-plans/{lesson_id}")
+    async def lesson_plan(lesson_id: str, aircraft: str | None = None):
+        if lesson_id not in {x["id"] for x in flying_lessons(load_catalog())}:
+            raise HTTPException(404, f"No flying lesson '{lesson_id}'")
+        return await db(plans.plan(lesson_id, aircraft or default_aircraft()))
+
+    @r.patch("/lesson-plans/{lesson_id}")
+    async def edit_lesson_plan(lesson_id: str, body: LessonPlanIn, x_sop_editor: str | None = Header(None)):
+        if lesson_id not in {x["id"] for x in flying_lessons(load_catalog())}:
+            raise HTTPException(404, f"No flying lesson '{lesson_id}'")
+        return await db(plans.update(lesson_id, by=x_sop_editor, checks_on=body.checks_on, include=body.include,
+                                     exclude=body.exclude, reset=body.reset,
+                                     aircraft_id=body.aircraft or default_aircraft()))
 
     @r.post("/evaluate/{session_id}")
     async def evaluate(session_id: UUID, body: EvaluateIn | None = None,

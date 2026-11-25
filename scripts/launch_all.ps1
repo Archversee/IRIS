@@ -23,6 +23,12 @@
 .PARAMETER Port
     Port the reverse proxy (the single URL you actually open) listens on.
 
+.PARAMETER LocalOnly
+    Bind the proxy to 127.0.0.1 only. By default it listens on every
+    interface so tablets on the same LAN can open http://<this-pc-ip>:<Port>
+    (needs an inbound firewall rule for <Port> on the Private profile). The
+    backends themselves (:6945, :8000) are reached only through the proxy.
+
 .PARAMETER SkipAdapter
     Don't launch the OBS/Smart-Eye adapter. Use this if you're driving it
     yourself, or don't want video/eye-tracking for this session -- IRIS's
@@ -43,6 +49,7 @@
 #>
 param(
     [int]$Port = 3000,
+    [switch]$LocalOnly,
     [switch]$SkipAdapter,
     [switch]$SkipMsfsCheck,
     [switch]$DryRun
@@ -299,7 +306,7 @@ Write-Host "`n=== 6/6: Reverse proxy ==="
 Start-Backend -Name "Proxy" `
     -WorkDir (Join-Path $RepoRoot "proxy") `
     -VenvPython (Join-Path $RepoRoot "proxy\.venv\Scripts\python.exe") `
-    -ArgList @("-m", "uvicorn", "app:app", "--port", "$Port") `
+    -ArgList @("-m", "uvicorn", "app:app", "--host", $(if ($LocalOnly) { "127.0.0.1" } else { "0.0.0.0" }), "--port", "$Port") `
     -HealthUrl "http://localhost:$Port/health" `
     -ListenPort $Port `
     -SetupHint "cd proxy; python -m venv .venv; .venv\Scripts\pip install -r requirements.txt"
@@ -311,6 +318,20 @@ if ($DryRun) {
 
 Write-Host "`n================================================================"
 Write-Host " Dashboard:  http://localhost:$Port"
+if (-not $LocalOnly) {
+    # Tablets on the same network open one of these (trainee view: /live).
+    $lanIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+        Select-Object -ExpandProperty IPAddress
+    foreach ($ip in $lanIps) { Write-Host " Tablets:    http://${ip}:$Port/live" }
+    $fw = Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue |
+        Where-Object { $_.LocalPort -eq "$Port" } | Get-NetFirewallRule -ErrorAction SilentlyContinue |
+        Where-Object { $_.Enabled -eq "True" -and $_.Direction -eq "Inbound" -and $_.Action -eq "Allow" }
+    if (-not $fw) {
+        Write-Host " (no inbound firewall rule for TCP $Port -- tablets can't connect until one exists;"
+        Write-Host "  admin PowerShell: New-NetFirewallRule -DisplayName 'MAVIS-IRIS $Port' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Private)"
+    }
+}
 Write-Host " Logs:       $LogDir"
 Write-Host " Watchdog:   MAVIS, IRIS backend and proxy are restarted if they exit."
 Write-Host " Press Ctrl+C to stop everything this script started."
