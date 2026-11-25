@@ -336,6 +336,15 @@ def build_session(rt):
                 log.exception("finishing the lesson after quit failed")
         quit_task["t"] = asyncio.create_task(_finish())
 
+    async def close_run():
+        """The scorecard's Finish & save / Finish & discard was pressed on one
+        screen. Which screen is in the lesson is each browser's own business
+        (MAVIS keeps session_id and, after save, the scorecard), so the other
+        screens -- a second tablet, the sim PC -- can't tell the run is over;
+        bumping this tells them to go back to their menu too."""
+        rt.state["closed"] = int(rt.state.get("closed") or 0) + 1
+
+    rt.close_run = close_run
     rt._apply_reference = _apply_reference
     rt._sync_refs_to_state = _sync_refs_to_state
     rt.configure_session = configure_session

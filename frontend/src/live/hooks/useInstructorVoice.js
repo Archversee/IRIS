@@ -79,10 +79,16 @@ export function useInstructorVoice(audio, active) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  // MAVIS withdrew the line it was saying (stop_speech: the lesson moved on,
-  // the briefing was cut short, a restart) -- stop it here too.
+  // An older MAVIS ({url, seq}, no gen) withdraws a line by clearing url -- stop
+  // it here too. A current MAVIS also empties its clip list (so url goes away)
+  // once a line has *finished* by its own clock; that must not stop anything:
+  // a tablet fetches each clip over Wi-Fi only when the one before ends, so it
+  // runs behind the server and would be cut off mid-line -- and a bare pause()
+  // never fires "ended", so playingRef stayed true and every later line just
+  // queued, silent. A real withdrawal (stop_speech) arrives as a new gen below.
   useEffect(() => {
-    if (!audio?.url) voiceRef.current?.pause();
+    if (audio && audio.gen == null && !audio.url) stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audio?.url]);
 
   useEffect(() => {

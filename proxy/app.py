@@ -96,7 +96,8 @@ async def _proxy_http(request, target_base: str, strip_prefix: str) -> Response:
 
 
 async def _proxy_stream(request, target_base: str, strip_prefix: str) -> Response:
-    """Endless responses (the Live Monitor's MJPEG screen feeds) can't be
+    """Endless responses (the Live Monitor's MJPEG screen feeds) and large
+    ones (recorded session videos, with Range requests for seeking) can't be
     buffered like _proxy_http does -- pass them through chunk by chunk, and
     close the upstream when the viewer goes away."""
     url = target_base.rstrip("/") + request.url.path[len(strip_prefix):]
@@ -115,13 +116,17 @@ async def _proxy_stream(request, target_base: str, strip_prefix: str) -> Respons
         finally:
             await upstream.aclose()
 
-    resp_headers = {k: v for k, v in upstream.headers.items()
-                    if k.lower() not in _HOP_BY_HOP and k.lower() != "content-length"}
+    # Content-Length is kept when upstream sends one (videos: the browser needs
+    # it alongside Content-Range to seek); MJPEG feeds have none and stay chunked.
+    resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _HOP_BY_HOP}
     return StreamingResponse(body(), status_code=upstream.status_code, headers=resp_headers)
 
 
 async def api_proxy(request):
-    if request.method == "GET" and request.url.path.startswith("/api/capture/") and request.url.path.endswith(".mjpg"):
+    path = request.url.path
+    if request.method == "GET" and (
+            (path.startswith("/api/capture/") and path.endswith(".mjpg"))
+            or path.startswith("/api/videos/")):
         return await _proxy_stream(request, IRIS_BACKEND, "/api")
     return await _proxy_http(request, IRIS_BACKEND, "/api")
 

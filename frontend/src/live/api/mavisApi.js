@@ -31,6 +31,9 @@ export const mavisApi = {
   selectLesson: (id) => postJson("/lesson/select", { id }),
   start: () => postJson("/demo/start"),
   quit: () => postJson("/demo/quit"),
+  // Finish & save / discard done here: tell every other screen on this run
+  // (second tablet, sim PC) to go back to its menu (bumps state.closed)
+  close: () => postJson("/demo/close"),
   // the finished run's scorecard: post it to the leaderboard (name "" = the
   // trainee name the session was set up with), or throw it away
   scoreSubmit: (name = "") => postJson("/score/submit", { name }),
