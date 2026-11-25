@@ -31,6 +31,7 @@ from uuid import UUID
 import yaml
 
 from .evaluate import (STRICTNESS, evaluate, pick_strictness, sample_from_flight_row, summarize)
+from .gaze import judge_all as judge_gaze, load_eye, phase_spans
 from .runtime import match_profile
 from .schema import APP_ROOT, LESSON_TYPES, aircraft_profiles, resolve_ref
 
@@ -195,6 +196,13 @@ class ResultStore:
             if r.get("_needs_phase"):
                 r.pop("_needs_phase")
                 results.append(_no_phase_result(r))
+        # eye-tracking rules: judged from the eye tracker's samples + the AOI zones (sop/gaze.py)
+        if any(r.get("kind") == "gaze" for r in rules) and rows:
+            async with self.store.acquire() as c:
+                eye, zones = await load_eye(c, session_id)
+            spans = phase_spans([(r["ts"].timestamp(), r.get("phase")) for r in rows])
+            gaze = judge_gaze(rules, spans, eye, zones, float(STRICTNESS[strictness]["tol_mult"]))
+            results = [gaze.get(x["rule_id"], x) for x in results]
         pos = {r.get("id"): i for i, r in enumerate(rules)}
         results.sort(key=lambda x: pos.get(x["rule_id"], len(rules)))
 

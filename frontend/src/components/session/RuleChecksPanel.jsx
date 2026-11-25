@@ -1,14 +1,15 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client.js";
-import { sopApi } from "../../sop/sopApi.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import IncidentView from "./IncidentView.jsx";
 
 // SOP / handbook rule checks of one session (MAVIS sop/evaluate.py, stored by
 // sop/results.py; instructor verdicts via backend/app/routers/rule_results.py).
-// Instructors see every rule, can re-check with another strictness, overrule a
-// verdict and sign the results off. Trainees see what to work on first, and
-// whether their instructor has reviewed it yet.
+// Instructors see every rule, mark each rule Met / Not met with one click, and sign the results off (which takes them back to Sessions for
+// the next flight). Trainees see what to work on first, and whether their
+// instructor has reviewed it yet. No strictness or re-check controls here
+// (MAVIS checks every flight itself), and rules that didn't apply aren't listed.
 
 const VERDICT = {
   fail: { label: "Not met", cls: "fail" },
@@ -18,6 +19,12 @@ const VERDICT = {
   insufficient_data: { label: "No data", cls: "na" },
   not_evaluated: { label: "Not checked yet", cls: "na" },
 };
+// why a rule on the flight's list has no Met / Not met / To assess (shown under the tiles)
+const UNJUDGED = {
+  not_applicable: "Didn't apply",
+  insufficient_data: "No data",
+  not_evaluated: "Not checked yet",
+};
 const SEVERITY_ORDER = { warning: 0, caution: 1, advisory: 2 };
 const GROUPS = [
   { key: "fail", title: "Not met" },
@@ -25,12 +32,11 @@ const GROUPS = [
   { key: "pass", title: "Met" },
   { key: "other", title: "Didn't apply / no data" },
 ];
-// the count tiles, which are also the tabs
+// the count tiles, which are also the tabs ("didn't apply / no data" isn't listed)
 const TALLY = [
   { key: "fail", label: "broken", title: "Broken" },
   { key: "pass", label: "met", title: "Met" },
   { key: "instructor", label: "to assess", title: "Left for the instructor to assess" },
-  { key: "other", label: "didn't apply", title: "Didn't apply" },
 ];
 const groupOf = (v) => (v === "fail" || v === "pass" || v === "instructor" ? v : "other");
 
@@ -56,19 +62,14 @@ export function RuleChecksChip({ evaluation, missing, onClick }) {
   );
 }
 
-function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, flightStartMs }) {
+function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, playFrom, flightStartMs }) {
   const { user } = useAuth() || {};
+  const nav = useNavigate();
   const isInstructor = user && (user.role === "instructor" || user.role === "admin");
-  const [presets, setPresets] = useState(null);
-  const [strictness, setStrictness] = useState("");
-  const [useCurrent, setUseCurrent] = useState(false);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [comment, setComment] = useState("");
 
-  useEffect(() => {
-    sopApi.strictness().then(setPresets).catch(() => setPresets(null));
-  }, []);
   useEffect(() => {
     setComment(evaluation?.instructor_comment || "");
   }, [evaluation?.id, evaluation?.instructor_comment]);
@@ -80,9 +81,17 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
     finally { setBusy(""); }
   }, [reload]);
 
-  const recheck = () => run("Checking…", () => sopApi.evaluate(sessionId, {
-    ...(strictness ? { strictness } : {}), use_current_rules: useCurrent || !evaluation,
-  }));
+  // Signing off finishes this flight's review: back to Sessions to pick the next one.
+  const signOff = async () => {
+    setBusy("Signing…"); setErr("");
+    try {
+      await api.signOffRules(sessionId, { signed_off: true, comment });
+      nav("/sessions");
+    } catch (e) {
+      setErr(e.detail || e.message || String(e));
+      setBusy("");
+    }
+  };
 
   const toT = (epoch) => (flightStartMs ? epoch - flightStartMs / 1000 : 0);
   const [incident, setIncident] = useState(null);     // {resultId, index}: the ±30 s view
@@ -99,10 +108,11 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
   // The count tiles double as tabs: the broken rules by default, and a click
   // on Met / To assess / Didn't apply lists those instead (again: back to broken).
   const [view, setView] = useState("fail");
+  const [showUnjudged, setShowUnjudged] = useState(false);
   const pick = (key) => setView((cur) => (cur === key && key !== "fail" ? "fail" : key));
   const ruleRow = (r) => (
     <RuleRow key={r.id} r={r} isInstructor={isInstructor} toT={toT}
-      seek={(epoch) => seekTo(Math.max(0, toT(epoch)))} onSaved={reload}
+      watch={(epoch) => playFrom(Math.max(0, toT(epoch)))} onSaved={reload}
       onAnalyse={(index) => {          // the video jumps there too, a few seconds early
         const v = r.violations?.[index];
         if (v?.t0 != null) seekTo(Math.max(0, toT(v.t0) - 5));
@@ -114,7 +124,7 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
     <>
     {incident && (
       <IncidentView resultId={incident.resultId} index={incident.index} onClose={() => setIncident(null)}
-        onWatch={(epoch) => { setIncident(null); seekTo(Math.max(0, toT(epoch))); }} />
+        onWatch={(epoch) => { setIncident(null); playFrom(Math.max(0, toT(epoch))); }} />
     )}
     <div className="rc-pane" role="region" aria-label="SOP rule checks">
       <div className="rc-head">
@@ -124,16 +134,12 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
       {missing && !evaluation && (
         <div className="rc-empty">
           This flight hasn't been checked against its rules yet.
-          {!isInstructor && <div className="rc-muted">Your instructor can run the check.</div>}
+          <div className="rc-muted">The results show here once MAVIS has checked it.</div>
         </div>
       )}
 
       {evaluation && (
         <div className="rc-meta">
-          <div>
-            <b>{evaluation.strictness_label || evaluation.strictness}</b>
-            <span className="rc-muted"> · {evaluation.strictness_why || "strictness"}</span>
-          </div>
           <div className="rc-muted">
             {evaluation.source === "live" ? "Checked live during the flight" : "Checked from the recorded flight"}
             {" · "}{new Date(evaluation.created_at).toLocaleString()}
@@ -159,16 +165,16 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
           <b>No rules were checked.</b> When this flight was checked, {evaluation.aircraft_profile || "the aircraft"} had
           no active rule set with rules for {evaluation.lesson_type || "normal"} lessons, and no training handbook
           was active. {isInstructor
-            ? <>Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page, then press Re-check.</>
-            : "Your instructor can activate a rule set and re-check this flight."}
+            ? <>Activate a rule set on the <a href="/sop/rules">SOP Rules</a> page; flights after that are checked against it.</>
+            : "Your instructor can activate a rule set for the next flights."}
         </div>
       )}
       {evaluation && results.length > 0 && !(grouped.fail.length || grouped.pass.length) && (
         <div className="rc-why">
           <b>No rule could be marked met or not met from the flight data.</b>{" "}
           Of {results.length} rules, {grouped.instructor.length} can't be measured from flight data (the instructor
-          judges them below) and {grouped.other.length} didn't apply or had no data: each says why, e.g. its phase
-          was never flown in this lesson.{" "}
+          judges them below) and the rest didn't apply or had no data, e.g. their phase was never flown in this
+          lesson.{" "}
           {isInstructor && grouped.instructor.length > 0 && (
             <>Rules about heights, speeds, bank or descent rate can be made measurable on the{" "}
               <a href="/sop/rules">SOP Rules</a> page (as a band, limit, event or capture rule).</>
@@ -194,6 +200,28 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
             })}
           </div>
 
+          {/* rules that were checked but couldn't be judged in this flight -- no tile of their
+              own (they need no action), but counted and explained so the totals add up */}
+          {grouped.other.length > 0 && (
+            <div className="rc-unjudged">
+              <button type="button" className="rc-unjudged__toggle" aria-expanded={showUnjudged}
+                onClick={() => setShowUnjudged((x) => !x)}>
+                {grouped.other.length} more couldn't be judged in this flight · {showUnjudged ? "hide" : "show why"}
+              </button>
+              {showUnjudged && (
+                <ul className="rc-unjudged__list">
+                  {grouped.other.map((r) => (
+                    <li key={r.id}>
+                      <span className="rc-unjudged__what">{UNJUDGED[r.final_verdict] || "Not judged"}</span>
+                      <b>{r.title}</b>
+                      <span className="rc-muted">{r.summary}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <section className="rc-group">
             {view === "fail" ? (
               <>
@@ -217,44 +245,15 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
         </>
       )}
 
-      {isInstructor && (
-        <div className="rc-tools rc-tools--recheck">
-          <label>
-            Strictness{" "}
-            <select value={strictness} onChange={(e) => setStrictness(e.target.value)}>
-              <option value="">{evaluation ? "Keep current" : "Trainee's / mode default"}</option>
-              {Object.entries(presets?.presets || { lenient: {}, standard: {}, strict: {} }).map(([k, p]) => (
-                <option key={k} value={k}>{p.label || k}</option>
-              ))}
-            </select>
-          </label>
-          {evaluation && (
-            <label className="rc-check">
-              <input type="checkbox" checked={useCurrent} onChange={(e) => setUseCurrent(e.target.checked)} />
-              Use the rules as they are now
-            </label>
-          )}
-          <button className="rc-btn" disabled={!!busy} onClick={recheck}>
-            {busy === "Checking…" ? busy : evaluation ? "Re-check" : "Check now"}
-          </button>
-          {presets && strictness && (
-            <div className="rc-preset rc-muted">
-              {Object.entries(presets.help).map(([k, label]) => (
-                <span key={k}>{label}: <b>{fmtPreset(k, presets.presets[strictness]?.[k])}</b></span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
       {evaluation && isInstructor && (
         <div className="rc-signoff">
           <h3>Sign off</h3>
           <textarea rows={3} placeholder="Comment for the trainee (optional)" value={comment}
             onChange={(e) => setComment(e.target.value)} />
           <div className="rc-row">
-            <button className="rc-btn primary" disabled={!!busy}
-              onClick={() => run("Signing…", () => api.signOffRules(sessionId, { signed_off: true, comment }))}>
-              {evaluation.signed_off_at ? "Update sign-off" : "Sign off results"}
+            <button className="rc-btn primary" disabled={!!busy} onClick={signOff}
+              title="Save the sign-off and go back to Sessions to review the next flight">
+              {busy === "Signing…" ? busy : evaluation.signed_off_at ? "Update sign-off" : "Sign off results"}
             </button>
             {evaluation.signed_off_at && (
               <button className="rc-btn" disabled={!!busy}
@@ -270,13 +269,6 @@ function RuleChecksPanel({ sessionId, evaluation, missing, reload, seekTo, fligh
   );
 }
 
-function fmtPreset(k, v) {
-  if (v == null) return "–";
-  if (k === "max_out_frac") return `${Math.round(v * 100)}%`;
-  if (k === "tol_mult") return `×${v}`;
-  return `${v} s`;
-}
-
 function mmss(s) {
   if (s == null || !isFinite(s)) return "–";
   const t = Math.max(0, Math.round(s));
@@ -284,7 +276,7 @@ function mmss(s) {
 }
 const MAX_SHOWN = 12;
 
-function RuleRow({ r, isInstructor, toT, seek, onSaved, onAnalyse }) {
+function RuleRow({ r, isInstructor, toT, watch, onSaved, onAnalyse }) {
   const [open, setOpen] = useState(false);
   const [showEvery, setShowEvery] = useState(false);
   const v = VERDICT[r.final_verdict] || VERDICT.not_evaluated;
@@ -336,7 +328,9 @@ function RuleRow({ r, isInstructor, toT, seek, onSaved, onAnalyse }) {
           {r.requirement && <div className="rc-brk__req">Limit: <b>{r.requirement}</b></div>}
           <div className="rc-brk__sum">
             {r.summary}
-            {outFor > 0 && <span className="rc-muted"> · outside the limit for {outFor.toFixed(0)} s in total</span>}
+            {outFor > 0 && <span className="rc-muted"> · {r.kind === "gaze" && r.summary?.includes("without looking")
+              ? `${outFor.toFixed(0)} s without a look in total`
+              : `outside the limit for ${outFor.toFixed(0)} s in total`}</span>}
           </div>
           {r.instructor_verdict && (
             <div className="rc-muted rc-brk__by">Marked not met by the instructor{r.verdict !== "fail" ? ` (computed: ${VERDICT[r.verdict]?.label})` : ""}</div>
@@ -354,9 +348,12 @@ function RuleRow({ r, isInstructor, toT, seek, onSaved, onAnalyse }) {
                 <b>{x.peak_text}</b>
                 {x.dur_s != null && <span className="rc-muted"> · {x.dur_s.toFixed(0)} s</span>}
               </span>
-              <button className="rc-vbtn" onClick={() => seek(x.t0)} title="Jump the video and timeline to this moment">▶ Watch</button>
-              <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
-                title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+              <button className="rc-vbtn" onClick={() => watch(x.t0)} title="Jump to this moment and play">▶ Watch</button>
+              {/* eye-tracking rules: no flight value to analyse, Watch shows the moment */}
+              {r.kind !== "gaze" && (
+                <button className="rc-vbtn rc-vbtn--why" onClick={() => onAnalyse(i)}
+                  title="The 30 s before and after: what led to it and how it was corrected">Analyse</button>
+              )}
             </li>
           ))}
           {viol.length > MAX_SHOWN && (
@@ -373,35 +370,49 @@ function RuleRow({ r, isInstructor, toT, seek, onSaved, onAnalyse }) {
   );
 }
 
-// Instructor: agree with the computed verdict or overrule it, with a note.
+// Instructor: one click on Met or Not met saves it (no dropdown, no Save).
+// Clicking what was computed anyway stores "agree" (null), so a later
+// re-check can still change it; "Undo" puts back the computed result. The
+// optional note is saved with the click, or when you leave the box.
 function Judge({ r, onSaved }) {
-  const [verdict, setVerdict] = useState(r.instructor_verdict || "");
   const [note, setNote] = useState(r.instructor_note || "");
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState("");
   const [err, setErr] = useState("");
-  useEffect(() => { setVerdict(r.instructor_verdict || ""); setNote(r.instructor_note || ""); },
-    [r.id, r.instructor_verdict, r.instructor_note]);
-  const dirty = verdict !== (r.instructor_verdict || "") || note !== (r.instructor_note || "");
+  useEffect(() => { setNote(r.instructor_note || ""); }, [r.id, r.instructor_note]);
 
-  const save = async () => {
-    setSaving(true); setErr("");
+  const save = async (label, instructor_verdict) => {
+    setSaving(label); setErr("");
     try {
-      await api.setRuleVerdict(r.id, { instructor_verdict: verdict || null, instructor_note: note || null });
+      await api.setRuleVerdict(r.id, { instructor_verdict, instructor_note: note.trim() || null });
       await onSaved();
     } catch (e) { setErr(e.detail || e.message); }
-    finally { setSaving(false); }
+    finally { setSaving(""); }
   };
+  const mark = (v) => save(v, v === r.verdict ? null : v);
+  const saveNote = () => {
+    if (note.trim() !== (r.instructor_note || "")) save("note", r.instructor_verdict || null);
+  };
+  const now = r.final_verdict;           // pass | fail | instructor (not judged yet) | ...
+  const overruled = !!r.instructor_verdict && r.instructor_verdict !== r.verdict;
 
   return (
     <div className="rc-judge">
-      <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
-        <option value="">{r.verdict === "instructor" ? "Not assessed" : `Agree (${VERDICT[r.verdict]?.label})`}</option>
-        <option value="pass">Met</option>
-        <option value="fail">Not met</option>
-        <option value="not_applicable">Didn't apply</option>
-      </select>
-      <input placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
-      <button className="rc-btn" disabled={!dirty || saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+      <div className="rc-judge__btns" role="group" aria-label="Instructor's verdict">
+        <button type="button" className={"rc-btn rc-judge__met" + (now === "pass" ? " is-on" : "")}
+          aria-pressed={now === "pass"} disabled={!!saving || now === "pass"} onClick={() => mark("pass")}>
+          {saving === "pass" ? "Saving…" : "✓ Met"}
+        </button>
+        <button type="button" className={"rc-btn rc-judge__notmet" + (now === "fail" ? " is-on" : "")}
+          aria-pressed={now === "fail"} disabled={!!saving || now === "fail"} onClick={() => mark("fail")}>
+          {saving === "fail" ? "Saving…" : "✗ Not met"}
+        </button>
+        {overruled && (
+          <button type="button" className="rc-linkbtn" disabled={!!saving} onClick={() => save("undo", null)}
+            title={`Go back to the computed result (${VERDICT[r.verdict]?.label})`}>Undo</button>
+        )}
+      </div>
+      <input placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)}
+        onBlur={saveNote} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
       {r.reviewed_by && <span className="rc-muted">by {r.reviewed_by}</span>}
       {err && <span className="rc-err">{err}</span>}
     </div>
