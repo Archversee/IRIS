@@ -68,8 +68,8 @@ export function LeaderboardPage() {
 
   const rows = data?.rows || [];
   const total = data?.total || 0;
-  // action column: View (rows linked to a session) and Delete (own runs / admin)
-  const anyActions = rows.some((e) => e.session_id || canDelete(e));
+  // action column: View (flights this account may open) and Delete (own runs / admin)
+  const anyActions = rows.some((e) => e.can_review || canDelete(e));
 
   return (
     <GuidePage title="Leaderboard" sub="Every flight posted from MAVIS, ranked by score." wide>
@@ -107,7 +107,7 @@ export function LeaderboardPage() {
                   <td>{e.grade ? <span className={`mg-grade mg-grade--${e.grade}`}>{e.grade}</span> : "–"}</td>
                   {anyActions && (
                     <td className="num"><div className="mg-actions">
-                      {e.session_id && (
+                      {e.can_review && (
                         <Link to={`/sessions/${e.session_id}/review`} className="mg-act"
                           title="Open this session's review">View</Link>
                       )}

@@ -29,8 +29,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
-from ..auth import current_user
+from .. import access, db
 from ..flight_summary import PROMPT_VERSION, build_facts, build_messages, split_sections
 from ..incident_explain import ModelTimeout, ask_model, debrief_settings, unsupported_numbers
 from ..progress import pilot_of
@@ -92,7 +91,9 @@ def _row(r) -> dict | None:
 
 # ------------------------------------------------------------------ facts
 async def _facts(conn, sid: UUID) -> dict:
-    s = await conn.fetchrow("select id, name, pilot_name, lesson_id, started_at, created_at from sessions where id=$1", sid)
+    s = await conn.fetchrow("select s.id, s.name, s.pilot_name, s.pilot_user_id, s.lesson_id, s.started_at, s.created_at, "
+                            f"{access.ACCOUNT_NAME.format(u='u')} as account_name "
+                            "from sessions s left join users u on u.id = s.pilot_user_id where s.id=$1", sid)
     if s is None:
         raise HTTPException(404, "No such session")
     span = await conn.fetchrow("select min(ts) a, max(ts) b from flight_data where session_id=$1", sid)
@@ -129,10 +130,11 @@ async def _previous(conn, s: dict) -> dict | None:
     if not pilot:
         return None
     when = s.get("started_at") or s.get("created_at")
+    # the same account's flights; for a pilot without one, the same name's
     for o in await conn.fetch("select id, name, pilot_name, started_at, created_at from sessions "
-                              "where coalesce(started_at, created_at) < $1 order by coalesce(started_at, created_at) desc "
-                              "limit 50", when):
-        if (pilot_of(dict(o)) or "").lower() != pilot.lower():
+                              "where coalesce(started_at, created_at) < $1 and pilot_user_id is not distinct from $2 "
+                              "order by coalesce(started_at, created_at) desc limit 50", when, s["pilot_user_id"]):
+        if s["pilot_user_id"] is None and (pilot_of(dict(o)) or "").lower() != pilot.lower():
             continue
         ev = await conn.fetchrow("select id from flight_evaluations where session_id=$1 order by created_at desc limit 1",
                                  o["id"])
@@ -332,7 +334,7 @@ def _public(job: dict | None) -> dict | None:
 
 # ------------------------------------------------------------------ API
 @router.get("/sessions/{session_id}/debrief")
-async def get_debrief(session_id: UUID, user: dict = Depends(current_user)):
+async def get_debrief(session_id: UUID, user: dict = Depends(access.viewer)):
     async with db.acquire() as conn:
         summary = _row(await conn.fetchrow("select * from flight_summaries where session_id=$1 "
                                            "order by created_at desc limit 1", session_id))
@@ -344,7 +346,7 @@ async def get_debrief(session_id: UUID, user: dict = Depends(current_user)):
 
 
 @router.get("/sessions/{session_id}/debrief/status")
-async def debrief_status(session_id: UUID, user: dict = Depends(current_user)):
+async def debrief_status(session_id: UUID, user: dict = Depends(access.viewer)):
     """Cheap: just the background job's progress (Review polls it)."""
     return {"job": _public(_job(session_id))}
 
@@ -356,7 +358,7 @@ class RunIn(BaseModel):
 
 
 @router.post("/sessions/{session_id}/debrief/run")
-async def run_debrief(session_id: UUID, body: RunIn, user: dict = Depends(current_user)):
+async def run_debrief(session_id: UUID, body: RunIn, user: dict = Depends(access.viewer)):
     instructor = user["role"] in ("instructor", "admin")
     if (body.redo_summary or body.all_notes or not body.auto) and not instructor:
         raise HTTPException(403, "Instructors only")
@@ -382,6 +384,10 @@ class RatingIn(BaseModel):
 async def rate_summary(summary_id: int, body: RatingIn, user: dict = Depends(require_instructor)):
     if body.rating not in (None, "helpful", "not_helpful"):
         raise HTTPException(400, "rating must be helpful, not_helpful or null")
+    async with db.acquire() as conn:
+        sid = await conn.fetchval("select session_id from flight_summaries where id=$1", summary_id)
+    if sid is not None:
+        await access.check(sid, user)
     async with db.acquire() as conn:
         row = await conn.fetchrow(
             "update flight_summaries set rating=$2, rating_note=$3, rated_by=$4, rated_at=now() where id=$1 returning *",

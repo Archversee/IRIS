@@ -19,7 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import access, db
 from ..auth import current_user
 from ..incident_explain import debrief_settings, explain
 from ..incidents import MAX_WINDOW_S, MIN_WINDOW_S, analyse
@@ -182,7 +182,7 @@ async def cached_findings(conn, result_id: int, idx: int, budget: list[int]) -> 
 
 
 @router.get("/sessions/{session_id}/incidents")
-async def session_incidents(session_id: UUID, user: dict = Depends(current_user)):
+async def session_incidents(session_id: UUID, user: dict = Depends(access.viewer)):
     budget, pending, out = [MAX_NEW_FINDINGS], 0, []
     async with db.acquire() as conn:
         ev = await conn.fetchrow("select id from flight_evaluations where session_id=$1 "
@@ -213,6 +213,7 @@ async def session_incidents(session_id: UUID, user: dict = Depends(current_user)
 @router.get("/rule-results/{result_id}/incidents/{index}")
 async def incident(result_id: int, index: int, before: float | None = None, after: float | None = None,
                    user: dict = Depends(current_user)):
+    await access.check_result(result_id, user)
     out = await load_incident(result_id, index, before, after)
     out["explanation"] = await _latest_explanation(result_id, index, out["window_s"]["before"], out["window_s"]["after"])
     return out
@@ -221,6 +222,7 @@ async def incident(result_id: int, index: int, before: float | None = None, afte
 @router.post("/rule-results/{result_id}/incidents/{index}/explain")
 async def explain_incident(result_id: int, index: int, before: float | None = None, after: float | None = None,
                            user: dict = Depends(require_instructor)):
+    await access.check_result(result_id, user)
     try:
         return await write_note(result_id, index, before, after, user.get("full_name") or user.get("username"))
     except RuntimeError as err:
@@ -236,6 +238,10 @@ class RatingIn(BaseModel):
 async def rate(expl_id: int, body: RatingIn, user: dict = Depends(require_instructor)):
     if body.rating not in (None, "helpful", "not_helpful"):
         raise HTTPException(400, "rating must be helpful, not_helpful or null")
+    async with db.acquire() as conn:
+        result_id = await conn.fetchval("select result_id from incident_explanations where id=$1", expl_id)
+    if result_id is not None:
+        await access.check_result(result_id, user)
     async with db.acquire() as conn:
         row = await conn.fetchrow(
             "update incident_explanations set rating=$2, rating_note=$3, rated_by=$4, rated_at=now() "

@@ -348,14 +348,17 @@ class MavisBridge:
         title = ((state.get("active_lesson") or {}).get("title") or "").strip() or "MAVIS session"
         who = (sess.get("name") or "").strip()
         name = f"{title} – {who}" if who else f"{title} – {datetime.now().strftime('%d %b %H:%M')}"
+        # whose flight it is: the account picked on the start menu (a trainee's own,
+        # or the trainee their instructor chose)
+        pilot_id = sess.get("pilot_user_id") or ""
         async with db.acquire() as conn:
             await conn.execute(
                 """
-                insert into sessions (id, name, pilot_name, lesson_id, mode, sim_source, source, started_at)
-                values ($1, $2, $5, $3, $4, 'MSFS', 'mavis', now())
+                insert into sessions (id, name, pilot_name, lesson_id, mode, sim_source, source, started_at, pilot_user_id)
+                values ($1, $2, $5, $3, $4, 'MSFS', 'mavis', now(), (select id from users where id::text = $6))
                 on conflict (id) do nothing
                 """,
-                session_id, name, state.get("lesson_id"), sess.get("mode"), who or None,
+                session_id, name, state.get("lesson_id"), sess.get("mode"), who or None, pilot_id,
             )
 
     async def _write_flight_events(self, session_id: UUID, rows: list[tuple]) -> None:

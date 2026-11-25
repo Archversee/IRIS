@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import Pager from "../components/Pager.jsx";
+import { useAuth } from "../auth/AuthContext.jsx";
 
 const POLL_INTERVAL_MS = 5000;
 const PAGE_SIZE = 10;
 
+// The API only returns the flights this account may see (backend app/access.py).
 export default function Sessions() {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +61,8 @@ export default function Sessions() {
         <p className="muted">Loading…</p>
       ) : sessions.length === 0 ? (
         <p className="muted">
-          No sessions yet. <Link to="/upload">Upload some data →</Link>
+          {user.role === "trainee" ? "No flights of yours yet. They appear here once you've flown."
+            : <>No sessions yet. <Link to="/upload">Upload some data →</Link></>}
         </p>
       ) : (
         <table data-tour="sessions-table">

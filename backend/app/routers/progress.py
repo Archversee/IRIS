@@ -1,9 +1,9 @@
 """The Progress page: how trainees are getting on across flights (post-flight only).
 
-  GET /progress/pilots                       pilots with flights (a trainee sees only themselves)
+  GET /progress/pilots                       pilots with flights (of the flights you may see: app/access.py)
   GET /progress/pilot?name=Alex              learning curves, scan per phase vs the expert flights, coaching,
                                              handling, plain-words notes (app/progress.py)
-  GET /progress/cohort?last=5                instructors: the whole group -- most-broken rules, rules that
+  GET /progress/cohort?last=5                instructors: their group -- most-broken rules, rules that
                                              matter most in practice, pilots side by side, which callouts help
   GET /progress/expert-flights               instructors: flights that can be marked as expert reference runs
   PUT /progress/expert-flights/{session_id}  instructors: {"expert": true|false}
@@ -23,7 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import db
+from .. import access, db
 from ..auth import current_user
 from ..progress import (CAUSE_KIND, CAUSES, STATS_VERSION, coaching_summary, flight_label, insights,
                         learning_curve, phase_scan_table, pilot_of, rule_impact, session_stats)
@@ -69,18 +69,14 @@ def _j(v):
     return json.loads(v) if isinstance(v, str) else v
 
 
-def _me(user: dict) -> set[str]:
-    return {x.strip().lower() for x in (user.get("full_name"), user.get("username")) if x and x.strip()}
-
-
-def _may_see(user: dict, pilot: str) -> bool:
-    return user["role"] in ("instructor", "admin") or pilot.strip().lower() in _me(user)
-
-
-async def _sessions(conn) -> list[dict]:
+async def _sessions(conn, user: dict) -> list[dict]:
+    """The flights this user may see, oldest first."""
     rows = await conn.fetch("select s.id, s.name, s.pilot_name, s.lesson_id, s.mode, s.started_at, s.created_at, "
+                            f"{access.ACCOUNT_NAME.format(u='u')} as account_name, "
                             "e.session_id is not null as expert from sessions s "
-                            "left join progress_expert_flights e on e.session_id = s.id")
+                            "left join users u on u.id = s.pilot_user_id "
+                            "left join progress_expert_flights e on e.session_id = s.id "
+                            f"where {access.visible_sql(user, '$1')}", user["id"])
     out = []
     for r in rows:
         d = dict(r)
@@ -177,7 +173,7 @@ async def _expert_table(conn, version: str, zones: list[dict], budget: list[int]
 @router.get("/pilots")
 async def pilots(user: dict = Depends(current_user)):
     async with db.acquire() as conn:
-        sess = await _sessions(conn)
+        sess = await _sessions(conn, user)
     by: dict[str, dict] = {}
     for s in sess:
         if s["expert"]:
@@ -185,17 +181,14 @@ async def pilots(user: dict = Depends(current_user)):
         p = by.setdefault(s["pilot"].lower(), {"pilot": s["pilot"], "flights": 0, "last": None})
         p["flights"] += 1
         p["last"] = (s.get("started_at") or s.get("created_at")).isoformat()
-    out = sorted(by.values(), key=lambda p: p["pilot"].lower())
-    return [p for p in out if _may_see(user, p["pilot"])]
+    return sorted(by.values(), key=lambda p: p["pilot"].lower())
 
 
 @router.get("/pilot")
 async def pilot(name: str, user: dict = Depends(current_user)):
-    if not _may_see(user, name):
-        raise HTTPException(403, "You can only see your own progress")
     stat_budget, find_budget, pending = [MAX_NEW_STATS], [MAX_NEW_FINDINGS], 0
     async with db.acquire() as conn:
-        sess = [s for s in await _sessions(conn) if s["pilot"].lower() == name.strip().lower() and not s["expert"]]
+        sess = [s for s in await _sessions(conn, user) if s["pilot"].lower() == name.strip().lower() and not s["expert"]]
         if not sess:
             raise HTTPException(404, f"No flights for {name}")
         version, zones = await _version(conn)
@@ -233,7 +226,7 @@ async def cohort(user: dict = Depends(require_instructor), last: int = 5):
     """Each pilot's last `last` checked flights."""
     stat_budget, find_budget, pending = [MAX_NEW_STATS], [MAX_NEW_FINDINGS], 0
     async with db.acquire() as conn:
-        sess = await _sessions(conn)
+        sess = await _sessions(conn, user)
         version, zones = await _version(conn)
         by_pilot: dict[str, dict] = {}
         for s in reversed(sess):                            # newest first
@@ -300,7 +293,7 @@ def _avg(xs):
 @router.get("/expert-flights")
 async def expert_flights(user: dict = Depends(require_instructor)):
     async with db.acquire() as conn:
-        sess = await _sessions(conn)
+        sess = await _sessions(conn, user)
     return [{"id": str(s["id"]), "label": flight_label(s), "pilot": s["pilot"], "expert": s["expert"]}
             for s in reversed(sess)]
 
@@ -311,6 +304,7 @@ class ExpertIn(BaseModel):
 
 @router.put("/expert-flights/{session_id}")
 async def set_expert(session_id: UUID, body: ExpertIn, user: dict = Depends(require_instructor)):
+    await access.check(session_id, user)
     async with db.acquire() as conn:
         if not await conn.fetchval("select 1 from sessions where id=$1", session_id):
             raise HTTPException(404, "No such session")

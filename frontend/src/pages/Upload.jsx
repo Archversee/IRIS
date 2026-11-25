@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import { EMPTY_LINKS, PilotPicker, VideoLinker, saveVideoLinks, usePilotOptions } from "../components/SessionFormParts.jsx";
 
-const EMPTY_DETAILS = { name: "", pilot_name: "", aircraft: "", sim_source: "", notes: "" };
+const EMPTY_DETAILS = { name: "", pilot_name: "", pilot_user_id: null, aircraft: "", sim_source: "", notes: "" };
 
 // Manual upload: pick or create a session, upload its CSV data files, link
 // videos, then Next -> Review. (A finished MAVIS flight goes to the Save
@@ -13,7 +13,7 @@ export default function Upload() {
   const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState(searchParams.get("session") || "");
-  const [form, setForm] = useState({ name: "", pilot_name: "", aircraft: "", sim_source: "MSFS" });
+  const [form, setForm] = useState({ name: "", pilot_name: "", pilot_user_id: null, aircraft: "", sim_source: "MSFS" });
   const [details, setDetails] = useState(EMPTY_DETAILS);
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [files, setFiles] = useState({ flight: null, eye: null });
@@ -37,7 +37,7 @@ export default function Upload() {
     const s = sessions.find((s) => s.id === sessionId);
     if (s) {
       setDetails({
-        name: s.name || "", pilot_name: s.pilot_name || "",
+        name: s.name || "", pilot_name: s.pilot_name || "", pilot_user_id: s.pilot_user_id || null,
         aircraft: s.aircraft || "", sim_source: s.sim_source || "", notes: s.notes || "",
       });
     }
@@ -148,8 +148,8 @@ export default function Upload() {
               </div>
               <div className="col">
                 <label>Pilot</label>
-                <PilotPicker value={form.pilot_name} options={pilots}
-                  onChange={(v) => setForm({ ...form, pilot_name: v })} />
+                <PilotPicker value={form} options={pilots}
+                  onChange={(v) => setForm({ ...form, ...v })} />
               </div>
             </div>
             <div className="row">
@@ -175,8 +175,8 @@ export default function Upload() {
               </div>
               <div className="col">
                 <label>Pilot</label>
-                <PilotPicker value={details.pilot_name} options={pilots}
-                  onChange={(v) => setDetails({ ...details, pilot_name: v })} />
+                <PilotPicker value={details} options={pilots}
+                  onChange={(v) => setDetails({ ...details, ...v })} />
               </div>
             </div>
             <div className="row">

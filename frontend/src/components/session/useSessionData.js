@@ -132,7 +132,7 @@ export function useSessionData({ id, live }) {
     if (!id) return;
     let cancelled = false;
     api.summary(id).then((sm) => { if (!cancelled) setSummary(sm); })
-      .catch((e) => { if (!cancelled) setErr(e.message); });
+      .catch((e) => { if (!cancelled) setErr(e.status === 403 ? e.detail : e.message); });
     api.listAoiZones().then(setAoiZones).catch(() => {});
     api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
@@ -241,7 +241,7 @@ export function useSessionData({ id, live }) {
         api.eye(id, undefined, (l, t) => { loaded.eye = l; totals.eye = t; reportProgress(); }),
       ])
         .then(([fl, ey]) => { if (!cancelled) { setFlight(fl); setEye(ey); } })
-        .catch((e) => { if (!cancelled) setErr(e.message); })
+        .catch((e) => { if (!cancelled) setErr(e.status === 403 ? e.detail : e.message); })
         .finally(() => {
           clearInterval(simTimer);
           if (!cancelled) { setFlightLoaded(true); setLoadProgress(1); }

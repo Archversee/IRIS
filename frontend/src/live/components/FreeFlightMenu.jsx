@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { mavisApi, mediaUrl } from "../api/mavisApi.js";
-import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
+import FlownBy, { useFlownBy } from "./FlownBy.jsx";
+import { pilotIdentity } from "../../auth/AuthContext.jsx";
 
 // Same shell as MainMenu (Basic Flight) -- placeholder UI reusing the same
 // styling/background -- but no visitor/trainee/pilot cards: Free Flight
@@ -9,7 +10,7 @@ import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
 // Flight waits for you to press Start). Mode is fixed to "pilot" (least
 // hand-holding) since there's no card to choose it from.
 export default function FreeFlightMenu({ onStarting }) {
-  const { user } = useAuth();
+  const flownBy = useFlownBy();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [media, setMedia] = useState(null);
@@ -24,6 +25,7 @@ export default function FreeFlightMenu({ onStarting }) {
   }, []);
 
   async function startSession() {
+    if (!flownBy.pilot) return;
     setBusy(true);
     setErr(null);
     try {
@@ -32,7 +34,7 @@ export default function FreeFlightMenu({ onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
-        ...pilotIdentity(user),
+        ...pilotIdentity(flownBy.pilot),
         free_flight: true, // logged as Free Flight, not as the lesson MAVIS has loaded underneath
       });
       await mavisApi.start();
@@ -49,11 +51,12 @@ export default function FreeFlightMenu({ onStarting }) {
   return (
     <div className="mavis-menu mavis-menu--solo" style={menuBg ? { backgroundImage: `url(${menuBg})` } : undefined}>
       <div className="mavis-menu__main">
+        <FlownBy {...flownBy} disabled={busy} />
         <div className="mavis-modes">
           <button
             type="button"
             className="mavis-mode-card"
-            disabled={busy}
+            disabled={busy || !flownBy.pilot}
             onClick={startSession}
             style={splashBg ? { backgroundImage: `linear-gradient(180deg, rgba(19,25,34,0.55), rgba(19,25,34,0.92)), url(${splashBg})` } : undefined}
           >

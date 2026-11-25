@@ -3,8 +3,8 @@ random bearer tokens in `auth_tokens` (see db/schema_auth.sql).
 
 Deliberately small -- no OAuth/JWT. The frontend sends the token as
 `Authorization: Bearer <token>`; routes that need a signed-in user depend
-on `current_user`, admin-only routes on `require_admin`. The rest of the
-API (MAVIS bridge, LiveAdapter, ingest) is unchanged and not gated.
+on `current_user`, admin-only routes on `require_admin`. Who may see which
+flight is app/access.py (which also says what stays open for LiveAdapter).
 """
 from __future__ import annotations
 
@@ -103,6 +103,11 @@ async def current_user(authorization: str | None = Header(default=None)) -> dict
     if row is None:
         raise HTTPException(401, "Session expired -- please sign in again")
     return dict(row)
+
+
+async def optional_user(authorization: str | None = Header(default=None)) -> dict | None:
+    """The signed-in user, or None when no token was sent (LiveAdapter.py)."""
+    return await current_user(authorization) if _bearer(authorization) else None
 
 
 async def current_token(authorization: str | None = Header(default=None)) -> str | None:

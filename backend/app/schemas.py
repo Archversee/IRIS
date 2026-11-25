@@ -9,6 +9,7 @@ from pydantic import BaseModel
 class SessionCreate(BaseModel):
     name: str
     pilot_name: str | None = None
+    pilot_user_id: UUID | None = None   # the account that flew it; pilot_name follows it (app/access.py)
     aircraft: str | None = None
     sim_source: str | None = None
     notes: str | None = None
@@ -33,6 +34,7 @@ class SessionUpdate(BaseModel):
     # exists without having to resend the ones that aren't changing.
     name: str | None = None
     pilot_name: str | None = None
+    pilot_user_id: UUID | None = None
     aircraft: str | None = None
     sim_source: str | None = None
     notes: str | None = None

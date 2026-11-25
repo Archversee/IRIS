@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import ModeCards from "./ModeCards.jsx";
 import { mavisApi, mediaUrl } from "../api/mavisApi.js";
+import FlownBy, { useFlownBy } from "./FlownBy.jsx";
 import { useAuth, pilotIdentity } from "../../auth/AuthContext.jsx";
 import { SOP_ROLES } from "../../components/Sidebar.jsx";
 import { LessonRulesCard } from "../../sop/LessonRules.jsx";
@@ -13,6 +14,7 @@ import "../../sop/sop.css";
 // duplicated here -- this screen is just "who's flying, at what level".
 export default function MainMenu({ state, onStarting }) {
   const { user } = useAuth();
+  const flownBy = useFlownBy();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [media, setMedia] = useState(null);
@@ -27,6 +29,7 @@ export default function MainMenu({ state, onStarting }) {
   }, []);
 
   async function chooseMode(mode) {
+    if (!flownBy.pilot) return;
     setBusy(true);
     setErr(null);
     try {
@@ -35,7 +38,7 @@ export default function MainMenu({ state, onStarting }) {
         jargon: "layman",
         tone: "warm",
         reference: "planned",
-        ...pilotIdentity(user),
+        ...pilotIdentity(flownBy.pilot),
       });
       await mavisApi.start();
       onStarting();
@@ -57,7 +60,8 @@ export default function MainMenu({ state, onStarting }) {
         {/* before flying: which SOP rules this lesson checks (instructors can change the list here) */}
         <LessonRulesCard lessonId={state?.lesson_id || state?.active_lesson?.id}
           editable={SOP_ROLES.includes(user?.role)} />
-        <ModeCards onChoose={chooseMode} busy={busy} media={media} />
+        <FlownBy {...flownBy} disabled={busy} />
+        <ModeCards onChoose={chooseMode} busy={busy || !flownBy.pilot} media={media} />
         {err && <div className="mavis-menu__error">{err}</div>}
       </div>
     </div>

@@ -1,7 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE || "/api";
 
-// Sign-in token (see auth/AuthContext.jsx) -- sent on every request; only
-// the /auth and /users routes require it.
+// Sign-in token (see auth/AuthContext.jsx) -- sent on every request. Which
+// flights it opens: backend app/access.py.
 const TOKEN_KEY = "authToken";
 export function getToken() {
   try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }

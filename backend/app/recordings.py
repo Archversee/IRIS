@@ -22,9 +22,9 @@ import shutil
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from . import db
+from . import access, db
 from .config import settings
 from .videos import SCREENS, VIDEO_EXTS, _inside_video_dir
 
@@ -176,7 +176,7 @@ async def recordings_saved(session_id: UUID) -> None:
 
 
 @router.get("/sessions/{session_id}/recordings")
-async def status(session_id: UUID):
+async def status(session_id: UUID, _: dict = Depends(access.viewer)):
     """{screen: {state, detail}}. state: linked | processing (OBS finishing the
     file) | failed (detail says why) | waiting (no recording reported)."""
     row = await _row(session_id)

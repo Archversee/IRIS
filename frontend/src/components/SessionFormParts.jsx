@@ -1,60 +1,75 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client.js";
+import { useAuth } from "../auth/AuthContext.jsx";
 
 // Shared by the Save Session page (end of a MAVIS flight) and the manual
 // Upload page.
 
 const NEW = "__new__";
 
-// Existing pilots = trainee accounts + any pilot name already used on a
-// session. Pick one from the dropdown, or choose "+ New pilot…" to type one.
+// Who a flight can be saved for: accounts (an instructor's own trainees, every
+// trainee for an administrator, and themselves), or a name that has no account.
 export function usePilotOptions(sessions) {
+  const { user } = useAuth();
   const [trainees, setTrainees] = useState([]);
   useEffect(() => { api.listPilots().then(setTrainees).catch(() => setTrainees([])); }, []);
   return useMemo(() => {
-    const accounts = trainees.map((t) => t.full_name || t.username);
-    const seen = new Set(accounts.map((n) => n.toLowerCase()));
+    const accounts = trainees.map((t) => ({ id: t.id, name: t.full_name || t.username }));
+    if (user.role !== "trainee") accounts.push({ id: user.id, name: user.full_name || user.username, me: true });
+    const seen = new Set(accounts.map((a) => a.name.toLowerCase()));
     const previous = [];
     for (const s of sessions || []) {
       const n = (s.pilot_name || "").trim();
-      if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); previous.push(n); }
+      if (n && !s.pilot_user_id && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); previous.push(n); }
     }
     previous.sort((a, b) => a.localeCompare(b));
-    return { accounts, previous };
-  }, [trainees, sessions]);
+    return { accounts, previous, fixed: user.role === "trainee", me: user };
+  }, [trainees, sessions, user]);
 }
 
+// value / onChange: {pilot_user_id, pilot_name} -- pilot_user_id null = a typed
+// name. A trainee's flights are their own: shown, not chosen.
 export function PilotPicker({ value, onChange, options }) {
-  const all = [...options.accounts, ...options.previous];
-  const known = !value || all.some((n) => n.toLowerCase() === value.toLowerCase());
   const [typing, setTyping] = useState(false);
-  const showInput = typing || !known;
+  const { pilot_user_id: id, pilot_name: name = "" } = value;
+  if (options.fixed) {
+    return <input value={name || options.me.full_name || options.me.username} disabled aria-label="Pilot" />;
+  }
+  const previous = options.previous.find((n) => n.toLowerCase() === (name || "").toLowerCase());
+  const showInput = typing || (!id && !!name && !previous);
+  // its pilot's account isn't one this user can choose (another instructor's trainee)
+  const other = id && !options.accounts.some((a) => a.id === id);
 
   return (
     <div className="pilot-picker">
       <select
-        value={showInput ? NEW : (all.find((n) => n.toLowerCase() === (value || "").toLowerCase()) || "")}
+        value={showInput ? NEW : id ? `u:${id}` : previous ? `n:${previous}` : ""}
         onChange={(e) => {
-          if (e.target.value === NEW) { setTyping(true); onChange(""); }
-          else { setTyping(false); onChange(e.target.value); }
+          const v = e.target.value;
+          setTyping(v === NEW);
+          if (v.startsWith("u:")) {
+            const a = options.accounts.find((x) => x.id === v.slice(2));
+            onChange(a ? { pilot_user_id: a.id, pilot_name: a.name } : value);
+          } else onChange({ pilot_user_id: null, pilot_name: v.startsWith("n:") ? v.slice(2) : "" });
         }}
       >
         <option value="">— select pilot —</option>
+        {other && <option value={`u:${id}`}>{name}</option>}
         {options.accounts.length > 0 && (
-          <optgroup label="Trainee accounts">
-            {options.accounts.map((n) => <option key={"a" + n} value={n}>{n}</option>)}
+          <optgroup label="Accounts">
+            {options.accounts.map((a) => <option key={a.id} value={`u:${a.id}`}>{a.name}{a.me ? " (me)" : ""}</option>)}
           </optgroup>
         )}
         {options.previous.length > 0 && (
-          <optgroup label="Previous pilots">
-            {options.previous.map((n) => <option key={"p" + n} value={n}>{n}</option>)}
+          <optgroup label="Previous pilots (no account)">
+            {options.previous.map((n) => <option key={n} value={`n:${n}`}>{n}</option>)}
           </optgroup>
         )}
         <option value={NEW}>+ New pilot…</option>
       </select>
       {showInput && (
-        <input autoFocus placeholder="Type the pilot's name" value={value || ""}
-          onChange={(e) => onChange(e.target.value)} />
+        <input autoFocus placeholder="Type the pilot's name" value={name || ""}
+          onChange={(e) => onChange({ pilot_user_id: null, pilot_name: e.target.value })} />
       )}
     </div>
   );

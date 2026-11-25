@@ -7,6 +7,8 @@ Run it on the sim PC (standard library only, any Python 3.10+):
 
     python scripts/check_eye_pipeline.py                 # checks the latest session
     python scripts/check_eye_pipeline.py --session <id>  # a specific session
+    python scripts/check_eye_pipeline.py --user admin    # signs in (asks for the password;
+                                                         # or set IRIS_USER / IRIS_PASSWORD)
     python scripts/check_eye_pipeline.py --listen 15     # also listen for Smart Eye
                                                          # packets for 15 s (stop the
                                                          # adapter first: it holds the port)
@@ -14,6 +16,7 @@ Run it on the sim PC (standard library only, any Python 3.10+):
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import socket
@@ -59,8 +62,21 @@ def warn(msg, fix=""):
         print(f"        -> {fix}")
 
 
+_token = None
+
+
+def sign_in(base, user, password):
+    """Sessions are only shown to whoever may see them (backend/app/access.py)."""
+    global _token
+    req = urllib.request.Request(base + "/auth/login", method="POST", headers={"Content-Type": "application/json"},
+                                 data=json.dumps({"username": user, "password": password}).encode())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        _token = json.loads(r.read())["token"]
+
+
 def get(base, path):
-    with urllib.request.urlopen(base + path, timeout=15) as r:
+    req = urllib.request.Request(base + path, headers={"Authorization": f"Bearer {_token}"} if _token else {})
+    with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 
 
@@ -221,11 +237,18 @@ def main():
     ap.add_argument("--iris", default=os.environ.get("IRIS_URL", "http://localhost:8000"))
     ap.add_argument("--session", help="session id (default: the latest)")
     ap.add_argument("--listen", type=float, default=0, help="also listen for Smart Eye packets for N seconds")
+    ap.add_argument("--user", default=os.environ.get("IRIS_USER"), help="IRIS account to read the session with")
     a = ap.parse_args()
     up = check_backend(a.iris)
     if up:
         check_adapter(a.iris)
-        check_session(a.iris, a.session)
+        user = a.user or input("IRIS username (an admin sees every session): ")
+        try:
+            sign_in(a.iris, user, os.environ.get("IRIS_PASSWORD") or getpass.getpass(f"IRIS password for {user}: "))
+        except urllib.error.HTTPError:
+            bad(f"couldn't sign in to IRIS as {user}", "section 3 needs an IRIS account")
+        else:
+            check_session(a.iris, a.session)
     if a.listen:
         listen(a.listen)
     print("\n" + ("All checks passed." if not problems else f"{len(problems)} problem(s) found -- fix the first one first."))

@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import db
-from ..auth import current_user
+from .. import access, db
+from ..auth import current_user, optional_user
 from ..catalog import lesson_title
 
 log = logging.getLogger(__name__)
@@ -112,7 +112,9 @@ async def leaderboard(
     q: str = "",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    user: dict | None = Depends(optional_user),
 ):
+    """can_review: whether this account may open the run's review."""
     args: list = []
 
     def arg(v) -> str:
@@ -125,7 +127,12 @@ async def leaderboard(
     if q:
         like = arg("%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
         search_sql = "where " + _SEARCH.replace("$q", like)
+    n_search = len(args)
     limit, offset = arg(page_size), arg((page - 1) * page_size)
+    may = (f"exists (select 1 from sessions vs where vs.id = ranked.session_id and "
+           f"{access.visible_sql(user, '$ME', 'vs')})" if user else "false")
+    if user:
+        may = may.replace("$ME", arg(user["id"]))
     sql = f"""
         with ranked as (
             select *, row_number() over (order by total desc nulls last, retries asc nulls last,
@@ -134,7 +141,7 @@ async def leaderboard(
         )
         select rank, id, session_id, user_id, pilot, coalesce(circuit, lesson_id) as circuit, aircraft,
                total, grade, expert_total, expert_reference, mode, retries, capped, scored_at,
-               count(*) over () as matches
+               {may} as can_review, count(*) over () as matches
           from ranked {search_sql}
          order by rank
          limit {limit} offset {offset}
@@ -143,7 +150,7 @@ async def leaderboard(
         rows = [dict(r) for r in await conn.fetch(sql, *args)]
         matches = rows[0]["matches"] if rows else (
             # past the last page: still report how many there are
-            await conn.fetchval(f"select count(*) from ({board}) ranked {search_sql}", *args[:-2])
+            await conn.fetchval(f"select count(*) from ({board}) ranked {search_sql}", *args[:n_search])
         )
     for r in rows:
         r.pop("matches", None)

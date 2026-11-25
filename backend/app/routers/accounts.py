@@ -7,7 +7,7 @@
   POST   /auth/me/password      {current_password, new_password}
   PATCH  /auth/me/prefs         {tours_enabled?, tours_seen_add?, tours_reset?}
 
-  GET    /users/pilots          any signed-in user: trainee names (pilot dropdown)
+  GET    /users/pilots          the trainees you can fly / save a flight for (pilot dropdown)
   GET    /users                 admin: every account
   POST   /users                 admin: create
   PATCH  /users/{id}            admin: edit details / role / instructor / reset password
@@ -23,7 +23,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import access, db
 from ..auth import (ROLES, USER_FIELDS, current_token, current_user, hash_password,
                     issue_token, require_admin, verify_password)
 
@@ -189,13 +189,12 @@ async def list_users(_: dict = Depends(require_admin)):
 
 
 @router.get("/users/pilots")
-async def list_pilots(_: dict = Depends(current_user)):
-    """Trainee accounts, for the pilot dropdown when saving/uploading a
-    session -- any signed-in user (names only, no account details)."""
+async def list_pilots(user: dict = Depends(current_user)):
+    """Trainee accounts for the pilot dropdowns (starting, saving and uploading a
+    flight): an instructor's own trainees, an admin's all of them, a trainee's
+    only themselves. Names only, no account details."""
     async with db.acquire() as conn:
-        rows = await conn.fetch(
-            "select id, username, full_name from users where role = 'trainee' order by full_name, username")
-    return [dict(r) for r in rows]
+        return await access.pilots_for(conn, user)
 
 
 @router.post("/users", status_code=201)

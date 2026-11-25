@@ -342,9 +342,10 @@ def callout_responses(fl: list[dict], callouts: list[dict]) -> list[dict]:
 
 # ---------------------------------------------------------------- across flights
 def pilot_of(session: dict) -> str | None:
-    """Who flew it: sessions.pilot_name, else the part after ' – ' in a MAVIS
-    session name ('Your First Circuit – Alex'). None when unknown."""
-    p = (session.get("pilot_name") or "").strip()
+    """Who flew it: the account's name (account_name, where the query has it), else
+    sessions.pilot_name, else the part after ' – ' in a MAVIS session name
+    ('Your First Circuit – Alex'). None when unknown."""
+    p = (session.get("account_name") or session.get("pilot_name") or "").strip()
     if p:
         return p
     name = session.get("name") or ""

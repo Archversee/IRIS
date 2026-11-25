@@ -6,7 +6,7 @@ flight_evaluations + rule_results; the frontend asks MAVIS to (re-)check via
 /mavis/sop/evaluate/{session_id}. IRIS writes only the instructor's part,
 because it knows who is signed in and their role.
 
-  GET   /sessions/{id}/rule-results            latest check (any signed-in user)
+  GET   /sessions/{id}/rule-results            latest check (whoever may see the flight: app/access.py)
   PATCH /rule-results/{id}                     instructor: {instructor_verdict, instructor_note}
   POST  /sessions/{id}/rule-results/sign-off   instructor: {signed_off, comment}
   GET   /users/{id}/rule-strictness            the trainee's strictness preset
@@ -23,7 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import access, db
 from ..auth import current_user
 
 log = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def _summary(results: list[dict]) -> dict:
 
 
 @router.get("/sessions/{session_id}/rule-results")
-async def latest(session_id: UUID, user: dict = Depends(current_user)):
+async def latest(session_id: UUID, user: dict = Depends(access.viewer)):
     async with db.acquire() as conn:
         ev = await conn.fetchrow("select * from flight_evaluations where session_id=$1 "
                                  "order by created_at desc limit 1", session_id)
@@ -118,6 +118,7 @@ async def set_verdict(result_id: int, body: VerdictIn, user: dict = Depends(requ
     if body.instructor_verdict is not None and body.instructor_verdict not in OVERRIDES:
         raise HTTPException(400, f"instructor_verdict must be one of {', '.join(OVERRIDES)} or null")
     note = (body.instructor_note or "").strip() or None
+    await access.check_result(result_id, user)
     async with db.acquire() as conn:
         row = await conn.fetchrow("""
             update rule_results set instructor_verdict=$2, instructor_note=$3,
@@ -137,6 +138,7 @@ class SignOffIn(BaseModel):
 
 @router.post("/sessions/{session_id}/rule-results/sign-off")
 async def sign_off(session_id: UUID, body: SignOffIn, user: dict = Depends(require_instructor)):
+    await access.check(session_id, user)
     async with db.acquire() as conn:
         ev = await conn.fetchrow("select id from flight_evaluations where session_id=$1 "
                                  "order by created_at desc limit 1", session_id)

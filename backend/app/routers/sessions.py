@@ -1,9 +1,10 @@
 """Session CRUD."""
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .. import db, deleted_sessions, mavis_bridge, videos
+from .. import access, db, deleted_sessions, mavis_bridge, videos
+from ..auth import current_user, optional_user
 from ..catalog import lesson_title
 from ..schemas import Session, SessionCreate, SessionUpdate
 from . import stream
@@ -34,33 +35,40 @@ async def list_running_sessions():
 
 
 @router.post("", response_model=Session, status_code=201)
-async def create_session(body: SessionCreate):
+async def create_session(body: SessionCreate, user: dict = Depends(current_user)):
+    fields = body.model_dump()
     async with db.acquire() as conn:
+        await access.set_pilot(conn, fields, user, None)
         row = await conn.fetchrow(
             """
-            insert into sessions (name, pilot_name, aircraft, sim_source, notes)
-            values ($1, $2, $3, $4, $5)
+            insert into sessions (name, pilot_name, pilot_user_id, aircraft, sim_source, notes)
+            values ($1, $2, $3, $4, $5, $6)
             returning *
             """,
-            body.name, body.pilot_name, body.aircraft, body.sim_source, body.notes,
+            fields["name"], fields["pilot_name"], fields["pilot_user_id"],
+            fields["aircraft"], fields["sim_source"], fields["notes"],
         )
     return dict(row)
 
 
 @router.get("", response_model=list[Session])
-async def list_sessions():
+async def list_sessions(user: dict = Depends(current_user)):
+    """The flights this user may see (app/access.py)."""
     async with db.acquire() as conn:
         rows = await conn.fetch(
-            """
-            select s.*,
+            f"""
+            select s.*, {access.ACCOUNT_NAME.format(u='u')} as account_name,
                    (select array_agg(t.title order by t.first_flight)
                       from (select title, min(flight) as first_flight
                               from session_flights f where f.session_id = s.id
                              group by title) t) as curricula
-              from sessions s
+              from sessions s left join users u on u.id = s.pilot_user_id
+             where {access.visible_sql(user, '$1')}
              order by s.created_at desc
-            """)
+            """, user["id"])
     out = [dict(r) for r in rows]
+    for r in out:      # the account's name as it is now
+        r["pilot_name"] = r.pop("account_name") or r["pilot_name"]
     for r in out:      # flown before flights were logged: the session's own lesson says what it was
         if not r.get("curricula") and lesson_title(r.get("lesson_id")):
             r["curricula"] = [lesson_title(r["lesson_id"])]
@@ -68,27 +76,41 @@ async def list_sessions():
 
 
 @router.get("/{session_id}", response_model=Session)
-async def get_session(session_id: UUID):
+async def get_session(session_id: UUID, user: dict | None = Depends(optional_user)):
     async with db.acquire() as conn:
-        row = await conn.fetchrow("select * from sessions where id = $1", session_id)
+        row = await conn.fetchrow(
+            f"select s.*, {access.ACCOUNT_NAME.format(u='u')} as account_name "
+            "from sessions s left join users u on u.id = s.pilot_user_id where s.id = $1", session_id)
     if row is None:
         raise HTTPException(404, "Session not found")
-    return dict(row)
+    if user is None:
+        # LiveAdapter.py (no account) polls this to know when to stop OBS: that it
+        # exists and whether it has ended, nothing about the flight
+        return {"id": row["id"], "name": "", "created_at": row["created_at"], "ended_at": row["ended_at"]}
+    await access.check(session_id, user, live_ok=True)
+    d = dict(row)
+    d["pilot_name"] = d.pop("account_name") or d["pilot_name"]
+    return d
 
 
 @router.patch("/{session_id}", response_model=Session)
-async def update_session(session_id: UUID, body: SessionUpdate):
+async def update_session(session_id: UUID, body: SessionUpdate, user: dict = Depends(current_user)):
     """Fills in session details after the fact -- Upload's own form uses
     this for name/pilot/aircraft/notes, and MAVIS's End Session/Main-menu
     flow (LiveCoach.jsx) uses it to set ended_at the moment the trainee
     actually quits."""
     fields = body.model_dump(exclude_unset=True)
-    if not fields:
-        row = await get_session(session_id)
-        return row
-
-    set_clause = ", ".join(f"{col} = ${i}" for i, col in enumerate(fields, start=2))
+    # whichever screen it's pressed on can end the flight MAVIS is on (OBS stops on it)
+    if not (set(fields) == {"ended_at"} and access.is_current(session_id)):
+        await access.check(session_id, user)
     async with db.acquire() as conn:
+        current = await conn.fetchrow("select * from sessions where id = $1", session_id)
+        if current is None:
+            raise HTTPException(404, "Session not found")
+        await access.set_pilot(conn, fields, user, dict(current))
+        if not fields:
+            return dict(current)
+        set_clause = ", ".join(f"{col} = ${i}" for i, col in enumerate(fields, start=2))
         row = await conn.fetchrow(
             f"update sessions set {set_clause} where id = $1 returning *",
             session_id, *fields.values(),
@@ -115,9 +137,11 @@ async def update_session(session_id: UUID, body: SessionUpdate):
 
 
 @router.delete("/{session_id}", status_code=204)
-async def delete_session(session_id: UUID):
+async def delete_session(session_id: UUID, user: dict = Depends(current_user)):
     """Deletes the session, all its data (cascade), and its video files:
     linked videos + OBS recordings no other session uses (see videos.py)."""
+    if not access.is_current(session_id):     # Finish & discard works from whichever screen it's pressed on
+        await access.check(session_id, user)
     # before the delete: MAVIS and the eye bridge keep sending data for this session
     deleted_sessions.add(session_id)
     try:

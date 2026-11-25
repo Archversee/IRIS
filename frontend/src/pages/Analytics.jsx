@@ -16,7 +16,7 @@ export default function Analytics() {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    api.analytics(id).then(setA).catch((e) => setErr(e.message));
+    api.analytics(id).then(setA).catch((e) => setErr(e.status === 403 ? e.detail : e.message));
   }, [id]);
 
   if (err) return <div className="card err">Error: {err}</div>;

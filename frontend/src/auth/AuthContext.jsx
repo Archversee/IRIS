@@ -7,12 +7,20 @@ const AuthContext = createContext(null);
 
 export const ROLE_LABELS = { trainee: "Trainee", instructor: "Instructor", admin: "Administrator" };
 
-// Who's flying, for MAVIS's session setup: the name it uses in the debrief and
-// posts on the leaderboard, and the account that owns those leaderboard runs
-// (so that pilot can delete them).
-export function pilotIdentity(user) {
-  if (!user) return {};
-  return { trainee_name: user.full_name || user.username || "", pilot_user_id: user.id };
+// Who's flying (live/components/FlownBy.jsx: not always who is signed in), for
+// MAVIS's session setup: the name it uses in the debrief and posts on the
+// leaderboard, and the account the flight and its leaderboard runs belong to.
+export function pilotIdentity(pilot) {
+  if (!pilot) return {};
+  return { trainee_name: pilot.full_name || pilot.username || "", pilot_user_id: pilot.id };
+}
+
+// the pilot an instructor last picked on the start menu, per account (sessionStorage)
+export const FLOWN_BY_KEY = "flownBy:";
+function forgetPilot() {
+  try {
+    Object.keys(sessionStorage).filter((k) => k.startsWith(FLOWN_BY_KEY)).forEach((k) => sessionStorage.removeItem(k));
+  } catch { /* storage unavailable -- nothing kept */ }
 }
 
 export function AuthProvider({ children }) {
@@ -43,6 +51,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try { await api.logout(); } catch { /* already gone -- fine */ }
     setToken(null);
+    forgetPilot();
     setUser(null);
   }, []);
 

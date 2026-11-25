@@ -92,11 +92,11 @@ export default function SaveSession() {
       .then((s) => {
         if (s.notes) notesTouched.current = true;
         setDetails({
-          name: s.name || "", pilot_name: s.pilot_name || "", aircraft: s.aircraft || "",
+          name: s.name || "", pilot_name: s.pilot_name || "", pilot_user_id: s.pilot_user_id || null, aircraft: s.aircraft || "",
           sim_source: s.sim_source || "", notes: s.notes || "",
         });
       })
-      .catch((e) => setErr(e.status === 404 ? "This session no longer exists." : e.message));
+      .catch((e) => setErr(e.status === 404 ? "This session no longer exists." : e.detail || e.message));
     api.listSessions().then(setSessions).catch(() => {});
   }, [id]);
 
@@ -153,8 +153,8 @@ export default function SaveSession() {
           </div>
           <div className="col">
             <label>Pilot</label>
-            <PilotPicker value={details.pilot_name} options={pilots}
-              onChange={(v) => setDetails((d) => ({ ...d, pilot_name: v }))} />
+            <PilotPicker value={details} options={pilots}
+              onChange={(v) => setDetails((d) => ({ ...d, ...v }))} />
           </div>
         </div>
         <label>Aircraft</label>

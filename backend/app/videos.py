@@ -5,33 +5,45 @@ import threading
 import time
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from . import db
+from . import access, db
+from .auth import current_user
 from .config import settings
 
 router = APIRouter(tags=["videos"])
 VIDEO_EXTS = {".mp4", ".webm", ".m4v", ".mov"}
 SCREENS = {"instrument", "otw"}  # each session links one recording per screen
 
+async def _others_videos(user: dict) -> set[str]:
+    """Videos of flights this user may not see."""
+    async with db.acquire() as conn:
+        rows = await conn.fetch("select instrument_video_filename a, otw_video_filename b from sessions s "
+                                f"where not {access.visible_sql(user, '$1')}", user["id"])
+    return {f for r in rows for f in (r["a"], r["b"]) if f}
+
+
 @router.get("/videos-available")
-async def available():
+async def available(user: dict = Depends(current_user)):
     found = []
+    hidden = await _others_videos(user)
     for root, _dirs, files in os.walk(settings.video_dir):
         for f in files:
             if os.path.splitext(f)[1].lower() in VIDEO_EXTS:
                 rel = os.path.relpath(os.path.join(root, f), settings.video_dir)
                 found.append(rel.replace(os.sep, "/"))
-    return sorted(found)
+    return sorted(f for f in found if f not in hidden)
 
 class VideoLink(BaseModel):
     filename: str | None = None
     offset_sec: float = 0
 
 @router.put("/sessions/{session_id}/video/{screen}")
-async def set_video(session_id: str, screen: str, body: VideoLink):
+async def set_video(session_id: UUID, screen: str, body: VideoLink, user: dict = Depends(access.editor)):
     if screen not in SCREENS:
         raise HTTPException(404, "Unknown screen — use 'instrument' or 'otw'")
+    if body.filename and body.filename in await _others_videos(user):
+        raise HTTPException(403, access.NOT_YOURS)
     if body.filename and not os.path.isfile(os.path.join(settings.video_dir, body.filename)):
         raise HTTPException(404, "File not in video dir")
     async with db.acquire() as conn:

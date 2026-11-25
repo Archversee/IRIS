@@ -181,6 +181,9 @@ async def get_summary(session_id: UUID):
             card = None
         # pilot: as saved on the Save Session page, else the name the run was posted under
         pilot = s["pilot_name"]
+        if s["pilot_user_id"]:
+            pilot = await conn.fetchval("select coalesce(nullif(trim(full_name), ''), username) from users "
+                                        "where id = $1", s["pilot_user_id"]) or pilot
         if not pilot:
             try:
                 pilot = await conn.fetchval(
