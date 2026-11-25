@@ -15,7 +15,7 @@ name: "Unusual Attitude Recovery"
 # configuration "in the correct sequence" to a stabilized level flight attitude.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# Same airfield geometry as Your First Circuit -- used for the map and the runway the
 # aircraft is put back on at the end.
 airport:
   icao: WSAP
@@ -106,7 +106,7 @@ briefing:
     power, lower the nose, then level the wings. Nose low: power off, level the
     wings, then raise the nose.
 
-# See lesson00_familiarization.yaml for the step_notes format. The up-front
+# See basic05_familiarization.yaml for the step_notes format. The up-front
 # demo sets each attitude up and recovers it itself (runtime/flight_flow.py
 # _demo_upset); demo: false steps are explained when the trainee gets there.
 step_notes:

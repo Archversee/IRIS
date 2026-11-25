@@ -13,7 +13,7 @@ name: "Diversion"
 # read the same here.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map, finding Paya Lebar at
+# Same airfield geometry as Your First Circuit -- used for the map, finding Paya Lebar at
 # the end, and the runway the aircraft is put back on.
 airport:
   icao: WSAP
@@ -95,7 +95,7 @@ briefing:
     Diversion and lost procedure, airborne at {alt} feet, inbound to Paya Lebar.
     Expect a diversion, then a lost-procedure exercise.
 
-# See lesson00_familiarization.yaml for the step_notes format. teleport: the
+# See basic05_familiarization.yaml for the step_notes format. teleport: the
 # step starts somewhere else (same keys as airborne_start); timeout_s: its own
 # time limit (a diversion turn has to be prompt); done: said only when the step
 # was really done, not when it timed out.

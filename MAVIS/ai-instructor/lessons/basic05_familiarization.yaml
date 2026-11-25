@@ -3,7 +3,7 @@ name: "Flight Familiarization"
 # core/familiarization.py; main.py switches on this type.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map, and as the target the
+# Same airfield geometry as Your First Circuit -- used for the map, and as the target the
 # trainee navigates back to at the end.
 airport:
   icao: WSAP

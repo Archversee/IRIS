@@ -360,11 +360,10 @@ class FamiliarizationEngine:
         self.geom = None
         self.skipped: set[str] = set()          # steps that timed out unfinished
         self._last_fire: dict[str, float] = {}
-        # demo_tracker() only: the to-do list's heading, the active step's
-        # note, and whether MAVIS has done what the step asks
+        # demo_tracker() only: the to-do list's heading,
+        # and whether MAVIS has done what the step asks
         self.todo_title: str | None = None
         self._demo_skip: set[str] = set()        # steps the demo doesn't fly: never ticked off
-        self._demo_note = ""
         self._demo_met = False
         self._reset_step()
 
@@ -1442,8 +1441,6 @@ class FamiliarizationEngine:
                     row["progress"] = "Listen to MAVIS \u2014 aircraft held"
                 if self._demo_met:
                     row["progress"] = "Done \u2014 next one coming up"
-                elif self._demo_note:
-                    row["progress"] = self._demo_note
             steps.append(row)
         return {**({"title": self.todo_title} if self.todo_title else {}),
                 "steps": steps, "complete": self.phase == "DEBRIEF",
@@ -1471,13 +1468,12 @@ class FamiliarizationEngine:
         t.todo_title = "To do \u00b7 MAVIS demonstrating"
         return t
 
-    def demo_step(self, step: str, tel: Telemetry, note: str = "") -> None:
+    def demo_step(self, step: str, tel: Telemetry) -> None:
         """MAVIS starts demonstrating this step: it becomes the active one."""
         self.detector.advance(step)
         self._reset_step()
         self._enter(tel, time.time(), log_it=False)
         self._events = []
-        self._demo_note = note
         self._demo_met = False
 
     def demo_tick(self, tel: Telemetry) -> None:

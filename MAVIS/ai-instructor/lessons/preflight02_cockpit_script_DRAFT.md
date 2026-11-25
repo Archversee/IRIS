@@ -1,19 +1,19 @@
 # Cockpit Familiarisation: spoken checklist draft
 
 > **Superseded where it describes the G1000.** The 3D view now uses `cessna.glb`, an older
-> round-gauge 172, and `lesson00_cockpit.py` was rewritten to match (throttle and mixture
+> round-gauge 172, and `preflight02_cockpit.py` was rewritten to match (throttle and mixture
 > knobs, ignition, fuel selector, flight instruments, radio stack, avionics, lighting). The
 > module is the current text; this draft is kept for provenance.
 
-Working draft for `lesson00_cockpit` (catalog stub today: `available: false`, no `kind`,
-no content module). Companion to `lesson00_preflight_script_DRAFT.md`, same convention:
-this becomes `lessons/lesson00_cockpit.py`: plain Python, same shape as
-`lesson00_preflight.py` (`TITLE` + `CHECKPOINTS` + `as_state()`/`find()`/`speech_text()`).
+Working draft for `preflight02_cockpit` (catalog stub today: `available: false`, no `kind`,
+no content module). Companion to `preflight01_walkaround_script_DRAFT.md`, same convention:
+this becomes `lessons/preflight02_cockpit.py`: plain Python, same shape as
+`preflight01_walkaround.py` (`TITLE` + `CHECKPOINTS` + `as_state()`/`find()`/`speech_text()`).
 
 ## Decisions
 
 - **Narration only.** No per-checkpoint verification question, matching
-  `lesson00_preflight` exactly. If this changes, it changes for both reading lessons
+  `preflight01_walkaround` exactly. If this changes, it changes for both reading lessons
   together, not one at a time.
 - **Fixed pilot's-eye camera per checkpoint**, unlike the walk-around's free orbit.
   Clicking a checkpoint snaps the camera to a preset position looking at that item,
@@ -164,7 +164,7 @@ aircraft, and this lesson should follow an equivalent natural order in the cockp
 
 ---
 
-## Before this becomes `lesson00_cockpit.py`
+## Before this becomes `preflight02_cockpit.py`
 
 1. Generalise the reading-lesson plumbing from single-lesson to lesson-id-keyed.
    `index.html:1583` dispatches on `les.kind==="reading"`, not on lesson id, so *any*
@@ -173,9 +173,9 @@ aircraft, and this lesson should follow an equivalent natural order in the cockp
    `main.py`. Rename-and-parameterise, not a redesign.
 2. Verify the G1000 PFD/MFD content in checkpoints 5–6 against the real panel.
 3. Write the content module, with the verification caveat in its docstring (as
-   `lesson00_preflight.py` does).
+   `preflight01_walkaround.py` does).
 4. Once the `.glb` exists: calibrate a hotspot position **and** a camera position/target
    per checkpoint; confirm whether the model's sub-meshes are named.
 5. Confirm checkpoint order against a real seated cockpit flow.
-6. Add `"kind": "reading"` and set `"available": true` on `lesson00_cockpit` in
+6. Add `"kind": "reading"` and set `"available": true` on `preflight02_cockpit` in
    `catalog.json`.

@@ -2,7 +2,7 @@
 
 Companion to phrases.py's spoken-content convention: plain Python here, not
 YAML, since this is narration text rather than tunable config. See
-lessons/lesson00_preflight_script_DRAFT.md for provenance/notes. Verify
+lessons/preflight01_walkaround_script_DRAFT.md for provenance/notes. Verify
 against the actual aircraft POH before treating this as authoritative.
 """
 

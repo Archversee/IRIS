@@ -17,8 +17,10 @@ def _titles() -> dict[str, str]:
     except Exception as e:           # not checked out beside the backend, or unreadable
         log.info("lesson catalog not available (%s)", e)
         return {}
-    return {les["id"]: les.get("title", les["id"])
-            for mod in cat.get("modules", []) for les in mod.get("lessons", []) if "id" in les}
+    # old_ids: what the lesson was called in flights saved before it was renamed
+    return {i: les.get("title", les["id"])
+            for mod in cat.get("modules", []) for les in mod.get("lessons", []) if "id" in les
+            for i in (les["id"], *les.get("old_ids", []))}
 
 
 def lesson_title(lesson_id: str | None) -> str | None:

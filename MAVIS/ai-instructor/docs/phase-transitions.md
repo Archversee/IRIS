@@ -1,7 +1,7 @@
 # Phase transition requirements, Lesson 1 (WSAP pattern)
 
 The lesson tracker (`core/phase_detector.py`) advances through these phases in order.
-All geometry uses the runway threshold lat/lon in `lessons/lesson01_pattern.yaml` and
+All geometry uses the runway threshold lat/lon in `lessons/basic08_pattern.yaml` and
 `centerline_offset_m` to align the map with the sim.
 
 ## Phase order
@@ -103,7 +103,7 @@ keeps you in CLIMB_OUT.
 ## Map calibration
 
 If the aircraft is centred on the runway in MSFS but offset on the tablet map, adjust
-`pattern.centerline_offset_m` in `lessons/lesson01_pattern.yaml`:
+`pattern.centerline_offset_m` in `lessons/basic08_pattern.yaml`:
 
 - Appears **too far right** on map → **increase** the value (default `18`).
 - Appears **too far left** → **decrease** it.

@@ -8,7 +8,7 @@ name: "Straight & Level, Climbs & Descents"
 # and down to a set height.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# Same airfield geometry as Your First Circuit -- used for the map and the runway the
 # aircraft is put back on at the end.
 airport:
   icao: WSAP
@@ -90,7 +90,7 @@ briefing:
     Paya Lebar. Attitude plus power equals performance. Demonstration first:
     trim, speed changes, level-offs at assigned altitudes, power-off glide.
 
-# See lesson00_familiarization.yaml for the step_notes format.
+# See basic05_familiarization.yaml for the step_notes format.
 step_notes:
   STRAIGHT_LEVEL:
     title: Straight & level

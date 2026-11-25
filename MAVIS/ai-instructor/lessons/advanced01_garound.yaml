@@ -1,5 +1,5 @@
 name: "Go-Around"
-# Circuit Variations. Same circuit as Lesson 1, from runway 02 at Paya Lebar.
+# Advanced Flight. Same circuit as Your First Circuit, from runway 02 at Paya Lebar.
 # On final MAVIS calls "Go around!" at a random height (go_around.call_agl_ft);
 # the trainee applies full power, pitches for the climb and brings the flaps up
 # in stages (core/variations.py GoAround), then climbs out straight ahead.

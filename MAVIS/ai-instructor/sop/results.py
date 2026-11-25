@@ -30,6 +30,8 @@ from uuid import UUID
 
 import yaml
 
+from core.lesson_catalog import current_id
+
 from .evaluate import (STRICTNESS, evaluate, pick_strictness, sample_from_flight_row, summarize)
 from .gaze import judge_all as judge_gaze, load_eye, phase_spans
 from .runtime import match_profile
@@ -74,6 +76,7 @@ def snapshot(rules: list[dict]) -> list[dict]:
 
 
 def load_lesson(lesson_id: str | None, default_path: str | None) -> tuple[str | None, dict]:
+    lesson_id = current_id(lesson_id)      # flown before the lesson was renamed
     for p in ([APP_ROOT / "lessons" / f"{lesson_id}.yaml"] if lesson_id else []) + \
              ([APP_ROOT / str(default_path)] if default_path else []):
         if p.is_file():

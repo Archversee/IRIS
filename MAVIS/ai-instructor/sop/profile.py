@@ -126,7 +126,7 @@ def nominal_circuit(lesson: dict, aircraft: dict) -> dict[str, dict[str, tuple[f
 
 
 def load_nominal(aircraft_id: str | None, lesson_path: str | None = None) -> dict | None:
-    lesson = _load(APP_ROOT / (lesson_path or "lessons/lesson01_pattern.yaml"))
+    lesson = _load(APP_ROOT / (lesson_path or "lessons/basic08_pattern.yaml"))
     ac_file = APP_ROOT / "profiles" / "aircraft" / f"{aircraft_id}.yaml"
     if not lesson or not aircraft_id or not ac_file.is_file():
         return None

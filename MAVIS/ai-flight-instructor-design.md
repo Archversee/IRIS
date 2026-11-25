@@ -172,7 +172,7 @@ coach/llm_coach.py         queue, speech lock, stale suppression, Ollama, Q&A, e
 coach/phrases.py           PERSONA + all templates (incl. switch-flaps + INTRO) — edit tone here
 voice/tts.py               kokoro/piper/pyttsx3, synth-to-wav for tablet playback
 web/server.py + static/    FastAPI, WS state push, single-file UI, cockpit schematic SVG
-lessons/lesson01_pattern.yaml   runway/pattern/total_circuits/targets
+lessons/basic08_pattern.yaml   runway/pattern/total_circuits/targets
 profiles/aircraft/c172sp_g1000.yaml   v-speeds, flaps style, facts (feeds Q&A)
 tools/hid_forwarder.py     optional sim-PC-side raw HID → UDP
 ```
@@ -430,7 +430,7 @@ The trainee's *actual* flying (post-teleport reps) is what's scored; retries the
 - Entry schema:
 
 ```
-{ "name": "Jun", "mode": "pilot", "lesson": "lesson01_pattern", "ts": 1783600000,
+{ "name": "Jun", "mode": "pilot", "lesson": "basic08_pattern", "ts": 1783600000,
   "total": 82, "grade": "B", "retries": 1, "capped": true,
   "scores": { "track": 90, "speed": 85, "altitude": 88, "landing": 74, "smoothness": 92 } }
 ```
@@ -494,7 +494,7 @@ The trainee flies slower/faster than the expert, so runs can't be compared by ti
 Stored as JSON at `profiles/experts/‹name›.json`:
 
 ```
-{ "name": "Maverick-L1-Run3", "callsign": "Maverick", "lesson": "lesson01_pattern",
+{ "name": "Maverick-L1-Run3", "callsign": "Maverick", "lesson": "basic08_pattern",
   "aircraft": "c172sp_g1000", "recorded_by": "instructor", "ts": 173..., "quality": "good",
   "samples": [ ...raw ticks... ], "reference": { ...progress-indexed curve... },
   "turn_points": { "CROSSWIND": {...}, "DOWNWIND": {...}, ... },

@@ -39,7 +39,7 @@ class LessonSel(BaseModel):
 
 class CheckpointMsg(BaseModel):
     id: str = ""
-    lesson: str = "lesson00_preflight"
+    lesson: str = "preflight01_walkaround"
 
 
 class NameMsg(BaseModel):

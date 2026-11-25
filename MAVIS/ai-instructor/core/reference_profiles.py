@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .lesson_catalog import current_id
+
 HERE = Path(__file__).resolve().parent.parent
 EXPERTS_DIR = HERE / "profiles" / "experts"
 
@@ -243,14 +245,14 @@ class ReferenceProfile:
         }
 
 
-PLANNED = ReferenceProfile("planned", "Planned circuit", "lesson01_pattern", track=None)
+PLANNED = ReferenceProfile("planned", "Planned circuit", "basic08_pattern", track=None)
 
 
 class ReferenceRegistry:
     def __init__(self, lesson: dict, lesson_id: str):
         self.lesson_id = lesson_id
         # A lesson flown over the same circuit (e.g. the night circuit) can share
-        # another lesson's expert runs: references_from: lesson01_pattern
+        # another lesson's expert runs: references_from: basic08_pattern
         self.shared_from = lesson.get("references_from") or ""
         self.rw = lesson["runway"]
         self.pat = lesson["pattern"]
@@ -260,7 +262,7 @@ class ReferenceRegistry:
         self.reload()
 
     def _profile_from_file(self, path: Path, data: dict) -> ReferenceProfile | None:
-        if data.get("lesson") and data["lesson"] not in (self.lesson_id, self.shared_from):
+        if data.get("lesson") and current_id(data["lesson"]) not in (self.lesson_id, self.shared_from):
             return None
         pid = data.get("id") or path.stem
         track = data.get("track")

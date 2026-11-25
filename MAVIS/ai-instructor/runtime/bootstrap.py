@@ -10,7 +10,7 @@ from core.lesson_engine import LessonEngine
 from core.scoring import Scorer
 from core.familiarization import (FamiliarizationEngine, FamiliarizationScorer, STEP_TITLES,
                                   field_center, is_familiarization, lesson_steps)
-from lessons import lesson00_preflight, lesson00_cockpit
+from lessons import preflight01_walkaround, preflight02_cockpit
 
 log = logging.getLogger("main")     # same logger name as before the move: log lines unchanged
 HERE = Path(__file__).parent.parent  # ai-instructor/, where main.py lives
@@ -18,8 +18,8 @@ HERE = Path(__file__).parent.parent  # ai-instructor/, where main.py lives
 # Reading-kind lessons (catalog.json "kind": "reading"): narrated checklists with
 # no flight telemetry, keyed by the same lesson id the catalog and sidebar use.
 READING_LESSONS = {
-    "lesson00_preflight": lesson00_preflight,
-    "lesson00_cockpit": lesson00_cockpit,
+    "preflight01_walkaround": preflight01_walkaround,
+    "preflight02_cockpit": preflight02_cockpit,
 }
 
 

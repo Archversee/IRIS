@@ -88,7 +88,7 @@ def score(rows, lesson, aircraft, name, mode, lesson_id, hz):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", type=Path)
-    ap.add_argument("--lesson", type=Path, default=HERE / "lessons" / "lesson01_pattern.yaml")
+    ap.add_argument("--lesson", type=Path, default=HERE / "lessons" / "basic08_pattern.yaml")
     ap.add_argument("--aircraft", type=Path, default=HERE / "profiles" / "aircraft" / "c172sp_g1000.yaml")
     ap.add_argument("--session", help="session_id to select when the CSV holds several flights")
     ap.add_argument("--name", default="")

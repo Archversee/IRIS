@@ -13,7 +13,7 @@ import time
 
 from adapters.sim_base import Telemetry
 from coach import phrases
-from core.demo import DEMO_LONG_STEPS, DESCRIBE_ONLY, NO_DEMO, DemoPilot
+from core.demo import DEMO_LONG_STEPS, NO_DEMO, DemoPilot
 from core.events import CoachEvent
 from core.familiarization import (STEP_TITLES, UPSET_HIGH, UPSET_STEPS, is_familiarization,
                                   runway_start, start_position)
@@ -408,8 +408,8 @@ def build_flight_flow(rt):
         return None
 
     async def _fam_demo_all(gen: int):
-        """"I have control": the sim flies every step in order while MAVIS
-        explains each, then the aircraft goes back to the start, frozen.
+        """"I have control": the sim flies every step it can (not NO_DEMO) in
+        order while MAVIS explains each, then the aircraft goes back to the start, frozen.
         Skip (state.demo, /demo/skip_demo) ends it there; steps not shown in
         full are explained the usual way (held still) when the trainee gets
         to them."""
@@ -449,7 +449,7 @@ def build_flight_flow(rt):
             for i, step in enumerate(steps):
                 if step in UPSET_STEPS:
                     # shown for real: put in the attitude and recovered, frozen
-                    rt.state["demo"] = {"n": i + 1, "of": len(steps), "describe": False,
+                    rt.state["demo"] = {"n": i + 1, "of": len(steps),
                                         "title": (rt.engine.notes.get(step) or {}).get("title") or step}
                     if tracker:
                         tracker.demo_step(step, Telemetry(**dict(rt.state.get("tel") or tel0)))
@@ -464,18 +464,11 @@ def build_flight_flow(rt):
                     continue
                 tel = dict(rt.state.get("tel") or tel0)
                 data = rt.engine.preview(step, Telemetry(**tel), demo=True)
-                if data.get("demo_layman"):
-                    # a step the autopilot can't fly: its explain-only lines
-                    data = {**data, "layman": data["demo_layman"],
-                            "pilot": data.get("demo_pilot") or data["demo_layman"]}
                 rt.state["demo"] = {"n": i + 1, "of": len(steps),
-                                 "title": data.get("title") or STEP_TITLES.get(step, step),
-                                 "describe": step in DESCRIBE_ONLY}
+                                 "title": data.get("title") or STEP_TITLES.get(step, step)}
                 rt.state["look_at"] = {"items": data.get("look") or [], "phase": step, "seq": time.time()}
                 if tracker:
-                    tracker.demo_step(step, Telemetry(**tel), note=(
-                        "MAVIS explains this one \u2014 you fly it on your turn"
-                        if step in DESCRIBE_ONLY else ""))
+                    tracker.demo_step(step, Telemetry(**tel))
                 pilot = DemoPilot(step, rt.engine, tel, mock=mock, base_throttle=base_th,
                                   max_s=max(4.0, unit * weight[step]))
                 speak = asyncio.create_task(rt.coach.say(phrases.render("LESSON_NOTE", data), phase=step))

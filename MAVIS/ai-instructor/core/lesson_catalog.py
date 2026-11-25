@@ -1,4 +1,8 @@
-"""Lesson curriculum manifest (LMS-style navigation)."""
+"""Lesson curriculum manifest (LMS-style navigation).
+
+A lesson's id is its file name: <module><number in the sidebar>_<name>. Ids are
+also saved with flights, rule settings and expert runs, so a renamed lesson
+keeps its earlier ids in the catalog's `old_ids` and they still find it."""
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -23,6 +27,20 @@ def flatten_lessons(catalog: dict) -> list[dict]:
                 "module_title": mod.get("title", ""),
             })
     return out
+
+
+def old_ids(lesson_id: str) -> list[str]:
+    """The ids this lesson had before it was renamed."""
+    meta = lesson_meta(load_catalog(), lesson_id)
+    return list((meta or {}).get("old_ids") or [])
+
+
+def current_id(lesson_id: str | None) -> str | None:
+    """A saved lesson id as it is now (unchanged if it was never renamed)."""
+    for item in flatten_lessons(load_catalog()):
+        if lesson_id in (item.get("old_ids") or []):
+            return item["id"]
+    return lesson_id
 
 
 def lesson_meta(catalog: dict, lesson_id: str) -> dict | None:

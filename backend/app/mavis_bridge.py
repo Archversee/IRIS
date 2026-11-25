@@ -332,7 +332,7 @@ class MavisBridge:
 
     async def _ensure_session_row(self, session_id: UUID, state: dict) -> None:
         sess = state.get("session") or {}
-        # default name: the lesson's title (not its id, e.g. "lesson06_steep")
+        # default name: the lesson's title (not its id, e.g. "basic04_steep")
         # with the trainee's name, or the start time when there's no name --
         # "Steep Turns – Alex" / "Steep Turns – 13 Oct 14:05". Editable on Save.
         title = ((state.get("active_lesson") or {}).get("title") or "").strip() or "MAVIS session"

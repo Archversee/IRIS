@@ -13,7 +13,7 @@
 -- are unaffected.
 -- ---------------------------------------------------------------------
 alter table sessions
-    add column if not exists lesson_id            text,        -- MAVIS lesson_id, e.g. 'lesson01_pattern'
+    add column if not exists lesson_id            text,        -- MAVIS lesson_id, e.g. 'basic08_pattern'
     add column if not exists mode                  text,        -- visitor | trainee | pilot | exam
     add column if not exists instructor_callsign   text,
     add column if not exists source                text not null default 'manual',

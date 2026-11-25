@@ -31,6 +31,8 @@ from pathlib import Path
 
 import yaml
 
+from core.lesson_catalog import current_id, old_ids
+
 from .schema import APP_ROOT, LESSON_TYPES, aircraft_profiles, resolve_ref
 
 log = logging.getLogger(__name__)
@@ -143,7 +145,10 @@ class LessonPlans:
 
     async def _row(self, c, lesson_id: str) -> dict:
         await self._ensure(c)
-        r = await c.fetchrow("select * from sop_lesson_plans where lesson_id=$1", lesson_id)
+        # saved before the lesson was renamed: under an old id, until next edited
+        r = await c.fetchrow("select * from sop_lesson_plans where lesson_id = any($1::text[]) "
+                             "order by (lesson_id = $2) desc, updated_at desc limit 1",
+                             [lesson_id, *old_ids(lesson_id)], lesson_id)
         return {"checks_on": True, "added": [], "removed": [], "updated_by": None, "updated_at": None} if r is None \
             else {"checks_on": r["checks_on"], "added": list(r["added"]), "removed": list(r["removed"]),
                   "updated_by": r["updated_by"], "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None}
@@ -152,8 +157,10 @@ class LessonPlans:
         async with self.store.acquire() as c:
             await self._ensure(c)
             out = {}
-            for r in await c.fetch("select * from sop_lesson_plans"):
-                out[r["lesson_id"]] = {"checks_on": r["checks_on"], "added": list(r["added"]),
+            # oldest first, and a renamed lesson's old row before its own: the last one wins
+            rows = await c.fetch("select * from sop_lesson_plans order by updated_at")
+            for r in sorted(rows, key=lambda r: current_id(r["lesson_id"]) == r["lesson_id"]):
+                out[current_id(r["lesson_id"])] = {"checks_on": r["checks_on"], "added": list(r["added"]),
                                        "removed": list(r["removed"]), "updated_by": r["updated_by"]}
             return out
 

@@ -1,6 +1,6 @@
 # External Walk-Around, spoken checklist draft
 
-Draft content for `lesson00_preflight` (currently a catalog stub, see root `CLAUDE.md`).
+Draft content for `preflight01_walkaround` (currently a catalog stub, see root `CLAUDE.md`).
 Sourced from BAA Training + ThrustFlight C172 preflight guides (standard counterclockwise
 walk), cross-checked against the earlier Google-sourced notes already in `CLAUDE.md`.
 **Verify against the actual aircraft's POH before this becomes shipped coaching content**,

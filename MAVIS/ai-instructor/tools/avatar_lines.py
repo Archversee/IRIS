@@ -66,7 +66,7 @@ SOURCE_STILL = LINES / "_source.png"
 
 # Shown as text / played as their own video, never spoken by the TTS
 NOT_SPOKEN = {"INTRO_BEGINNER", "INTRO_TRAINING"}
-LESSON_TEXT_KEYS = ("layman", "pilot", "demo_layman", "demo_pilot")
+LESSON_TEXT_KEYS = ("layman", "pilot")
 # The scripted dialogue (collect's default): MAVIS's set lines that aren't
 # coaching instructions, and the lesson file's own talk (briefing, closing).
 DIALOGUE_CODES = {

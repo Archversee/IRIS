@@ -27,7 +27,7 @@ sim:
       snow:   { theme: "Snow" }
 
 aircraft_profile: profiles/aircraft/c172sp_g1000.yaml
-lesson: lessons/lesson01_pattern.yaml
+lesson: lessons/basic08_pattern.yaml
 
 input:
   mode: none               # overridden by: python main.py --input udp

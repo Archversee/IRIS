@@ -10,7 +10,7 @@ name: "Map Reading & Pilotage"
 # read the same here.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map, finding Paya Lebar at
+# Same airfield geometry as Your First Circuit -- used for the map, finding Paya Lebar at
 # the end, and the runway the aircraft is put back on.
 airport:
   icao: WSAP
@@ -100,7 +100,7 @@ briefing:
     Pilotage, airborne at {alt} feet south of Marina Bay. Three visual
     checkpoints, note the time over each, then locate Paya Lebar.
 
-# See lesson00_familiarization.yaml for the step_notes format.
+# See basic05_familiarization.yaml for the step_notes format.
 step_notes:
   CHECKPOINT_1:
     title: Marina Bay Sands

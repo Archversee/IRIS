@@ -4,7 +4,7 @@
 // see that file's own comments for the measured-landmark notes behind these
 // numbers.
 export const READING_3D = {
-  lesson00_preflight: {
+  preflight01_walkaround: {
     model: "/static/models/cessna.glb",
     camera: "orbit",
     blurb: "Preflight & Cockpit · walk the aircraft before you fly",
@@ -36,7 +36,7 @@ export const READING_3D = {
       final: { pos: [6.65, 4.29, 7.37], target: [0, 1.39, -2.09] },
     },
   },
-  lesson00_cockpit: {
+  preflight02_cockpit: {
     model: "/static/models/cessna.glb",
     camera: "fixed",
     blurb: "Preflight & Cockpit · find your way around the controls",
@@ -73,7 +73,7 @@ export const READING_3D = {
 };
 
 export function readingCfg(lessonId) {
-  return READING_3D[lessonId] || READING_3D.lesson00_preflight;
+  return READING_3D[lessonId] || READING_3D.preflight01_walkaround;
 }
 
 // Materials named in cfg.seeThrough are authored opaque but stand for glass;

@@ -87,21 +87,25 @@ def _circuit(lesson: dict, rw: dict) -> dict:
     return {"path": pts, "runway": [_to_latlon(rw, pat, 0, 0), _to_latlon(rw, pat, rw["length_m"], 0)]}
 
 
-def _titles() -> dict:
+def _titles() -> tuple[dict, dict]:
+    """(lesson id -> label, lesson id -> the ids it had before it was renamed)"""
     try:
         cat = json.loads((Path(settings.mavis_lessons_dir) / "catalog.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
-    return {les["id"]: f"{mod.get('title', '')} — {les.get('title', '')}".strip(" —")
-            for mod in cat.get("modules", []) for les in mod.get("lessons", [])}
+        return {}, {}
+    lessons = [(mod, les) for mod in cat.get("modules", []) for les in mod.get("lessons", [])]
+    return ({les["id"]: f"{mod.get('title', '')} — {les.get('title', '')}".strip(" —") for mod, les in lessons},
+            {les["id"]: les.get("old_ids", []) for _, les in lessons})
 
 
 @router.get("/routes")
 async def list_routes():
-    titles = _titles()
+    titles, old_ids = _titles()
     out = []
     seen: dict[str, dict] = {}   # circuits already listed (same shape = same route)
-    for f in sorted(Path(settings.mavis_lessons_dir).glob("*.yaml")):
+    # the plain circuit first: lessons flying the same one are listed under it
+    for f in sorted(Path(settings.mavis_lessons_dir).glob("*.yaml"),
+                    key=lambda f: (f.stem != "basic08_pattern", f.name)):
         try:
             lesson = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
             rw = lesson.get("runway")
@@ -109,14 +113,15 @@ async def list_routes():
                     or lesson.get("segment")):
                 continue
             label = titles.get(f.stem) or lesson.get("name") or f.stem
+            ids = [f.stem, *old_ids.get(f.stem, [])]      # saved flights may have an old id
             for runway in (rw, _reciprocal(rw)):
                 circuit = _circuit(lesson, runway)
                 sig = json.dumps(circuit)
                 if sig in seen:
-                    seen[sig]["lesson_ids"].append(f.stem)
+                    seen[sig]["lesson_ids"].extend(ids)
                     continue
                 route = {
-                    "key": f"{f.stem}:{runway['ident']}", "lesson_id": f.stem, "lesson_ids": [f.stem],
+                    "key": f"{f.stem}:{runway['ident']}", "lesson_id": f.stem, "lesson_ids": list(ids),
                     "label": f"{label} (RWY {runway['ident']})", "runway_ident": runway["ident"],
                     **circuit,
                 }

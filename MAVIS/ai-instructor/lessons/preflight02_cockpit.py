@@ -1,8 +1,8 @@
 """Cockpit Familiarisation: read-along checklist content.
 
-Companion to lesson00_preflight.py, following phrases.py's spoken-content
+Companion to preflight01_walkaround.py, following phrases.py's spoken-content
 convention: plain Python rather than YAML, since this is narration text and not
-tunable config. See lessons/lesson00_cockpit_script_DRAFT.md for provenance.
+tunable config. See lessons/preflight02_cockpit_script_DRAFT.md for provenance.
 
 Content is written for the older, round-gauge Cessna 172 shown in the 3D view
 (web/static/models/cessna.glb), not the G1000 glass panel. The "pfd" and "mfd"

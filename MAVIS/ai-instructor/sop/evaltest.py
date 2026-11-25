@@ -146,7 +146,7 @@ def fly_mock_circuit(max_s: float = 900.0) -> tuple[list[dict], list[dict], dict
         from adapters.sim_mock import MockAdapter
         from core.lesson_engine import LessonEngine
         from .evaluate import sample_from_telemetry
-        lesson = yaml.safe_load((root / "lessons/lesson01_pattern.yaml").read_text(encoding="utf-8"))
+        lesson = yaml.safe_load((root / "lessons/basic08_pattern.yaml").read_text(encoding="utf-8"))
         aircraft = yaml.safe_load((root / "profiles/aircraft/c172sp_g1000.yaml").read_text(encoding="utf-8"))
         sim = MockAdapter(lesson, aircraft)
         sim.connect()

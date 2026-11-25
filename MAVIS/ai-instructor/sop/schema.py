@@ -262,7 +262,8 @@ def known_phases() -> list[str]:
     """Union of the phases declared by every YAML lesson, in first-seen order
     (falls back to the phase detector's own order)."""
     seen: list[str] = []
-    for p in sorted((APP_ROOT / "lessons").glob("*.yaml")):
+    # the full circuit first: it flies the phases in order
+    for p in sorted((APP_ROOT / "lessons").glob("*.yaml"), key=lambda p: (p.stem != "basic08_pattern", p.name)):
         try:
             for ph in (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("phases", []):
                 if ph not in seen:

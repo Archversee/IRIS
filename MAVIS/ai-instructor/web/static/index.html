@@ -1524,17 +1524,17 @@ function currentLessonId(){
     // selection, ignore a stale/stored value pointing at one.
     if(!p||p.kind!=="reading")return sel;
   }
-  return (S&&S.lesson_id)||"lesson01_pattern";
+  return (S&&S.lesson_id)||"basic08_pattern";
 }
 function lessonPick(id){
   return ((S&&S.lesson_list)||[]).find(l=>l.id===id)||null;
 }
 function lessonIsPlayable(id){
-  const active=(S&&S.lesson_id)||"lesson01_pattern";
+  const active=(S&&S.lesson_id)||"basic08_pattern";
   if(id!==active)return false;
   const p=lessonPick(id);
   if(p)return !!p.available;
-  return id==="lesson01_pattern";
+  return id==="basic08_pattern";
 }
 function refsForSelectedLesson(){
   const lid=currentLessonId();
@@ -1571,6 +1571,9 @@ let lessonSyncSent=false;
 function syncStoredLessonToServer(){
   if(lessonSyncSent||!S||!S.lesson_id||!S.lesson_list)return;
   lessonSyncSent=true;
+  // stored before the lesson was renamed
+  const renamed=S.lesson_list.find(l=>(l.old_ids||[]).includes(settings.selectedLesson));
+  if(renamed){settings.selectedLesson=renamed.id;saveSettings();}
   const id=settings.selectedLesson;
   if(id&&id!==S.lesson_id)selectFlyingLesson(id);
 }
@@ -1824,7 +1827,7 @@ function restartPfPlayAll(){
   pfUpdateAllBtn();
 }
 function openReadingLesson(lessonId){
-  pfLesson=lessonId||"lesson00_preflight";
+  pfLesson=lessonId||"preflight01_walkaround";
   const data=readingData();
   const body=$("preflightBody");
   if(!data.checkpoints||!body)return;
@@ -1881,7 +1884,7 @@ function closeReadingLesson(){
 // a free orbit inside the cabin ends up behind the seats or inside the panel;
 // the trainee can still look around from wherever they were placed.
 const READING_3D={
-  lesson00_preflight:{
+  preflight01_walkaround:{
     model:"/static/models/cessna.glb",
     camera:"orbit",
     blurb:"Preflight & Cockpit · walk the aircraft before you fly",
@@ -1923,7 +1926,7 @@ const READING_3D={
       final:{pos:[6.65,4.29,7.37],target:[0,1.39,-2.09]},
     },
   },
-  lesson00_cockpit:{
+  preflight02_cockpit:{
     model:"/static/models/cessna.glb",
     camera:"fixed",
     blurb:"Preflight & Cockpit · find your way around the controls",
@@ -1976,7 +1979,7 @@ const READING_3D={
   },
 };
 let pfLesson=null;   // id of the reading lesson showing in the menu panel, else null
-function readingCfg(){return READING_3D[pfLesson]||READING_3D.lesson00_preflight;}
+function readingCfg(){return READING_3D[pfLesson]||READING_3D.preflight01_walkaround;}
 function readingData(){
   const all=(S&&S.reading_lessons)||{};
   return all[pfLesson]||{title:"",checkpoints:[]};
@@ -2677,7 +2680,7 @@ function drawMap(tel){
 const DEF_SET={theme:"dark",timeFmt:"24h",dateFmt:"DD-MMM-YYYY",
                nameFmt:"given-family",jargon:"layman",examMode:false,tone:"warm",
                traineeFirstName:"",traineeLastName:"",
-               reference:"planned",selectedLesson:"lesson01_pattern",
+               reference:"planned",selectedLesson:"basic08_pattern",
                recordingActive:false};
 let settings=(()=>{try{const raw=localStorage.getItem("mavis.settings")
   ||localStorage.getItem("fion.settings");const s={...DEF_SET,...JSON.parse(raw||"{}")};

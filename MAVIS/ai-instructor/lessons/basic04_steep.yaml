@@ -6,7 +6,7 @@ name: "Steep Turns"
 # at 30 degrees, then 45 degrees holding height all the way round.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# Same airfield geometry as Your First Circuit -- used for the map and the runway the
 # aircraft is put back on at the end.
 airport:
   icao: WSAP
@@ -51,6 +51,12 @@ exercises:
 
 freeze_during_instructions: true
 
+# The demo is only the first steps, so not "same steps"
+say:
+  FAM_DEMO_END:
+    layman: "Your turn now. Start with the steps you just watched."
+    pilot: "Your turn. Start with the same sequence."
+
 end_reposition:
   along_m: 60
 
@@ -68,9 +74,9 @@ briefing:
     Steep turns, airborne at {alt} feet south of Paya Lebar. Medium turns at 30
     degrees, then 360s at 45 degrees, altitude within 200 feet.
 
-# See lesson00_familiarization.yaml for the step_notes format. demo_layman /
-# demo_pilot: what MAVIS says instead in the up-front demo, for a step the
-# autopilot can't fly (core/demo.py DESCRIBE_ONLY).
+# See basic05_familiarization.yaml for the step_notes format. The demo
+# leaves out the 45-degree turns (core/demo.py NO_DEMO): they're
+# explained when the trainee gets there.
 step_notes:
   MEDIUM_TURN_LEFT:
     title: Medium turn left
@@ -105,10 +111,6 @@ step_notes:
       Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees: a bit of power, pull back firmly to hold {alt_now:,} feet, full circle.
     pilot: >-
       Steep turn left, {steep_bank_lo} to {steep_bank_hi} degrees through 360, add power, hold {alt_now:,} feet.
-    demo_layman: >-
-      The autopilot can't bank this steeply, so listen: {steep_bank_lo} to {steep_bank_hi} degrees, a bit of power, pull back firmly.
-    demo_pilot: >-
-      No autopilot demo: {steep_bank_lo} to {steep_bank_hi} degrees, power, back pressure.
   STEEP_TURN_RIGHT:
     title: Steep turn right
     todo:
@@ -120,7 +122,3 @@ step_notes:
       Same to the right, full circle, holding {alt_now:,} feet.
     pilot: >-
       Steep turn right, through 360, hold {alt_now:,} feet.
-    demo_layman: >-
-      Then the same to the right.
-    demo_pilot: >-
-      Then right, through 360.

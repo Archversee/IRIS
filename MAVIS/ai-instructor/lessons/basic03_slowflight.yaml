@@ -6,7 +6,7 @@ name: "Slow Flight & Stalls"
 # the stall, then the stall itself and the recovery.
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# Same airfield geometry as Your First Circuit -- used for the map and the runway the
 # aircraft is put back on at the end.
 airport:
   icao: WSAP
@@ -68,9 +68,15 @@ exercises:
   stall_height_loss_ok_ft: 200    # a recovery losing no more than this is a good one
   step_timeout_s: 210
 
-demo_max_s: 240             # seven steps: a longer demo than the usual two minutes
+demo_max_s: 170             # slow flight takes a while to settle: longer than the usual two minutes
 
 freeze_during_instructions: true
+
+# The demo is only the first steps, so not "same steps"
+say:
+  FAM_DEMO_END:
+    layman: "Your turn now. Start with the steps you just watched."
+    pilot: "Your turn. Start with the same sequence."
 
 end_reposition:
   along_m: 60
@@ -97,9 +103,9 @@ briefing:
     power-off and a power-on stall clean, then slow flight and a stall in the
     landing configuration. Minimum height loss on every recovery.
 
-# See lesson00_familiarization.yaml for the step_notes format. demo_layman /
-# demo_pilot: what MAVIS says instead in the up-front demo, for a step the
-# autopilot can't fly (core/demo.py DESCRIBE_ONLY).
+# See basic05_familiarization.yaml for the step_notes format. The demo
+# leaves out the stalls and the flaps-down slow flight (core/demo.py NO_DEMO): they're
+# explained when the trainee gets there.
 step_notes:
   SLOW_FLIGHT:
     title: Slow flight
@@ -146,10 +152,6 @@ step_notes:
       and level off. Try to lose less than {lost_ok} feet.
     pilot: >-
       Power-off stall, then recover: lower the nose, full power. Minimum height loss.
-    demo_layman: >-
-      The autopilot can't stall, so just listen: idle, stick back until the nose drops, then nose down, full power.
-    demo_pilot: >-
-      No autopilot demo: power-off stall, recover with nose down and full power.
   STALL_POWER_ON:
     title: "Stall, power on"
     todo:
@@ -165,11 +167,6 @@ step_notes:
     pilot: >-
       Power-on stall: at least {power_pct} percent, raise the nose until it stalls,
       recover with nose down, full power, wings level with rudder.
-    demo_layman: >-
-      Just listen for this one: power up, nose well up until it stalls, then nose down and level off.
-      With power on it can drop a wing, so keep it level with your feet.
-    demo_pilot: >-
-      No autopilot demo: power-on stall, recover nose down, full power, rudder for a wing drop.
   SLOW_FLIGHT_FLAPS:
     title: "Slow flight, flaps down"
     todo:
@@ -182,11 +179,6 @@ step_notes:
       even slower, {sff_lo} to {sff_hi} knots, but it needs more power to hold the height.
     pilot: >-
       Landing configuration, full flaps. Slow flight {sff_lo} to {sff_hi} knots, hold {alt_now:,} feet.
-    demo_layman: >-
-      I'll just describe this one: flaps all the way down, keep the height, and let the
-      speed settle at {sff_lo} to {sff_hi} knots. You'll need more power than before.
-    demo_pilot: >-
-      No autopilot demo: full flaps, slow flight {sff_lo} to {sff_hi} knots at altitude.
   STALL_FLAPS:
     title: "Stall, flaps down"
     todo:
@@ -200,8 +192,3 @@ step_notes:
       so we can climb away.
     pilot: >-
       Approach stall, full flaps, power off. Recover: nose down, full power, flaps {recover_flaps}, level off.
-    demo_layman: >-
-      Just listen: flaps down, idle, nose up until it stalls. Then nose down, full power,
-      and flaps up to {recover_flaps}.
-    demo_pilot: >-
-      No autopilot demo: power-off stall in landing configuration, recover with flaps {recover_flaps}.

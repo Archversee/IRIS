@@ -23,16 +23,17 @@ from __future__ import annotations
 
 from .phase_detector import hdg_diff
 
-# Steps that aren't demonstrated: finding the field is the lesson's own test.
-NO_DEMO = {"FIND_AIRFIELD"}
-# Steps the autopilot can't fly -- it won't bank past about 25 degrees and
-# can't be made to stall -- so the demo holds the aircraft level while MAVIS
-# explains them (the lesson's demo_layman / demo_pilot lines, if it has them).
+# Steps the demo leaves out without mentioning them; they are explained in
+# full, held still, when the trainee gets to them.
+NO_DEMO = {
+    "FIND_AIRFIELD",                             # the lesson's own test
+    # the autopilot can't be made to stall, and the demo can't set the flaps
+    "STALL", "STALL_FLAPS", "STALL_POWER_ON", "SLOW_FLIGHT_FLAPS",
+    # it won't bank past about 25 degrees
+    "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT",
+}
 # Unusual attitudes aren't flown by the autopilot either: the demo sets the
 # attitude and moves it directly (runtime/flight_flow.py _demo_upset).
-# Nor can the demo set the flaps, so the flaps-down steps are explained too.
-DESCRIBE_ONLY = {"STALL", "STALL_FLAPS", "STALL_POWER_ON", "SLOW_FLIGHT_FLAPS",
-                 "STEEP_TURN_LEFT", "STEEP_TURN_RIGHT"}
 # Steps that change height: they get a bigger share of the demo's minute.
 DEMO_LONG_STEPS = {"CLIMB", "DESCEND", "CLIMB_TO", "DESCEND_TO", "GLIDE",
                    "PITCH_UP", "PITCH_DOWN", "SLOW_FLIGHT", "MEDIUM_TURN_LEFT", "MEDIUM_TURN_RIGHT",
@@ -139,8 +140,6 @@ class DemoPilot:
             return [{"cmd": {"ap": True, "hdg": h0, "alt": a0, "spd": spd,
                              "throttle": max(0.2, th0 - 0.25) if slow else 1.0},
                      "until": "speed", "tgt": spd, "min_s": 3, "max_s": 60}]
-        if p in DESCRIBE_ONLY:
-            return [{"cmd": level, "min_s": 6, "max_s": 6}]
         if p in ("CLIMB_TO", "DESCEND_TO"):
             # the demo climbs/descends a short way (demo_level_ft) so the
             # level-off -- the point of the step -- fits in its share of the minute

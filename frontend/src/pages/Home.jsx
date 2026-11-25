@@ -10,7 +10,7 @@ import { SOP_ROLES } from "../components/Sidebar.jsx";
 //    reading lesson, so nothing needs selecting on the MAVIS server first);
 //  - instructor / admin: Live Monitor, to watch the sims that are flying.
 // The sidebar is hidden on this route (see App.jsx).
-const WALK_AROUND = "/live?reading=lesson00_preflight";
+const WALK_AROUND = "/live?reading=preflight01_walkaround";
 const LIVE_MONITOR = "/monitor";
 
 function startFor(role) {

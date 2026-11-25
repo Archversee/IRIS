@@ -5,7 +5,7 @@ name: "Effects of Controls"
 # (finding Paya Lebar is Flight Familiarization's job, not this lesson's).
 type: familiarization
 
-# Same airfield geometry as Lesson 1 -- used for the map and the runway the
+# Same airfield geometry as Your First Circuit -- used for the map and the runway the
 # aircraft is put back on at the end.
 airport:
   icao: WSAP
@@ -77,7 +77,7 @@ briefing:
     ailerons, rudder, power, primary and secondary effects. Demonstration
     first, then work the task list.
 
-# See lesson00_familiarization.yaml for the step_notes format.
+# See basic05_familiarization.yaml for the step_notes format.
 step_notes:
   STRAIGHT_LEVEL:
     title: Straight & level
