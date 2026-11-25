@@ -4,7 +4,7 @@ Draft content for `lesson00_preflight` (currently a catalog stub, see root `CLAU
 Sourced from BAA Training + ThrustFlight C172 preflight guides (standard counterclockwise
 walk), cross-checked against the earlier Google-sourced notes already in `CLAUDE.md`.
 **Verify against the actual aircraft's POH before this becomes shipped coaching content**,
-this is a generic C172/G1000 procedure, not this specific tail number's.
+this is a generic C172 procedure, not this specific tail number's.
 
 Each checkpoint = one spoken line (what the coach says) + what the trainee should be
 looking for. Written for the checkpoint-index lesson engine described in `CLAUDE.md`
@@ -17,7 +17,7 @@ looking for. Written for the checkpoint-index lesson engine described in `CLAUDE
 
 - Remove the control lock if fitted.
 - Master switch **on** briefly: check exterior lights (nav, beacon, strobe, landing
-  light) and pitot heat, confirm the PFD powers up and fuel gauges register, then
+  light) and pitot heat, confirm the fuel gauges register, then
   **off** again before you go outside.
 - Fuel selector to **BOTH**.
 - Flaps down (gives you access to check them, and matches the walk-around photos).
