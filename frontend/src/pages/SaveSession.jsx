@@ -8,7 +8,59 @@ import { useMavisState } from "../live/hooks/useMavisSocket.js";
 // session, pick the pilot, then Next -> Review. The summary is prefilled
 // with the scorecard's own debrief text (MAVIS's live state), and can be
 // edited. No CSV upload or video linking here -- MAVIS already logged the
-// flight data; that's the separate Upload page's job.
+// flight data, and the flight's OBS recordings are added to the review by
+// themselves (FlightVideos shows how that's going; nothing waits for it).
+
+const SCREENS = [["instrument", "Instrument screen"], ["otw", "OTW screen"]];
+const NO_RECORDING_MS = 30000;   // none reported by then: the flight wasn't recorded
+
+function FlightVideos({ id }) {
+  const [screens, setScreens] = useState(null);
+  const [gaveUp, setGaveUp] = useState(false);
+  useEffect(() => {
+    let alive = true, timer;
+    const opened = Date.now();
+    const poll = async () => {
+      let next = null;
+      try {
+        next = await api.recordings(id);
+        if (alive) setScreens(next);
+      } catch {
+        // try again
+      }
+      if (!alive) return;
+      const late = Date.now() - opened > NO_RECORDING_MS;
+      setGaveUp(late);
+      const states = next && Object.values(next).map((s) => s.state);
+      const more = states ? states.some((s) => s === "processing" || (s === "waiting" && !late)) : !late;
+      if (more) timer = setTimeout(poll, 2000);
+    };
+    poll();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [id]);
+
+  const line = (s) => {
+    if (s?.state === "linked") return ["ok", "Added to the review"];
+    if (s?.state === "processing") return ["busy", "Saving the recording…"];
+    if (s?.state === "failed") return ["bad", s.detail];
+    if (gaveUp) return ["bad", "No recording received. Check that OBS and the adapter are running."];
+    return ["busy", "Waiting for the recording…"];
+  };
+
+  return (
+    <div className="card">
+      <h2>Flight videos</h2>
+      <ul className="save-session__videos" role="status">
+        {SCREENS.map(([key, label]) => {
+          const [look, text] = line(screens?.[key]);
+          return <li key={key} className={`is-${look}`}><b>{label}</b><span>{text}</span></li>;
+        })}
+      </ul>
+      <p className="muted">Added to the review automatically. You don't have to wait here.</p>
+    </div>
+  );
+}
+
 export default function SaveSession() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -99,6 +151,8 @@ export default function SaveSession() {
         <textarea rows={5} value={details.notes} onChange={setNotes}
           placeholder={card?.debrief_pending && !notesTouched.current ? "Writing the summary from your score…" : ""} />
       </div>
+
+      <FlightVideos id={id} />
 
       {err && <p className="err">{err}</p>}
       <div className="save-session__actions">

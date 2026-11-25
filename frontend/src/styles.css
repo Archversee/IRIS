@@ -556,6 +556,12 @@ tbody tr:hover td { background: var(--inset); }
 .save-session__head h1 { margin: 0 0 4px; }
 .save-session__head p { margin: 0; }
 .save-session__id { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); }
+.save-session__videos { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+.save-session__videos li { display: flex; align-items: baseline; gap: 12px; font-size: var(--fs-md); }
+.save-session__videos b { flex: 0 0 140px; font-weight: 600; }
+.save-session__videos .is-ok span { color: var(--good); }
+.save-session__videos .is-busy span { color: var(--muted); }
+.save-session__videos .is-bad span { color: var(--warn); }
 .save-session__actions { display: flex; justify-content: flex-end; margin: 8px 0 24px; }
 .next-btn { padding: 12px 26px; font-size: var(--fs-base); border-radius: 10px; }
 

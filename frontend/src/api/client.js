@@ -147,6 +147,8 @@ export const api = {
   // eye-based workload index, one value per second (routers/workload.py; after the flight only)
   workload: (id) => req(`/sessions/${id}/workload`),
 
+  // the flight's OBS recordings being added to its review, per screen
+  recordings: (id) => req(`/sessions/${id}/recordings`),
   videosAvailable: () => req("/videos-available"),
   linkVideo: (id, screen, body) =>
     req(`/sessions/${id}/video/${screen}`, {

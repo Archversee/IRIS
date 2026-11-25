@@ -214,7 +214,8 @@ def session_end_watcher() -> None:
 # Set False to skip OBS entirely and just run the Smart Eye bridge.
 ENABLE_OBS_RECORDING = True
 
-# One entry per OBS instance, it doesn't need to match anything in OBS.
+# One entry per OBS instance, it doesn't need to match anything in OBS. The
+# name is the Review screen its recording is shown on: instrument or otw.
 # No password -- make sure each instance has "Enable Authentication"
 # unchecked in Tools > WebSocket Server Settings.
 OBS_INSTANCES = [
@@ -232,24 +233,45 @@ def connect_obs_clients():
     return clients
 
 
+_record_called: dict[str, float] = {}   # name -> when it was told to record
+
+
 def start_obs_recordings(clients):
     for name, client in clients:
         client.start_record()
+        _record_called[name] = time.time()
         print(f"OBS ({name}) recording started")
 
 
-def stop_obs_recordings(clients) -> list[str]:
-    """Stops every OBS instance; returns the saved file paths OBS reported."""
-    paths = []
+def _recording_started_at(name: str, client) -> float | None:
+    """When the running recording's first frame was (epoch seconds), from how
+    long OBS says it has been recording: OBS starts a moment after it's told
+    to. Review lines the video up with the flight by this."""
+    called = _record_called.get(name)
+    try:
+        started = time.time() - client.get_record_status().output_duration / 1000
+        # nowhere near when it was told to (e.g. paused in OBS for a while): don't trust it
+        if called is None or abs(started - called) < 10:
+            return started
+    except Exception as e:
+        print(f"OBS ({name}): couldn't read the recording's length ({e})")
+    return called
+
+
+def stop_obs_recordings(clients) -> list[dict]:
+    """Stops every OBS instance; returns what OBS saved:
+    [{path, screen, started_at}] (screen = the instance's name above)."""
+    recs = []
     for name, client in clients:
+        started = _recording_started_at(name, client)
         try:
             resp = client.stop_record()
             print(f"OBS ({name}) saved recording to {resp.output_path}")
             if resp.output_path:
-                paths.append(resp.output_path)
+                recs.append({"path": os.path.abspath(resp.output_path), "screen": name, "started_at": started})
         except Exception as e:
             print(f"Failed to stop OBS ({name}) recording cleanly: {e}")
-    return paths
+    return recs
 
 
 # Same-named siblings to remove too: with OBS's "Automatically remux to mp4"
@@ -285,15 +307,15 @@ def _discard_worker(sid: str, paths: list[str]) -> None:
 _REGISTER_RETRY_S = 30 * 60   # keep trying this long if IRIS is down / erroring
 
 
-def _post_recordings(sid: str, paths: list[str]) -> bool:
+def _post_recordings(sid: str, recs: list[dict]) -> bool:
     """True when IRIS has the paths, or the session is already gone (404)."""
     req = urllib.request.Request(
         f"{API_BASE_URL}/sessions/{sid}/recordings",
-        data=json.dumps({"paths": [os.path.abspath(p) for p in paths]}).encode(),
+        data=json.dumps({"paths": [r["path"] for r in recs], "recordings": recs}).encode(),
         headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=5):
-            print(f"Registered {len(paths)} recording(s) with IRIS for session {sid}")
+            print(f"Registered {len(recs)} recording(s) with IRIS for session {sid}")
         return True
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -304,23 +326,24 @@ def _post_recordings(sid: str, paths: list[str]) -> bool:
     return False
 
 
-def _register_retry_worker(sid: str, paths: list[str]) -> None:
+def _register_retry_worker(sid: str, recs: list[dict]) -> None:
     deadline = time.time() + _REGISTER_RETRY_S
     while time.time() < deadline:
         time.sleep(15)
-        if _post_recordings(sid, paths):
+        if _post_recordings(sid, recs):
             return
-    print(f"Gave up registering recordings for {sid}: deleting the session won't remove {paths}")
+    print(f"Gave up registering recordings for {sid}: not in its review, and deleting it won't remove "
+          f"{[r['path'] for r in recs]}")
 
 
-def register_recordings(sid: str, paths: list[str], retry: bool = True) -> None:
-    """Tell IRIS which files OBS wrote for this session, so deleting the
-    session later (Sessions page, Finish & discard, any time) removes them
-    -- not just a discard this process happens to still remember. If IRIS
+def register_recordings(sid: str, recs: list[dict], retry: bool = True) -> None:
+    """Tell IRIS which files OBS wrote for this session: they become its Review
+    videos (backend/app/recordings.py), and deleting the session later
+    (Sessions page, Finish & discard, any time) removes them -- not just a discard this process happens to still remember. If IRIS
     can't take them right now, keep trying in the background: an unregistered
     recording is never deleted with its session."""
-    if not _post_recordings(sid, paths) and retry:
-        threading.Thread(target=_register_retry_worker, args=(sid, paths), daemon=True).start()
+    if not _post_recordings(sid, recs) and retry:
+        threading.Thread(target=_register_retry_worker, args=(sid, recs), daemon=True).start()
 
 
 def delete_recordings(sid: str, paths: list[str]) -> None:
@@ -942,10 +965,10 @@ def main():
     saved: dict[str, list[str]] = {}  # session_id -> files OBS wrote for it (kept for discard)
 
     def stop_and_remember(sid: str, retry: bool = True) -> None:
-        paths = stop_obs_recordings(obs_clients)
-        if paths:
-            register_recordings(sid, paths, retry)
-            saved[sid] = saved.get(sid, []) + paths   # Fly again: one session, several recordings
+        recs = stop_obs_recordings(obs_clients)
+        if recs:
+            register_recordings(sid, recs, retry)
+            saved[sid] = saved.get(sid, []) + [r["path"] for r in recs]   # Fly again: one session, several recordings
             with _recent_lock:
                 if sid not in _recent_sids:
                     _recent_sids.append(sid)

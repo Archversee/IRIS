@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { VIDEO_SYNC_TOLERANCE, VIDEO_SYNC_TOLERANCE_PLAYING } from "./constants.js";
 
 export function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
@@ -11,6 +11,15 @@ export function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
   // decoder is free, so the video still lands on the right frame once
   // dragging settles, even though most in-between seeks get skipped.
   const latestTargetRef = useRef(0);
+  // the video's length is only known once its header has loaded: sync again then
+  const [loaded, setLoaded] = useState(0);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !src) return;
+    const onLoaded = () => setLoaded((n) => n + 1);
+    video.addEventListener("loadedmetadata", onLoaded);
+    return () => video.removeEventListener("loadedmetadata", onLoaded);
+  });   // every render: the page mounts its <video>s only once the flight has loaded
 
   useEffect(() => {
     const video = ref.current;
@@ -28,14 +37,20 @@ export function useSyncedVideo(ref, src, offsetSec, curT, playing, speed) {
   useEffect(() => {
     const video = ref.current;
     if (!video || !src || Number.isNaN(video.duration)) return;
-    const target = Math.max(0, curT + offsetSec);
+    // before the recording starts / after it ends: held on its first / last frame
+    const at = curT + offsetSec;
+    const target = Math.max(0, Math.min(at, video.duration));
     latestTargetRef.current = target;
     if (video.seeking) return; // let the in-flight seek finish -- the "seeked" listener above will catch up to `target` once it does
     const tolerance = playing ? VIDEO_SYNC_TOLERANCE_PLAYING : VIDEO_SYNC_TOLERANCE;
     if (Math.abs(video.currentTime - target) > tolerance) {
       video.currentTime = target;
+    } else if (playing && at !== target) {
+      video.pause();
+    } else if (playing && video.paused && !video.ended) {
+      video.play().catch(() => {});
     }
-  }, [curT, src, playing]);
+  }, [curT, src, playing, offsetSec, loaded]);
 
   useEffect(() => {
     const video = ref.current;

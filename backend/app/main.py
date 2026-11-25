@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, eye_clock, incident_explain, mavis_bridge, videos
+from . import auth, db, eye_clock, incident_explain, mavis_bridge, recordings, videos
 from .config import settings
 from .routers import (accounts, adapter, aoi_zones, analytics, capture, data, debrief, incidents, ingest, leaderboard, progress,
                       routes, rule_results, sessions, stream, workload)
@@ -18,7 +18,7 @@ os.makedirs(settings.video_dir, exist_ok=True)
 async def lifespan(app: FastAPI):
     await db.connect()
     await auth.ensure_schema()  # users/auth_tokens tables + first admin account
-    await videos.ensure_schema()  # sessions.recording_paths (OBS files to delete with a session)
+    await videos.ensure_schema()  # the session's OBS recordings (its Review videos)
     await eye_clock.ensure_schema()  # sessions.eye_clock_* (Smart Eye clock offset, from LiveAdapter.py)
     try:
         await db.ensure_eye_extra()  # eye_tracking_data.extra (the other Smart Eye fields)
@@ -69,6 +69,7 @@ app.include_router(stream.router)
 app.include_router(capture.router)
 app.include_router(leaderboard.router)
 app.include_router(videos.router)
+app.include_router(recordings.router)
 app.include_router(eye_clock.router)
 app.include_router(incidents.router)
 app.include_router(progress.router)

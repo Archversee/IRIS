@@ -20,7 +20,14 @@ alter table sessions
     -- source: 'manual' (existing Upload-page flow) | 'mavis' (session minted by MAVIS)
     -- recording_paths: absolute paths of the OBS recordings LiveAdapter.py made
     -- for this session; deleted with it (backend/app/videos.py). Applied at startup too.
-    add column if not exists recording_paths       text[];
+    add column if not exists recording_paths       text[],
+    -- recordings: the same files with the screen each shows and when it started
+    -- ([{path, screen, started_at}]); linked as the session's videos by
+    -- backend/app/recordings.py. *_video_started_at: when a linked recording began,
+    -- which lines it up with the flight; null = linked by hand, use its offset_sec.
+    add column if not exists recordings                   jsonb,
+    add column if not exists instrument_video_started_at  timestamptz,
+    add column if not exists otw_video_started_at         timestamptz;
 
 -- ---------------------------------------------------------------------
 -- flight_data: MAVIS's Telemetry has a few fields IRIS's SimConnect-mirrored

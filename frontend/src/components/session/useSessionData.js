@@ -10,6 +10,8 @@ const SCAN_TRAIL_LEN = 5; // glances shown in the gaze trail (Instruments + OTW 
 // frame; the heavier panels (scan log, region pie, gaze trail, ground track)
 // follow a copy of it refreshed this often, so they don't re-render 60x/s.
 const SLOW_VIEW_MS = 125;
+// after a flight, how long Review waits for a recording that hasn't been reported yet
+const RECORDING_WAIT_MS = 120000;
 // longest the playback clock waits for a buffering video before carrying on without it
 const BUFFER_WAIT_MS = 3000;
 
@@ -135,6 +137,37 @@ export function useSessionData({ id, live }) {
     api.listRoutes().then(setRoutes).catch(() => setRoutes([]));
     return () => { cancelled = true; };
   }, [id]);
+
+  // Review opened straight after the flight: its recordings may still be on
+  // their way in (OBS finishing the files) -- show each one as it arrives
+  const videoUrls = summary && [summary.session.instrument_video_url, summary.session.otw_video_url];
+  const noVideoYet = !live && !!videoUrls && videoUrls.some((u) => !u);
+  const endedMs = Date.parse(summary?.session?.ended_at);
+  useEffect(() => {
+    if (!id || !noVideoYet) return;
+    let cancelled = false, timer;
+    const opened = Date.now();
+    const have = videoUrls.filter(Boolean).length;
+    const poll = async () => {
+      try {
+        const screens = Object.values(await api.recordings(id));
+        if (cancelled) return;
+        if (screens.filter((s) => s.state === "linked").length > have) {
+          const sm = await api.summary(id);
+          if (!cancelled) setSummary(sm);
+          return;                     // this effect runs again if a screen is still missing
+        }
+        const justEnded = Math.abs(opened - endedMs) < RECORDING_WAIT_MS && Date.now() - opened < RECORDING_WAIT_MS;
+        if (!screens.some((s) => s.state === "processing" || (s.state === "waiting" && justEnded))) return;
+      } catch {
+        return;                       // older backend, or the session is gone
+      }
+      if (!cancelled) timer = setTimeout(poll, 3000);
+    };
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, noVideoYet, videoUrls?.[0], videoUrls?.[1]]);
 
   // workload index: worked out (and cached) by the backend over the finished flight
   useEffect(() => {
@@ -300,9 +333,14 @@ export function useSessionData({ id, live }) {
   const hasIndex = indexForFlight != null;
 
   const instrumentVideoSrc = summary?.session?.instrument_video_url || null;
-  const instrumentOffsetSec = summary?.session?.instrument_video_offset_sec ?? 0;
+  // a flight's own recording knows when it started, which lines it up exactly;
+  // one linked by hand has the sync offset typed in on the Upload page
+  const videoOffset = (startedAt, offsetSec) =>
+    (startedAt && t0 ? (t0 - Date.parse(startedAt)) / 1000 : offsetSec ?? 0);
+  const instrumentOffsetSec = videoOffset(summary?.session?.instrument_video_started_at,
+    summary?.session?.instrument_video_offset_sec);
   const otwVideoSrc = summary?.session?.otw_video_url || null;
-  const otwOffsetSec = summary?.session?.otw_video_offset_sec ?? 0;
+  const otwOffsetSec = videoOffset(summary?.session?.otw_video_started_at, summary?.session?.otw_video_offset_sec);
 
   const series = useMemo(() => {
     if (!flight.length) return [];

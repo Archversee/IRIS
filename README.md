@@ -280,8 +280,12 @@ lines. Typed Q&A, SOP upload and debriefs need the LLM.
      password.
 4. Point both recording paths at `data/videos/Instruments` and
    `data/videos/OTW` (or wherever `video_dir` in `backend/app/config.py`
-   points).
-5. If your hosts or ports differ, edit `OBS_INSTANCES` in
+   points). Recordings saved anywhere else still work: IRIS links or copies
+   them into that folder.
+5. Record to **.mp4** (or turn on **Settings → Advanced → Automatically remux
+   to mp4**): browsers can't play .mkv. When a flight ends, its recordings are
+   added to that session's Review by themselves, in sync with the flight.
+6. If your hosts or ports differ, edit `OBS_INSTANCES` in
    `Sim_Data_Adapter/LiveAdapter.py`.
 
 OBS listens on the sim PC only, so no firewall rule is needed.

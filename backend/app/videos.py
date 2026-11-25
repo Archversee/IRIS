@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import threading
@@ -36,7 +37,8 @@ async def set_video(session_id: str, screen: str, body: VideoLink):
     async with db.acquire() as conn:
         # screen is whitelisted against SCREENS above, so this is safe to interpolate
         r = await conn.execute(
-            f"update sessions set {screen}_video_filename=$1, {screen}_video_offset_sec=$2 where id=$3",
+            f"update sessions set {screen}_video_filename=$1, {screen}_video_offset_sec=$2, "
+            f"{screen}_video_started_at=null where id=$3",   # lined up by hand: the offset counts
             body.filename, body.offset_sec, session_id)
     if r.endswith("0"):
         raise HTTPException(404, "Session not found")
@@ -47,7 +49,7 @@ async def set_video(session_id: str, screen: str, body: VideoLink):
 # ---------------------------------------------------------------------
 # Two kinds of files belong to a session:
 #  * linked videos -- {instrument,otw}_video_filename, relative to video_dir
-#    (picked on the Save Session / Upload pages);
+#    (the flight's OBS recordings, linked by recordings.py, or picked on the Upload page);
 #  * OBS recordings -- absolute paths LiveAdapter.py reports after it stops
 #    recording (POST /sessions/{id}/recordings), kept in recording_paths.
 # Both are removed when the session is deleted (Sessions page, Finish &
@@ -60,39 +62,58 @@ RECORDING_EXTS = VIDEO_EXTS | {".mkv", ".flv", ".ts"}
 
 
 async def ensure_schema() -> None:
-    """Additive column for recording paths (also in db/schema_mavis_integration.sql)."""
+    """Additive columns for recordings (also in db/schema_mavis_integration.sql)."""
     try:
         async with db.acquire() as conn:
-            await conn.execute("alter table sessions add column if not exists recording_paths text[]")
+            for col in ("recording_paths text[]", "recordings jsonb",
+                        "instrument_video_started_at timestamptz", "otw_video_started_at timestamptz"):
+                await conn.execute(f"alter table sessions add column if not exists {col}")
     except Exception as e:  # sessions table not created yet -- run db/schema.sql first
-        log.warning("videos: couldn't add sessions.recording_paths: %s", e)
+        log.warning("videos: couldn't add the recording columns to sessions: %s", e)
+
+
+class Recording(BaseModel):
+    path: str
+    screen: str                         # instrument | otw
+    started_at: float | None = None     # epoch seconds of its first frame
 
 
 class RecordingPaths(BaseModel):
     paths: list[str]
+    recordings: list[Recording] = []
 
 
 @router.post("/sessions/{session_id}/recordings")
 async def add_recordings(session_id: UUID, body: RecordingPaths):
-    """LiveAdapter.py reports the files OBS wrote for this session, so they
-    can be deleted along with it later. Only absolute paths to video files."""
+    """LiveAdapter.py reports the files OBS wrote for this session: they become
+    its Review videos (recordings.py), and can be deleted along with it later.
+    Only absolute paths to video files."""
     paths = [os.path.abspath(p) for p in body.paths
              if p and os.path.isabs(p) and os.path.splitext(p)[1].lower() in RECORDING_EXTS]
     if not paths:
         return {"ok": True, "paths": []}
+    recs = [{**r.model_dump(), "path": os.path.abspath(r.path)} for r in body.recordings
+            if r.screen in SCREENS and os.path.abspath(r.path) in paths]
     async with db.acquire() as conn:
         row = await conn.fetchrow(
             "update sessions set recording_paths = "
-            "(select array_agg(distinct p) from unnest(coalesce(recording_paths, '{}') || $2::text[]) p) "
-            "where id = $1 returning recording_paths", session_id, paths)
+            "(select array_agg(distinct p) from unnest(coalesce(recording_paths, '{}') || $2::text[]) p), "
+            "recordings = coalesce(recordings, '[]'::jsonb) || $3::jsonb "
+            "where id = $1 returning recording_paths", session_id, paths, json.dumps(recs))
     if row is None:
         raise HTTPException(404, "Session not found")
+    if recs:
+        from .recordings import recordings_saved   # here: recordings imports this module
+        await recordings_saved(session_id)
     return {"ok": True, "paths": row["recording_paths"]}
 
 
 def _inside_video_dir(path: str) -> bool:
     root = os.path.realpath(settings.video_dir)
-    return os.path.commonpath([root, os.path.realpath(path)]) == root
+    try:
+        return os.path.commonpath([root, os.path.realpath(path)]) == root
+    except ValueError:      # another drive
+        return False
 
 
 async def session_files(conn, session_id) -> list[str]:
