@@ -77,10 +77,13 @@ def build_flight_flow(rt):
         return [t for t in out if t]
 
     async def _briefing_lines():
+        gen = rt.run_gen["n"]
         texts = _briefing_texts()
         if is_familiarization(rt.lesson):
             for t in texts:
                 await rt.coach.say(t)
+                if gen != rt.run_gen["n"]:
+                    return
             rt.engine.start_flying()
             return
         # ground starts: if the trainee rolls during the briefing, the rest of
@@ -89,10 +92,15 @@ def build_flight_flow(rt):
         brief = (rt.coach.say if rt.lesson.get("airborne_start") or rt.cfg["sim"]["adapter"] == "mock"
                  else _brief)
         for t in texts:
-            if await brief(t) is False:
+            done = await brief(t)
+            if gen != rt.run_gen["n"]:
+                return                        # restarted: the new run has its own briefing
+            if done is False:
                 break
         if rt.lesson.get("airborne_start"):
             await _set_frozen(False)          # held on final through the briefing
+            if gen != rt.run_gen["n"]:
+                return
         rt.engine.start_flying()
 
     def _lesson_clock() -> tuple[int, int]:
@@ -173,10 +181,37 @@ def build_flight_flow(rt):
         return (is_familiarization(rt.lesson) and bool(rt.lesson.get("freeze_during_instructions"))
                 and pol.get("coaching") != "silent")
 
-    async def _set_frozen(on: bool) -> None:
-        fn = getattr(rt.sim, "set_frozen", None)
-        if fn and not await rt.loop.run_in_executor(None, fn, on):
-            log.warning("sim did not confirm freeze=%s", on)
+    # freeze / control-lock calls reach the sim one at a time, in the order they
+    # were made: each runs in an executor thread, and a release must never be
+    # overtaken by the freeze an old run had already asked for
+    hold_lock = asyncio.Lock()
+
+    async def _set_frozen(on: bool, gen: int | None = None) -> None:
+        """gen: the run asking to freeze -- ignored once a newer run has begun."""
+        async with hold_lock:
+            if on and gen is not None and gen != rt.run_gen["n"]:
+                return
+            fn = getattr(rt.sim, "set_frozen", None)
+            if fn and not await rt.loop.run_in_executor(None, fn, on):
+                log.warning("sim did not confirm freeze=%s", on)
+
+    async def _release_aircraft() -> None:
+        """Whatever the run before left behind -- the aircraft frozen (briefing,
+        explanation, end-of-lesson hold), the controls locked (demo) -- undo it.
+        Every new run starts with this, whatever kind of lesson either one is;
+        bump rt.run_gen first, so the old run's tasks can't freeze it again."""
+        await _lock_controls(False)
+        await _set_frozen(False)
+
+    # a lesson ended held in the air (_fam_finish) and isn't back on the runway yet
+    runway_due = {"on": False}
+
+    async def _reposition_if_due() -> None:
+        """A new run took over while the last lesson was still being scored, so
+        _fam_finish stood down before its last step: put the aircraft back on
+        the runway now, rather than let it go in mid-air with nobody flying."""
+        if runway_due["on"]:
+            await _to_runway_start()
 
     async def _set_vacuum(on: bool) -> None:
         """Partial Panel's failed attitude and heading gauges (lesson
@@ -201,7 +236,9 @@ def build_flight_flow(rt):
         gen, eng = rt.run_gen["n"], rt.engine
         phase = ev.data.get("phase")
         try:
-            await _set_frozen(True)
+            await _set_frozen(True, gen)
+            if gen != rt.run_gen["n"]:
+                return
             if ev.data.get("teleport"):
                 ev = await _teleport_step(ev, eng)
             await rt.coach.say(phrases.render("LESSON_NOTE", ev.data), phase=phase)
@@ -271,7 +308,7 @@ def build_flight_flow(rt):
         silent = (rt.session.get("policy") or {}).get("coaching") == "silent"
         placed = False
         try:
-            await _set_frozen(True)
+            await _set_frozen(True, gen)
             if not silent:
                 line = (phrases.render("FAM_UPSET_NEXT", {"title_lc": _title_lc(phase, ev.data)})
                         if phase in rt.demo_ctl["shown"] else phrases.render("LESSON_NOTE", ev.data))
@@ -279,7 +316,11 @@ def build_flight_flow(rt):
             if gen != rt.run_gen["n"] or not rt.started.is_set():
                 return
             await rt.coach.say(phrases.render("FAM_UPSET_LOOK_DOWN", {}), phase=phase)
+            if gen != rt.run_gen["n"]:
+                return
             placed = await _place_upset(eng.upset_attitude(phase))
+            if gen != rt.run_gen["n"]:
+                return
             if not placed:
                 log.warning("unusual attitude: the sim didn't take %s -- skipping it", phase)
                 eng.skip_phase()                 # not the trainee's fault: no score either way
@@ -345,13 +386,16 @@ def build_flight_flow(rt):
             await asyncio.sleep(0.6)             # a beat between actions
         return not stop()
 
-    async def _lock_controls(on: bool) -> None:
+    async def _lock_controls(on: bool, gen: int | None = None) -> None:
         """Trainee's stick/pedals/throttle/trim locked out while MAVIS flies
-        the demo, handed back after."""
-        fn = getattr(rt.sim, "lock_controls", None)
-        if fn and not await rt.loop.run_in_executor(None, fn, on):
-            log.warning("sim did not take lock_controls(%s): the trainee's controls "
-                        "may still move the aircraft during the demo", on)
+        the demo, handed back after. gen: as in _set_frozen."""
+        async with hold_lock:
+            if on and gen is not None and gen != rt.run_gen["n"]:
+                return
+            fn = getattr(rt.sim, "lock_controls", None)
+            if fn and not await rt.loop.run_in_executor(None, fn, on):
+                log.warning("sim did not take lock_controls(%s): the trainee's controls "
+                            "may still move the aircraft during the demo", on)
 
     async def _fly_demo(pilot: DemoPilot, gen: int):
         """Feed the demo pilot live telemetry and send its commands to the sim."""
@@ -382,6 +426,8 @@ def build_flight_flow(rt):
             # hand-over: no separate "You have control" after it.
             # Controls stay locked from the demo's start until then.
             await _lock_controls(False)
+            if gen != rt.run_gen["n"]:
+                return
             # the ground track starts here, with the trainee's own flying:
             # nothing from the demo (skipped or not) or the reset back to the start
             rt.state["track"] = [[]]
@@ -389,6 +435,8 @@ def build_flight_flow(rt):
             rt.demo_ctl["no_track"] = False
             if rt.demo_ctl["shown"]:
                 await _set_frozen(False)
+                if gen != rt.run_gen["n"]:
+                    return
             rt.engine.start_flying()
         finally:
             rt.demo_ctl["no_track"] = False
@@ -439,8 +487,10 @@ def build_flight_flow(rt):
             await rt.coach.say(phrases.render("FAM_DEMO_START", {}))
             if rt.demo_ctl["skip"].is_set() or gen != rt.run_gen["n"]:
                 return
-            await _lock_controls(True)          # hands off: MAVIS has control
+            await _lock_controls(True, gen)     # hands off: MAVIS has control
             await _set_frozen(False)
+            if gen != rt.run_gen["n"]:
+                return
             flew = True
             # MAVIS flies this stretch: marked as its own event so it is never mistaken for
             # (or graded as) the trainee's flying
@@ -453,7 +503,7 @@ def build_flight_flow(rt):
                                         "title": (rt.engine.notes.get(step) or {}).get("title") or step}
                     if tracker:
                         tracker.demo_step(step, Telemetry(**dict(rt.state.get("tel") or tel0)))
-                    await _set_frozen(True)
+                    await _set_frozen(True, gen)
                     shown = await _demo_upset(step, gen)
                     skipped = rt.demo_ctl["skip"].is_set() or gen != rt.run_gen["n"]
                     if skipped:
@@ -503,21 +553,23 @@ def build_flight_flow(rt):
             if flew and gen == rt.run_gen["n"]:
                 back_t = None
                 try:
-                    await _set_frozen(True)
-                    ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
-                        tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
-                        throttle_pct=base_th * 100.0))
-                    if not ok:
-                        log.warning("demo: couldn't put the aircraft back at the start")
-                    else:
-                        back_t = await _wait_back_at(tel0["lat"], tel0["lon"])
+                    await _set_frozen(True, gen)
+                    if gen == rt.run_gen["n"]:  # restarted meanwhile: never move the new run's aircraft
+                        ok = await rt.loop.run_in_executor(None, lambda: rt.sim.set_position(
+                            tel0["lat"], tel0["lon"], tel0["alt_msl"], tel0["hdg"], max(60.0, tel0["ias"]),
+                            throttle_pct=base_th * 100.0))
+                        if not ok:
+                            log.warning("demo: couldn't put the aircraft back at the start")
+                        else:
+                            back_t = await _wait_back_at(tel0["lat"], tel0["lon"])
                 finally:
                     # the demo event ends only once the sim reports the aircraft back
                     # at the start, so IRIS's ground track (which leaves the demo out)
                     # never draws the jump back from where the demo finished
-                    rt.event_log.close(back_t or rt._sim_now(),
-                                       "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
-                    rt._publish_events()
+                    if gen == rt.run_gen["n"]:  # a Restart has closed it already: this would be the new run's
+                        rt.event_log.close(back_t or rt._sim_now(),
+                                           "skipped" if (skipped or rt.demo_ctl["skip"].is_set()) else "completed")
+                        rt._publish_events()
         if gen == rt.run_gen["n"] and rt.demo_ctl["shown"]:
             await rt.coach.say(phrases.render("FAM_DEMO_SKIPPED" if skipped else "FAM_DEMO_END", {}))
 
@@ -525,16 +577,18 @@ def build_flight_flow(rt):
         """End of the exercise: hold the aircraft while it's scored, then put
         it back at the start of the runway, stopped, ready for whatever's next."""
         gen = rt.run_gen["n"]
-        await _set_frozen(True)
+        runway_due["on"] = True
+        await _set_frozen(True, gen)
         await _set_vacuum(False)
         try:
             await rt.finish_lesson(False)
         except Exception:
             log.exception("finishing the familiarization lesson failed")
         if gen != rt.run_gen["n"]:
-            return                      # Fly again / reset already took over
+            return                      # Fly again / reset already took over (and released it)
         await _set_frozen(False)
-        await _to_runway_start()
+        if gen == rt.run_gen["n"]:
+            await _to_runway_start()
 
     async def _to_runway_start() -> bool:
         """Aircraft lined up at the start of the lesson's runway, stopped,
@@ -545,7 +599,19 @@ def build_flight_flow(rt):
         ok = fn is not None and await rt.loop.run_in_executor(
             None, lambda: fn(lat, lon, elev, hdg, 0, throttle_pct=0, on_ground=True))
         if ok:
+            runway_due["on"] = False
             log.info("aircraft placed at the start of runway %s", rt.lesson["runway"]["ident"])
+            # the sim reports the old place for a moment: a lesson begun on that would
+            # think it's already flying (Take-off: already finished, and hold it again)
+            deadline = time.time() + 6.0
+            while time.time() < deadline:
+                tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+                if tel.on_ground and abs(tel.lat - lat) + abs(tel.lon - lon) < 2e-3:
+                    await asyncio.sleep(0.4)     # and the tick loop has it too
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                log.warning("the sim didn't report the aircraft on the runway in 6 s, continuing")
         else:
             log.warning("couldn't put the aircraft at the start of the runway")
         return ok
@@ -563,6 +629,7 @@ def build_flight_flow(rt):
         if not ok:
             raise RuntimeError("Couldn't place the aircraft in the air for the "
                                "familiarization flight -- check MAVIS's log, then press Start again.")
+        runway_due["on"] = False
         # wait for telemetry to show the new position, so the first exercise
         # snapshots the airborne altitude, not the ramp
         deadline = time.time() + 6.0
@@ -603,6 +670,8 @@ def build_flight_flow(rt):
     rt._fam_opening = _fam_opening
     rt._lesson_text = _lesson_text
     rt._orient_lesson_to_aircraft = _orient_lesson_to_aircraft
+    rt._release_aircraft = _release_aircraft
+    rt._reposition_if_due = _reposition_if_due
     rt._set_frozen = _set_frozen
     rt._set_vacuum = _set_vacuum
     rt._speakable = _speakable

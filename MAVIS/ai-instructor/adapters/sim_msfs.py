@@ -110,10 +110,12 @@ class MSFSAdapter:
         self._vacuum_failed = False    # TOGGLE_VACUUM_FAILURE sent and not yet undone
         self._lock_mapped = False      # _LOCKED_EVENTS mapped to client ids yet
         self._locked = False
+        self._freeze_unsure = False    # the last freeze / release wasn't confirmed in time
         # the tick loop and a teleport both run in executor threads -- one
         # SimConnect call at a time on the shared handle
         import threading
         self._lock = threading.Lock()
+        self._freeze_lock = threading.Lock()   # one set_frozen() at a time (its events are toggles)
         self._weather = weather or {}      # config.yaml sim.weather -- unused for now, see module docstring
         self._prev_alt = None   # for self-computed, smoothed vertical speed
         self._prev_t = 0.0
@@ -565,31 +567,38 @@ class MSFSAdapter:
     def set_frozen(self, on: bool) -> bool:
         """Hold the aircraft still (position, altitude and attitude) while the
         instructor explains, like MSFS's own lessons; on=False hands it back.
-        Returns True once the sim reports the requested state."""
+        Returns True once the sim reports the requested state. A release is
+        tried again if the sim doesn't report it: a trainee must never be left
+        held."""
         if self._sm is None:
             return False
 
         def settled() -> bool:
             return all(bool(self._get(var, 0)) == on for var, _ in _FREEZES)
 
-        try:
-            self._drain()
-            with self._lock:
-                for var, event in _FREEZES:
-                    if bool(self._get(var, 0)) != on:
-                        self._sm.send_event(event)
-            if self._wait_for(settled, 1.5):
-                return True
-        except Exception as e:
-            log.error("SimConnect set_frozen(%s) failed: %s", on, e)
-            return False
-        log.warning("sim didn't confirm freeze=%s within 1.5 s", on)
+        with self._freeze_lock:
+            try:
+                for attempt in range(1 if on else 3):
+                    if self._freeze_unsure:     # a toggle may still be on its way: read the state after it
+                        self._wait_for(lambda: False, 0.5)
+                    self._drain()
+                    with self._lock:
+                        for var, event in _FREEZES:
+                            if bool(self._get(var, 0)) != on:
+                                self._sm.send_event(event)
+                    self._freeze_unsure = not self._wait_for(settled, 1.5)
+                    if not self._freeze_unsure:
+                        return True
+                    log.warning("sim didn't confirm freeze=%s within 1.5 s (try %d)", on, attempt + 1)
+            except Exception as e:
+                log.error("SimConnect set_frozen(%s) failed: %s", on, e)
         return False
 
     def close(self) -> None:
         if self._sm:
             try:
                 self.set_vacuum_failed(False)    # never leave the sim with dead gauges
+                self.set_frozen(False)           # ... or the aircraft held
                 self._sm.Close()
             except Exception:
                 pass

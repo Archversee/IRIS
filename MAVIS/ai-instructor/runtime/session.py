@@ -31,15 +31,28 @@ def build_session(rt):
         free = bool(rt.session.get("free_flight"))
         if rt.cfg["sim"]["adapter"] == "msfs":
             await rt._connect_msfs_with_retries()
+        # every run starts with a free aircraft, whatever the last one left it in
+        # (the holds below are this run's own, and it lets go of them itself)
+        await rt._release_aircraft()
+        if free or not rt.lesson.get("airborne_start"):
+            await rt._reposition_if_due()
+        gen = rt.run_gen["n"]
+        if rt.cfg["sim"]["adapter"] == "msfs":
+            if not free and not rt.lesson.get("airborne_start"):
+                tel = await rt.loop.run_in_executor(None, rt.sim.get_telemetry)
+                # left in the air (an airborne lesson ended early): this one starts on the runway
+                if not tel.on_ground and tel.alt_agl > 50 and not await rt._to_runway_start():
+                    raise RuntimeError("Couldn't move the aircraft to the start of the runway "
+                                       "-- check MAVIS's log, then press Start again.")
             if not is_familiarization(rt.lesson) and not rt.lesson.get("airborne_start"):
                 rt._orient_lesson_to_aircraft(await rt.loop.run_in_executor(None, rt.sim.get_telemetry))
         if rt.lesson.get("airborne_start") and not free:
             await rt._airborne_start()
             if rt._fam_freezes():
-                await rt._set_frozen(True)     # held through the briefing
+                await rt._set_frozen(True, gen)     # held through the briefing
             elif (not is_familiarization(rt.lesson)
                     and (rt.session.get("policy") or {}).get("coaching") == "turn_by_turn"):
-                await rt._set_frozen(True)     # landing: held on final while it's briefed
+                await rt._set_frozen(True, gen)     # landing: held on final while it's briefed
         if rt.lesson.get("vacuum_failure") and not free:
             await rt._set_vacuum(True)         # Partial Panel: the gauges fail as it starts
         rt.state["look_at"] = None
@@ -90,9 +103,9 @@ def build_session(rt):
             "blob": rt.sim.save_state() if hasattr(rt.sim, "save_state") else None}
 
     async def restart():
+        rt.run_gen["n"] += 1                   # first: the old run's tasks stand down
         await rt._set_vacuum(False)            # start() fails it again if the lesson wants
         rt.stop_speech()
-        rt.run_gen["n"] += 1
         rt.live_rules["ev"] = None
         rt.state["sop_live"] = None
         rt.engine.restart()
@@ -118,8 +131,7 @@ def build_session(rt):
         rt.state["demo_track"] = []
         rt.state["look_at"] = None
         rt.transcript.clear()
-        if is_familiarization(rt.lesson):
-            await rt._set_frozen(False)
+        await rt._release_aircraft()
         if hasattr(rt.sim, "reset"):
             rt.sim.reset()
             await rt._apply_lesson_clock()   # mock reset returns to daytime
@@ -226,10 +238,11 @@ def build_session(rt):
                                 trainee_name: str = "",
                                 tone: str = "warm", free_flight: bool = False,
                                 strictness: str = "", pilot_user_id: str = ""):
+        rt.run_gen["n"] += 1                   # first: the old run's tasks stand down
         rt.stop_speech()
         rt.coach.pause()
-        if is_familiarization(rt.lesson):
-            await rt._set_frozen(False)
+        await rt._release_aircraft()
+        await rt._reposition_if_due()
         mid = normalize_mode(mode)
         policy = policy_for(mid)
         rt.session["mode"] = mid
@@ -252,7 +265,6 @@ def build_session(rt):
                           guidance=policy.get("guidance", "direct"),
                           tone=rt.session["tone"])
         rt.attempts.clear()
-        rt.run_gen["n"] += 1
         rt.scored["done"] = False
         rt._discard_card()
         rt.engine.restart()
@@ -306,7 +318,13 @@ def build_session(rt):
     async def quit_lesson():
         # trainee pressed Back before finishing -> practice summary, NOT posted
         await rt._set_vacuum(False)
-        if is_familiarization(rt.lesson):
+        if not rt.scored["done"]:
+            # ended early: its briefing / demo / explanation stands down, and the
+            # aircraft is handed back. (A finished lesson's own hold is let go by
+            # _fam_finish, which is still scoring it and must not stand down.)
+            rt.run_gen["n"] += 1
+            await rt._release_aircraft()
+        elif is_familiarization(rt.lesson):
             await rt._set_frozen(False)        # hand the aircraft back on the way out
         if rt.scored["done"]:
             # the flight already finished on its own and is scored: nothing more to score,
