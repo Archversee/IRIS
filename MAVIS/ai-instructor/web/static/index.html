@@ -1867,11 +1867,14 @@ function closeReadingLesson(){
 }
 
 // ---- 3D viewers for reading-kind lessons.
-// Coords are in web/static/models/cockpit.glb's own axes: +X = aircraft's left
-// (so the pilot's seat and the PFD are at +X), +Z = nose, +Y = up, ground at y=0.
-// The model is NOT in metres: it spans 3.69 units across an 11 m wingspan, so
-// roughly 1 unit ≈ 3 m. Every figure below is in model units; retarget them all
-// if the model file is ever swapped.
+// Coords are in web/static/models/cessna.glb's own axes: +X = aircraft's left
+// (so the pilot's seat and the six-pack are at +X), +Z = nose, +Y = up, wheels
+// at y=0. The model ("Cessna172" by KOG_THORNS on Sketchfab, CC BY 4.0) is a
+// steam-gauge 172 in roughly metres: 12.6 units across the wingspan, origin
+// near the front of the cabin rather than the centre of the airframe. Every
+// figure below is in model units; retarget them all if the model is swapped.
+// The earlier G1000 model (cockpit.glb) was ~3.4x smaller, with its origin
+// ~1.75 units further aft.
 //
 // "orbit" lessons let the camera fly around the aircraft freely. "fixed" lessons
 // (cockpit interior) snap the camera to a per-checkpoint viewpoint instead, since
@@ -1879,81 +1882,96 @@ function closeReadingLesson(){
 // the trainee can still look around from wherever they were placed.
 const READING_3D={
   lesson00_preflight:{
-    model:"/static/models/cockpit.glb",
+    model:"/static/models/cessna.glb",
     camera:"orbit",
     blurb:"Preflight & Cockpit · walk the aircraft before you fly",
-    frame:[2.8,1.9,3.4],     // camera offset from model centre on load
-    dist:[0.8,12],           // OrbitControls min/max distance
+    frame:[9.55,6.27,11.70], // camera offset from model centre on load
+    dist:[2.7,41],           // OrbitControls min/max distance
     grid:true,
-    gridSize:8,              // model is ~3.7 units across, not ~12 like the old one
+    gridSize:28,             // ~2x the 12.6-unit wingspan
     scale:0.033,             // apparent badge size; angular, so model-scale independent
     scaleByDistance:true,
+    seeThrough:["GlassMat_New"],
     hint:"Click a numbered point to walk round to it. Drag to rotate, scroll to zoom.",
-    // Measured landmarks: wing y≈0.66 spanning x ±1.84; main wheels x ±0.44 at
-    // z≈0.40; nose wheel z≈0.96; propeller disc z≈1.22; tail fin to z≈−1.41;
-    // tie-down streamers x ±0.93.
+    // Measured landmarks: wing y 1.98…2.36 spanning x ±6.30 (nav lights x ±6.27),
+    // root at x ±0.64, z −1.04…0.50, red fuel caps on top near the root; struts
+    // x ±0.64…2.93; main wheel fairings x ±1.27…1.58, z −0.83…0.20; nose wheel
+    // z≈1.1…2.0; propeller disc z≈2.35…2.56; fin to z −6.61, top y 2.96;
+    // tailplane x ±2.0 at y≈1.2, z −4.5…−5.9; fuselage x ±0.67. Two whip
+    // antennas lean back off the cabin roof (z −0.3…−1.0) and a third sits on
+    // the rear fuselage (z≈−2.2). No tie-downs are modelled.
     pos:{
-      cabin:[-0.20,0.50,0.35], left_wing_root:[0.30,0.68,0.35], left_wing:[1.62,0.68,0.34],
-      left_gear:[0.47,0.15,0.40], nose:[0,0.42,1.24], right_gear:[-0.47,0.15,0.40],
-      right_wing:[-1.62,0.68,0.34], right_fuselage:[-0.19,0.45,-0.35], empennage:[0,0.72,-1.20],
-      antennas:[0,0.72,-0.55], final:[0,0.05,0.28],
+      cabin:[-0.68,1.65,-0.55], left_wing_root:[1.02,2.24,-0.55], left_wing:[5.52,2.24,-0.58],
+      left_gear:[1.60,0.49,-0.37], nose:[0,1.39,2.52], right_gear:[-1.60,0.49,-0.37],
+      right_wing:[-5.52,2.24,-0.58], right_fuselage:[-0.64,1.40,-1.60], empennage:[0,2.38,-5.88],
+      antennas:[0,2.40,-1.20], final:[0,0.17,-0.79],
     },
     // Each viewpoint stands off the checkpoint on the same side of the aircraft,
     // so the airframe never comes between the camera and what it's showing.
     view:{
-      cabin:{pos:[-0.88,0.72,0.95],target:[-0.18,0.50,0.35]},
-      left_wing_root:{pos:[0.95,1.05,0.98],target:[0.30,0.66,0.35]},
-      left_wing:{pos:[2.30,1.00,1.00],target:[1.62,0.66,0.34]},
-      left_gear:{pos:[1.25,0.45,0.98],target:[0.44,0.10,0.40]},
-      nose:{pos:[0.62,0.78,2.15],target:[0,0.40,1.20]},
-      right_gear:{pos:[-1.25,0.45,0.98],target:[-0.44,0.10,0.40]},
-      right_wing:{pos:[-2.30,1.00,1.00],target:[-1.62,0.66,0.34]},
-      right_fuselage:{pos:[-0.90,0.75,-0.78],target:[-0.19,0.45,-0.35]},
-      empennage:{pos:[0.78,1.08,-2.35],target:[0,0.66,-1.20]},
-      antennas:{pos:[0.88,1.28,-0.30],target:[0,0.70,-0.58]},
-      final:{pos:[1.95,1.30,2.65],target:[0,0.42,-0.10]},
+      cabin:{pos:[-3.40,1.75,1.90],target:[-0.60,1.60,-0.30]},
+      left_wing_root:{pos:[3.24,3.46,1.62],target:[1.02,2.18,-0.55]},
+      left_wing:{pos:[7.84,3.30,1.69],target:[5.52,2.18,-0.58]},
+      left_gear:{pos:[4.60,1.40,1.90],target:[1.43,0.35,-0.30]},
+      nose:{pos:[2.11,2.57,5.65],target:[0,1.32,2.38]},
+      right_gear:{pos:[-4.60,1.40,1.90],target:[-1.43,0.35,-0.30]},
+      right_wing:{pos:[-7.84,3.30,1.69],target:[-5.52,2.18,-0.58]},
+      right_fuselage:{pos:[-3.40,1.90,-3.60],target:[-0.60,1.40,-1.40]},
+      empennage:{pos:[2.66,3.56,-9.83],target:[0,2.18,-5.88]},
+      // side-on at roof height, so all three antennas show against the sky
+      antennas:{pos:[6.20,2.50,-2.20],target:[0,2.10,-1.20]},
+      final:{pos:[6.65,4.29,7.37],target:[0,1.39,-2.09]},
     },
   },
   lesson00_cockpit:{
-    model:"/static/models/cockpit.glb",
+    model:"/static/models/cessna.glb",
     camera:"fixed",
     blurb:"Preflight & Cockpit · find your way around the controls",
-    // Opening view: further back than any checkpoint viewpoint, so it reads as a
+    // Opening view: from behind and above the front seats, so it reads as a
     // wide shot of the whole cabin rather than as one of the numbered steps.
-    home:{pos:[0.00,0.56,0.14],target:[0.01,0.475,0.78]},
-    dist:[0.06,2],
-    near:0.01,               // interior viewpoints sit ~0.2 units out
-    fill:[0,0.60,0.55],      // point light inside the cabin; the interior is unlit
+    home:{pos:[0.00,2.00,-0.75],target:[0.02,1.55,0.78]},
+    dist:[0.1,3],
+    near:0.01,               // interior viewpoints sit ~0.4 units out
+    fill:[0.10,1.95,0.30],   // point light inside the cabin; the interior is unlit
     grid:false,
     scale:0.05,              // apparent badge size; angular, so model-scale independent
     scaleByDistance:true,
+    // the black "glass" over the small engine gauges and radio displays is
+    // authored opaque, which would hide them; render it as a faint tint instead
+    seeThrough:["GlassMat_New"],
     hint:"Click a numbered point to move to that part of the cockpit. Drag to look around, scroll to zoom.",
-    // Measured landmarks: the instrument panel is a flat plane at z=0.76 carrying a
-    // photographic G1000 texture, spanning x −0.08…+0.10, y 0.46…0.52 PFD on the
-    // pilot's (+X) half, MFD on the −X half. Throttle/mixture knobs x ±0.07 at
-    // y≈0.435, z≈0.74; lower console y 0.24…0.45 around z 0.70; seats z 0.44…0.58.
+    // Measured landmarks (steam-gauge panel, face at z≈0.76): six-pack x +0.05…+0.35,
+    // y 1.50…1.80 in front of the pilot (+X); radio stack x −0.02…−0.21,
+    // y 1.50…1.80; engine gauges further −X. Lower panel y 1.36…1.47: master
+    // switch x 0.45, ignition key x 0.40, primer x 0.50, circuit breakers
+    // x 0.13…0.34, light rocker switches x 0.06…0.14, throttle x≈0 and red
+    // mixture x −0.07 (knobs out to z 0.66), flap lever x −0.20. Fuel selector
+    // on the floor at (0.01, 0.95, 0.61). Pilot seat cushion x 0.03…0.52,
+    // y≈1.15, z 0…0.49; yokes y 1.46…1.63, z 0.52…0.79.
     // Badges sit just aft of each item (toward the pilot) so they read against it.
     pos:{
-      seating:[0.09,0.36,0.46], power_quadrant:[0.00,0.44,0.70], ignition:[0.10,0.44,0.73],
-      fuel_system:[0.00,0.30,0.68], pfd:[0.055,0.49,0.755], mfd:[-0.035,0.49,0.755],
-      avionics:[-0.075,0.455,0.745], lighting:[0.09,0.512,0.745], flaps_trim:[-0.04,0.42,0.70],
+      seating:[0.27,1.20,0.25], power_quadrant:[-0.035,1.42,0.65], ignition:[0.42,1.41,0.72],
+      // pfd/mfd keep their G1000-era ids: pfd marks the six-pack flight
+      // instruments, mfd the radio stack
+      fuel_system:[0.01,0.99,0.58], pfd:[0.20,1.69,0.74], mfd:[-0.115,1.65,0.74],
+      avionics:[0.24,1.42,0.73], lighting:[0.10,1.43,0.73], flaps_trim:[-0.20,1.43,0.73],
       // no parking brake is modelled; this marks where the handle sits on the
       // real aircraft, under the pilot's side of the panel
-      final_check:[0.075,0.425,0.655],
+      final_check:[0.18,1.30,0.68],
     },
     view:{
-      // the cabin is only x ±0.18 wide; a camera outside that sits inside the
+      // the cabin is x ±0.64 wide; a camera outside that sits inside the
       // fuselage skin, so every viewpoint here stays inboard of it
-      seating:{pos:[0.00,0.57,0.26],target:[0.06,0.40,0.52]},
-      power_quadrant:{pos:[0.00,0.55,0.45],target:[0.00,0.435,0.74]},
-      ignition:{pos:[0.13,0.50,0.52],target:[0.10,0.45,0.74]},
-      fuel_system:{pos:[0.15,0.47,0.42],target:[0.00,0.30,0.70]},
-      pfd:{pos:[0.055,0.52,0.55],target:[0.055,0.49,0.76]},
-      mfd:{pos:[-0.035,0.52,0.55],target:[-0.035,0.49,0.76]},
-      avionics:{pos:[-0.075,0.53,0.53],target:[-0.075,0.455,0.76]},
-      lighting:{pos:[0.11,0.56,0.53],target:[0.09,0.512,0.76]},
-      flaps_trim:{pos:[0.05,0.53,0.45],target:[-0.04,0.42,0.72]},
-      final_check:{pos:[0.00,0.575,0.20],target:[0.02,0.455,0.72]},
+      seating:{pos:[0.05,1.85,0.45],target:[0.27,1.20,0.00]},
+      power_quadrant:{pos:[0.00,1.75,0.15],target:[-0.03,1.42,0.72]},
+      ignition:{pos:[0.50,1.60,0.30],target:[0.44,1.41,0.74]},  // outboard of the yoke
+      fuel_system:{pos:[0.00,1.45,0.35],target:[0.01,0.96,0.60]},
+      pfd:{pos:[0.20,1.72,0.30],target:[0.20,1.69,0.78]},
+      mfd:{pos:[-0.115,1.72,0.28],target:[-0.115,1.65,0.78]},
+      avionics:{pos:[0.24,1.50,0.30],target:[0.24,1.42,0.76]},
+      lighting:{pos:[0.10,1.50,0.33],target:[0.10,1.42,0.76]},
+      flaps_trim:{pos:[-0.28,1.40,0.38],target:[-0.20,1.43,0.76]}, // under the right yoke
+      final_check:{pos:[0.12,1.88,-0.15],target:[0.05,1.55,0.78]},
     },
   },
 };
@@ -2082,6 +2100,7 @@ function ensurePf3D(){
   }
   pf3D={scene,camera,renderer,controls,hotspots,container,animId:0,animate,goal:null,lesson:pfLesson};
   new THREE.GLTFLoader().load(cfg.model,(gltf)=>{
+    pfSeeThrough(gltf.scene,cfg.seeThrough);
     scene.add(gltf.scene);
     const box=new THREE.Box3().setFromObject(gltf.scene);
     const center=box.getCenter(new THREE.Vector3());
@@ -2103,6 +2122,17 @@ function ensurePf3D(){
   });
   window.addEventListener("resize",pf3dResize);
   return pf3D;
+}
+// Materials named in cfg.seeThrough are authored opaque but stand for glass;
+// draw them as a faint tint so what sits behind them stays visible.
+function pfSeeThrough(root,names){
+  if(!names||!names.length)return;
+  root.traverse(o=>{
+    if(!o.isMesh)return;
+    (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{
+      if(m&&names.includes(m.name)){m.transparent=true;m.opacity=0.15;m.depthWrite=false;}
+    });
+  });
 }
 function pf3dResize(){
   if(!pf3D)return;
