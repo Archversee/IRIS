@@ -9,36 +9,45 @@ import { useMavisState } from "../live/hooks/useMavisSocket.js";
 // with the scorecard's own debrief text (MAVIS's live state), and can be
 // edited. No CSV upload or video linking here -- MAVIS already logged the
 // flight data, and the flight's OBS recordings are added to the review by
-// themselves (FlightVideos shows how that's going; nothing waits for it).
+// themselves (FlightVideos shows how that's going; Next waits for them).
 
 const SCREENS = [["instrument", "Instrument screen"], ["otw", "OTW screen"]];
 const NO_RECORDING_MS = 30000;   // none reported by then: the flight wasn't recorded
 
-function FlightVideos({ id }) {
+// How the flight's videos are coming along. pending: at least one is still on
+// its way -- Next waits for it. A video that failed, or that was never recorded,
+// doesn't hold the page up.
+function useFlightVideos(id) {
   const [screens, setScreens] = useState(null);
   const [gaveUp, setGaveUp] = useState(false);
+  const [pending, setPending] = useState(true);
   useEffect(() => {
-    let alive = true, timer;
+    let alive = true, timer, last = null;
     const opened = Date.now();
     const poll = async () => {
-      let next = null;
+      let gone = false;
       try {
-        next = await api.recordings(id);
-        if (alive) setScreens(next);
-      } catch {
-        // try again
+        last = await api.recordings(id);
+      } catch (e) {
+        gone = e.status === 404;     // no such session; anything else: try again
       }
       if (!alive) return;
       const late = Date.now() - opened > NO_RECORDING_MS;
-      setGaveUp(late);
-      const states = next && Object.values(next).map((s) => s.state);
-      const more = states ? states.some((s) => s === "processing" || (s === "waiting" && !late)) : !late;
+      const states = last && Object.values(last).map((s) => s.state);
+      const more = !gone && (states ? states.some((s) => s === "processing" || (s === "waiting" && !late)) : !late);
+      setScreens(last);
+      setGaveUp(late || gone);
+      setPending(more);
       if (more) timer = setTimeout(poll, 2000);
     };
+    setPending(true);
     poll();
     return () => { alive = false; clearTimeout(timer); };
   }, [id]);
+  return { screens, gaveUp, pending };
+}
 
+function FlightVideos({ screens, gaveUp, pending }) {
   const line = (s) => {
     if (s?.state === "linked") return ["ok", "Added to the review"];
     if (s?.state === "processing") return ["busy", "Saving the recording…"];
@@ -56,7 +65,9 @@ function FlightVideos({ id }) {
           return <li key={key} className={`is-${look}`}><b>{label}</b><span>{text}</span></li>;
         })}
       </ul>
-      <p className="muted">Added to the review automatically. You don't have to wait here.</p>
+      <p className="muted">
+        {pending ? "You can continue once the videos are saved." : "Videos are added to the review automatically."}
+      </p>
     </div>
   );
 }
@@ -69,6 +80,7 @@ export default function SaveSession() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const pilots = usePilotOptions(sessions);
+  const videos = useFlightVideos(id);
   // the scorecard of this session's finished flight, while MAVIS still holds it
   const mavis = useMavisState();
   const card = mavis?.session_id === id ? mavis?.scorecard : null;
@@ -152,12 +164,12 @@ export default function SaveSession() {
           placeholder={card?.debrief_pending && !notesTouched.current ? "Writing the summary from your score…" : ""} />
       </div>
 
-      <FlightVideos id={id} />
+      <FlightVideos {...videos} />
 
       {err && <p className="err">{err}</p>}
       <div className="save-session__actions">
-        <button type="button" className="next-btn" onClick={next} disabled={busy}>
-          {busy ? "Saving…" : "Next › Review"}
+        <button type="button" className="next-btn" onClick={next} disabled={busy || videos.pending}>
+          {busy ? "Saving…" : videos.pending ? "Saving videos…" : "Next › Review"}
         </button>
       </div>
     </div>
