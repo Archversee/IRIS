@@ -44,6 +44,12 @@ ROUTE_HINT = (r"(again|redo|retry|rewind|checkpoint|another go|go back|guide|dia
 # question ("how do I end the lesson?" is caught by QUESTION_RE)
 END_RE = (r"\b(end|finish|stop|quit|terminate|wrap up)\b.{0,15}"
           r"\b(lesson|session|flight|free ?flight)\b")
+# "skip the demo", "no need for the demonstration", "I'll fly it myself": the
+# same as the demo banner's Skip button (only while a demo is coming or running)
+SKIP_DEMO_RE = (r"\b(skip|stop|end|cancel|no|don'?t|without|enough|forget|past)\b.{0,30}"
+                r"\b(demo|demos|demonstration|demonstrating)\b|"
+                r"\b(i'?ll|i will|let me|i can|i want to|i'?d like to) (just )?(fly|do|try) (it|this|that)"
+                r"( myself| on my own)?\b|\b(straight|right) (in|into it|to it|to my turn)\b")
 
 def parse_clock(t: str):
     """Deterministic parse of explicit times: 12:45pm, 0630, 1400 hrs, 7 pm."""
@@ -108,6 +114,16 @@ def build_chat(rt, state, coach, loop, retry):
                 and re.search(END_RE, t) and not re.search(QUESTION_RE, t)):
             await coach.say("Okay, ending the flight here.")
             asyncio.create_task(rt.quit_lesson())
+            return
+        # --- skip the demo: what the demo banner's Skip button does. The task then
+        #     comes from the lesson itself (its first step is named or explained).
+        #     Before this, it went to the chat model, which only said it would. ---
+        if (rt.demo_ctl.get("pending") and re.search(SKIP_DEMO_RE, t)
+                and not re.search(QUESTION_RE, t)):
+            running = state.get("demo") is not None
+            await rt.skip_demo()
+            if not running:                       # still in the briefing: the demo just won't start
+                await coach.say("Okay, no demo. You'll fly it yourself after the briefing.")
             return
         # --- UI intents: controls guide ---
         if re.search(r"(close|hide|remove).{0,20}(guide|diagram|picture)", t):

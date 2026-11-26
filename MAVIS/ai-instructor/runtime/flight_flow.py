@@ -413,6 +413,9 @@ def build_flight_flow(rt):
         whole lesson flown once as a demonstration, then the hand-over, so the
         trainee then flies every step in one go."""
         gen = rt.run_gen["n"]
+        # a demo is coming: "skip the demo" (chat) works from the briefing on
+        rt.demo_ctl["skip"].clear()
+        rt.demo_ctl["pending"] = {"gen": gen}
         try:
             if briefing:
                 alt = (rt.lesson.get("airborne_start") or {}).get("alt_msl_ft", 0)
@@ -420,6 +423,7 @@ def build_flight_flow(rt):
             if gen != rt.run_gen["n"]:
                 return
             await _fam_demo_all(gen)
+            _no_demo_pending(gen)
             if gen != rt.run_gen["n"]:
                 return
             # the demo's closing line ("Your turn now, same steps.") is the
@@ -439,8 +443,13 @@ def build_flight_flow(rt):
                     return
             rt.engine.start_flying()
         finally:
+            _no_demo_pending(gen)
             rt.demo_ctl["no_track"] = False
             await _lock_controls(False)     # whatever happened: never leave them locked
+
+    def _no_demo_pending(gen: int):
+        if (rt.demo_ctl.get("pending") or {}).get("gen") == gen:   # (not a newer run's)
+            rt.demo_ctl["pending"] = None
 
     async def _wait_back_at(lat: float, lon: float, timeout_s: float = 6.0) -> float | None:
         """After set_position: the sim can keep reporting the old position for a
@@ -468,6 +477,10 @@ def build_flight_flow(rt):
                  if s not in NO_DEMO and (rt.engine.notes.get(s) or {}).get("demo", True)]
         if not steps or not tel0 or tel0.get("on_ground", True):
             return
+        if rt.demo_ctl["skip"].is_set():
+            # skipped during the briefing: no demo at all, so every step is explained
+            # in full (held still) when the trainee gets to it, starting with the first
+            return
         mock = rt.cfg["sim"]["adapter"] == "mock"
         base_th = tel0.get("throttle", 0.7)
         # the whole demo in about two minutes (lesson demo_max_s): each step gets
@@ -476,7 +489,6 @@ def build_flight_flow(rt):
         # steps that change height need longer to show than the steady ones
         weight = {s: (3.0 if s in DEMO_LONG_STEPS else 1.0) for s in steps}
         unit = (float(rt.lesson.get("demo_max_s", 120)) - 10.0) / sum(weight.values())
-        rt.demo_ctl["skip"].clear()
         rt.state["demo"] = {"n": 0, "of": len(steps), "title": "Getting ready"}
         # the to-do list follows the demo, step by step, as it will on the
         # trainee's turn (FamiliarizationEngine.demo_tracker)

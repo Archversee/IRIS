@@ -320,6 +320,10 @@ class FamiliarizationEngine:
                           "STEEP": (float(ex.get("steep_bank_deg", 45)), float(ex.get("steep_turn_deg", 360))),
                           "SLOW": (float(ex.get("slow_turn_bank_deg", 15)), float(ex.get("slow_turn_deg", 90)))}
         self.height_band = float(ex.get("height_band_ft", 200))  # where height counts: within this
+        # turn_height: false -- the medium / steep / slow-flight turns are about the bank
+        # alone: height isn't on their to-do card, doesn't stop the turn counting,
+        # and isn't scored (Steep Turns)
+        self.turn_height = bool(ex.get("turn_height", True))
         # unusual attitudes: (pitch + up, bank, speed) MAVIS sets each one up at
         self.upset_spec = {
             "HIGH": (float(ex.get("nose_high_pitch_deg", 20)), float(ex.get("nose_high_bank_deg", 30)),
@@ -453,7 +457,7 @@ class FamiliarizationEngine:
             out["speed"] = band(58, 140, kind="limit")
         if p in LEVEL_OFF_STEPS and e.get("tgt") is not None:
             out["alt"] = band(e["tgt"] - self.level_band, e["tgt"] + self.level_band, e["tgt"])
-        elif p in LEVEL_STEPS and e.get("alt") is not None:
+        elif p in LEVEL_STEPS and e.get("alt") is not None and not self._no_height(p):
             out["alt"] = band(e["alt"] - self.height_band, e["alt"] + self.height_band, e["alt"])
         elif self._target_alt() is not None:
             out["alt"] = band(target=self._target_alt())
@@ -498,9 +502,13 @@ class FamiliarizationEngine:
         self._done_t = None                      # step finished: MAVIS is saying how it went
         self._err = [0.0, 0.0]                   # diversion: off-heading error, time
 
+    def _no_height(self, step: str) -> bool:
+        """A turn this lesson flies for the bank alone (turn_height: false)."""
+        return not self.turn_height and step in BANKED_TURNS
+
     def _target_alt(self):
         a = self._entry.get("alt")
-        if a is None:
+        if a is None or self._no_height(self.phase):
             return None
         if self.phase == "CLIMB":
             return a + self.climb_ft
@@ -896,7 +904,7 @@ class FamiliarizationEngine:
             if self._stage == 0:
                 lo, hi = self.speed_band.get(p, (0.0, 999.0))     # slow-flight turns: speed too
                 if (tel.bank * want >= bank - 8
-                        and abs(tel.alt_msl - e["alt"]) < self.height_band
+                        and (self._no_height(p) or abs(tel.alt_msl - e["alt"]) < self.height_band)
                         and lo <= tel.ias <= hi):
                     self._progress += max(0.0, step_turn * want)
                 if self._progress >= deg - roll_out_lead(tel.bank):
@@ -1152,6 +1160,7 @@ class FamiliarizationEngine:
         if self.vacuum_failed:             # the card mustn't give back what the gauge lost
             rows = [r for r in rows if r.get("label") not in ("Bank", "Wings level")]
         if (any(r.get("label") == "Height" for r in rows) or self.phase in NO_HEIGHT_ROW
+                or self._no_height(self.phase)
                 or (self.phase == "FIND_AIRFIELD" and (self.checkpoints or self.diversion))):
             return rows                    # only what the step needs
         p, e, d = self.phase, self._entry, self._data
@@ -1367,9 +1376,11 @@ class FamiliarizationEngine:
         if p in BANKED_TURNS:
             bank, deg = self.turn_target(p)
             k = self.turn_key(p)
+            if self._no_height(p):
+                height_row = None
             if self._stage == 1:
                 return [{"label": "Wings level", "now": f"{abs(tel.bank):.0f}\u00b0",
-                         "target": "under 8\u00b0", "ok": abs(tel.bank) < 8}, height_row]
+                         "target": "under 8\u00b0", "ok": abs(tel.bank) < 8}] + ([height_row] if height_row else [])
             rows = [{"label": "Turned", "now": f"{_r(self._progress, 5)}\u00b0",
                      "target": f"{deg - 20:.0f}\u2013{deg:.0f}\u00b0",
                      "pct": min(1.0, self._progress / max(1.0, deg - 20))},
@@ -1380,7 +1391,7 @@ class FamiliarizationEngine:
                 rows.append({"label": "Speed", "now": f"{tel.ias:.0f} kt",
                              "target": f"{d['sf_lo']}\u2013{d['sf_hi']} kt",
                              "ok": d["sf_lo"] <= tel.ias <= d["sf_hi"]})
-            return rows + [height_row]
+            return rows + ([height_row] if height_row else [])
         if p == "FIND_AIRFIELD":
             f = self._field(tel)
             rel = f["rel"]
@@ -1541,7 +1552,10 @@ class FamiliarizationScorer:
         self.hold_steps = held_steps(lesson)
         if ex_set & {"DIVERT_TRACK", "COMPASS_TURN", *TIMED_TURNS}:
             self.metrics.add("heading")
-        if ex_set & {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS}:
+        # turns flown for the bank alone (turn_height: false) aren't scored on height
+        self.height_steps = {"STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS} - (
+            set() if ex.get("turn_height", True) else set(BANKED_TURNS))
+        if ex_set & self.height_steps:
             self.metrics.add("altitude")
         if ex_set & {"TURN_LEFT", "TURN_RIGHT", *ROLL_STEPS, *BANKED_TURNS}:
             self.metrics.add("bank")
@@ -1608,7 +1622,7 @@ class FamiliarizationScorer:
                 self._add("speed", max(0.0, lo - ias, ias - hi))
             else:
                 self._add("speed", abs(ias - self.speeds[phase]))
-        if phase in ("STRAIGHT_LEVEL", *HOLD_HEIGHT_STEPS, *HOLD_ALT_STEPS):
+        if phase in self.height_steps:
             self._add("altitude", abs(alt - self._ref_alt))
         # bank accuracy once established in the turn -- rolling in and out
         # passes through small angles on the way and isn't an error

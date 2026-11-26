@@ -177,7 +177,7 @@ TEMPLATES = {
     "FAM_DEMO_START": ["Watch me first. I have control."],
     "FAM_DEMO_END": ["Your turn now, same steps."],
     "FAM_STEP_CUE": ["Now, {title_lc}. {action}."],
-    "FAM_DEMO_SKIPPED": ["Okay, demo skipped. Back to the start. Your turn now, the same steps in order."],
+    "FAM_DEMO_SKIPPED": ["Okay, demo skipped. Back to the start. Your turn now."],
     "FAM_UPSET_NEXT": ["This one's {title_lc}, like I showed you."],
     "FAM_UPSET_LOOK_DOWN": ["I have control. Look down at your lap and let go of the controls."],
     "FAM_UPSET_HANDOVER": ["Look up. You have control."],
