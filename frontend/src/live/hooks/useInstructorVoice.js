@@ -94,9 +94,14 @@ export function useInstructorVoice(audio, active) {
   // runs behind the server and would be cut off mid-line -- and a bare pause()
   // never fires "ended", so playingRef stayed true and every later line just
   // queued, silent. A real withdrawal (stop_speech) arrives as a new gen below.
+  // So only an older MAVIS (no gen) is stopped here. (This used to run for every
+  // MAVIS: on a tablet, a long line was cut off part way and the voice stayed
+  // silent from then on while the chat carried on.)
+  const legacy = audio != null && audio.gen == null;
   useEffect(() => {
-    if (!audio?.url) { voiceRef.current?.pause(); setFace(null); }
-  }, [audio?.url]);
+    if (legacy && !audio?.url) stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audio?.url, legacy]);
 
   useEffect(() => {
     const voice = voiceRef.current;
@@ -111,6 +116,10 @@ export function useInstructorVoice(audio, active) {
     lastSeqRef.current = fresh[fresh.length - 1].seq;
     queueRef.current.push(...fresh);
     if (queueRef.current.length > MAX_QUEUE) queueRef.current = queueRef.current.slice(-MAX_QUEUE);
+    // "playing" but paused and not finished: something outside paused it (the tablet
+    // interrupted its audio, say) and "ended" will never come -- carry on with the queue
+    // (play() unpauses at once, so a clip that is just starting never looks like this)
+    if (playingRef.current && voice.paused && !voice.ended) playingRef.current = false;
     if (!playingRef.current) nextRef.current();
   }, [active, audio]);
 
