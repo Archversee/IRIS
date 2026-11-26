@@ -23,6 +23,12 @@
 .PARAMETER Port
     Port the reverse proxy (the single URL you actually open) listens on.
 
+.PARAMETER HttpsPort
+    Port the same site is also served on over https. Tablets need it for the
+    microphone (push-to-talk): browsers only allow the mic on https, or on
+    http://localhost. The certificate is made by proxy/make_cert.py; each
+    tablet installs its CA once (README.md §8.7). 0 turns https off.
+
 .PARAMETER LocalOnly
     Bind the proxy to 127.0.0.1 only. By default it listens on every
     interface so tablets on the same LAN can open http://<this-pc-ip>:<Port>
@@ -49,6 +55,7 @@
 #>
 param(
     [int]$Port = 3000,
+    [int]$HttpsPort = 3443,
     [switch]$LocalOnly,
     [switch]$SkipAdapter,
     [switch]$SkipMsfsCheck,
@@ -132,7 +139,7 @@ function Start-ServiceProcess {
 # The OBS/Smart-Eye adapter isn't watched: IRIS's backend launches it for
 # every MAVIS session itself, and it exits on purpose when a copy is running.
 # ---------------------------------------------------------------------
-$WATCHED = @("MAVIS", "IRIS-backend", "Proxy")
+$WATCHED = @("MAVIS", "IRIS-backend", "Proxy", "Proxy-HTTPS")
 $RESTART_MIN_S = 2
 $RESTART_MAX_S = 60
 $RESTART_RESET_S = 120
@@ -311,6 +318,31 @@ Start-Backend -Name "Proxy" `
     -ListenPort $Port `
     -SetupHint "cd proxy; python -m venv .venv; .venv\Scripts\pip install -r requirements.txt"
 
+# The same site over https, for tablets' microphones (see -HttpsPort).
+$httpsUp = $false
+if ($HttpsPort -and -not $LocalOnly) {
+    $proxyPy = Join-Path $RepoRoot "proxy\.venv\Scripts\python.exe"
+    $certDir = Join-Path $RepoRoot "proxy\certs"
+    if ($DryRun) {
+        Write-Host "[Proxy-HTTPS] (dry run) would run proxy\make_cert.py, then serve https on :$HttpsPort"
+    } elseif (Test-Path $proxyPy) {
+        & $proxyPy (Join-Path $RepoRoot "proxy\make_cert.py")
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "[Proxy-HTTPS] couldn't make the certificate -- no https, so tablets can't use the microphone. One-time setup: cd proxy; .venv\Scripts\pip install -r requirements.txt"
+        } else {
+            Start-Backend -Name "Proxy-HTTPS" `
+                -WorkDir (Join-Path $RepoRoot "proxy") `
+                -VenvPython $proxyPy `
+                -ArgList @("-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "$HttpsPort",
+                           "--ssl-certfile", (Join-Path $certDir "server.crt"), "--ssl-keyfile", (Join-Path $certDir "server.key")) `
+                -ListenPort $HttpsPort
+            for ($i = 0; $i -lt 20 -and -not $httpsUp; $i++) { Start-Sleep -Milliseconds 500; $httpsUp = Test-Port -Port $HttpsPort }
+            if ($httpsUp) { Write-Host "[Proxy-HTTPS] up on :$HttpsPort." }
+            else { Write-Warning "[Proxy-HTTPS] not listening on :$HttpsPort (check $LogDir\Proxy-HTTPS.err.log)." }
+        }
+    }
+}
+
 if ($DryRun) {
     Write-Host "`n(dry run complete -- nothing was started)"
     exit 0
@@ -323,17 +355,22 @@ if (-not $LocalOnly) {
     $lanIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
         Select-Object -ExpandProperty IPAddress
-    foreach ($ip in $lanIps) { Write-Host " Tablets:    http://${ip}:$Port/live" }
-    $fw = Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue |
-        Where-Object { $_.LocalPort -eq "$Port" } | Get-NetFirewallRule -ErrorAction SilentlyContinue |
-        Where-Object { $_.Enabled -eq "True" -and $_.Direction -eq "Inbound" -and $_.Action -eq "Allow" }
-    if (-not $fw) {
-        Write-Host " (no inbound firewall rule for TCP $Port -- tablets can't connect until one exists;"
-        Write-Host "  admin PowerShell: New-NetFirewallRule -DisplayName 'MAVIS-IRIS $Port' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Private)"
+    foreach ($ip in $lanIps) {
+        if ($httpsUp) { Write-Host " Tablets:    https://${ip}:$HttpsPort/live   (certificate, once per tablet: http://${ip}:$Port/iris-ca.crt)" }
+        else { Write-Host " Tablets:    http://${ip}:$Port/live   (no https: push-to-talk won't work on tablets)" }
+    }
+    foreach ($fwPort in @($Port) + $(if ($httpsUp) { @($HttpsPort) } else { @() })) {
+        $fw = Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalPort -eq "$fwPort" } | Get-NetFirewallRule -ErrorAction SilentlyContinue |
+            Where-Object { $_.Enabled -eq "True" -and $_.Direction -eq "Inbound" -and $_.Action -eq "Allow" }
+        if (-not $fw) {
+            Write-Host " (no inbound firewall rule for TCP $fwPort -- tablets can't connect on it until one exists;"
+            Write-Host "  admin PowerShell: New-NetFirewallRule -DisplayName 'MAVIS-IRIS $fwPort' -Direction Inbound -Protocol TCP -LocalPort $fwPort -Action Allow -Profile Private)"
+        }
     }
 }
 Write-Host " Logs:       $LogDir"
-Write-Host " Watchdog:   MAVIS, IRIS backend and proxy are restarted if they exit."
+Write-Host " Watchdog:   MAVIS, IRIS backend and proxies are restarted if they exit."
 Write-Host " Press Ctrl+C to stop everything this script started."
 Write-Host "================================================================"
 

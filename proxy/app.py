@@ -9,6 +9,9 @@ or this process down. See docs/INTEGRATION_PLAN.md §4a.
     /mavis/*     -> MAVIS          (strip /mavis) default http://localhost:6945
     /health      -> aggregates both backends' health, for the launcher +
                     the dashboard's own "service unavailable" banners
+    /iris-ca.crt -> the CA tablets install so https works without warnings
+                    (make_cert.py; the launcher also serves the site on https
+                    :3443, which tablets need for the microphone)
 
 Run: uvicorn proxy.app:app --port 3000
 Env: FRONTEND_DIST, IRIS_BACKEND_URL, MAVIS_BACKEND_URL (see defaults below).
@@ -185,6 +188,16 @@ async def mavis_ws_proxy(websocket: WebSocket):
     await _ws_proxy(websocket, MAVIS_BACKEND, "/mavis")
 
 
+CA_CERT = Path(__file__).resolve().parent / "certs" / "ca.crt"
+
+
+async def ca_cert(request):
+    if not CA_CERT.exists():
+        return JSONResponse({"detail": "no certificate yet: start the site with scripts/launch_all.ps1"}, status_code=404)
+    return Response(CA_CERT.read_bytes(), media_type="application/x-x509-ca-cert",
+                    headers={"Content-Disposition": 'attachment; filename="iris-ca.crt"'})
+
+
 async def health(request):
     async def ok(url: str) -> bool:
         try:
@@ -200,6 +213,7 @@ async def health(request):
 
 routes = [
     Route("/health", health),
+    Route("/iris-ca.crt", ca_cert),
     # Specific routes first -- Mount("/") below is a catch-all and must lose
     # to these when both could match the same path.
     Route("/api/{path:path}", api_proxy, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),

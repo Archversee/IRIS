@@ -29,6 +29,14 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
       reject(Object.assign(new Error("mic"), { code: "mic_insecure" }));
       return;
     }
+    // The audio engine is made and started before the first await, while this is
+    // still the tap/click that began the recording: iOS Safari leaves one created
+    // later suspended, so it records nothing. Ask for 16 kHz (Whisper's rate).
+    const AC = window.AudioContext || window.webkitAudioContext;
+    let ctx = null;
+    try { ctx = new AC({ sampleRate: 16000 }); } catch { try { ctx = new AC(); } catch { /* below */ } }
+    ctx?.resume().catch(() => {});
+    const closeCtx = () => { try { ctx?.close(); } catch { /* fine */ } };
     let stream;
     try {
       // Raw mic with the browser's automatic gain: echo cancellation and noise
@@ -43,20 +51,19 @@ export function recordMicWav({ maxMs = 20000, stopSignal = null, onReady = null 
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     } catch (e) {
+      closeCtx();
       reject(Object.assign(new Error("mic"), { code: e?.name === "NotAllowedError" ? "mic_denied" : "mic_error" }));
       return;
     }
     const track = stream.getAudioTracks()[0];
     const device = track ? `${track.label || "unnamed input"}${track.muted ? " (muted by system)" : ""}` : "no input";
-    // Ask for 16 kHz (Whisper's rate) but fall back to the device rate:
-    // Firefox refuses to connect a mic stream to a context at another rate.
-    const AC = window.AudioContext || window.webkitAudioContext;
-    let ctx, src;
+    // Falls back to the device rate: Firefox refuses to connect a mic stream to
+    // a context at another rate.
+    let src;
     try {
-      ctx = new AC({ sampleRate: 16000 });
       src = ctx.createMediaStreamSource(stream);
     } catch {
-      try { ctx?.close(); } catch { /* fine */ }
+      closeCtx();
       try {
         ctx = new AC();
         src = ctx.createMediaStreamSource(stream);
@@ -139,5 +146,5 @@ export const VOICE_REASONS = {
   stt_timeout: "Speech recognition took too long. Try again in a moment.",
   mic_denied: "Microphone permission denied. Allow the mic in the browser, then try again.",
   mic_error: "Couldn't open the microphone.",
-  mic_insecure: "The browser only allows the microphone on https or localhost. Open IRIS via localhost on this PC.",
+  mic_insecure: "The browser only allows the microphone on a secure page. On a tablet open the https address the launcher prints (https://<sim-pc-ip>:3443), not http://…:3000.",
 };

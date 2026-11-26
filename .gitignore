@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 backend/.env
+# the proxy's HTTPS certificate and its CA's private key (proxy/make_cert.py)
+proxy/certs/
 # node
 node_modules/
 frontend/dist/

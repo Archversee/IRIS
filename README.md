@@ -12,7 +12,7 @@ section 11 on is reference.
 
 | Part | What it is | Port |
 |---|---|---|
-| Proxy (`proxy/`) | The website: serves the React app and forwards `/api` and `/mavis` | **3000** (the only port tablets use) |
+| Proxy (`proxy/`) | The website: serves the React app and forwards `/api` and `/mavis` | **3000** http, **3443** https (the only ports tablets use) |
 | IRIS backend (`backend/`) | FastAPI + asyncpg: sessions, review, analytics, accounts | 8000 (this PC only) |
 | MAVIS (`MAVIS/ai-instructor/`) | Live instructor: SimConnect, lesson engine, coaching, voice | 6945 (reached through the proxy) |
 | Frontend (`frontend/`) | React (Vite), built into `frontend/dist` and served by the proxy | none (built files) |
@@ -39,8 +39,11 @@ section 11 on is reference.
 
 - Everything except Ollama and Smart Eye runs on **one sim PC**. A browser on
   the sim PC at `http://localhost:3000` works exactly like a tablet.
-- Tablets only need a browser on the same network. They connect to port 3000
-  on the sim PC, and nothing else.
+- Tablets only need a browser on the same network. They open
+  `https://<sim-pc>:3443` (the same site over https; browsers only allow the
+  microphone for push-to-talk on https) and nothing else. Plain
+  `http://<sim-pc>:3000` works too, except for the microphone. Each tablet
+  installs the site's certificate once (§8.7).
 - Several tablets (and the sim PC's own browser) can be open at once. They all
   show the same live session, and any of them can drive it.
 - Give the sim PC and the LLM PC fixed addresses (a DHCP reservation in the
@@ -329,8 +332,9 @@ blocking traffic.
 ### 8.2 Sim PC rules
 
 ```powershell
-# Tablets -> the website. Always needed.
+# Tablets -> the website (3000 http, 3443 https). Always needed.
 New-NetFirewallRule -DisplayName "MAVIS-IRIS 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "MAVIS-IRIS 3443" -Direction Inbound -Protocol TCP -LocalPort 3443 -Action Allow -Profile Private
 
 # Smart Eye PC -> live gaze. Only if SEP runs on another PC.
 New-NetFirewallRule -DisplayName "MAVIS-IRIS Smart Eye 5001" -Direction Inbound -Protocol UDP -LocalPort 5001 -Action Allow -Profile Private
@@ -392,6 +396,46 @@ Or open `http://<sim-pc-ip>:3000/health` in the tablet's browser. It reports
 whether both backends are up. UDP 5001 can't be tested this way; watch for
 gaze in Live Monitor instead.
 
+### 8.7 Tablets: install the certificate (once per tablet)
+
+Push-to-talk needs the microphone, and browsers only allow it on https (or on
+`localhost`, which is why it already works in the sim PC's own browser). The
+launcher serves the site over https on port 3443 with a certificate signed by
+a small certificate authority (CA) of the sim PC's own
+(`proxy/make_cert.py`, files in `proxy/certs/`, not in git). Trust that CA
+once on each tablet and https works without warnings, including after the
+PC's address changes.
+
+iPad / iPhone:
+
+1. Start the site (§9). In **Safari** open `http://<sim-pc-ip>:3000/iris-ca.crt`
+   and choose **Allow** to download the profile.
+2. **Settings → General → VPN & Device Management** (on older iOS: **Profile
+   Downloaded** at the top of Settings) → *IRIS local CA* → **Install**.
+3. **Settings → General → About → Certificate Trust Settings** → turn on
+   **IRIS local CA**. iOS does not use the certificate until this is on.
+4. Open `https://<sim-pc-ip>:3443/live`. The first time you hold the mic
+   button, allow the microphone.
+
+Windows tablet (Surface, Edge or Chrome):
+
+1. In Edge open `http://<sim-pc-ip>:3000/iris-ca.crt` and keep the download.
+2. In an **admin PowerShell** on the tablet:
+   `Import-Certificate -FilePath "$env:USERPROFILE\Downloads\iris-ca.crt" -CertStoreLocation Cert:\LocalMachine\Root`
+   (or double-click the file → **Install Certificate** → *Local Machine* →
+   *Place all certificates in the following store* → **Trusted Root
+   Certification Authorities**).
+3. Close every Edge window and open `https://<sim-pc-ip>:3443/live`. The
+   first time you hold the mic button, allow the microphone.
+
+Android: download the same file, then **Settings → Security → Encryption &
+credentials → Install a certificate → CA certificate**.
+
+If `proxy/certs/` is deleted, a new CA is made and every tablet has to
+install it again. Without the certificate, Safari shows "This connection is
+not private"; don't tap through it, as the live page's connection to the
+sim may still fail.
+
 ---
 
 ## 9. First start
@@ -404,12 +448,13 @@ The launcher starts, in order: Postgres (if it's a stopped Windows service),
 an advisory MSFS check, MAVIS, the IRIS backend, the OBS/Smart Eye adapter,
 and the proxy. Each step is health-checked, but a failure doesn't stop the
 script; the website shows banners for whatever is down. A watchdog restarts
-MAVIS, the backend or the proxy if one exits. Logs go to `logs/launcher/`,
+MAVIS, the backend or the proxy if one exits. The proxy runs twice: http on
+3000 and https on 3443 (§8.7). Logs go to `logs/launcher/`,
 and **Ctrl+C** stops everything it started.
 
 When it's done, it prints:
 
 ```
  Dashboard:  http://localhost:3000
- Tablets:    http://192.168.0.103:3000/live
+ Tablets:    https://192.168.0.103:3443/live   (certificate, once per tablet: http://192.168.0.103:3000/iris-ca.crt)
 ```
