@@ -352,7 +352,8 @@
   50% { box-shadow: 0 0 0 7px rgba(255, 159, 67, 0); }
 }
 .mavis-topbar__error { font-size: var(--fs-sm); color: var(--danger); max-width: 320px; }
-.mavis-chat__voice { padding: 0 12px 8px; font-size: var(--fs-sm); color: var(--faint); background: var(--panel); }
+.mavis-chat__mic.is-error { background: var(--danger); color: #fff; border-color: var(--danger); }
+.mavis-chat .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- Map ---- */
 .mavis-map {

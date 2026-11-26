@@ -19,7 +19,7 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [talking, setTalking] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState("");
+  const [micError, setMicError] = useState("");   // the mic can't be used: the button turns red, the reason is its tooltip
   const stopRef = useRef(null);
   const busyRef = useRef(false);
   const statusTimer = useRef(null);
@@ -46,11 +46,13 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
 
   const disabled = false;   // questions are never blocked, in any mode
 
-  // status line: "Listening…"/"Transcribing…" stay up; results fade after a few seconds
-  function showStatus(msg, sticky = false) {
+  // No running commentary ("Speak now", "too short", "Heard: ..."): the button glowing
+  // while held is the cue, and what was said shows up in the chat. Only a mic that
+  // can't be used at all is flagged, on the button itself, so nothing moves.
+  function showError(msg) {
     clearTimeout(statusTimer.current);
-    setVoiceStatus(msg);
-    if (!sticky && msg) statusTimer.current = setTimeout(() => setVoiceStatus(""), 6000);
+    setMicError(msg);
+    statusTimer.current = setTimeout(() => setMicError(""), 4000);
   }
 
   // leaving the page mid-recording must release the mic
@@ -64,36 +66,29 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
     busyRef.current = true;
     const stop = new Promise((r) => { stopRef.current = r; });
     setTalking(true);
-    showStatus("Opening microphone…", true);
+    setMicError("");
     let rec;
     try {
-      rec = await recordMicWav({
-        maxMs: 60000,
-        stopSignal: stop,
-        onReady: () => showStatus("Speak now… release when done", true),
-      });
+      rec = await recordMicWav({ maxMs: 60000, stopSignal: stop });
     } catch (e) {
       stopRef.current = null;
       busyRef.current = false;
       setTalking(false);
-      showStatus(VOICE_REASONS[e.code] || VOICE_REASONS.mic_error);
+      showError(VOICE_REASONS[e.code] || VOICE_REASONS.mic_error);
       return;
     }
     setTalking(false);
-    if (rec.durationMs < 200 || rec.maxAbs < 0.0005) {
+    if (rec.durationMs < 200 || rec.maxAbs < 0.0005) {    // a tap, or nothing heard: just ignore it
       busyRef.current = false;
-      const heard = `${(rec.durationMs / 1000).toFixed(1)} s, peak ${rec.maxAbs.toFixed(4)}, audio ${rec.engine}; input: ${rec.device}`;
-      showStatus(`${rec.durationMs < 200 ? VOICE_REASONS.too_short : VOICE_REASONS.low_level} (${heard})`);
       return;
     }
-    showStatus("Transcribing…", true);
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 45000);
     try {
       const j = await mavisApi.voicePtt(rec.blob, speakerName, ac.signal);
-      showStatus(j?.ok ? `Heard: “${j.text}”` : (VOICE_REASONS[j?.reason] || "Couldn't use that recording."));
+      if (!j?.ok && (j?.reason === "stt_unavailable" || j?.reason === "chat_disabled")) showError(VOICE_REASONS[j.reason]);
     } catch (e) {
-      showStatus(e?.name === "AbortError" ? VOICE_REASONS.stt_timeout : "Couldn't reach speech recognition.");
+      showError(e?.name === "AbortError" ? VOICE_REASONS.stt_timeout : "Couldn't reach speech recognition.");
     } finally {
       clearTimeout(timer);
       busyRef.current = false;
@@ -155,8 +150,8 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
         />
         <button
           type="button"
-          className={"mavis-chat__mic" + (talking ? " is-hot" : "")}
-          title="Hold to talk (or hold the joystick push-to-talk button)"
+          className={"mavis-chat__mic" + (talking ? " is-hot" : micError ? " is-error" : "")}
+          title={micError || "Hold to talk (or hold the joystick push-to-talk button)"}
           aria-label="Hold to talk"
           disabled={disabled}
           onPointerDown={(e) => {
@@ -189,7 +184,7 @@ export default function ChatPanel({ transcript, chatEnabled, joyPtt = false, spe
           </svg>
         </button>
       </div>
-      {voiceStatus && <div className="mavis-chat__voice" role="status">{voiceStatus}</div>}
+      {micError && <span className="sr-only" role="status">{micError}</span>}
     </div>
   );
 }
