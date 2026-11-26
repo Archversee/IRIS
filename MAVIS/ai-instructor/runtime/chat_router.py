@@ -40,10 +40,12 @@ TIME_HINT = (r"(time|clock|hrs|o'?clock|[ap]\.?m\b|\d{1,2}[:.]\d{2}|night|day(ti
 # words that could make a free-text request a tool call (retry a leg, show/hide the guide, lighting)
 ROUTE_HINT = (r"(again|redo|retry|rewind|checkpoint|another go|go back|guide|diagram|"
               r"controls?|show|hide|close|open|dark|bright|light|weather)")
-# "end lesson", "finish the flight", "stop this session" -- a command, never a
-# question ("how do I end the lesson?" is caught by QUESTION_RE)
-END_RE = (r"\b(end|finish|stop|quit|terminate|wrap up)\b.{0,15}"
-          r"\b(lesson|session|flight|free ?flight)\b")
+# "end lesson", "finish the flight", "stop this session", "I'm done for today" --
+# a command, never a question ("how do I end the lesson?" is caught by QUESTION_RE)
+END_RE = (r"\b(end|finish|stop|quit|terminate|wrap up|exit|leave|close)\b.{0,15}"
+          r"\b(lesson|session|flight|free ?flight|exercise)\b|"
+          r"\b(i'?m|we'?re|i am|we are) (all )?(done|finished)( (here|now|for (today|now|the day)))?\s*[.!]?\s*$|"
+          r"\bcall it a day\b|\bthat'?s (it|all|enough) for (today|now)\b")
 # "skip the demo", "no need for the demonstration", "I'll fly it myself": the
 # same as the demo banner's Skip button (only while a demo is coming or running)
 SKIP_DEMO_RE = (r"\b(skip|stop|end|cancel|no|don'?t|without|enough|forget|past)\b.{0,30}"
@@ -108,11 +110,13 @@ def build_chat(rt, state, coach, loop, retry):
         import re
         await coach.say(text, who="trainee")
         t = text.lower()
-        # --- end intent: Free Flight has no lesson to finish, so saying "end
-        #     lesson" ends it the same way the End Session button does ---
-        if (rt.session.get("free_flight") and rt.started.is_set() and not rt.scored["done"]
-                and re.search(END_RE, t) and not re.search(QUESTION_RE, t)):
-            await coach.say("Okay, ending the flight here.")
+        # --- end intent: "end the session" does what the End Session button does,
+        #     in every lesson and Free Flight: the flight stops and the scorecard
+        #     comes up (the page then marks the session ended, so OBS stops) ---
+        if (rt.started.is_set() and not rt.scored["done"]
+                and re.search(END_RE, t) and not re.search(QUESTION_RE, t)
+                and not re.search(r"\bdemo", t)):         # "stop the demo flight" skips the demo (below)
+            await coach.say("Okay, ending the session here.")
             asyncio.create_task(rt.quit_lesson())
             return
         # --- skip the demo: what the demo banner's Skip button does. The task then
